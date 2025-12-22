@@ -1,0 +1,34 @@
+[package]
+name = "remdb"
+version = "0.1.0"
+edition = "2021"
+authors = ["remdb contributors"]
+description = "嵌入式内存数据库"
+license = "MIT"
+
+[lib]
+name = "remdb"
+path = "src/lib.rs"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+
+[features]
+default = ["std"]
+std = []
+posix = ["std"]
+baremetal = []
+debug = []
+
+[profile.release]
+opt-level = "z"          # 优化大小
+lto = true               # 链接时优化
+codegen-units = 1        # 单代码生成单元，优化更好
+panic = "abort"          # 崩溃时直接终止
+
+[profile.dev]
+opt-level = 1            # 开发模式也有一些优化
+panic = "abort"
+
+[build-dependencies]
+cc = "1.0"
