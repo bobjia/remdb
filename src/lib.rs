@@ -30,6 +30,11 @@ pub struct RemDb {
 }
 
 impl RemDb {
+    /// 快照魔数
+    const SNAPSHOT_MAGIC: u32 = 0x52454D44; // 'REMD'
+    /// 快照版本
+    const SNAPSHOT_VERSION: u32 = 1;
+    
     /// 创建新的数据库实例
     pub unsafe fn new(
         config: &'static config::DbConfig,
@@ -125,14 +130,257 @@ impl RemDb {
     
     /// 初始化数据库
     pub unsafe fn init(&mut self) -> Result<()> {
-        // 初始化平台抽象层（如果未初始化）
-        if crate::platform::PLATFORM.is_none() {
-            // 默认使用POSIX平台（如果可用）
-            #[cfg(feature = "posix")]
-            crate::platform::init_platform(crate::platform::posix::get_posix_platform());
-        }
+        // 直接初始化平台抽象层，不检查当前状态
+        // 默认使用POSIX平台（如果可用）
+        #[cfg(feature = "posix")]
+        crate::platform::init_platform(crate::platform::posix::get_posix_platform());
         
         Ok(())
+    }
+    
+    /// 保存快照到文件
+    pub unsafe fn save_snapshot(&self, path: &str) -> Result<()> {
+        // 打开文件 - 使用Write模式
+        let handle = crate::platform::file_open(path, crate::platform::FileMode::Write)
+            .map_err(|_| RemDbError::FileIoError)?;
+        
+        // 使用defer确保文件关闭
+        let _defer = Defer::new(|| {
+            let _ = crate::platform::file_close(handle);
+        });
+        
+        // 写入魔数
+        let magic = Self::SNAPSHOT_MAGIC.to_le_bytes();
+        let written = crate::platform::file_write(handle, magic.as_ptr(), magic.len())
+            .map_err(|_| RemDbError::FileIoError)?;
+        if written != magic.len() {
+            return Err(RemDbError::FileIoError);
+        }
+        
+        // 写入版本号
+        let version = Self::SNAPSHOT_VERSION.to_le_bytes();
+        let written = crate::platform::file_write(handle, version.as_ptr(), version.len())
+            .map_err(|_| RemDbError::FileIoError)?;
+        if written != version.len() {
+            return Err(RemDbError::FileIoError);
+        }
+        
+        // 写入表数量
+        let table_count = self.config.tables.len() as u32;
+        let table_count_bytes = table_count.to_le_bytes();
+        let written = crate::platform::file_write(handle, table_count_bytes.as_ptr(), table_count_bytes.len())
+            .map_err(|_| RemDbError::FileIoError)?;
+        if written != table_count_bytes.len() {
+            return Err(RemDbError::FileIoError);
+        }
+        
+        // 写入每个表的数据
+        for table_id in 0..table_count as usize {
+            if let Some(table) = &self.tables[table_id] {
+                // 写入表ID（4字节）
+                let table_id_u32 = table_id as u32;
+                let table_id_bytes = table_id_u32.to_le_bytes();
+                let written = crate::platform::file_write(handle, table_id_bytes.as_ptr(), table_id_bytes.len())
+                    .map_err(|_| RemDbError::FileIoError)?;
+                if written != table_id_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+                
+                // 写入已使用的记录数（4字节）
+                let used_count_u32 = table.record_count() as u32;
+                let used_count_bytes = used_count_u32.to_le_bytes();
+                let written = crate::platform::file_write(handle, used_count_bytes.as_ptr(), used_count_bytes.len())
+                    .map_err(|_| RemDbError::FileIoError)?;
+                if written != used_count_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+                
+                // 动态计算记录大小
+                let mut record_size = 0;
+                for field in table.def.fields {
+                    record_size += field.size;
+                }
+                
+                // 写入已使用的记录
+                for i in 0..table.def.max_records {
+                    let status_ptr = table.get_status_ptr(i);
+                    if (*status_ptr).status == crate::types::RecordStatus::Used {
+                        // 写入记录索引（4字节）
+                        let index_u32 = i as u32;
+                        let index_bytes = index_u32.to_le_bytes();
+                        let written = crate::platform::file_write(handle, index_bytes.as_ptr(), index_bytes.len())
+                            .map_err(|_| RemDbError::FileIoError)?;
+                        if written != index_bytes.len() {
+                            return Err(RemDbError::FileIoError);
+                        }
+                        
+                        // 写入记录数据
+                        let record_ptr = table.get_record_ptr(i);
+                        let written = crate::platform::file_write(handle, record_ptr, record_size)
+                            .map_err(|_| RemDbError::FileIoError)?;
+                        if written != record_size {
+                            return Err(RemDbError::FileIoError);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 跳过CRC32计算和写入，简化实现
+        Ok(())
+    }
+    
+    /// 从文件恢复快照
+    pub unsafe fn restore_snapshot(&mut self, path: &str) -> Result<()> {
+        // 打开文件
+        let handle = crate::platform::file_open(path, crate::platform::FileMode::Read)
+            .map_err(|_| RemDbError::FileIoError)?;
+        
+        // 使用defer确保文件关闭
+        let _defer = Defer::new(|| {
+            let _ = crate::platform::file_close(handle);
+        });
+        
+        // 读取魔数
+        let mut magic_bytes = [0u8; 4];
+        let read = crate::platform::file_read(handle, magic_bytes.as_mut_ptr(), magic_bytes.len())
+            .map_err(|_| RemDbError::FileIoError)?;
+        if read != magic_bytes.len() {
+            return Err(RemDbError::FileIoError);
+        }
+        let magic = u32::from_le_bytes(magic_bytes);
+        if magic != Self::SNAPSHOT_MAGIC {
+            return Err(RemDbError::SnapshotFormatError);
+        }
+        
+        // 读取版本号
+        let mut version_bytes = [0u8; 4];
+        let read = crate::platform::file_read(handle, version_bytes.as_mut_ptr(), version_bytes.len())
+            .map_err(|_| RemDbError::FileIoError)?;
+        if read != version_bytes.len() {
+            return Err(RemDbError::FileIoError);
+        }
+        let version = u32::from_le_bytes(version_bytes);
+        if version != Self::SNAPSHOT_VERSION {
+            return Err(RemDbError::SnapshotFormatError);
+        }
+        
+        // 读取表数量
+        let mut table_count_bytes = [0u8; 4];
+        let read = crate::platform::file_read(handle, table_count_bytes.as_mut_ptr(), table_count_bytes.len())
+            .map_err(|_| RemDbError::FileIoError)?;
+        if read != table_count_bytes.len() {
+            return Err(RemDbError::FileIoError);
+        }
+        let table_count = u32::from_le_bytes(table_count_bytes) as usize;
+        
+        // 检查表数量是否匹配
+        if table_count != self.config.tables.len() {
+            return Err(RemDbError::SnapshotFormatError);
+        }
+        
+        // 读取每个表的数据
+        for _ in 0..table_count {
+            // 读取表ID（4字节）
+            let mut table_id_bytes = [0u8; 4];
+            let read = crate::platform::file_read(handle, table_id_bytes.as_mut_ptr(), table_id_bytes.len())
+                .map_err(|_| RemDbError::FileIoError)?;
+            if read != table_id_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            let table_id = u32::from_le_bytes(table_id_bytes) as usize;
+            
+            // 检查表ID是否有效
+            if table_id >= self.tables.len() {
+                return Err(RemDbError::SnapshotFormatError);
+            }
+            
+            // 获取表引用
+            let table = match &mut self.tables[table_id] {
+                Some(table) => table,
+                None => return Err(RemDbError::SnapshotFormatError),
+            };
+            
+            // 重置所有记录的状态和数据
+            for i in 0..table.def.max_records {
+                let status_ptr = table.get_status_ptr(i);
+                let record_ptr = table.get_record_ptr_mut(i);
+                
+                (*status_ptr).status = crate::types::RecordStatus::Free;
+                (*status_ptr).version += 1;
+                crate::platform::memset(record_ptr, 0, table.def.record_size);
+            }
+            
+            // 重置记录数
+            table.set_record_count(0);
+            
+            // 读取已使用的记录数（4字节）
+            let mut used_count_bytes = [0u8; 4];
+            let read = crate::platform::file_read(handle, used_count_bytes.as_mut_ptr(), used_count_bytes.len())
+                .map_err(|_| RemDbError::FileIoError)?;
+            if read != used_count_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            let used_count = u32::from_le_bytes(used_count_bytes) as usize;
+            
+            // 动态计算记录大小
+            let mut record_size = 0;
+            for field in table.def.fields {
+                record_size += field.size;
+            }
+            
+            // 读取已使用的记录
+            for _ in 0..used_count {
+                // 读取记录索引（4字节）
+                let mut index_bytes = [0u8; 4];
+                let read = crate::platform::file_read(handle, index_bytes.as_mut_ptr(), index_bytes.len())
+                    .map_err(|_| RemDbError::FileIoError)?;
+                if read != index_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+                let i = u32::from_le_bytes(index_bytes) as usize;
+                
+                // 检查索引是否有效
+                if i >= table.def.max_records {
+                    return Err(RemDbError::SnapshotFormatError);
+                }
+                
+                // 读取记录数据
+                let record_ptr = table.get_record_ptr_mut(i);
+                let read = crate::platform::file_read(handle, record_ptr, record_size)
+                    .map_err(|_| RemDbError::FileIoError)?;
+                if read != record_size {
+                    return Err(RemDbError::FileIoError);
+                }
+                
+                // 更新记录状态
+                let status_ptr = table.get_status_ptr(i);
+                (*status_ptr).status = crate::types::RecordStatus::Used;
+                (*status_ptr).version += 1;
+                table.inc_record_count();
+            }
+        }
+        
+        // 简化实现，跳过CRC32校验
+        Ok(())
+    }
+}
+
+/// 延迟执行结构体（用于确保资源释放）
+struct Defer<F: FnMut()>(Option<F>);
+
+impl<F: FnMut()> Defer<F> {
+    /// 创建新的延迟执行实例
+    pub fn new(f: F) -> Self {
+        Defer(Some(f))
+    }
+}
+
+impl<F: FnMut()> Drop for Defer<F> {
+    fn drop(&mut self) {
+        if let Some(mut f) = self.0.take() {
+            f();
+        }
     }
 }
 

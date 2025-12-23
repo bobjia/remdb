@@ -1,3 +1,6 @@
+/// 文件操作结果类型
+pub type FileResult<T> = core::result::Result<T, ()>;
+
 /// 平台抽象层接口
 pub trait Platform {
     /// 获取当前时间戳（毫秒）
@@ -29,6 +32,57 @@ pub trait Platform {
     
     /// 延迟（微秒）
     fn delay_us(&self, us: u32);
+    
+    /// 打开文件
+    fn file_open(&self, path: &str, mode: FileMode) -> FileResult<FileHandle>;
+    
+    /// 关闭文件
+    fn file_close(&self, handle: FileHandle) -> FileResult<()>;
+    
+    /// 写入文件
+    fn file_write(&self, handle: FileHandle, buffer: *const u8, size: usize) -> FileResult<usize>;
+    
+    /// 读取文件
+    fn file_read(&self, handle: FileHandle, buffer: *mut u8, size: usize) -> FileResult<usize>;
+    
+    /// 文件定位
+    fn file_seek(&self, handle: FileHandle, offset: i64, whence: SeekWhence) -> FileResult<u64>;
+    
+    /// 删除文件
+    fn file_remove(&self, path: &str) -> FileResult<()>;
+    
+    /// 获取文件大小
+    fn file_size(&self, path: &str) -> FileResult<usize>;
+    
+    /// 计算CRC32校验和
+    fn crc32(&self, data: *const u8, size: usize) -> u32;
+}
+
+/// 文件模式
+#[derive(Copy, Clone)]
+pub enum FileMode {
+    /// 只读模式
+    Read,
+    /// 只写模式，创建文件（如果不存在）
+    Write,
+    /// 读写模式，创建文件（如果不存在）
+    ReadWrite,
+    /// 只写模式，追加到文件末尾
+    Append,
+}
+
+/// 文件句柄类型 - 使用*const u8作为通用句柄类型，可以容纳任何指针
+pub type FileHandle = *const u8;
+
+/// 文件定位起始位置
+#[derive(Copy, Clone)]
+pub enum SeekWhence {
+    /// 从文件开头
+    SeekSet,
+    /// 从当前位置
+    SeekCur,
+    /// 从文件末尾
+    SeekEnd,
 }
 
 /// 全局平台实例
@@ -143,6 +197,94 @@ pub fn delay_us(us: u32) {
     unsafe {
         if let Some(platform) = PLATFORM {
             platform.delay_us(us)
+        } else {
+            panic!("Platform not initialized")
+        }
+    }
+}
+
+/// 打开文件
+pub fn file_open(path: &str, mode: FileMode) -> FileResult<FileHandle> {
+    unsafe {
+        if let Some(platform) = PLATFORM {
+            platform.file_open(path, mode)
+        } else {
+            panic!("Platform not initialized")
+        }
+    }
+}
+
+/// 关闭文件
+pub fn file_close(handle: FileHandle) -> FileResult<()> {
+    unsafe {
+        if let Some(platform) = PLATFORM {
+            platform.file_close(handle)
+        } else {
+            panic!("Platform not initialized")
+        }
+    }
+}
+
+/// 写入文件
+pub fn file_write(handle: FileHandle, buffer: *const u8, size: usize) -> FileResult<usize> {
+    unsafe {
+        if let Some(platform) = PLATFORM {
+            platform.file_write(handle, buffer, size)
+        } else {
+            panic!("Platform not initialized")
+        }
+    }
+}
+
+/// 读取文件
+pub fn file_read(handle: FileHandle, buffer: *mut u8, size: usize) -> FileResult<usize> {
+    unsafe {
+        if let Some(platform) = PLATFORM {
+            platform.file_read(handle, buffer, size)
+        } else {
+            panic!("Platform not initialized")
+        }
+    }
+}
+
+/// 文件定位
+pub fn file_seek(handle: FileHandle, offset: i64, whence: SeekWhence) -> FileResult<u64> {
+    unsafe {
+        if let Some(platform) = PLATFORM {
+            platform.file_seek(handle, offset, whence)
+        } else {
+            panic!("Platform not initialized")
+        }
+    }
+}
+
+/// 删除文件
+pub fn file_remove(path: &str) -> FileResult<()> {
+    unsafe {
+        if let Some(platform) = PLATFORM {
+            platform.file_remove(path)
+        } else {
+            panic!("Platform not initialized")
+        }
+    }
+}
+
+/// 获取文件大小
+pub fn file_size(path: &str) -> FileResult<usize> {
+    unsafe {
+        if let Some(platform) = PLATFORM {
+            platform.file_size(path)
+        } else {
+            panic!("Platform not initialized")
+        }
+    }
+}
+
+/// 计算CRC32校验和
+pub fn crc32(data: *const u8, size: usize) -> u32 {
+    unsafe {
+        if let Some(platform) = PLATFORM {
+            platform.crc32(data, size)
         } else {
             panic!("Platform not initialized")
         }

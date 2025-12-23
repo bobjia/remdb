@@ -91,7 +91,7 @@ pub struct TableDef {
 }
 
 /// 记录状态
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u8)]
 pub enum RecordStatus {
     /// 空闲
@@ -141,6 +141,12 @@ pub enum RemDbError {
     ConfigError,
     /// 操作不支持
     UnsupportedOperation,
+    /// 文件I/O错误
+    FileIoError,
+    /// 快照格式错误
+    SnapshotFormatError,
+    /// CRC校验失败
+    Crc32Error,
 }
 
 impl fmt::Display for RemDbError {
@@ -154,6 +160,9 @@ impl fmt::Display for RemDbError {
             RemDbError::TransactionError => write!(f, "Transaction error"),
             RemDbError::ConfigError => write!(f, "Config error"),
             RemDbError::UnsupportedOperation => write!(f, "Unsupported operation"),
+            RemDbError::FileIoError => write!(f, "File I/O error"),
+            RemDbError::SnapshotFormatError => write!(f, "Snapshot format error"),
+            RemDbError::Crc32Error => write!(f, "CRC32 checksum error"),
         }
     }
 }

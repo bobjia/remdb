@@ -15,6 +15,8 @@ pub struct MemoryTable {
     record_count: usize,
     /// 自旋锁
     lock: u32,
+    /// 记录大小（运行时计算）
+    record_size: usize,
 }
 
 impl MemoryTable {
@@ -32,12 +34,19 @@ impl MemoryTable {
             (*status_ptr).version = 0;
         }
         
+        // 计算记录大小
+        let mut record_size = 0;
+        for field in def.fields {
+            record_size += field.size;
+        }
+        
         MemoryTable {
             def,
             data_start: NonNull::new_unchecked(data_start),
             status_array,
             record_count: 0,
             lock: 0,
+            record_size,
         }
     }
     
@@ -67,10 +76,10 @@ impl MemoryTable {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status == RecordStatus::Free {
                 // 计算记录地址
-                let record_ptr = self.data_start.as_ptr().add(i * self.def.record_size);
+                let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
                 
                 // 拷贝记录数据
-                memcpy(record_ptr, record_data, self.def.record_size);
+                memcpy(record_ptr, record_data, self.record_size);
                 
                 // 更新状态
                 (*status_ptr).status = RecordStatus::Used;
@@ -107,8 +116,8 @@ impl MemoryTable {
         (*status_ptr).version += 1;
         
         // 清空记录数据
-        let record_ptr = self.data_start.as_ptr().add(id * self.def.record_size);
-        memset(record_ptr, 0, self.def.record_size);
+        let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
+        memset(record_ptr, 0, self.record_size);
         
         // 更新记录计数
         self.record_count -= 1;
@@ -129,8 +138,8 @@ impl MemoryTable {
         }
         
         // 拷贝记录数据
-        let record_ptr = self.data_start.as_ptr().add(id * self.def.record_size);
-        memcpy(dest, record_ptr, self.def.record_size);
+        let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
+        memcpy(dest, record_ptr, self.record_size);
         
         Ok(())
     }
@@ -146,8 +155,14 @@ impl MemoryTable {
             return Err(RemDbError::FieldNotFound);
         }
         
+        // 动态计算字段偏移量
+        let mut offset = 0;
+        for i in 0..field_index {
+            offset += self.def.fields[i].size;
+        }
+        
         let field = &self.def.fields[field_index];
-        let field_ptr = record_data.add(field.offset);
+        let field_ptr = record_data.add(offset);
         
         // 根据字段类型获取值
         let value = match field.data_type {
@@ -197,8 +212,14 @@ impl MemoryTable {
             return Err(RemDbError::FieldNotFound);
         }
         
+        // 动态计算字段偏移量
+        let mut offset = 0;
+        for i in 0..field_index {
+            offset += self.def.fields[i].size;
+        }
+        
         let field = &self.def.fields[field_index];
-        let field_ptr = record_data.add(field.offset);
+        let field_ptr = record_data.add(offset);
         
         // 根据字段类型设置值
         match field.data_type {
@@ -260,7 +281,7 @@ impl MemoryTable {
         for i in 0..self.def.max_records {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status == RecordStatus::Used {
-                let record_ptr = self.data_start.as_ptr().add(i * self.def.record_size);
+                let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
                 if !f(i, record_ptr) {
                     break;
                 }
@@ -268,6 +289,31 @@ impl MemoryTable {
         }
         
         Ok(())
+    }
+    
+    /// 获取记录状态指针
+    pub unsafe fn get_status_ptr(&self, index: usize) -> *mut RecordHeader {
+        self.status_array.as_ptr().add(index)
+    }
+    
+    /// 获取记录数据指针
+    pub unsafe fn get_record_ptr(&self, index: usize) -> *const u8 {
+        self.data_start.as_ptr().add(index * self.record_size)
+    }
+    
+    /// 获取记录数据可变指针
+    pub unsafe fn get_record_ptr_mut(&self, index: usize) -> *mut u8 {
+        self.data_start.as_ptr().add(index * self.record_size) as *mut u8
+    }
+    
+    /// 设置记录数（仅用于快照恢复）
+    pub unsafe fn set_record_count(&mut self, count: usize) {
+        self.record_count = count;
+    }
+    
+    /// 增加记录数（仅用于快照恢复）
+    pub unsafe fn inc_record_count(&mut self) {
+        self.record_count += 1;
     }
 }
 
