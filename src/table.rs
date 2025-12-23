@@ -17,6 +17,10 @@ pub struct MemoryTable {
     lock: u32,
     /// 记录大小（运行时计算）
     record_size: usize,
+    /// 空闲记录槽栈（优化插入性能）
+    free_slots: NonNull<usize>,
+    /// 空闲记录槽数量
+    free_slot_count: usize,
 }
 
 impl MemoryTable {
@@ -24,7 +28,8 @@ impl MemoryTable {
     pub unsafe fn new(
         def: &'static TableDef,
         data_start: *mut u8,
-        status_start: *mut RecordHeader
+        status_start: *mut RecordHeader,
+        free_slots_start: *mut usize
     ) -> Self {
         // 初始化状态数组
         let status_array = NonNull::new_unchecked(status_start);
@@ -32,6 +37,12 @@ impl MemoryTable {
             let status_ptr = status_array.as_ptr().add(i);
             (*status_ptr).status = RecordStatus::Free;
             (*status_ptr).version = 0;
+        }
+        
+        // 初始化空闲记录槽栈，将所有记录槽压入栈中
+        let free_slots = NonNull::new_unchecked(free_slots_start);
+        for i in 0..def.max_records {
+            *free_slots.as_ptr().add(i) = (def.max_records - 1 - i) as usize;
         }
         
         // 计算记录大小
@@ -47,6 +58,8 @@ impl MemoryTable {
             record_count: 0,
             lock: 0,
             record_size,
+            free_slots,
+            free_slot_count: def.max_records,
         }
     }
     
@@ -56,8 +69,10 @@ impl MemoryTable {
         let data_size = def.record_size * def.max_records;
         // 状态数组大小：RecordHeader大小 * 最大记录数
         let status_size = core::mem::size_of::<RecordHeader>() * def.max_records;
+        // 空闲槽栈大小：usize大小 * 最大记录数
+        let free_slots_size = core::mem::size_of::<usize>() * def.max_records;
         
-        data_size + status_size
+        data_size + status_size + free_slots_size
     }
     
     /// 插入记录
@@ -71,28 +86,30 @@ impl MemoryTable {
             return Err(RemDbError::OutOfMemory);
         }
         
-        // 查找空闲记录槽
-        for i in 0..self.def.max_records {
-            let status_ptr = self.status_array.as_ptr().add(i);
-            if (*status_ptr).status == RecordStatus::Free {
-                // 计算记录地址
-                let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
-                
-                // 拷贝记录数据
-                memcpy(record_ptr, record_data, self.record_size);
-                
-                // 更新状态
-                (*status_ptr).status = RecordStatus::Used;
-                (*status_ptr).version += 1;
-                
-                // 更新记录计数
-                self.record_count += 1;
-                
-                return Ok(i);
-            }
+        // 从空闲槽栈获取空闲记录槽（O(1)时间复杂度）
+        if self.free_slot_count == 0 {
+            return Err(RemDbError::OutOfMemory);
         }
         
-        Err(RemDbError::OutOfMemory)
+        // 获取栈顶空闲槽
+        self.free_slot_count -= 1;
+        let slot_id = *self.free_slots.as_ptr().add(self.free_slot_count);
+        
+        // 计算记录地址
+        let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
+        
+        // 拷贝记录数据
+        memcpy(record_ptr, record_data, self.record_size);
+        
+        // 更新状态
+        let status_ptr = self.status_array.as_ptr().add(slot_id);
+        (*status_ptr).status = RecordStatus::Used;
+        (*status_ptr).version += 1;
+        
+        // 更新记录计数
+        self.record_count += 1;
+        
+        Ok(slot_id)
     }
     
     /// 删除记录
@@ -111,13 +128,17 @@ impl MemoryTable {
             return Err(RemDbError::RecordNotFound);
         }
         
-        // 标记为已删除
-        (*status_ptr).status = RecordStatus::Deleted;
+        // 标记为空闲
+        (*status_ptr).status = RecordStatus::Free;
         (*status_ptr).version += 1;
         
         // 清空记录数据
         let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
         memset(record_ptr, 0, self.record_size);
+        
+        // 将空闲槽压回栈中
+        *self.free_slots.as_ptr().add(self.free_slot_count) = id;
+        self.free_slot_count += 1;
         
         // 更新记录计数
         self.record_count -= 1;
@@ -155,14 +176,8 @@ impl MemoryTable {
             return Err(RemDbError::FieldNotFound);
         }
         
-        // 动态计算字段偏移量
-        let mut offset = 0;
-        for i in 0..field_index {
-            offset += self.def.fields[i].size;
-        }
-        
         let field = &self.def.fields[field_index];
-        let field_ptr = record_data.add(offset);
+        let field_ptr = record_data.add(field.offset);
         
         // 根据字段类型获取值
         let value = match field.data_type {
@@ -212,14 +227,8 @@ impl MemoryTable {
             return Err(RemDbError::FieldNotFound);
         }
         
-        // 动态计算字段偏移量
-        let mut offset = 0;
-        for i in 0..field_index {
-            offset += self.def.fields[i].size;
-        }
-        
         let field = &self.def.fields[field_index];
-        let field_ptr = record_data.add(offset);
+        let field_ptr = record_data.add(field.offset);
         
         // 根据字段类型设置值
         match field.data_type {
@@ -314,6 +323,83 @@ impl MemoryTable {
     /// 增加记录数（仅用于快照恢复）
     pub unsafe fn inc_record_count(&mut self) {
         self.record_count += 1;
+    }
+    
+    /// 批量插入记录
+    /// 参数：records - 指向记录数组的指针，count - 要插入的记录数
+    /// 返回：成功插入的记录数，以及每个记录的ID数组
+    pub unsafe fn batch_insert(&mut self, records: *const u8, count: usize) -> Result<(usize, Vec<usize>)> {
+        // 自旋锁保护
+        crate::platform::spin_lock(&mut self.lock);
+        defer! { crate::platform::spin_unlock(&mut self.lock); }
+        
+        // 检查是否有足够空间
+        let available = self.def.max_records - self.record_count;
+        let actual_count = core::cmp::min(count, available);
+        
+        if actual_count == 0 {
+            return Err(RemDbError::OutOfMemory);
+        }
+        
+        // 分配结果数组
+        let mut record_ids = Vec::with_capacity(actual_count);
+        
+        // 批量插入记录
+        for i in 0..actual_count {
+            if self.free_slot_count == 0 {
+                break;
+            }
+            
+            // 获取栈顶空闲槽
+            self.free_slot_count -= 1;
+            let slot_id = *self.free_slots.as_ptr().add(self.free_slot_count);
+            record_ids.push(slot_id);
+            
+            // 计算记录地址
+            let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
+            let src_ptr = records.add(i * self.record_size);
+            
+            // 拷贝记录数据
+            memcpy(record_ptr, src_ptr, self.record_size);
+            
+            // 更新状态
+            let status_ptr = self.status_array.as_ptr().add(slot_id);
+            (*status_ptr).status = RecordStatus::Used;
+            (*status_ptr).version += 1;
+            
+            // 更新记录计数
+            self.record_count += 1;
+        }
+        
+        Ok((actual_count, record_ids))
+    }
+    
+    /// 批量获取记录
+    /// 参数：ids - 要获取的记录ID数组，dest - 存储结果的缓冲区
+    /// 返回：成功获取的记录数
+    pub unsafe fn batch_get(&self, ids: &[usize], dest: *mut u8) -> Result<usize> {
+        let mut success_count = 0;
+        
+        for (i, &id) in ids.iter().enumerate() {
+            // 检查ID有效性
+            if id >= self.def.max_records {
+                continue;
+            }
+            
+            let status_ptr = self.status_array.as_ptr().add(id);
+            if (*status_ptr).status != RecordStatus::Used {
+                continue;
+            }
+            
+            // 拷贝记录数据
+            let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
+            let dest_ptr = dest.add(i * self.record_size);
+            memcpy(dest_ptr, record_ptr, self.record_size);
+            
+            success_count += 1;
+        }
+        
+        Ok(success_count)
     }
 }
 

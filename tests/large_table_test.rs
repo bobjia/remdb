@@ -143,21 +143,25 @@ fn test_large_table_performance() {
     
     // 计算所需的内存缓冲区大小
     let data_buffer_size = LARGE_TABLE_DEF.record_size * LARGE_TABLE_DEF.max_records;
-    let status_buffer_size = LARGE_TABLE_DEF.max_records;
+    let status_buffer_size = LARGE_TABLE_DEF.max_records * core::mem::size_of::<RecordHeader>();
+    let free_slots_size = LARGE_TABLE_DEF.max_records * core::mem::size_of::<usize>();
     
     // 分配内存缓冲区
     let mut data_buffer = vec![0u8; data_buffer_size];
-    let mut status_buffer = vec![0u8; status_buffer_size * core::mem::size_of::<RecordHeader>()];
+    let mut status_buffer = vec![0u8; status_buffer_size];
+    let mut free_slots_buffer = vec![0usize; LARGE_TABLE_DEF.max_records];
     
     // 将状态缓冲区转换为RecordHeader数组指针
     let status_ptr = status_buffer.as_mut_ptr() as *mut RecordHeader;
+    let free_slots_ptr = free_slots_buffer.as_mut_ptr();
     
     unsafe {
         // 创建表
         let mut table = MemoryTable::new(
             &LARGE_TABLE_DEF,
             data_buffer.as_mut_ptr(),
-            status_ptr
+            status_ptr,
+            free_slots_ptr
         );
         
         // 1. 插入80,000条记录（达到80%容量）

@@ -20,7 +20,7 @@ pub struct PrimaryIndexItem {
     /// 下一个项的指针
     pub next: Option<NonNull<PrimaryIndexItem>>,
     /// 记录ID
-    pub record_id: u32,
+    pub record_id: u16,
     /// 键大小
     pub key_size: u8,
     /// 键数据
@@ -116,14 +116,15 @@ impl PrimaryIndex {
     
     /// 计算哈希值
     fn hash_key(&self, key: *const u8, key_size: usize) -> usize {
-        // 使用FNV-1a哈希算法
-        let mut hash = 0xcbf29ce484222325u64;
-        let prime = 0x100000001b3u64;
+        // 优化的哈希算法：使用MurmurHash3的简化版本，更适合小数据
+        let mut hash = 0u64;
+        let seed = 0x5bd1e995u64;
         
         for i in 0..key_size {
             let byte = unsafe { *key.add(i) };
             hash ^= byte as u64;
-            hash = hash.wrapping_mul(prime);
+            hash = hash.wrapping_mul(seed);
+            hash ^= hash >> 47;
         }
         
         (hash as usize) % self.hash_table_size
@@ -436,13 +437,30 @@ impl SecondaryIndex {
         };
         memcpy(new_item.key_data.as_ptr() as *mut u8, key, key_size);
         
-        // 找到插入位置
+        // 使用二分查找找到插入位置，将O(n)优化为O(log n)
         let mut insert_pos = self.item_count;
-        for i in 0..self.item_count {
-            let item = &*self.items.as_ptr().add(i);
-            if self.compare_items(&new_item, item) == core::cmp::Ordering::Less {
-                insert_pos = i;
-                break;
+        if self.item_count > 0 {
+            let mut low = 0;
+            let mut high = self.item_count - 1;
+            
+            while low <= high {
+                let mid = (low + high) / 2;
+                let item = &*self.items.as_ptr().add(mid);
+                
+                match self.compare_items(&new_item, item) {
+                    core::cmp::Ordering::Less => {
+                        insert_pos = mid;
+                        high = mid - 1;
+                    }
+                    core::cmp::Ordering::Greater => {
+                        low = mid + 1;
+                    }
+                    core::cmp::Ordering::Equal => {
+                        // 插入到相等元素后面
+                        insert_pos = mid + 1;
+                        low = mid + 1;
+                    }
+                }
             }
         }
         
@@ -529,63 +547,72 @@ impl SecondaryIndex {
         // 更新统计信息
         self.stats.access_count += 1;
         
-        // 简单实现：遍历所有项查找第一个匹配范围的项
-        for i in 0..self.item_count {
-            let item = &*self.items.as_ptr().add(i);
+        // 使用二分查找找到起始位置，优化范围查询性能
+        let mut start_pos = 0;
+        let mut low = 0;
+        let mut high = self.item_count - 1;
+        
+        // 创建临时索引项用于比较
+        let mut start_item = SecondaryIndexItem {
+            key_size: start_key_size as u8,
+            record_id: 0,
+            key_data: [0u8; 64],
+        };
+        memcpy(start_item.key_data.as_ptr() as *mut u8, start_key, start_key_size);
+        
+        // 二分查找起始位置
+        while low <= high {
+            let mid = (low + high) / 2;
+            let item = &*self.items.as_ptr().add(mid);
             
-            // 检查是否在范围内
-            let mut in_range = true;
-            
-            // 检查是否大于等于start_key
-            let mut ge_start = false;
-            let key_size = item.key_size as usize;
-            
-            if key_size < start_key_size {
-                ge_start = true;
+            if self.compare_items(item, &start_item) == core::cmp::Ordering::Less {
+                start_pos = mid + 1;
+                low = mid + 1;
             } else {
-                let min_size = core::cmp::min(key_size, start_key_size);
-                for j in 0..min_size {
-                    if item.key_data[j] > *start_key.add(j) {
-                        ge_start = true;
-                        break;
-                    } else if item.key_data[j] < *start_key.add(j) {
-                        ge_start = false;
-                        break;
-                    }
-                }
-                if !ge_start && key_size == start_key_size {
-                    ge_start = true;
-                }
+                high = mid - 1;
             }
-            
-            if !ge_start {
-                continue;
-            }
+        }
+        
+        // 从起始位置开始遍历，直到找到匹配项或超出范围
+        for i in start_pos..self.item_count {
+            let item = &*self.items.as_ptr().add(i);
             
             // 检查是否小于等于end_key
             let mut le_end = false;
+            let key_size = item.key_size as usize;
+            
             if key_size > end_key_size {
-                le_end = false;
-            } else {
-                let min_size = core::cmp::min(key_size, end_key_size);
-                for j in 0..min_size {
-                    if item.key_data[j] < *end_key.add(j) {
-                        le_end = true;
-                        break;
-                    } else if item.key_data[j] > *end_key.add(j) {
-                        le_end = false;
-                        break;
-                    }
-                }
-                if !le_end && key_size == end_key_size {
+                // 键大小大于end_key，超出范围
+                break;
+            }
+            
+            // 比较键数据
+            let min_size = core::cmp::min(key_size, end_key_size);
+            let mut all_equal = true;
+            
+            for j in 0..min_size {
+                if item.key_data[j] < *end_key.add(j) {
                     le_end = true;
+                    break;
+                } else if item.key_data[j] > *end_key.add(j) {
+                    // 超出范围
+                    le_end = false;
+                    all_equal = false;
+                    break;
                 }
+            }
+            
+            if all_equal && key_size == end_key_size {
+                le_end = true;
             }
             
             if le_end {
                 // 更新命中统计
                 self.stats.hit_count += 1;
                 return Ok(item.record_id);
+            } else {
+                // 已超出范围，结束遍历
+                break;
             }
         }
         
