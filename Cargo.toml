@@ -12,6 +12,7 @@ path = "src/lib.rs"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+rand = "0.8.5"
 
 [features]
 default = ["std"]

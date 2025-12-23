@@ -199,7 +199,7 @@ pub const fn validate_config(config: &DbConfig) -> bool {
         }
         
         // 检查最大记录数
-        if table.max_records > 65535 {
+        if table.max_records > 500000 {
             return false;
         }
         

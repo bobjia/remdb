@@ -20,7 +20,7 @@ pub struct PrimaryIndexItem {
     /// 下一个项的指针
     pub next: Option<NonNull<PrimaryIndexItem>>,
     /// 记录ID
-    pub record_id: u16,
+    pub record_id: u32,
     /// 键大小
     pub key_size: u8,
     /// 键数据
