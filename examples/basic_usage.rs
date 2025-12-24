@@ -73,15 +73,19 @@ fn main() {
         ).unwrap().as_ptr() as *mut index::SecondaryIndexItem;
         
         // 创建表和索引
-        let mut table = MemoryTable::new(&config.tables[0], table_ptr, status_ptr, free_slots_ptr);
-        let mut primary_index = PrimaryIndex::new(
-            &config.tables[0],
-            hash_table_ptr,
-            primary_index_items_ptr,
-            128,
-            100
-        );
-        let mut secondary_index = SecondaryIndex::new(&config.tables[0], secondary_index_items_ptr, 100);
+        let table = MemoryTable::new(&config.tables[0], table_ptr, status_ptr, free_slots_ptr).unwrap();
+        let primary_index = unsafe {
+            PrimaryIndex::new(
+                &config.tables[0],
+                hash_table_ptr,
+                primary_index_items_ptr,
+                128,
+                100
+            )
+        };
+        let secondary_index = unsafe {
+            SecondaryIndex::new(&config.tables[0], secondary_index_items_ptr, 100)
+        };
         
         // 初始化表和索引数组
         static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];

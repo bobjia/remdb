@@ -163,7 +163,7 @@ fn test_large_table_performance() {
             data_buffer.as_mut_ptr(),
             status_ptr,
             free_slots_ptr
-        );
+        ).unwrap();
         
         // 1. 插入80,000条记录（达到80%容量）
         println!("\n1. 插入80,000条记录...");

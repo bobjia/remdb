@@ -1,6 +1,7 @@
 use core::ptr::NonNull;
 use crate::memory::{MemoryBlock, MemoryStats};
 use crate::types::Result;
+use std::sync::{OnceLock, Mutex};
 
 /// 静态内存分配器
 pub struct StaticAllocator {
@@ -18,73 +19,84 @@ pub struct StaticAllocator {
     free_count: usize,
 }
 
+// 为StaticAllocator实现Send和Sync trait
+// 注意：这是安全的，因为StaticAllocator的所有操作都在锁保护下进行
+unsafe impl Send for StaticAllocator {}
+unsafe impl Sync for StaticAllocator {}
+
 impl StaticAllocator {
     /// 创建新的静态内存分配器
-    pub unsafe fn new(start_ptr: *mut u8, size: usize) -> Self {
-        let start_ptr = NonNull::new_unchecked(start_ptr);
+    pub fn new(start_ptr: *mut u8, size: usize) -> Option<Self> {
+        let start_ptr = NonNull::new(start_ptr)?;
         
         // 初始化内存池
-        let end_ptr = (start_ptr.as_ptr() as usize + size) as *mut u8;
+        let _end_ptr = (start_ptr.as_ptr() as usize + size) as *mut u8;
         
         // 创建一个大的空闲块
-        let block_ptr = start_ptr.as_ptr() as *mut MemoryBlock;
-        (*block_ptr).next = None;
-        (*block_ptr).size = size - MemoryBlock::SIZE;
-        (*block_ptr).is_allocated = false;
+        unsafe {
+            let block_ptr = start_ptr.as_ptr() as *mut MemoryBlock;
+            (*block_ptr).next = None;
+            (*block_ptr).size = size - MemoryBlock::SIZE;
+            (*block_ptr).is_allocated = false;
+        }
         
-        StaticAllocator {
+        Some(StaticAllocator {
             start_ptr,
             size,
             used: 0,
-            free_list: Some(NonNull::new_unchecked(block_ptr)),
+            free_list: Some(NonNull::new(start_ptr.as_ptr() as *mut MemoryBlock).unwrap()),
             alloc_count: 0,
             free_count: 0,
-        }
+        })
     }
     
     /// 分配内存
-    pub unsafe fn allocate(&mut self, size: usize) -> Result<NonNull<u8>> {
+    pub fn allocate(&mut self, size: usize) -> Result<NonNull<u8>> {
         // 对齐到8字节
         let aligned_size = (size + 7) & !7;
         let total_size = aligned_size + MemoryBlock::SIZE;
         
         // 查找合适的空闲块
         let mut current = &mut self.free_list;
-        while let Some(mut block) = current {
-            let block_mut = block.as_mut();
+        while let Some(mut block) = *current {
+            let block_mut = unsafe { block.as_mut() };
             
             // 检查块大小是否足够
             if block_mut.size >= aligned_size {
                 // 如果块太大，分割成两个块
                 if block_mut.size >= aligned_size + MemoryBlock::SIZE + 8 {
-                    let new_block_size = block_mut.size - total_size;
-                    let new_block_ptr = (block.as_ptr() as usize + total_size) as *mut MemoryBlock;
-                    
-                    (*new_block_ptr).next = block_mut.next;
-                    (*new_block_ptr).size = new_block_size;
-                    (*new_block_ptr).is_allocated = false;
-                    
-                    block_mut.next = Some(NonNull::new_unchecked(new_block_ptr));
-                    block_mut.size = aligned_size;
+                    unsafe {
+                        let new_block_size = block_mut.size - total_size;
+                        let new_block_ptr = (block.as_ptr() as usize + total_size) as *mut MemoryBlock;
+                        
+                        (*new_block_ptr).next = block_mut.next;
+                        (*new_block_ptr).size = new_block_size;
+                        (*new_block_ptr).is_allocated = false;
+                        
+                        block_mut.next = Some(NonNull::new_unchecked(new_block_ptr));
+                        block_mut.size = aligned_size;
+                    }
                 }
                 
                 // 从空闲列表中移除该块
                 let allocated_block = *current;
-                *current = block_mut.next;
+                *current = unsafe { block.as_mut() }.next;
                 
                 // 标记为已分配
-                block_mut.is_allocated = true;
+                unsafe {
+                    block.as_mut().is_allocated = true;
+                }
                 
                 // 更新统计信息
-                self.used += block_mut.size + MemoryBlock::SIZE;
+                self.used += unsafe { block.as_mut() }.size + MemoryBlock::SIZE;
                 self.alloc_count += 1;
                 
                 // 返回块数据指针
                 let data_ptr = (block.as_ptr() as usize + MemoryBlock::SIZE) as *mut u8;
-                return Ok(NonNull::new_unchecked(data_ptr));
+                return Ok(NonNull::new(data_ptr).unwrap())
             }
             
-            current = &mut block_mut.next;
+            current = &mut unsafe { block.as_mut() }.next;
         }
         
         // 没有找到合适的块
@@ -92,16 +104,18 @@ impl StaticAllocator {
     }
     
     /// 释放内存
-    pub unsafe fn free(&mut self, ptr: NonNull<u8>) {
+    pub fn free(&mut self, ptr: NonNull<u8>) {
         // 获取块头指针
         let block_ptr = (ptr.as_ptr() as usize - MemoryBlock::SIZE) as *mut MemoryBlock;
-        let mut block = NonNull::new_unchecked(block_ptr);
+        let mut block = NonNull::new(block_ptr).unwrap();
         
         // 标记为未分配
-        block.as_mut().is_allocated = false;
+        unsafe {
+            block.as_mut().is_allocated = false;
+        }
         
         // 更新统计信息
-        self.used -= block.as_mut().size + MemoryBlock::SIZE;
+        self.used -= unsafe { block.as_mut() }.size + MemoryBlock::SIZE;
         self.free_count += 1;
         
         // 插入到空闲列表，保持地址有序
@@ -109,18 +123,22 @@ impl StaticAllocator {
         while let Some(mut current_block) = *current {
             if current_block.as_ptr() > block.as_ptr() {
                 // 插入到当前位置之前
-                block.as_mut().next = Some(current_block);
+                unsafe {
+                    block.as_mut().next = Some(current_block);
+                }
                 *current = Some(block);
                 
                 // 尝试合并前后块
                 self.merge_adjacent_blocks();
                 return;
             }
-            current = &mut current_block.as_mut().next;
+            current = &mut unsafe { current_block.as_mut() }.next;
         }
         
         // 插入到列表末尾
-        block.as_mut().next = None;
+        unsafe {
+            block.as_mut().next = None;
+        }
         *current = Some(block);
         
         // 尝试合并前后块
@@ -128,14 +146,14 @@ impl StaticAllocator {
     }
     
     /// 合并相邻的空闲块
-    unsafe fn merge_adjacent_blocks(&mut self) {
+    fn merge_adjacent_blocks(&mut self) {
         let mut current = &mut self.free_list;
         while let Some(mut block) = *current {
-            let block_mut = block.as_mut();
+            let block_mut = unsafe { block.as_mut() };
             
             // 检查下一个块是否相邻
             if let Some(mut next_block) = block_mut.next {
-                let next_block_mut = next_block.as_mut();
+                let next_block_mut = unsafe { next_block.as_mut() };
                 let block_end = block.as_ptr() as usize + MemoryBlock::SIZE + block_mut.size;
                 let next_block_start = next_block.as_ptr() as usize;
                 
@@ -187,57 +205,67 @@ impl StaticAllocator {
     }
     
     /// 重置内存分配器
-    pub unsafe fn reset(&mut self) {
+    pub fn reset(&mut self) {
         // 创建一个大的空闲块
-        let block_ptr = self.start_ptr.as_ptr() as *mut MemoryBlock;
-        (*block_ptr).next = None;
-        (*block_ptr).size = self.size - MemoryBlock::SIZE;
-        (*block_ptr).is_allocated = false;
+        unsafe {
+            let block_ptr = self.start_ptr.as_ptr() as *mut MemoryBlock;
+            (*block_ptr).next = None;
+            (*block_ptr).size = self.size - MemoryBlock::SIZE;
+            (*block_ptr).is_allocated = false;
+        }
         
         self.used = 0;
-        self.free_list = Some(NonNull::new_unchecked(block_ptr));
+        self.free_list = Some(NonNull::new(self.start_ptr.as_ptr() as *mut MemoryBlock).unwrap());
         self.alloc_count = 0;
         self.free_count = 0;
     }
 }
 
-/// 全局内存分配器
-pub static mut GLOBAL_ALLOCATOR: Option<StaticAllocator> = None;
+/// 全局内存分配器 - 使用OnceLock和Mutex确保线程安全
+static GLOBAL_ALLOCATOR: OnceLock<Mutex<StaticAllocator>> = OnceLock::new();
 
 /// 初始化全局内存分配器
-pub unsafe fn init_global_allocator(start_ptr: *mut u8, size: usize) {
-    GLOBAL_ALLOCATOR = Some(StaticAllocator::new(start_ptr, size));
+pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
+    let allocator = StaticAllocator::new(start_ptr, size)
+        .ok_or(crate::types::RemDbError::OutOfMemory)?;
+    
+    GLOBAL_ALLOCATOR.set(Mutex::new(allocator))
+        .map_err(|_| crate::types::RemDbError::ConfigError)?;
+    
+    Ok(())
 }
 
 /// 从全局分配器分配内存
-pub unsafe fn alloc(size: usize) -> Result<NonNull<u8>> {
-    if let Some(allocator) = &mut GLOBAL_ALLOCATOR {
-        allocator.allocate(size)
-    } else {
-        Err(crate::types::RemDbError::OutOfMemory)
-    }
+pub fn alloc(size: usize) -> Result<NonNull<u8>> {
+    let allocator = GLOBAL_ALLOCATOR.get()
+        .ok_or(crate::types::RemDbError::OutOfMemory)?;
+    
+    let mut allocator_guard = allocator.lock().map_err(|_| crate::types::RemDbError::OutOfMemory)?;
+    allocator_guard.allocate(size)
 }
 
 /// 释放内存到全局分配器
-pub unsafe fn free(ptr: NonNull<u8>) {
-    if let Some(allocator) = &mut GLOBAL_ALLOCATOR {
-        allocator.free(ptr);
+pub fn free(ptr: NonNull<u8>) {
+    if let Some(allocator) = GLOBAL_ALLOCATOR.get() {
+        if let Ok(mut allocator_guard) = allocator.lock() {
+            allocator_guard.free(ptr);
+        }
     }
 }
 
 /// 获取全局内存统计信息
 pub fn get_memory_stats() -> MemoryStats {
-    unsafe {
-        if let Some(allocator) = &GLOBAL_ALLOCATOR {
-            allocator.stats()
-        } else {
-            MemoryStats {
-                used: 0,
-                total: 0,
-                fragmentation: 0.0,
-                alloc_count: 0,
-                free_count: 0,
-            }
+    if let Some(allocator) = GLOBAL_ALLOCATOR.get() {
+        if let Ok(allocator_guard) = allocator.lock() {
+            return allocator_guard.stats();
         }
+    }
+    
+    MemoryStats {
+        used: 0,
+        total: 0,
+        fragmentation: 0.0,
+        alloc_count: 0,
+        free_count: 0,
     }
 }

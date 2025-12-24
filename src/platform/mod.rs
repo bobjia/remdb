@@ -1,8 +1,10 @@
+use std::sync::OnceLock;
+
 /// 文件操作结果类型
 pub type FileResult<T> = core::result::Result<T, ()>;
 
 /// 平台抽象层接口
-pub trait Platform {
+pub trait Platform: Send + Sync {
     /// 获取当前时间戳（毫秒）
     fn get_timestamp(&self) -> u64;
     
@@ -86,208 +88,172 @@ pub enum SeekWhence {
 }
 
 /// 全局平台实例
-pub static mut PLATFORM: Option<&'static dyn Platform> = None;
+pub static PLATFORM: OnceLock<&'static dyn Platform> = OnceLock::new();
 
 /// 初始化平台抽象层
-pub unsafe fn init_platform(platform: &'static dyn Platform) {
-    PLATFORM = Some(platform);
+pub fn init_platform(platform: &'static dyn Platform) {
+    PLATFORM.set(platform).ok();
 }
 
 /// 获取当前时间戳（毫秒）
 pub fn get_timestamp() -> u64 {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.get_timestamp()
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.get_timestamp()
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 获取当前时间戳（微秒）
 pub fn get_timestamp_us() -> u64 {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.get_timestamp_us()
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.get_timestamp_us()
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 自旋锁实现
 pub fn spin_lock(lock: &mut u32) {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.spin_lock(lock)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.spin_lock(lock)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 自旋锁释放
 pub fn spin_unlock(lock: &mut u32) {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.spin_unlock(lock)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.spin_unlock(lock)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 内存屏障 - 编译器屏障
 pub fn compiler_barrier() {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.compiler_barrier()
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.compiler_barrier()
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 内存屏障 - 读写屏障
 pub fn full_memory_barrier() {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.full_memory_barrier()
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.full_memory_barrier()
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 内存拷贝（安全版本）
 pub fn memcpy(dest: *mut u8, src: *const u8, size: usize) {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.memcpy(dest, src, size)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.memcpy(dest, src, size)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 内存设置
 pub fn memset(dest: *mut u8, value: u8, size: usize) {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.memset(dest, value, size)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.memset(dest, value, size)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 延迟（毫秒）
 pub fn delay_ms(ms: u32) {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.delay_ms(ms)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.delay_ms(ms)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 延迟（微秒）
 pub fn delay_us(us: u32) {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.delay_us(us)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.delay_us(us)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 打开文件
 pub fn file_open(path: &str, mode: FileMode) -> FileResult<FileHandle> {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.file_open(path, mode)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.file_open(path, mode)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 关闭文件
 pub fn file_close(handle: FileHandle) -> FileResult<()> {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.file_close(handle)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.file_close(handle)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 写入文件
 pub fn file_write(handle: FileHandle, buffer: *const u8, size: usize) -> FileResult<usize> {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.file_write(handle, buffer, size)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.file_write(handle, buffer, size)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 读取文件
 pub fn file_read(handle: FileHandle, buffer: *mut u8, size: usize) -> FileResult<usize> {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.file_read(handle, buffer, size)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.file_read(handle, buffer, size)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 文件定位
 pub fn file_seek(handle: FileHandle, offset: i64, whence: SeekWhence) -> FileResult<u64> {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.file_seek(handle, offset, whence)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.file_seek(handle, offset, whence)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 删除文件
 pub fn file_remove(path: &str) -> FileResult<()> {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.file_remove(path)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.file_remove(path)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 获取文件大小
 pub fn file_size(path: &str) -> FileResult<usize> {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.file_size(path)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.file_size(path)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 
 /// 计算CRC32校验和
 pub fn crc32(data: *const u8, size: usize) -> u32 {
-    unsafe {
-        if let Some(platform) = PLATFORM {
-            platform.crc32(data, size)
-        } else {
-            panic!("Platform not initialized")
-        }
+    if let Some(platform) = PLATFORM.get() {
+        platform.crc32(data, size)
+    } else {
+        panic!("Platform not initialized")
     }
 }
 

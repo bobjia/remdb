@@ -178,6 +178,8 @@ pub enum RemDbError {
     LockTimeout,
     /// 表未找到
     TableNotFound,
+    /// 记录大小无效
+    InvalidRecordSize,
 }
 
 impl fmt::Display for RemDbError {
@@ -200,6 +202,7 @@ impl fmt::Display for RemDbError {
             RemDbError::LockConflict => write!(f, "Lock conflict"),
             RemDbError::LockTimeout => write!(f, "Lock timeout"),
             RemDbError::TableNotFound => write!(f, "Table not found"),
+            RemDbError::InvalidRecordSize => write!(f, "Invalid record size"),
         }
     }
 }

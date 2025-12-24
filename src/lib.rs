@@ -31,6 +31,11 @@ pub struct RemDb {
     pub tx_manager: TransactionManager,
 }
 
+// 为RemDb实现Send和Sync trait
+// 注意：这是安全的，因为RemDb的所有字段都是线程安全的
+unsafe impl Send for RemDb {}
+unsafe impl Sync for RemDb {}
+
 impl RemDb {
     /// 快照魔数
     const SNAPSHOT_MAGIC: u32 = 0x52454D44; // 'REMD'
@@ -38,7 +43,7 @@ impl RemDb {
     const SNAPSHOT_VERSION: u32 = 1;
     
     /// 创建新的数据库实例
-    pub unsafe fn new(
+    pub fn new(
         config: &'static config::DbConfig,
         tables: &'static mut [Option<MemoryTable>],
         primary_indices: &'static mut [Option<PrimaryIndex>],
@@ -154,7 +159,7 @@ impl RemDb {
     }
     
     /// 初始化数据库
-    pub unsafe fn init(&mut self) -> Result<()> {
+    pub fn init(&mut self) -> Result<()> {
         // 直接初始化平台抽象层，不检查当前状态
         // 默认使用POSIX平台（如果可用）
         #[cfg(feature = "posix")]
@@ -164,7 +169,7 @@ impl RemDb {
     }
     
     /// 保存快照到文件
-    pub unsafe fn save_snapshot(&self, path: &str) -> Result<()> {
+    pub fn save_snapshot(&self, path: &str) -> Result<()> {
         // 打开文件 - 使用Write模式
         let handle = crate::platform::file_open(path, crate::platform::FileMode::Write)
             .map_err(|_| RemDbError::FileIoError)?;
@@ -228,8 +233,8 @@ impl RemDb {
                 
                 // 写入已使用的记录
                 for i in 0..table.def.max_records {
-                    let status_ptr = table.get_status_ptr(i);
-                    if (*status_ptr).status == crate::types::RecordStatus::Used {
+                    let status_ptr = unsafe { table.get_status_ptr(i) };
+                    if unsafe { (*status_ptr).status } == crate::types::RecordStatus::Used {
                         // 写入记录索引（4字节）
                         let index_u32 = i as u32;
                         let index_bytes = index_u32.to_le_bytes();
@@ -240,7 +245,7 @@ impl RemDb {
                         }
                         
                         // 写入记录数据
-                        let record_ptr = table.get_record_ptr(i);
+                        let record_ptr = unsafe { table.get_record_ptr(i) };
                         let written = crate::platform::file_write(handle, record_ptr, record_size)
                             .map_err(|_| RemDbError::FileIoError)?;
                         if written != record_size {
@@ -256,7 +261,7 @@ impl RemDb {
     }
     
     /// 从文件恢复快照
-    pub unsafe fn restore_snapshot(&mut self, path: &str) -> Result<()> {
+    pub fn restore_snapshot(&mut self, path: &str) -> Result<()> {
         // 打开文件
         let handle = crate::platform::file_open(path, crate::platform::FileMode::Read)
             .map_err(|_| RemDbError::FileIoError)?;
@@ -328,16 +333,20 @@ impl RemDb {
             
             // 重置所有记录的状态和数据
             for i in 0..table.def.max_records {
-                let status_ptr = table.get_status_ptr(i);
-                let record_ptr = table.get_record_ptr_mut(i);
+                let status_ptr = unsafe { table.get_status_ptr(i) };
+                let record_ptr = unsafe { table.get_record_ptr_mut(i) };
                 
-                (*status_ptr).status = crate::types::RecordStatus::Free;
-                (*status_ptr).version += 1;
-                crate::platform::memset(record_ptr, 0, table.def.record_size);
+                unsafe {
+                    (*status_ptr).status = crate::types::RecordStatus::Free;
+                    (*status_ptr).version += 1;
+                    crate::platform::memset(record_ptr, 0, table.def.record_size);
+                }
             }
             
             // 重置记录数
-            table.set_record_count(0);
+            unsafe {
+                table.set_record_count(0);
+            }
             
             // 读取已使用的记录数（4字节）
             let mut used_count_bytes = [0u8; 4];
@@ -371,7 +380,7 @@ impl RemDb {
                 }
                 
                 // 读取记录数据
-                let record_ptr = table.get_record_ptr_mut(i);
+                let record_ptr = unsafe { table.get_record_ptr_mut(i) };
                 let read = crate::platform::file_read(handle, record_ptr, record_size)
                     .map_err(|_| RemDbError::FileIoError)?;
                 if read != record_size {
@@ -379,10 +388,14 @@ impl RemDb {
                 }
                 
                 // 更新记录状态
-                let status_ptr = table.get_status_ptr(i);
-                (*status_ptr).status = crate::types::RecordStatus::Used;
-                (*status_ptr).version += 1;
-                table.inc_record_count();
+                let status_ptr = unsafe { table.get_status_ptr(i) };
+                unsafe {
+                    (*status_ptr).status = crate::types::RecordStatus::Used;
+                    (*status_ptr).version += 1;
+                }
+                unsafe {
+                    table.inc_record_count();
+                }
             }
         }
         
@@ -409,32 +422,35 @@ impl<F: FnMut()> Drop for Defer<F> {
     }
 }
 
+use std::sync::OnceLock;
+
+/// 全局数据库实例 - 使用静态可变变量存储
+static mut DB_INSTANCE: Option<RemDb> = None;
+
 /// 初始化数据库全局实例
 /// 注意：这是一个简化的实现，实际应用中应该根据需要创建数据库实例
-pub unsafe fn init_global_db(
+pub fn init_global_db(
     config: &'static config::DbConfig,
     tables: &'static mut [Option<MemoryTable>],
     primary_indices: &'static mut [Option<PrimaryIndex>],
     secondary_indices: &'static mut [Option<SecondaryIndex>]
 ) -> Result<&'static mut RemDb> {
-    static mut DB_INSTANCE: Option<RemDb> = None;
-    
-    if DB_INSTANCE.is_some() {
-        return Err(RemDbError::ConfigError);
+    unsafe {
+        if DB_INSTANCE.is_some() {
+            return Err(RemDbError::ConfigError);
+        }
+        
+        let mut db = RemDb::new(config, tables, primary_indices, secondary_indices);
+        db.init()?;
+        DB_INSTANCE = Some(db);
+        
+        Ok(DB_INSTANCE.as_mut().unwrap())
     }
-    
-    DB_INSTANCE = Some(RemDb::new(config, tables, primary_indices, secondary_indices));
-    
-    let db = DB_INSTANCE.as_mut().unwrap();
-    db.init()?;
-    
-    Ok(db)
 }
 
 /// 获取全局数据库实例
 pub fn get_global_db() -> Option<&'static mut RemDb> {
     unsafe {
-        static mut DB_INSTANCE: Option<RemDb> = None;
         DB_INSTANCE.as_mut()
     }
 }

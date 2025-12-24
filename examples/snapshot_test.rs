@@ -51,13 +51,13 @@ fn main() -> Result<()> {
         let status_ptr = table_ptr.add(TABLE_DATA_SIZE);
         let free_slots_ptr = status_ptr.add(STATUS_ARRAY_SIZE);
         
-        // 初始化第一个表
-        TABLES[0] = Some(remdb::MemoryTable::new(
+        // 初始化表
+        TABLES[0] = remdb::MemoryTable::new(
             &TEST_TABLE,
             table_ptr,
             status_ptr as *mut RecordHeader,
             free_slots_ptr as *mut usize
-        ));
+        );
         
         // 初始化数据库
         let db = init_global_db(
