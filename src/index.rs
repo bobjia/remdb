@@ -104,7 +104,7 @@ impl PrimaryIndex {
     
     /// 计算主键索引所需的内存大小
     pub const fn calculate_memory_size(
-        def: &'static TableDef,
+        _def: &'static TableDef,
         hash_table_size: usize,
         max_items: usize
     ) -> usize {
@@ -251,7 +251,7 @@ impl PrimaryIndex {
                     }
                     
                     // 归还到空闲列表
-                    let mut item_mut = item.as_mut();
+                    let item_mut = item.as_mut();
                     item_mut.next = self.free_items;
                     self.free_items = Some(item);
                         
@@ -369,7 +369,7 @@ impl SecondaryIndex {
             let mid_item = unsafe { &*self.items.as_ptr().add(mid) };
             
             // 比较键
-            let mut cmp = if mid_item.key_size != key_size as u8 {
+            let cmp = if mid_item.key_size != key_size as u8 {
                 mid_item.key_size.cmp(&(key_size as u8))
             } else {
                 let mut equal = true;
@@ -553,7 +553,7 @@ impl SecondaryIndex {
         let mut high = self.item_count - 1;
         
         // 创建临时索引项用于比较
-        let mut start_item = SecondaryIndexItem {
+        let start_item = SecondaryIndexItem {
             key_size: start_key_size as u8,
             record_id: 0,
             key_data: [0u8; 64],

@@ -418,7 +418,6 @@ impl<F: FnMut()> Drop for Defer<F> {
     }
 }
 
-use std::sync::OnceLock;
 
 /// 全局数据库实例 - 使用静态可变变量存储
 static mut DB_INSTANCE: Option<RemDb> = None;

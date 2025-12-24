@@ -79,7 +79,7 @@ impl StaticAllocator {
                 }
                 
                 // 从空闲列表中移除该块
-                let allocated_block = *current;
+                let _allocated_block = *current;
                 *current = unsafe { block.as_mut() }.next;
                 
                 // 标记为已分配
