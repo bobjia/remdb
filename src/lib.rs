@@ -27,8 +27,6 @@ pub struct RemDb {
     primary_indices: &'static mut [Option<PrimaryIndex>],
     /// 辅助索引数组
     secondary_indices: &'static mut [Option<SecondaryIndex>],
-    /// 事务管理器
-    pub tx_manager: TransactionManager,
 }
 
 // 为RemDb实现Send和Sync trait
@@ -54,7 +52,6 @@ impl RemDb {
             tables,
             primary_indices,
             secondary_indices,
-            tx_manager: TransactionManager::new(),
         }
     }
     
@@ -144,18 +141,17 @@ impl RemDb {
         log_buffer: *mut transaction::LogItem,
         max_log_items: usize
     ) -> Result<NonNull<transaction::Transaction>> {
-        self.tx_manager.begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items)
+        crate::transaction::TX_MANAGER.begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items)
     }
     
     /// 提交事务
     pub unsafe fn commit_transaction(&mut self) -> Result<()> {
-        self.tx_manager.commit()
+        crate::transaction::TX_MANAGER.commit()
     }
     
     /// 回滚事务
     pub unsafe fn rollback_transaction(&mut self) -> Result<()> {
-        // 使用全局rollback函数避免可变借用冲突
-        crate::transaction::rollback(self)
+        crate::transaction::TX_MANAGER.rollback(self)
     }
     
     /// 初始化数据库

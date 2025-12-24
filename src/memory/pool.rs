@@ -109,16 +109,16 @@ impl MemoryPool {
 }
 
 /// 多内存池管理器
-pub struct MultiPoolManager {
+pub struct MultiPoolManager<'a> {
     /// 内存池列表
-    pools: &'static mut [MemoryPool],
+    pools: &'a mut [MemoryPool],
     /// 池数量
     pool_count: usize,
 }
 
-impl MultiPoolManager {
+impl<'a> MultiPoolManager<'a> {
     /// 创建新的多内存池管理器
-    pub unsafe fn new(pools: &'static mut [MemoryPool]) -> Self {
+    pub unsafe fn new(pools: &'a mut [MemoryPool]) -> Self {
         // 计算pool_count并立即使用，避免同时借用
         let pool_count = pools.len();
         MultiPoolManager {

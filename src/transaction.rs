@@ -713,12 +713,27 @@ impl TransactionManager {
             // 根据日志类型执行相应的回滚操作
             match log_item.op_type {
                 LogOperation::Insert => {
-                    // 回滚Insert操作：删除已插入的记录
-                    table.delete(record_id)?;
+                    // 回滚Insert操作：直接删除已插入的记录，不添加日志
+                    let status_ptr = table.get_status_ptr(record_id);
+                    if (*status_ptr).status == crate::types::RecordStatus::Used {
+                        // 标记为空闲
+                        (*status_ptr).status = crate::types::RecordStatus::Free;
+                        (*status_ptr).version += 1;
+                        
+                        // 清空记录数据
+                        let record_ptr = table.get_record_ptr_mut(record_id);
+                        crate::platform::memset(record_ptr, 0, table.record_size);
+                        
+                        // 将空闲槽压回栈中
+                        *table.free_slots.as_ptr().add(table.free_slot_count) = record_id;
+                        table.free_slot_count += 1;
+                        
+                        // 更新记录计数
+                        table.record_count -= 1;
+                    }
                 },
                 LogOperation::Delete => {
-                    // 回滚Delete操作：恢复被删除的记录
-                    // 先检查记录是否已被重新使用
+                    // 回滚Delete操作：直接恢复被删除的记录，不添加日志
                     let status_ptr = table.get_status_ptr(record_id);
                     if (*status_ptr).status != crate::types::RecordStatus::Used {
                         // 记录已被释放，需要重新插入
@@ -732,11 +747,17 @@ impl TransactionManager {
                         // 更新状态
                         (*status_ptr).status = crate::types::RecordStatus::Used;
                         (*status_ptr).version += 1;
-                        table.inc_record_count();
+                        table.record_count += 1;
+                        
+                        // 从空闲槽栈中移除该槽
+                        // 这里简单处理，假设该槽是最近被释放的
+                        if table.free_slot_count > 0 {
+                            table.free_slot_count -= 1;
+                        }
                     }
                 },
                 LogOperation::Update => {
-                    // 回滚Update操作：恢复旧数据
+                    // 回滚Update操作：直接恢复旧数据，不添加日志
                     let record_ptr = table.get_record_ptr_mut(record_id);
                     crate::platform::memcpy(
                         record_ptr,

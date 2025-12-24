@@ -40,18 +40,13 @@ fn main() -> Result<()> {
         // 初始化平台抽象层
         #[cfg(feature = "posix")]
         remdb::platform::init_platform(remdb::platform::posix::get_posix_platform());
-        #[cfg(feature = "baremetal")]
-        remdb::platform::init_platform(remdb::platform::baremetal::get_baremetal_platform());
-        // 对于默认std功能，使用posix平台实现（因为它使用标准库）
-        #[cfg(all(feature = "std", not(any(feature = "posix", feature = "baremetal"))))]
-        remdb::platform::init_platform(remdb::platform::posix::get_posix_platform());
         
         // 初始化表
         let table_ptr = TABLE_MEM.as_mut_ptr();
         let status_ptr = table_ptr.add(TABLE_DATA_SIZE);
         let free_slots_ptr = status_ptr.add(STATUS_ARRAY_SIZE);
         
-        // 初始化表
+        // 初始化表，MemoryTable::new返回Option<MemoryTable>
         TABLES[0] = remdb::MemoryTable::new(
             &TEST_TABLE,
             table_ptr,
