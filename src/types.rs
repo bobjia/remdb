@@ -3,7 +3,7 @@ use core::mem::size_of;
 
 /// 基本数据类型枚举
 #[repr(u8)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum DataType {
     /// 8位有符号整数
     Int8 = 0,
@@ -39,6 +39,75 @@ impl DataType {
             DataType::Timestamp => 8,
             DataType::String => panic!("String size is variable at compile time"),
         }
+    }
+}
+
+/// 时间相关辅助方法
+pub mod time_utils {
+    /// 将秒转换为毫秒
+    pub const fn seconds_to_millis(seconds: u64) -> u64 {
+        seconds * 1000
+    }
+    
+    /// 将毫秒转换为秒
+    pub const fn millis_to_seconds(millis: u64) -> u64 {
+        millis / 1000
+    }
+    
+    /// 将微秒转换为毫秒
+    pub const fn micros_to_millis(micros: u64) -> u64 {
+        micros / 1000
+    }
+    
+    /// 将毫秒转换为微秒
+    pub const fn millis_to_micros(millis: u64) -> u64 {
+        millis * 1000
+    }
+    
+    /// 将纳秒转换为毫秒
+    pub const fn nanos_to_millis(nanos: u64) -> u64 {
+        nanos / 1000000
+    }
+    
+    /// 将毫秒转换为纳秒
+    pub const fn millis_to_nanos(millis: u64) -> u64 {
+        millis * 1000000
+    }
+    
+    /// 计算两个时间戳之间的时间差（毫秒）
+    pub fn time_diff(start: u64, end: u64) -> u64 {
+        if end > start {
+            end - start
+        } else {
+            start - end
+        }
+    }
+    
+    /// 检查时间戳是否在指定范围内
+    pub fn is_in_time_range(timestamp: u64, start: u64, end: u64) -> bool {
+        timestamp >= start && timestamp <= end
+    }
+    
+    /// 获取当前时间戳（毫秒）
+    /// 注意：在no_std环境中，此函数需要平台支持
+    #[cfg(feature = "std")]
+    pub fn now_millis() -> u64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_millis() as u64
+    }
+    
+    /// 获取当前时间戳（微秒）
+    /// 注意：在no_std环境中，此函数需要平台支持
+    #[cfg(feature = "std")]
+    pub fn now_micros() -> u64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_micros() as u64
     }
 }
 

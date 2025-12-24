@@ -3,6 +3,7 @@ use remdb::*;
 use remdb::types::*;
 use remdb::transaction::*;
 use remdb::platform::*;
+use serial_test::serial;
 
 // 测试用Platform实现
 struct TestPlatform;
@@ -138,6 +139,7 @@ static mut TABLE_STATUS_BUFFER: [MaybeUninit<RecordHeader>; 100] = [const { Mayb
 static mut TABLE_FREE_SLOTS_BUFFER: [usize; 100] = [0usize; 100];
 
 #[test]
+#[serial]
 fn test_transaction_begin_commit() {
     unsafe {
         // 初始化平台
@@ -235,6 +237,7 @@ fn test_transaction_begin_commit() {
 }
 
 #[test]
+#[serial]
 fn test_transaction_rollback() {
     unsafe {
         // 初始化平台
@@ -332,6 +335,7 @@ fn test_transaction_rollback() {
 }
 
 #[test]
+#[serial]
 fn test_transaction_update_rollback() {
     unsafe {
         // 初始化平台
@@ -453,6 +457,7 @@ fn test_transaction_update_rollback() {
 }
 
 #[test]
+#[serial]
 fn test_transaction_delete_rollback() {
     unsafe {
         // 初始化平台

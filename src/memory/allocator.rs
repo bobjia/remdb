@@ -24,30 +24,45 @@ pub struct StaticAllocator {
 unsafe impl Send for StaticAllocator {}
 unsafe impl Sync for StaticAllocator {}
 
+// 为StaticAllocator实现Clone trait
+impl Clone for StaticAllocator {
+    fn clone(&self) -> Self {
+        // 创建一个新的分配器实例，使用相同的内存池
+        Self::new(self.start_ptr.as_ptr() as *mut u8, self.size)
+            .expect("Failed to clone StaticAllocator")
+    }
+}
+
 impl StaticAllocator {
     /// 创建新的静态内存分配器
     pub fn new(start_ptr: *mut u8, size: usize) -> Option<Self> {
-        let start_ptr = NonNull::new(start_ptr)?;
-        
-        // 初始化内存池
-        let _end_ptr = (start_ptr.as_ptr() as usize + size) as *mut u8;
-        
-        // 创建一个大的空闲块
-        unsafe {
-            let block_ptr = start_ptr.as_ptr() as *mut MemoryBlock;
-            (*block_ptr).next = None;
-            (*block_ptr).size = size - MemoryBlock::SIZE;
-            (*block_ptr).is_allocated = false;
-        }
-        
-        Some(StaticAllocator {
-            start_ptr,
+        let mut allocator = StaticAllocator {
+            start_ptr: NonNull::new(start_ptr)?,
             size,
             used: 0,
-            free_list: Some(NonNull::new(start_ptr.as_ptr() as *mut MemoryBlock).unwrap()),
+            free_list: None,
             alloc_count: 0,
             free_count: 0,
-        })
+        };
+        
+        allocator.reset();
+        Some(allocator)
+    }
+    
+    /// 重置分配器，重新初始化内存池
+    pub fn reset(&mut self) {
+        // 创建一个大的空闲块
+        unsafe {
+            let block_ptr = self.start_ptr.as_ptr() as *mut MemoryBlock;
+            (*block_ptr).next = None;
+            (*block_ptr).size = self.size - MemoryBlock::SIZE;
+            (*block_ptr).is_allocated = false;
+            
+            self.free_list = Some(NonNull::new_unchecked(block_ptr));
+            self.used = 0;
+            self.alloc_count = 0;
+            self.free_count = 0;
+        }
     }
     
     /// 分配内存
@@ -204,21 +219,6 @@ impl StaticAllocator {
         }
     }
     
-    /// 重置内存分配器
-    pub fn reset(&mut self) {
-        // 创建一个大的空闲块
-        unsafe {
-            let block_ptr = self.start_ptr.as_ptr() as *mut MemoryBlock;
-            (*block_ptr).next = None;
-            (*block_ptr).size = self.size - MemoryBlock::SIZE;
-            (*block_ptr).is_allocated = false;
-        }
-        
-        self.used = 0;
-        self.free_list = Some(NonNull::new(self.start_ptr.as_ptr() as *mut MemoryBlock).unwrap());
-        self.alloc_count = 0;
-        self.free_count = 0;
-    }
 }
 
 /// 全局内存分配器 - 使用OnceLock和Mutex确保线程安全
@@ -226,11 +226,24 @@ static GLOBAL_ALLOCATOR: OnceLock<Mutex<StaticAllocator>> = OnceLock::new();
 
 /// 初始化全局内存分配器
 pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
-    let allocator = StaticAllocator::new(start_ptr, size)
+    // 强制重新初始化内存分配器，清空所有数据
+    let new_allocator = StaticAllocator::new(start_ptr, size)
         .ok_or(crate::types::RemDbError::OutOfMemory)?;
     
-    GLOBAL_ALLOCATOR.set(Mutex::new(allocator))
-        .map_err(|_| crate::types::RemDbError::ConfigError)?;
+    // 无论是否已经初始化过，都重新设置分配器
+    match GLOBAL_ALLOCATOR.get() {
+        Some(allocator_mutex) => {
+            // 获取锁并替换内部分配器
+            let mut allocator_guard = allocator_mutex.lock()
+                .map_err(|_| crate::types::RemDbError::OutOfMemory)?;
+            *allocator_guard = new_allocator;
+        },
+        None => {
+            // 首次初始化
+            GLOBAL_ALLOCATOR.set(Mutex::new(new_allocator))
+                .map_err(|_| crate::types::RemDbError::ConfigError)?;
+        }
+    }
     
     Ok(())
 }

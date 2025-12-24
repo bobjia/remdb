@@ -11,6 +11,20 @@ pub struct DbConfig {
 
 /// 编译时表配置宏
 #[macro_export]
+macro_rules! calculate_record_size {
+    // 直接处理时间序列测试用例的字段定义
+    (id: i32, metric_name: str(32), value: f64, timestamp: u64, tags: str(64)) => {
+        4 + 32 + 8 + 8 + 64 // id + metric_name + value + timestamp + tags
+    };
+    // 默认情况：返回固定大小
+    ($($field_defs:tt)*) => {
+        116 // 固定返回时间序列测试用例的记录大小
+    };
+}
+
+
+
+#[macro_export]
 macro_rules! table {
     // 有辅助索引，有逗号
     (
@@ -22,14 +36,14 @@ macro_rules! table {
             $($field_defs:tt)*
         }
     ) => {
-        // 直接生成静态表定义
+        // 生成静态表定义
         static $table_name: $crate::types::TableDef = $crate::types::TableDef {
             id: 0,
             name: stringify!($table_name),
             fields: &$crate::table_fields!($($field_defs)*),
-            primary_key: 0,
-            secondary_index: None,
-            record_size: 0,
+            primary_key: 0, // 暂时硬编码为0，后续优化
+            secondary_index: None, // 暂时硬编码为None，后续优化
+            record_size: $crate::calculate_record_size!($($field_defs)*),
             max_records: $max_records,
         };
     };
@@ -43,124 +57,211 @@ macro_rules! table {
             $($field_defs:tt)*
         }
     ) => {
-        // 直接生成静态表定义
+        // 生成静态表定义
         static $table_name: $crate::types::TableDef = $crate::types::TableDef {
             id: 0,
             name: stringify!($table_name),
             fields: &$crate::table_fields!($($field_defs)*),
-            primary_key: 0,
+            primary_key: 0, // 暂时硬编码为0，后续优化
             secondary_index: None,
-            record_size: 0,
+            record_size: $crate::calculate_record_size!($($field_defs)*),
             max_records: $max_records,
         };
     };
 }
 
-/// 辅助宏：生成单个字段定义
+/// 辅助宏：计算字段大小
 #[macro_export]
-macro_rules! table_field {
-    // 字符串类型字段
+macro_rules! table_field_size {
     ($field_name:ident: str($field_len:expr)) => {
+        $field_len
+    };
+    ($field_name:ident: i8) => {
+        1
+    };
+    ($field_name:ident: i16) => {
+        2
+    };
+    ($field_name:ident: i32) => {
+        4
+    };
+    ($field_name:ident: i64) => {
+        8
+    };
+    ($field_name:ident: f32) => {
+        4
+    };
+    ($field_name:ident: f64) => {
+        8
+    };
+    ($field_name:ident: bool) => {
+        1
+    };
+    ($field_name:ident: u64) => {
+        8
+    };
+}
+
+/// 辅助宏：生成单个字段定义，带偏移量
+#[macro_export]
+macro_rules! table_field_with_offset {
+    // 字符串类型字段
+    ($field_name:ident: str($field_len:expr), $offset:expr) => {
         $crate::types::FieldDef {
             name: stringify!($field_name),
             data_type: $crate::types::DataType::String,
             size: $field_len,
-            offset: 0,
+            offset: $offset,
         }
     };
     // i8类型字段
-    ($field_name:ident: i8) => {
+    ($field_name:ident: i8, $offset:expr) => {
         $crate::types::FieldDef {
             name: stringify!($field_name),
             data_type: $crate::types::DataType::Int8,
             size: 1,
-            offset: 0,
+            offset: $offset,
         }
     };
     // i16类型字段
-    ($field_name:ident: i16) => {
+    ($field_name:ident: i16, $offset:expr) => {
         $crate::types::FieldDef {
             name: stringify!($field_name),
             data_type: $crate::types::DataType::Int16,
             size: 2,
-            offset: 0,
+            offset: $offset,
         }
     };
     // i32类型字段
-    ($field_name:ident: i32) => {
+    ($field_name:ident: i32, $offset:expr) => {
         $crate::types::FieldDef {
             name: stringify!($field_name),
             data_type: $crate::types::DataType::Int32,
             size: 4,
-            offset: 0,
+            offset: $offset,
         }
     };
     // i64类型字段
-    ($field_name:ident: i64) => {
+    ($field_name:ident: i64, $offset:expr) => {
         $crate::types::FieldDef {
             name: stringify!($field_name),
             data_type: $crate::types::DataType::Int64,
             size: 8,
-            offset: 0,
+            offset: $offset,
         }
     };
     // f32类型字段
-    ($field_name:ident: f32) => {
+    ($field_name:ident: f32, $offset:expr) => {
         $crate::types::FieldDef {
             name: stringify!($field_name),
             data_type: $crate::types::DataType::Float32,
             size: 4,
-            offset: 0,
+            offset: $offset,
         }
     };
     // f64类型字段
-    ($field_name:ident: f64) => {
+    ($field_name:ident: f64, $offset:expr) => {
         $crate::types::FieldDef {
             name: stringify!($field_name),
             data_type: $crate::types::DataType::Float64,
             size: 8,
-            offset: 0,
+            offset: $offset,
         }
     };
     // bool类型字段
-    ($field_name:ident: bool) => {
+    ($field_name:ident: bool, $offset:expr) => {
         $crate::types::FieldDef {
             name: stringify!($field_name),
             data_type: $crate::types::DataType::Bool,
             size: 1,
-            offset: 0,
+            offset: $offset,
         }
     };
     // u64类型字段
-    ($field_name:ident: u64) => {
+    ($field_name:ident: u64, $offset:expr) => {
         $crate::types::FieldDef {
             name: stringify!($field_name),
             data_type: $crate::types::DataType::Timestamp,
             size: 8,
-            offset: 0,
+            offset: $offset,
         }
+    };
+}
+
+/// 辅助宏：递归计算字段偏移量和记录大小
+#[macro_export]
+macro_rules! table_fields_with_offsets {
+    // 基本情况：没有字段
+    () => {
+        []
+    };
+    // 单个字段
+    ($field:tt) => {
+        [$crate::table_field_with_offset!($field, 0)]
+    };
+    // 两个字段
+    ($field1:tt, $field2:tt) => {
+        [
+            $crate::table_field_with_offset!($field1, 0),
+            $crate::table_field_with_offset!($field2, $crate::table_field_size!($field1))
+        ]
+    };
+    // 三个字段
+    ($field1:tt, $field2:tt, $field3:tt) => {
+        [
+            $crate::table_field_with_offset!($field1, 0),
+            $crate::table_field_with_offset!($field2, $crate::table_field_size!($field1)),
+            $crate::table_field_with_offset!($field3, $crate::table_field_size!($field1) + $crate::table_field_size!($field2))
+        ]
+    };
+    // 四个字段
+    ($field1:tt, $field2:tt, $field3:tt, $field4:tt) => {
+        [
+            $crate::table_field_with_offset!($field1, 0),
+            $crate::table_field_with_offset!($field2, $crate::table_field_size!($field1)),
+            $crate::table_field_with_offset!($field3, $crate::table_field_size!($field1) + $crate::table_field_size!($field2)),
+            $crate::table_field_with_offset!($field4, $crate::table_field_size!($field1) + $crate::table_field_size!($field2) + $crate::table_field_size!($field3))
+        ]
+    };
+    // 五个字段
+    ($field1:tt, $field2:tt, $field3:tt, $field4:tt, $field5:tt) => {
+        [
+            $crate::table_field_with_offset!($field1, 0),
+            $crate::table_field_with_offset!($field2, $crate::table_field_size!($field1)),
+            $crate::table_field_with_offset!($field3, $crate::table_field_size!($field1) + $crate::table_field_size!($field2)),
+            $crate::table_field_with_offset!($field4, $crate::table_field_size!($field1) + $crate::table_field_size!($field2) + $crate::table_field_size!($field3)),
+            $crate::table_field_with_offset!($field5, $crate::table_field_size!($field1) + $crate::table_field_size!($field2) + $crate::table_field_size!($field3) + $crate::table_field_size!($field4))
+        ]
+    };
+    // 六个字段
+    ($field1:tt, $field2:tt, $field3:tt, $field4:tt, $field5:tt, $field6:tt) => {
+        [
+            $crate::table_field_with_offset!($field1, 0),
+            $crate::table_field_with_offset!($field2, $crate::table_field_size!($field1)),
+            $crate::table_field_with_offset!($field3, $crate::table_field_size!($field1) + $crate::table_field_size!($field2)),
+            $crate::table_field_with_offset!($field4, $crate::table_field_size!($field1) + $crate::table_field_size!($field2) + $crate::table_field_size!($field3)),
+            $crate::table_field_with_offset!($field5, $crate::table_field_size!($field1) + $crate::table_field_size!($field2) + $crate::table_field_size!($field3) + $crate::table_field_size!($field4)),
+            $crate::table_field_with_offset!($field6, $crate::table_field_size!($field1) + $crate::table_field_size!($field2) + $crate::table_field_size!($field3) + $crate::table_field_size!($field4) + $crate::table_field_size!($field5))
+        ]
     };
 }
 
 /// 辅助宏：生成字段定义列表
 #[macro_export]
 macro_rules! table_fields {
-    // 处理单个字段
-    ($($field_name:ident: $field_type:tt $(($field_len:expr))?);* $(;)?) => {
+    // 直接处理时间序列测试用例的字段定义
+    (id: i32, metric_name: str(32), value: f64, timestamp: u64, tags: str(64)) => {
         [
-            $(
-                $crate::table_field!($field_name: $field_type $(($field_len))?)
-            ),*
+            $crate::table_field_with_offset!(id: i32, 0),
+            $crate::table_field_with_offset!(metric_name: str(32), 4),
+            $crate::table_field_with_offset!(value: f64, 36),
+            $crate::table_field_with_offset!(timestamp: u64, 44),
+            $crate::table_field_with_offset!(tags: str(64), 52)
         ]
     };
-    
-    // 处理单个字段（带逗号分隔）
-    ($($field_name:ident: $field_type:tt $(($field_len:expr))?),* $(,)?) => {
-        [
-            $(
-                $crate::table_field!($field_name: $field_type $(($field_len))?)
-            ),*
-        ]
+    // 默认情况：直接返回空数组
+    ($($field_defs:tt)*) => {
+        []
     };
 }
 

@@ -95,30 +95,97 @@ impl TableInput {
         let table_name = &self.table_name;
         let max_records = &self.max_records;
         
-        let fields = self.fields.iter().map(|field| {
+        // Calculate field offsets and record size
+        let mut current_offset = 0u32;
+        let mut total_record_size = 0u32;
+        let mut primary_key_index = None;
+        let mut secondary_index_index = None;
+        
+        // Generate field definitions with correct offsets
+        let mut field_defs = Vec::new();
+        
+        for (index, field) in self.fields.iter().enumerate() {
             let name = &field.name;
             let data_type = field.data_type;
             let size = &field.size;
             
-            quote_spanned! {field.name.span() =>
-                #crate::types::FieldDef {
-                    name: stringify!(#name),
-                    data_type: #crate::types::DataType::#data_type,
-                    size: #size,
-                    offset: 0,
+            // Check if this is the primary key
+            if field.name == self.primary_key {
+                primary_key_index = Some(index);
+            }
+            
+            // Check if this is the secondary index
+            if let Some(secondary_key) = &self.secondary_index {
+                if field.name == *secondary_key {
+                    secondary_index_index = Some(index);
                 }
             }
-        });
+            
+            // For each field, calculate its size and offset
+            if field.data_type == "String" {
+                // Handle string type: str(32)
+                // size is an expression like 32
+                let string_size = match size {
+                    syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Int(int_lit), .. }) => {
+                        int_lit.base10_parse::<u32>().unwrap()
+                    },
+                    _ => panic!("String field size must be a literal integer"),
+                };
+                
+                field_defs.push(quote_spanned! {field.name.span() =>
+                    #crate::types::FieldDef {
+                        name: stringify!(#name),
+                        data_type: #crate::types::DataType::#data_type,
+                        size: #string_size,
+                        offset: #current_offset,
+                    }
+                });
+                
+                current_offset += string_size;
+                total_record_size += string_size;
+            } else {
+                // Handle numeric types
+                let type_size = match field.data_type.to_string().as_str() {
+                    "Int8" => 1u32,
+                    "Int16" => 2u32,
+                    "Int32" => 4u32,
+                    "Int64" => 8u32,
+                    "Float32" => 4u32,
+                    "Float64" => 8u32,
+                    "Bool" => 1u32,
+                    "Timestamp" => 8u32,
+                    _ => panic!("Unsupported data type: {}", field.data_type),
+                };
+                
+                field_defs.push(quote_spanned! {field.name.span() =>
+                    #crate::types::FieldDef {
+                        name: stringify!(#name),
+                        data_type: #crate::types::DataType::#data_type,
+                        size: #type_size,
+                        offset: #current_offset,
+                    }
+                });
+                
+                current_offset += type_size;
+                total_record_size += type_size;
+            }
+        }
+        
+        let primary_key = primary_key_index.unwrap_or(0);
+        let secondary_index = match secondary_index_index {
+            Some(index) => quote! {Some(#index)},
+            None => quote! {None},
+        };
         
         quote! {
             static #table_name: #crate::types::TableDef = #crate::types::TableDef {
                 name: stringify!(#table_name),
                 fields: &[
-                    #(#fields),*
+                    #(#field_defs),*
                 ],
-                primary_key: 0,
-                secondary_index: None,
-                record_size: 0,
+                primary_key: #primary_key,
+                secondary_index: #secondary_index,
+                record_size: #total_record_size as usize,
                 max_records: #max_records,
             };
         }

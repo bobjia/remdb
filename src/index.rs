@@ -619,6 +619,112 @@ impl SecondaryIndex {
         Err(RemDbError::RecordNotFound)
     }
     
+    /// 范围查询（返回所有匹配项）
+    pub unsafe fn find_range_all(
+        &mut self,
+        start_key: *const u8,
+        start_key_size: usize,
+        end_key: *const u8,
+        end_key_size: usize,
+        out_record_ids: *mut u16,
+        max_records: usize
+    ) -> Result<usize>
+    {
+        // 更新统计信息
+        self.stats.access_count += 1;
+        
+        // 检查输出缓冲区是否为null
+        if out_record_ids.is_null() {
+            return Err(RemDbError::UnsupportedOperation);
+        }
+        
+        // 如果没有记录，直接返回
+        if self.item_count == 0 {
+            return Ok(0);
+        }
+        
+        // 使用二分查找找到起始位置，优化范围查询性能
+        let mut start_pos = 0;
+        let mut low = 0;
+        let mut high = self.item_count - 1;
+        
+        // 创建临时索引项用于比较
+        let start_item = SecondaryIndexItem {
+            key_size: start_key_size as u8,
+            record_id: 0,
+            key_data: [0u8; 64],
+        };
+        memcpy(start_item.key_data.as_ptr() as *mut u8, start_key, start_key_size);
+        
+        // 二分查找起始位置
+        while low <= high {
+            let mid = (low + high) / 2;
+            let item = &*self.items.as_ptr().add(mid);
+            
+            if self.compare_items(item, &start_item) == core::cmp::Ordering::Less {
+                start_pos = mid + 1;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+        
+        // 从起始位置开始遍历，收集所有匹配项
+        let mut match_count = 0;
+        for i in start_pos..self.item_count {
+            if match_count >= max_records {
+                break;
+            }
+            
+            let item = &*self.items.as_ptr().add(i);
+            
+            // 检查是否小于等于end_key
+            let mut le_end = false;
+            let key_size = item.key_size as usize;
+            
+            if key_size > end_key_size {
+                // 键大小大于end_key，超出范围
+                break;
+            }
+            
+            // 比较键数据
+            let min_size = core::cmp::min(key_size, end_key_size);
+            let mut all_equal = true;
+            
+            for j in 0..min_size {
+                if item.key_data[j] < *end_key.add(j) {
+                    le_end = true;
+                    break;
+                } else if item.key_data[j] > *end_key.add(j) {
+                    // 超出范围
+                    le_end = false;
+                    all_equal = false;
+                    break;
+                }
+            }
+            
+            if all_equal && key_size == end_key_size {
+                le_end = true;
+            }
+            
+            if le_end {
+                // 保存匹配项的record_id到输出缓冲区
+                *out_record_ids.add(match_count) = item.record_id;
+                match_count += 1;
+            } else {
+                // 已超出范围，结束遍历
+                break;
+            }
+        }
+        
+        // 更新命中统计
+        if match_count > 0 {
+            self.stats.hit_count += match_count;
+        }
+        
+        Ok(match_count)
+    }
+    
     /// 获取索引统计信息
     pub fn stats(&self) -> &IndexStats {
         &self.stats

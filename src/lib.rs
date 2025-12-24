@@ -431,12 +431,11 @@ pub fn init_global_db(
     secondary_indices: &'static mut [Option<SecondaryIndex>]
 ) -> Result<&'static mut RemDb> {
     unsafe {
-        if DB_INSTANCE.is_some() {
-            return Err(RemDbError::ConfigError);
-        }
-        
+        // 无论是否已经初始化过，都创建一个新的数据库实例
         let mut db = RemDb::new(config, tables, primary_indices, secondary_indices);
         db.init()?;
+        
+        // 将新的数据库实例赋值给 DB_INSTANCE
         DB_INSTANCE = Some(db);
         
         Ok(DB_INSTANCE.as_mut().unwrap())
