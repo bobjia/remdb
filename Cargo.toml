@@ -16,6 +16,13 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 rand = { version = "0.8.5", optional = true }
 
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "database"
+harness = false
+
 [features]
 default = ["std"]
 std = ["rand"]
