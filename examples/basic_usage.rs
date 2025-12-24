@@ -56,6 +56,10 @@ fn main() {
             core::mem::size_of::<types::RecordHeader>() * config.tables[0].max_records
         ).unwrap().as_ptr() as *mut types::RecordHeader;
         
+        let free_slots_ptr = memory::allocator::alloc(
+            core::mem::size_of::<usize>() * config.tables[0].max_records
+        ).unwrap().as_ptr() as *mut usize;
+        
         let hash_table_ptr = memory::allocator::alloc(
             128 * core::mem::size_of::<Option<NonNull<index::PrimaryIndexItem>>>()
         ).unwrap().as_ptr() as *mut Option<NonNull<index::PrimaryIndexItem>>;
@@ -69,7 +73,7 @@ fn main() {
         ).unwrap().as_ptr() as *mut index::SecondaryIndexItem;
         
         // 创建表和索引
-        let mut table = MemoryTable::new(&config.tables[0], table_ptr, status_ptr);
+        let mut table = MemoryTable::new(&config.tables[0], table_ptr, status_ptr, free_slots_ptr);
         let mut primary_index = PrimaryIndex::new(
             &config.tables[0],
             hash_table_ptr,
@@ -160,12 +164,16 @@ fn main() {
             table_id: 0,
             record_id: 0,
             data_size: 0,
+            checksum: 0,
+            timestamp: 0,
+            tx_id: 0,
             old_data: [0u8; 512],
             new_data: [0u8; 512],
         }; 10];
         
         let tx = transaction::begin(
             transaction::TransactionType::ReadWrite,
+            transaction::IsolationLevel::ReadCommitted,
             &mut tx_buffer,
             log_buffer.as_mut_ptr(),
             10

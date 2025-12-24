@@ -10,7 +10,13 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **Indexing Mechanisms**:
   - Hash-based primary key index providing O(1) query performance
   - Ordered array-based secondary index supporting range queries
-- **Transaction Support**: Basic transaction management including begin, commit, and rollback operations
+- **Transaction Support**: Complete ACID transaction support, including:
+  - Atomicity: Transactions are either fully committed or fully rolled back
+  - Consistency: Ensures data integrity and correctness
+  - Isolation: Supports multiple isolation levels (Read Uncommitted, Read Committed, Repeatable Read, Serializable)
+  - Durability: Ensures data persistence through Write-Ahead Logging (WAL)
+  - Supports record-level locking (shared locks and exclusive locks)
+  - Supports transaction logging and crash recovery
 - **Memory Management**:
   - Static memory allocator with no dynamic memory allocation
   - Fixed-size block memory pool enabling efficient memory management
@@ -238,13 +244,10 @@ Issues and pull requests are welcome!
 1. remdb is designed for embedded systems and is not suitable for large-scale data storage
 2. When used in no_std environments, appropriate memory allocator implementation needs to be provided
 3. Ensure proper initialization of memory allocator and platform abstraction layer before use
-4. Currently only basic transaction functionality is supported, no complex transaction isolation levels
 
 ## Future Plans
 
 - Support more data types
-- Implement more advanced transaction isolation levels
-- Add persistence support
 - Optimize memory usage
 - Provide more index types
 - Add more examples and documentation

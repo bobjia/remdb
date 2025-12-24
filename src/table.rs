@@ -8,19 +8,19 @@ pub struct MemoryTable {
     /// 表定义
     pub def: &'static TableDef,
     /// 表数据起始地址
-    data_start: NonNull<u8>,
+    pub data_start: NonNull<u8>,
     /// 记录状态数组
-    status_array: NonNull<RecordHeader>,
+    pub status_array: NonNull<RecordHeader>,
     /// 当前记录数
-    record_count: usize,
+    pub record_count: usize,
     /// 自旋锁
-    lock: u32,
+    pub lock: u32,
     /// 记录大小（运行时计算）
-    record_size: usize,
+    pub record_size: usize,
     /// 空闲记录槽栈（优化插入性能）
-    free_slots: NonNull<usize>,
+    pub free_slots: NonNull<usize>,
     /// 空闲记录槽数量
-    free_slot_count: usize,
+    pub free_slot_count: usize,
 }
 
 impl MemoryTable {
@@ -37,6 +37,9 @@ impl MemoryTable {
             let status_ptr = status_array.as_ptr().add(i);
             (*status_ptr).status = RecordStatus::Free;
             (*status_ptr).version = 0;
+            (*status_ptr).lock_type = crate::types::LockType::None;
+            (*status_ptr).lock_owner = 0;
+            (*status_ptr).lock_count = 0;
         }
         
         // 初始化空闲记录槽栈，将所有记录槽压入栈中
@@ -98,6 +101,26 @@ impl MemoryTable {
         // 计算记录地址
         let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
         
+        // 记录日志（如果有活跃事务）
+        if let Some(mut tx) = crate::transaction::get_current_tx() {
+            let tx_mut = tx.as_mut();
+            if tx_mut.is_active() && !tx_mut.is_read_only() {
+                // 保存新数据
+                let mut new_data = [0u8; 512];
+                memcpy(new_data.as_mut_ptr(), record_data, self.record_size);
+                
+                // 添加日志项
+                tx_mut.add_log_item(
+                    crate::transaction::LogOperation::Insert,
+                    self.def.id,
+                    slot_id as u16,
+                    core::ptr::null(),
+                    new_data.as_ptr(),
+                    self.record_size
+                )?;
+            }
+        }
+        
         // 拷贝记录数据
         memcpy(record_ptr, record_data, self.record_size);
         
@@ -110,6 +133,58 @@ impl MemoryTable {
         self.record_count += 1;
         
         Ok(slot_id)
+    }
+    
+    /// 更新记录
+    pub unsafe fn update(&mut self, id: usize, record_data: *const u8) -> Result<()> {
+        // 自旋锁保护
+        crate::platform::spin_lock(&mut self.lock);
+        defer! { crate::platform::spin_unlock(&mut self.lock); }
+        
+        // 检查ID有效性
+        if id >= self.def.max_records {
+            return Err(RemDbError::RecordNotFound);
+        }
+        
+        let status_ptr = self.status_array.as_ptr().add(id);
+        if (*status_ptr).status != RecordStatus::Used {
+            return Err(RemDbError::RecordNotFound);
+        }
+        
+        // 计算记录地址
+        let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
+        
+        // 记录日志（如果有活跃事务）
+        if let Some(mut tx) = crate::transaction::get_current_tx() {
+            let tx_mut = tx.as_mut();
+            if tx_mut.is_active() && !tx_mut.is_read_only() {
+                // 保存旧数据
+                let mut old_data = [0u8; 512];
+                memcpy(old_data.as_mut_ptr(), record_ptr, self.record_size);
+                
+                // 保存新数据
+                let mut new_data = [0u8; 512];
+                memcpy(new_data.as_mut_ptr(), record_data, self.record_size);
+                
+                // 添加日志项
+                tx_mut.add_log_item(
+                    crate::transaction::LogOperation::Update,
+                    self.def.id,
+                    id as u16,
+                    old_data.as_ptr(),
+                    new_data.as_ptr(),
+                    self.record_size
+                )?;
+            }
+        }
+        
+        // 更新记录数据
+        memcpy(record_ptr, record_data, self.record_size);
+        
+        // 更新版本号
+        (*status_ptr).version += 1;
+        
+        Ok(())
     }
     
     /// 删除记录
@@ -126,6 +201,27 @@ impl MemoryTable {
         let status_ptr = self.status_array.as_ptr().add(id);
         if (*status_ptr).status != RecordStatus::Used {
             return Err(RemDbError::RecordNotFound);
+        }
+        
+        // 记录日志（如果有活跃事务）
+        if let Some(mut tx) = crate::transaction::get_current_tx() {
+            let tx_mut = tx.as_mut();
+            if tx_mut.is_active() && !tx_mut.is_read_only() {
+                // 保存旧数据
+                let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
+                let mut old_data = [0u8; 512];
+                memcpy(old_data.as_mut_ptr(), record_ptr, self.record_size);
+                
+                // 添加日志项
+                tx_mut.add_log_item(
+                    crate::transaction::LogOperation::Delete,
+                    self.def.id,
+                    id as u16,
+                    old_data.as_ptr(),
+                    core::ptr::null(),
+                    self.record_size
+                )?;
+            }
         }
         
         // 标记为空闲
@@ -326,9 +422,9 @@ impl MemoryTable {
     }
     
     /// 批量插入记录
-    /// 参数：records - 指向记录数组的指针，count - 要插入的记录数
-    /// 返回：成功插入的记录数，以及每个记录的ID数组
-    pub unsafe fn batch_insert(&mut self, records: *const u8, count: usize) -> Result<(usize, Vec<usize>)> {
+    /// 参数：records - 指向记录数组的指针，count - 要插入的记录数，out_ids - 输出记录ID的数组指针
+    /// 返回：成功插入的记录数
+    pub unsafe fn batch_insert(&mut self, records: *const u8, count: usize, out_ids: *mut usize) -> Result<usize> {
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
@@ -341,9 +437,6 @@ impl MemoryTable {
             return Err(RemDbError::OutOfMemory);
         }
         
-        // 分配结果数组
-        let mut record_ids = Vec::with_capacity(actual_count);
-        
         // 批量插入记录
         for i in 0..actual_count {
             if self.free_slot_count == 0 {
@@ -353,7 +446,11 @@ impl MemoryTable {
             // 获取栈顶空闲槽
             self.free_slot_count -= 1;
             let slot_id = *self.free_slots.as_ptr().add(self.free_slot_count);
-            record_ids.push(slot_id);
+            
+            // 保存记录ID到输出数组
+            if !out_ids.is_null() && i < count {
+                *out_ids.add(i) = slot_id;
+            }
             
             // 计算记录地址
             let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
@@ -371,7 +468,7 @@ impl MemoryTable {
             self.record_count += 1;
         }
         
-        Ok((actual_count, record_ids))
+        Ok(actual_count)
     }
     
     /// 批量获取记录

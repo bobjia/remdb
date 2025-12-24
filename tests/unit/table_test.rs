@@ -30,7 +30,10 @@ fn test_table_insert_delete() {
     let mut data_buffer = [0u8; 8 * 100]; // 8字节记录 * 100条
     let mut status_buffer = [RecordHeader { 
         status: RecordStatus::Free, 
-        version: 0 
+        version: 0,
+        lock_type: LockType::None,
+        lock_owner: 0,
+        lock_count: 0
     }; 100];
     
     unsafe {

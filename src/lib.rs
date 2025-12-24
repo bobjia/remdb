@@ -1,5 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use std::ptr::NonNull;
+
 // 导出公共API
 pub mod types;
 pub mod config;
@@ -126,6 +128,29 @@ impl RemDb {
     /// 获取表数量
     pub fn table_count(&self) -> usize {
         self.config.tables.len()
+    }
+    
+    /// 开始事务
+    pub unsafe fn begin_transaction(
+        &mut self,
+        tx_type: transaction::TransactionType,
+        isolation_level: transaction::IsolationLevel,
+        tx_buffer: *mut transaction::Transaction,
+        log_buffer: *mut transaction::LogItem,
+        max_log_items: usize
+    ) -> Result<NonNull<transaction::Transaction>> {
+        self.tx_manager.begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items)
+    }
+    
+    /// 提交事务
+    pub unsafe fn commit_transaction(&mut self) -> Result<()> {
+        self.tx_manager.commit()
+    }
+    
+    /// 回滚事务
+    pub unsafe fn rollback_transaction(&mut self) -> Result<()> {
+        // 使用全局rollback函数避免可变借用冲突
+        crate::transaction::rollback(self)
     }
     
     /// 初始化数据库

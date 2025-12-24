@@ -24,6 +24,7 @@ macro_rules! table {
     ) => {
         // 直接生成静态表定义
         static $table_name: $crate::types::TableDef = $crate::types::TableDef {
+            id: 0,
             name: stringify!($table_name),
             fields: &$crate::table_fields!($($field_defs)*),
             primary_key: 0,
@@ -44,6 +45,7 @@ macro_rules! table {
     ) => {
         // 直接生成静态表定义
         static $table_name: $crate::types::TableDef = $crate::types::TableDef {
+            id: 0,
             name: stringify!($table_name),
             fields: &$crate::table_fields!($($field_defs)*),
             primary_key: 0,

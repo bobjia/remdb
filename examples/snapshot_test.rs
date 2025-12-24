@@ -24,7 +24,8 @@ database!(
 const RECORD_SIZE: usize = 8 + 20 + 4;
 const TABLE_DATA_SIZE: usize = RECORD_SIZE * TEST_TABLE.max_records;
 const STATUS_ARRAY_SIZE: usize = core::mem::size_of::<RecordHeader>() * TEST_TABLE.max_records;
-const TABLE_MEM_SIZE: usize = TABLE_DATA_SIZE + STATUS_ARRAY_SIZE;
+const FREE_SLOTS_SIZE: usize = core::mem::size_of::<usize>() * TEST_TABLE.max_records;
+const TABLE_MEM_SIZE: usize = TABLE_DATA_SIZE + STATUS_ARRAY_SIZE + FREE_SLOTS_SIZE;
 
 // 静态变量，具有'static生命周期
 static mut TABLE_MEM: [u8; TABLE_MEM_SIZE] = [0; TABLE_MEM_SIZE];
@@ -48,12 +49,14 @@ fn main() -> Result<()> {
         // 初始化表
         let table_ptr = TABLE_MEM.as_mut_ptr();
         let status_ptr = table_ptr.add(TABLE_DATA_SIZE);
+        let free_slots_ptr = status_ptr.add(STATUS_ARRAY_SIZE);
         
         // 初始化第一个表
         TABLES[0] = Some(remdb::MemoryTable::new(
             &TEST_TABLE,
             table_ptr,
-            status_ptr as *mut RecordHeader
+            status_ptr as *mut RecordHeader,
+            free_slots_ptr as *mut usize
         ));
         
         // 初始化数据库

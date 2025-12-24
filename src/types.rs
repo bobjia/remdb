@@ -76,6 +76,8 @@ pub struct FieldDef {
 /// 表定义
 #[derive(Copy, Clone)]
 pub struct TableDef {
+    /// 表ID
+    pub id: u8,
     /// 表名称
     pub name: &'static str,
     /// 字段定义
@@ -102,6 +104,17 @@ pub enum RecordStatus {
     Deleted = 2,
 }
 
+/// 锁类型
+#[repr(u8)]
+pub enum LockType {
+    /// 无锁
+    None = 0,
+    /// 共享锁（读锁）
+    Shared = 1,
+    /// 排他锁（写锁）
+    Exclusive = 2,
+}
+
 /// 记录头
 #[repr(C)]
 pub struct RecordHeader {
@@ -109,6 +122,12 @@ pub struct RecordHeader {
     pub status: RecordStatus,
     /// 版本号（用于事务）
     pub version: u16,
+    /// 锁类型
+    pub lock_type: LockType,
+    /// 持有锁的事务ID
+    pub lock_owner: u32,
+    /// 锁计数器（用于共享锁）
+    pub lock_count: u8,
 }
 
 impl RecordHeader {
@@ -147,6 +166,18 @@ pub enum RemDbError {
     SnapshotFormatError,
     /// CRC校验失败
     Crc32Error,
+    /// 日志格式错误
+    LogFormatError,
+    /// 日志记录未找到
+    LogRecordNotFound,
+    /// 日志校验和错误
+    LogChecksumError,
+    /// 锁冲突
+    LockConflict,
+    /// 锁超时
+    LockTimeout,
+    /// 表未找到
+    TableNotFound,
 }
 
 impl fmt::Display for RemDbError {
@@ -163,6 +194,12 @@ impl fmt::Display for RemDbError {
             RemDbError::FileIoError => write!(f, "File I/O error"),
             RemDbError::SnapshotFormatError => write!(f, "Snapshot format error"),
             RemDbError::Crc32Error => write!(f, "CRC32 checksum error"),
+            RemDbError::LogFormatError => write!(f, "Log format error"),
+            RemDbError::LogRecordNotFound => write!(f, "Log record not found"),
+            RemDbError::LogChecksumError => write!(f, "Log checksum error"),
+            RemDbError::LockConflict => write!(f, "Lock conflict"),
+            RemDbError::LockTimeout => write!(f, "Lock timeout"),
+            RemDbError::TableNotFound => write!(f, "Table not found"),
         }
     }
 }

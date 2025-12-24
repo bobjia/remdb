@@ -6,6 +6,7 @@ use rand::random;
 
 // 定义一个用于性能测试的大表，max_records设置为500,000
 static LARGE_TABLE_DEF: TableDef = TableDef {
+    id: 0,
     name: "large_table",
     fields: &[
         FieldDef {

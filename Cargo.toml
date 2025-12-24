@@ -12,11 +12,11 @@ path = "src/lib.rs"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-rand = "0.8.5"
+rand = { version = "0.8.5", optional = true }
 
 [features]
 default = ["std"]
-std = []
+std = ["rand"]
 posix = ["std"]
 baremetal = []
 debug = []
