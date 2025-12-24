@@ -122,6 +122,48 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     max_records: 100, // 基准测试使用较小的记录数
 };
 
+// 时间序列表定义用于基准测试
+static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
+    id: 1,
+    name: "metrics",
+    fields: &[
+        FieldDef {
+            name: "id",
+            data_type: DataType::Int32,
+            size: 4,
+            offset: 0,
+        },
+        FieldDef {
+            name: "metric_name",
+            data_type: DataType::String,
+            size: 32,
+            offset: 4,
+        },
+        FieldDef {
+            name: "value",
+            data_type: DataType::Float64,
+            size: 8,
+            offset: 36,
+        },
+        FieldDef {
+            name: "timestamp",
+            data_type: DataType::Timestamp,
+            size: 8,
+            offset: 44,
+        },
+        FieldDef {
+            name: "tags",
+            data_type: DataType::String,
+            size: 64,
+            offset: 52,
+        },
+    ],
+    primary_key: 0,
+    secondary_index: Some(3), // 时间戳作为辅助索引
+    record_size: 116, // 4 + 32 + 8 + 8 + 64 = 116字节
+    max_records: 1000, // 时间序列测试使用较大的记录数
+};
+
 // 测试表的插入操作性能
 fn bench_table_insert(c: &mut Criterion) {
     // 初始化平台
@@ -587,5 +629,302 @@ fn bench_table_field_operations(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_table_insert, bench_table_query, bench_table_update_delete, bench_table_field_operations);
+// 测试时间序列数据的插入性能
+fn bench_time_series_insert(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    let mut group = c.benchmark_group("time_series_insert");
+    group.sample_size(500);
+    
+    group.bench_function("single_metric_insert", |b| {
+        b.iter(|| {
+            // 每个迭代创建新的内存缓冲区和表实例
+            let mut data_buffer = [0u8; 116 * 1000]; // 116字节记录 * 1000条
+            let mut status_buffer: [RecordHeader; 1000] = core::array::from_fn(|_| RecordHeader {
+                status: RecordStatus::Free,
+                version: 0,
+                lock_type: LockType::None,
+                lock_owner: 0,
+                lock_count: 0
+            });
+            let mut free_slots_buffer = [0usize; 1000];
+            
+            unsafe {
+                // 创建表
+                let mut table = MemoryTable::new(
+                    &TIME_SERIES_TABLE_DEF,
+                    data_buffer.as_mut_ptr(),
+                    status_buffer.as_mut_ptr(),
+                    free_slots_buffer.as_mut_ptr()
+                ).unwrap();
+                
+                // 准备时间序列数据
+                let mut metric_data = [0u8; 116];
+                let id: i32 = 1;
+                let metric_name = "cpu_usage";
+                let value: f64 = 45.5;
+                let timestamp: u64 = 1234567890;
+                let tags = "host=server1,env=prod";
+                
+                // 设置字段值
+                core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
+                core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
+                core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
+                core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
+                core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
+                
+                // 插入单条时间序列数据
+                black_box(table.insert(metric_data.as_ptr()).unwrap());
+            }
+        })
+    });
+    
+    group.bench_function("batch_metric_insert", |b| {
+        b.iter(|| {
+            // 每个迭代创建新的内存缓冲区和表实例
+            let mut data_buffer = [0u8; 116 * 1000]; // 116字节记录 * 1000条
+            let mut status_buffer: [RecordHeader; 1000] = core::array::from_fn(|_| RecordHeader {
+                status: RecordStatus::Free,
+                version: 0,
+                lock_type: LockType::None,
+                lock_owner: 0,
+                lock_count: 0
+            });
+            let mut free_slots_buffer = [0usize; 1000];
+            
+            unsafe {
+                // 创建表
+                let mut table = MemoryTable::new(
+                    &TIME_SERIES_TABLE_DEF,
+                    data_buffer.as_mut_ptr(),
+                    status_buffer.as_mut_ptr(),
+                    free_slots_buffer.as_mut_ptr()
+                ).unwrap();
+                
+                // 准备批量时间序列数据
+                let mut metrics_data = [0u8; 116 * 10]; // 10条记录
+                let mut out_ids = [0usize; 10];
+                
+                // 初始化测试数据
+                for i in 0..10 {
+                    let record_ptr = metrics_data.as_mut_ptr().add(i * 116);
+                    let id: i32 = i as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 45.5 + i as f64;
+                    let timestamp: u64 = 1234567890 + i as u64;
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, record_ptr, 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), record_ptr.add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, record_ptr.add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, record_ptr.add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), record_ptr.add(52), tags.len());
+                }
+                
+                // 执行批量插入
+                black_box(table.batch_insert(metrics_data.as_ptr(), 10, out_ids.as_mut_ptr()).unwrap());
+            }
+        })
+    });
+    
+    group.finish();
+}
+
+// 测试时间序列数据的查询性能
+fn bench_time_series_query(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    let mut group = c.benchmark_group("time_series_query");
+    group.sample_size(200);
+    
+    group.bench_function("query_by_id", |b| {
+        b.iter(|| {
+            // 每个迭代创建新的内存缓冲区和表实例
+            let mut data_buffer = [0u8; 116 * 1000]; // 116字节记录 * 1000条
+            let mut status_buffer: [RecordHeader; 1000] = core::array::from_fn(|_| RecordHeader {
+                status: RecordStatus::Free,
+                version: 0,
+                lock_type: LockType::None,
+                lock_owner: 0,
+                lock_count: 0
+            });
+            let mut free_slots_buffer = [0usize; 1000];
+            
+            unsafe {
+                // 创建表
+                let mut table = MemoryTable::new(
+                    &TIME_SERIES_TABLE_DEF,
+                    data_buffer.as_mut_ptr(),
+                    status_buffer.as_mut_ptr(),
+                    free_slots_buffer.as_mut_ptr()
+                ).unwrap();
+                
+                // 插入测试数据
+                for i in 0..500 {
+                    let mut metric_data = [0u8; 116];
+                    let id: i32 = i as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 45.5 + i as f64;
+                    let timestamp: u64 = 1234567890 + i as u64;
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
+                    
+                    table.insert(metric_data.as_ptr()).unwrap();
+                }
+                
+                let mut result_data = [0u8; 116];
+                
+                // 查询指定ID的时间序列数据
+                black_box(table.get_by_id(250, result_data.as_mut_ptr()).unwrap());
+            }
+        })
+    });
+    
+    group.bench_function("iterate_metrics", |b| {
+        b.iter(|| {
+            // 每个迭代创建新的内存缓冲区和表实例
+            let mut data_buffer = [0u8; 116 * 1000]; // 116字节记录 * 1000条
+            let mut status_buffer: [RecordHeader; 1000] = core::array::from_fn(|_| RecordHeader {
+                status: RecordStatus::Free,
+                version: 0,
+                lock_type: LockType::None,
+                lock_owner: 0,
+                lock_count: 0
+            });
+            let mut free_slots_buffer = [0usize; 1000];
+            
+            unsafe {
+                // 创建表
+                let mut table = MemoryTable::new(
+                    &TIME_SERIES_TABLE_DEF,
+                    data_buffer.as_mut_ptr(),
+                    status_buffer.as_mut_ptr(),
+                    free_slots_buffer.as_mut_ptr()
+                ).unwrap();
+                
+                // 插入测试数据
+                for i in 0..500 {
+                    let mut metric_data = [0u8; 116];
+                    let id: i32 = i as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 45.5 + i as f64;
+                    let timestamp: u64 = 1234567890 + i as u64;
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
+                    
+                    table.insert(metric_data.as_ptr()).unwrap();
+                }
+                
+                let mut count = 0;
+                let mut sum = 0.0;
+                
+                // 遍历时间序列数据，模拟聚合计算
+                table.iterate(|_id, data_ptr| {
+                    let value = core::ptr::read(data_ptr.add(36) as *const f64);
+                    sum += value;
+                    count += 1;
+                    
+                    true // 继续遍历
+                }).unwrap();
+                
+                black_box((count, sum));
+            }
+        })
+    });
+    
+    group.finish();
+}
+
+// 测试时间序列数据的聚合操作性能
+fn bench_time_series_aggregation(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    let mut group = c.benchmark_group("time_series_aggregation");
+    group.sample_size(100);
+    
+    group.bench_function("simple_aggregation", |b| {
+        b.iter(|| {
+            // 每个迭代创建新的内存缓冲区和表实例
+            let mut data_buffer = [0u8; 116 * 1000]; // 116字节记录 * 1000条
+            let mut status_buffer: [RecordHeader; 1000] = core::array::from_fn(|_| RecordHeader {
+                status: RecordStatus::Free,
+                version: 0,
+                lock_type: LockType::None,
+                lock_owner: 0,
+                lock_count: 0
+            });
+            let mut free_slots_buffer = [0usize; 1000];
+            
+            unsafe {
+                // 创建表
+                let mut table = MemoryTable::new(
+                    &TIME_SERIES_TABLE_DEF,
+                    data_buffer.as_mut_ptr(),
+                    status_buffer.as_mut_ptr(),
+                    free_slots_buffer.as_mut_ptr()
+                ).unwrap();
+                
+                // 插入测试数据
+                for i in 0..1000 {
+                    let mut metric_data = [0u8; 116];
+                    let id: i32 = i as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 40.0 + (i % 20) as f64;
+                    let timestamp: u64 = 1234567890 + i as u64;
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
+                    
+                    table.insert(metric_data.as_ptr()).unwrap();
+                }
+                
+                let mut min_value = f64::MAX;
+                let mut max_value = f64::MIN;
+                let mut sum_value = 0.0;
+                let mut count = 0;
+                
+                // 遍历计算聚合值
+                table.iterate(|_id, data_ptr| {
+                    let value = core::ptr::read(data_ptr.add(36) as *const f64);
+                    let timestamp = core::ptr::read(data_ptr.add(44) as *const u64);
+                    
+                    // 只处理特定时间范围的数据
+                    if timestamp >= 1234567890 && timestamp <= 1234568390 {
+                        min_value = min_value.min(value);
+                        max_value = max_value.max(value);
+                        sum_value += value;
+                        count += 1;
+                    }
+                    
+                    true // 继续遍历
+                }).unwrap();
+                
+                let avg_value = if count > 0 { sum_value / count as f64 } else { 0.0 };
+                
+                black_box((min_value, max_value, avg_value, count));
+            }
+        })
+    });
+    
+    group.finish();
+}
+
+criterion_group!(benches, bench_table_insert, bench_table_query, bench_table_update_delete, bench_table_field_operations, bench_time_series_insert, bench_time_series_query, bench_time_series_aggregation);
 criterion_main!(benches);
