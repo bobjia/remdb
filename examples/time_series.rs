@@ -4,7 +4,7 @@ use core::ptr::NonNull;
 use remdb::*;
 
 // 定义内存缓冲区
-static mut DB_MEMORY: [u8; 131072] = [0u8; 131072];
+static mut DB_MEMORY: [u8; 524288] = [0u8; 524288]; // Increased to 512KB to accommodate all allocations
 
 // 定义时间序列表结构
 remdb::table!(
@@ -33,7 +33,7 @@ fn main() {
         let config = &DB_CONFIG;
         
         // 初始化内存分配器
-        memory::allocator::init_global_allocator(
+        let _ = memory::allocator::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         );
@@ -140,18 +140,14 @@ fn main() {
         
         // 创建表和索引
         let table = MemoryTable::new(&config.tables[0], table_ptr, status_ptr, free_slots_ptr).unwrap();
-        let primary_index = unsafe {
-            PrimaryIndex::new(
-                &config.tables[0],
-                hash_table_ptr,
-                primary_index_items_ptr,
-                256,
-                1000
-            )
-        };
-        let secondary_index = unsafe {
-            SecondaryIndex::new(&config.tables[0], secondary_index_items_ptr, 1000)
-        };
+        let primary_index = PrimaryIndex::new(
+            &config.tables[0],
+            hash_table_ptr,
+            primary_index_items_ptr,
+            256,
+            1000
+        );
+        let secondary_index = SecondaryIndex::new(&config.tables[0], secondary_index_items_ptr, 1000);
         
         // 初始化表和索引数组
         static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
@@ -172,9 +168,6 @@ fn main() {
         
         // 获取表引用
         let table_mut = db.get_table_mut(0).unwrap();
-        
-        // 生成测试数据
-        let mut record_data = [0u8; 108]; // 计算记录大小：i32(4) + str(32) + f64(8) + u64(8) + str(64) = 116字节（对齐到8字节）
         
         // 批量插入测试数据
         let mut records_buffer = [0u8; 108 * 100]; // 100条记录

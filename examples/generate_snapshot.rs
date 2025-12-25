@@ -234,6 +234,7 @@ fn main() -> Result<()>
         
         // 插入测试数据
         println!("插入测试数据...");
+        println!("TEST_TABLE.fields.len() = {}", TEST_TABLE.fields.len());
         for i in 0..10 {
             // 创建对齐的记录数据
             #[repr(align(8))]

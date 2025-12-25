@@ -24,6 +24,10 @@ pub struct MemoryTable {
     pub free_slots: NonNull<usize>,
     /// 空闲记录槽数量
     pub free_slot_count: usize,
+    /// 是否处于低功耗模式
+    pub low_power_mode: bool,
+    /// 低功耗模式下的最大记录数
+    pub low_power_max_records: Option<usize>,
 }
 
 impl MemoryTable {
@@ -71,6 +75,8 @@ impl MemoryTable {
             record_size,
             free_slots,
             free_slot_count: def.max_records,
+            low_power_mode: false, // 默认不启用低功耗模式
+            low_power_max_records: None, // 默认使用表定义的最大记录数
         })
     }
     
@@ -93,20 +99,51 @@ impl MemoryTable {
         defer! { crate::platform::spin_unlock(&mut self.lock); }
         
         // 检查是否已满
-        if self.record_count >= self.def.max_records {
-            return Err(RemDbError::OutOfMemory);
-        }
-        
-        // 从空闲槽栈获取空闲记录槽（O(1)时间复杂度）
-        if self.free_slot_count == 0 {
-            return Err(RemDbError::OutOfMemory);
-        }
-        
-        // 获取栈顶空闲槽
-        let slot_id = unsafe {
-            self.free_slot_count -= 1;
-            *self.free_slots.as_ptr().add(self.free_slot_count)
+        let max_records = if self.low_power_mode {
+            self.low_power_max_records.unwrap_or(self.def.max_records)
+        } else {
+            self.def.max_records
         };
+        
+        let mut slot_id = 0;
+        let mut is_overwrite = false;
+        
+        if self.record_count >= max_records {
+            if self.low_power_mode {
+            // 低功耗模式：覆盖最旧的记录
+            // 查找最旧的记录
+            let mut oldest_id = 0;
+            let mut oldest_version = u16::MAX;
+            
+            for i in 0..self.def.max_records {
+                unsafe {
+                    let status_ptr = self.status_array.as_ptr().add(i);
+                    let status = &*status_ptr;
+                    if status.status == RecordStatus::Used && status.version < oldest_version {
+                        oldest_id = i;
+                        oldest_version = status.version;
+                    }
+                }
+            }
+            
+            slot_id = oldest_id;
+            is_overwrite = true;
+        } else {
+                // 正常模式：返回错误
+                return Err(RemDbError::OutOfMemory);
+            }
+        } else {
+            // 从空闲槽栈获取空闲记录槽（O(1)时间复杂度）
+            if self.free_slot_count == 0 {
+                return Err(RemDbError::OutOfMemory);
+            }
+            
+            // 获取栈顶空闲槽
+            slot_id = unsafe {
+                self.free_slot_count -= 1;
+                *self.free_slots.as_ptr().add(self.free_slot_count)
+            };
+        }
         
         // 计算记录地址
         let record_ptr = unsafe { self.data_start.as_ptr().add(slot_id * self.record_size) };
@@ -143,8 +180,10 @@ impl MemoryTable {
             (*status_ptr).version += 1;
         }
         
-        // 更新记录计数
-        self.record_count += 1;
+        // 更新记录计数（如果是覆盖旧记录，不需要增加计数）
+        if !is_overwrite {
+            self.record_count += 1;
+        }
         
         Ok(slot_id)
     }
@@ -389,9 +428,15 @@ impl MemoryTable {
         self.record_count >= self.def.max_records
     }
     
-    /// 检查表是否为空
-    pub fn is_empty(&self) -> bool {
-        self.record_count == 0
+    /// 设置低功耗模式
+    pub fn set_low_power_mode(&mut self, enabled: bool, max_records: Option<usize>) {
+        self.low_power_mode = enabled;
+        self.low_power_max_records = max_records;
+    }
+    
+    /// 检查是否处于低功耗模式
+    pub fn is_low_power_mode(&self) -> bool {
+        self.low_power_mode
     }
     
     /// 遍历记录
@@ -447,10 +492,24 @@ impl MemoryTable {
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         
+        // 计算最大记录数
+        let max_records = if self.low_power_mode {
+            self.low_power_max_records.unwrap_or(self.def.max_records)
+        } else {
+            self.def.max_records
+        };
+        
         // 检查是否有足够空间
-        let available = self.def.max_records - self.record_count;
-        let actual_count = core::cmp::min(count, available);
-        let actual_count = core::cmp::min(actual_count, self.free_slot_count);
+        let available = max_records - self.record_count;
+        let mut actual_count = count;
+        
+        if self.low_power_mode && self.record_count >= max_records {
+            // 低功耗模式：可以覆盖旧记录
+            actual_count = count;
+        } else if available < count {
+            // 正常模式或低功耗模式下有空间限制
+            actual_count = available;
+        }
         
         if actual_count == 0 {
             crate::platform::spin_unlock(&mut self.lock);
@@ -458,54 +517,92 @@ impl MemoryTable {
         }
         
         // 批量获取空闲槽
-        let _start_free_slot = self.free_slot_count;
-        let end_free_slot = self.free_slot_count - actual_count;
-        
-        // 创建一个数组来存储要使用的槽ID
         let mut slot_ids = [0usize; 256]; // 最多一次处理256条记录
         assert!(actual_count <= slot_ids.len(), "Batch insert count exceeds maximum");
         
-        // 从空闲槽栈中获取actual_count个槽ID
-        for i in 0..actual_count {
-            let free_slot_index = end_free_slot + i;
-            slot_ids[i] = *self.free_slots.as_ptr().add(free_slot_index);
+        let mut inserted_count = 0;
+        let mut i = 0;
+        
+        // 优先使用空闲槽
+        while i < actual_count && self.free_slot_count > 0 {
+            slot_ids[i] = *self.free_slots.as_ptr().add(self.free_slot_count - 1);
+            self.free_slot_count -= 1;
+            inserted_count += 1;
+            i += 1;
+        }
+        
+        // 如果空闲槽不够，在低功耗模式下覆盖旧记录
+        if i < actual_count && self.low_power_mode {
+            // 查找最旧的记录
+            let mut oldest_ids = [0usize; 256];
+            let mut oldest_versions = [u16::MAX; 256];
+            
+            for record_id in 0..self.def.max_records {
+                let status_ptr = self.status_array.as_ptr().add(record_id);
+                let status = &*status_ptr;
+                if status.status == crate::types::RecordStatus::Used {
+                    // 找到比当前最旧版本更旧的记录
+                    for j in 0..(actual_count - i) {
+                        if status.version < oldest_versions[j] {
+                            // 插入到合适位置
+                            for k in (j+1)..(actual_count - i) {
+                                if oldest_versions[k] > oldest_versions[k-1] {
+                                    break;
+                                }
+                                oldest_ids[k] = oldest_ids[k-1];
+                                oldest_versions[k] = oldest_versions[k-1];
+                            }
+                            oldest_ids[j] = record_id;
+                            oldest_versions[j] = status.version;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // 使用找到的最旧记录槽
+            for j in 0..(actual_count - i) {
+                slot_ids[i + j] = oldest_ids[j];
+            }
+            inserted_count = actual_count;
         }
         
         // 更新空闲槽计数
-        self.free_slot_count = end_free_slot;
-        
-        // 解锁，减少锁持有时间
         crate::platform::spin_unlock(&mut self.lock);
         
         // 批量处理记录，不持有锁
-        let mut inserted_count = 0;
-        
-        for i in 0..actual_count {
-            let slot_id = slot_ids[i];
+        for j in 0..inserted_count {
+            let slot_id = slot_ids[j];
             
             // 保存记录ID到输出数组
             if !out_ids.is_null() {
-                *out_ids.add(i) = slot_id;
+                *out_ids.add(j) = slot_id;
             }
             
             // 计算记录地址
             let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
-            let src_ptr = records.add(i * self.record_size);
+            let src_ptr = records.add(j * self.record_size);
             
             // 拷贝记录数据
             memcpy(record_ptr, src_ptr, self.record_size);
             
             // 更新状态
             let status_ptr = self.status_array.as_ptr().add(slot_id);
-            (*status_ptr).status = RecordStatus::Used;
+            (*status_ptr).status = crate::types::RecordStatus::Used;
             (*status_ptr).version += 1;
-            
-            inserted_count += 1;
         }
         
         // 再次加锁，更新记录计数
         crate::platform::spin_lock(&mut self.lock);
-        self.record_count += inserted_count;
+        
+        // 计算实际增加的记录数（只增加新插入的记录，不包括覆盖的记录）
+        let new_records_count = if self.low_power_mode && self.record_count >= max_records {
+            0 // 低功耗模式下覆盖旧记录，记录数不变
+        } else {
+            inserted_count // 新插入的记录数
+        };
+        
+        self.record_count += new_records_count;
         crate::platform::spin_unlock(&mut self.lock);
         
         Ok(inserted_count)

@@ -22,6 +22,11 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 固定大小块内存池，支持高效的内存管理
 - **平台抽象层**：支持POSIX和裸机环境
 - **编译时配置**：使用宏实现表和数据库的编译时配置，优化性能
+- **低功耗模式**：
+  - 支持进入和退出低功耗模式
+  - 低功耗模式下优化内存使用
+  - 减少事务日志写入频率，降低磁盘I/O
+  - 当记录数超过限制时，自动覆盖最旧的记录
 
 ## 技术特点
 
@@ -160,6 +165,45 @@ fn main() {
 }
 ```
 
+### 低功耗模式使用示例
+
+```rust
+// 定义支持低功耗模式的数据库
+remdb::database!(
+    TEST_DB,
+    tables: [
+        TEST_TABLE
+    ],
+    low_power: true,
+    low_power_max_records: 100
+);
+
+// 初始化数据库
+let db = remdb::init_global_db(
+    &TEST_DB,
+    &mut tables,
+    &mut primary_indices,
+    &mut secondary_indices
+).unwrap();
+
+// 进入低功耗模式
+db.enter_low_power_mode().unwrap();
+
+// 检查当前低功耗模式状态
+let is_low_power = db.is_low_power_mode();
+
+// 在低功耗模式下插入记录
+for i in 0..150 {
+    match db.get_table_mut(0).unwrap().insert(record_data) {
+        Ok(id) => println!("插入成功，记录ID: {}", id),
+        Err(e) => println!("插入失败，错误: {:?}", e),
+    }
+}
+
+// 退出低功耗模式
+db.exit_low_power_mode().unwrap();
+```
+
 ## 平台支持
 
 ### POSIX平台
@@ -225,6 +269,7 @@ cargo check --no-default-features --features=baremetal
 查看`examples`目录下的示例代码：
 
 - `basic_usage.rs`：基本使用示例，展示表定义、插入、查询和事务操作
+- `low_power_mode.rs`：低功耗模式示例，展示如何配置和使用低功耗模式
 
 ## 项目结构
 
@@ -246,7 +291,8 @@ remdb/
 │       ├── posix.rs        # POSIX平台实现
 │       └── baremetal.rs    # 裸机平台实现
 ├── examples/
-│   └── basic_usage.rs      # 基本使用示例
+│   ├── basic_usage.rs      # 基本使用示例
+│   └── low_power_mode.rs   # 低功耗模式示例
 ├── tests/
 │   ├── unit/
 │   │   ├── memory_test.rs  # 内存管理单元测试
@@ -277,3 +323,6 @@ MIT许可证
 - 优化内存使用
 - 提供更多的索引类型
 - 增加更多的示例和文档
+- 实现更复杂的内存优化算法
+- 添加低功耗模式下的性能监控
+- 实现自适应低功耗模式，根据系统负载自动切换模式

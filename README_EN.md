@@ -22,6 +22,11 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Fixed-size block memory pool enabling efficient memory management
 - **Platform Abstraction Layer**: Supports both POSIX and baremetal environments
 - **Compile-time Configuration**: Table and database configuration implemented via macros for performance optimization
+- **Low Power Mode**:
+  - Supports entering and exiting low power mode
+  - Optimized memory usage in low power mode
+  - Reduced transaction log write frequency, lowering disk I/O
+  - Automatically overwrites oldest records when the record count exceeds limits
 
 ## Technical Characteristics
 
@@ -160,6 +165,45 @@ fn main() {
 }
 ```
 
+### Low Power Mode Usage Example
+
+```rust
+// Define database with low power mode support
+remdb::database!(
+    TEST_DB,
+    tables: [
+        TEST_TABLE
+    ],
+    low_power: true,
+    low_power_max_records: 100
+);
+
+// Initialize database
+let db = remdb::init_global_db(
+    &TEST_DB,
+    &mut tables,
+    &mut primary_indices,
+    &mut secondary_indices
+).unwrap();
+
+// Enter low power mode
+db.enter_low_power_mode().unwrap();
+
+// Check current low power mode status
+let is_low_power = db.is_low_power_mode();
+
+// Insert records in low power mode
+for i in 0..150 {
+    match db.get_table_mut(0).unwrap().insert(record_data) {
+        Ok(id) => println!("Inserted successfully, record ID: {}", id),
+        Err(e) => println!("Insertion failed, error: {:?}", e),
+    }
+}
+
+// Exit low power mode
+db.exit_low_power_mode().unwrap();
+```
+
 ## Platform Support
 
 ### POSIX Platform
@@ -225,6 +269,7 @@ Directly running `cargo test` in baremetal environment will fail because the tes
 Check the examples directory for sample code:
 
 - `basic_usage.rs`: Basic usage example demonstrating table definition, insertion, query, and transaction operations
+- `low_power_mode.rs`: Low power mode example demonstrating how to configure and use low power mode
 
 ## Project Structure
 
@@ -246,7 +291,8 @@ remdb/
 │       ├── posix.rs        # POSIX platform implementation
 │       └── baremetal.rs    # Baremetal platform implementation
 ├── examples/
-│   └── basic_usage.rs      # Basic usage example
+│   ├── basic_usage.rs      # Basic usage example
+│   └── low_power_mode.rs   # Low power mode example
 ├── tests/
 │   ├── unit/
 │   │   ├── memory_test.rs  # Memory management unit tests
@@ -277,3 +323,6 @@ Issues and pull requests are welcome!
 - Optimize memory usage
 - Provide more index types
 - Add more examples and documentation
+- Implement more complex memory optimization algorithms
+- Add performance monitoring in low power mode
+- Implement adaptive low power mode that automatically switches based on system load

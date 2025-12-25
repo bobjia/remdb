@@ -128,6 +128,8 @@ static TEST_TABLE_DEF: TableDef = TableDef {
 static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     tables: &[TEST_TABLE_DEF],
     total_memory: 1024 * 1024, // 1MB
+    low_power_mode_supported: false,
+    low_power_max_records: None,
 };
 
 // 静态缓冲区用于测试

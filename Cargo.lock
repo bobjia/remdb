@@ -568,7 +568,17 @@ dependencies = [
  "cc",
  "criterion",
  "rand",
+ "remdb-macros",
  "serial_test",
+]
+
+[[package]]
+name = "remdb-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

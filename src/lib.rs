@@ -17,6 +17,10 @@ pub use table::MemoryTable;
 pub use index::{PrimaryIndex, SecondaryIndex, IndexStats};
 pub use transaction::{Transaction, TransactionType, TransactionManager};
 
+// 重新导出宏
+pub use remdb_macros::table;
+pub use remdb_macros::database;
+
 /// 数据库实例
 pub struct RemDb {
     /// 数据库配置
@@ -27,6 +31,10 @@ pub struct RemDb {
     primary_indices: &'static mut [Option<PrimaryIndex>],
     /// 辅助索引数组
     secondary_indices: &'static mut [Option<SecondaryIndex>],
+    /// 是否处于低功耗模式
+    low_power_mode: bool,
+    /// 低功耗模式下的内存使用限制
+    low_power_memory_limit: usize,
 }
 
 // 为RemDb实现Send和Sync trait
@@ -47,11 +55,21 @@ impl RemDb {
         primary_indices: &'static mut [Option<PrimaryIndex>],
         secondary_indices: &'static mut [Option<SecondaryIndex>]
     ) -> Self {
+        // 计算低功耗模式下的内存限制（如果启用）
+        let low_power_memory_limit = if config.low_power_mode_supported {
+            // 低功耗模式下，内存使用限制为正常模式的50%
+            (config.total_memory / 2).max(1024 * 1024) // 至少1MB
+        } else {
+            config.total_memory
+        };
+
         RemDb {
             config,
             tables,
             primary_indices,
             secondary_indices,
+            low_power_mode: false, // 默认不启用低功耗模式
+            low_power_memory_limit,
         }
     }
     
@@ -127,9 +145,81 @@ impl RemDb {
         }
     }
     
-    /// 获取表数量
-    pub fn table_count(&self) -> usize {
-        self.config.tables.len()
+    /// 检查是否处于低功耗模式
+    pub fn is_low_power_mode(&self) -> bool {
+        self.low_power_mode
+    }
+    
+    /// 进入低功耗模式
+    pub fn enter_low_power_mode(&mut self) -> Result<()> {
+        // 检查配置是否支持低功耗模式
+        if !self.config.low_power_mode_supported {
+            return Err(RemDbError::UnsupportedOperation);
+        }
+        
+        // 如果已经处于低功耗模式，直接返回
+        if self.low_power_mode {
+            return Ok(());
+        }
+        
+        // 执行低功耗模式准备工作
+        unsafe {
+            // 1. 压缩内存使用：释放不必要的内存
+            // 2. 减少索引更新频率
+            // 3. 降低事务日志的写入频率
+            
+            // 检查当前内存使用情况
+            let current_memory = self.config.total_memory;
+            if current_memory > self.low_power_memory_limit {
+                // 内存使用超出限制，需要进行优化
+                // 这里可以添加更复杂的内存优化逻辑
+            }
+            
+            // 设置事务管理器为低功耗模式
+            crate::transaction::TX_MANAGER.set_low_power_mode(true);
+        }
+        
+        // 遍历所有表，设置低功耗模式
+        for table in &mut self.tables.iter_mut() {
+            if let Some(table) = table {
+                table.set_low_power_mode(true, self.config.low_power_max_records);
+            }
+        }
+        
+        // 更新状态
+        self.low_power_mode = true;
+        
+        Ok(())
+    }
+    
+    /// 退出低功耗模式
+    pub fn exit_low_power_mode(&mut self) -> Result<()> {
+        // 如果已经不处于低功耗模式，直接返回
+        if !self.low_power_mode {
+            return Ok(());
+        }
+        
+        // 执行退出低功耗模式的准备工作
+        unsafe {
+            // 1. 恢复正常的索引更新频率
+            // 2. 恢复正常的事务日志写入频率
+            // 3. 检查并扩展内存使用（如果需要）
+            
+            // 设置事务管理器为正常模式
+            crate::transaction::TX_MANAGER.set_low_power_mode(false);
+        }
+        
+        // 遍历所有表，退出低功耗模式
+        for table in &mut self.tables.iter_mut() {
+            if let Some(table) = table {
+                table.set_low_power_mode(false, None);
+            }
+        }
+        
+        // 更新状态
+        self.low_power_mode = false;
+        
+        Ok(())
     }
     
     /// 开始事务

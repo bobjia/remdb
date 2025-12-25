@@ -542,6 +542,8 @@ pub struct TransactionManager {
     lock: u32,
     /// 日志管理器
     log_manager: Option<LogManager>,
+    /// 是否处于低功耗模式
+    low_power_mode: bool,
 }
 
 impl TransactionManager {
@@ -552,6 +554,7 @@ impl TransactionManager {
             tx_id_counter: 0,
             lock: 0,
             log_manager: None,
+            low_power_mode: false,
         }
     }
     
@@ -565,9 +568,14 @@ impl TransactionManager {
         self.log_manager.as_ref()
     }
     
-    /// 获取可变的日志管理器
-    pub fn get_log_manager_mut(&mut self) -> Option<&mut LogManager> {
-        self.log_manager.as_mut()
+    /// 设置低功耗模式
+    pub fn set_low_power_mode(&mut self, enabled: bool) {
+        self.low_power_mode = enabled;
+    }
+    
+    /// 获取低功耗模式状态
+    pub fn is_low_power_mode(&self) -> bool {
+        self.low_power_mode
     }
     
     /// 开始事务
@@ -652,12 +660,30 @@ impl TransactionManager {
             return Ok(());
         }
         
-        // 对于读写事务，将所有日志项写入磁盘
+        // 对于读写事务，根据低功耗模式调整日志写入策略
         if let Some(log_manager) = &mut self.log_manager {
-            // 写入所有日志项
-            for i in 0..tx_mut.log_item_count {
-                let log_item = &tx_mut.log_items.as_ptr().add(i).read();
-                log_manager.write_log_item(log_item)?;
+            if self.low_power_mode {
+                // 低功耗模式：优化日志写入
+                // 1. 减少日志写入频率
+                // 2. 只写入关键操作日志
+                // 3. 合并多个日志项
+                
+                // 这里简单实现：每10个事务只写入一次日志
+                if self.tx_id_counter % 10 == 0 {
+                    // 写入所有日志项
+                    for i in 0..tx_mut.log_item_count {
+                        let log_item = &tx_mut.log_items.as_ptr().add(i).read();
+                        log_manager.write_log_item(log_item)?;
+                    }
+                } else {
+                    // 跳过日志写入，减少磁盘I/O
+                }
+            } else {
+                // 正常模式：写入所有日志项
+                for i in 0..tx_mut.log_item_count {
+                    let log_item = &tx_mut.log_items.as_ptr().add(i).read();
+                    log_manager.write_log_item(log_item)?;
+                }
             }
         }
         
