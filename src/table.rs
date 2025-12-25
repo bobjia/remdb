@@ -97,6 +97,8 @@ impl MemoryTable {
     
     /// 插入记录
     pub fn insert(&mut self, record_data: *const u8) -> Result<usize> {
+        // 增加写入操作计数
+        crate::get_global_db().map(|db| db.metrics.inc_write_ops());
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
@@ -186,6 +188,8 @@ impl MemoryTable {
         // 更新记录计数（如果是覆盖旧记录，不需要增加计数）
         if !is_overwrite {
             self.record_count += 1;
+            // 更新内存使用：增加一条记录的内存
+            crate::get_global_db().map(|db| db.metrics.add_used_memory(self.record_size));
         }
         
         Ok(slot_id)
@@ -193,6 +197,8 @@ impl MemoryTable {
     
     /// 更新记录
     pub unsafe fn update(&mut self, id: usize, record_data: *const u8) -> Result<()> {
+        // 增加更新操作计数
+        crate::get_global_db().map(|db| db.metrics.inc_update_ops());
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
@@ -245,6 +251,8 @@ impl MemoryTable {
     
     /// 删除记录
     pub unsafe fn delete(&mut self, id: usize) -> Result<()> {
+        // 增加删除操作计数
+        crate::get_global_db().map(|db| db.metrics.inc_delete_ops());
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
@@ -295,11 +303,16 @@ impl MemoryTable {
         // 更新记录计数
         self.record_count -= 1;
         
+        // 更新内存使用：减少一条记录的内存
+        crate::get_global_db().map(|db| db.metrics.sub_used_memory(self.record_size));
+        
         Ok(())
     }
     
     /// 根据ID获取记录
     pub unsafe fn get_by_id(&self, id: usize, dest: *mut u8) -> Result<()> {
+        // 增加读取操作计数
+        crate::get_global_db().map(|db| db.metrics.inc_read_ops());
         // 检查ID有效性
         if id >= self.def.max_records {
             return Err(RemDbError::RecordNotFound);

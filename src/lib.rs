@@ -10,12 +10,14 @@ pub mod index;
 pub mod transaction;
 pub mod memory;
 pub mod platform;
+pub mod monitor;
 
 // 导出核心类型
 pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError};
 pub use table::MemoryTable;
 pub use index::{PrimaryIndex, SecondaryIndex, IndexStats};
 pub use transaction::{Transaction, TransactionType, TransactionManager};
+pub use monitor::{DbMetrics, DbMetricsSnapshot, HealthStatus, HealthCheckResult};
 
 // 重新导出宏
 pub use remdb_macros::table;
@@ -41,6 +43,8 @@ pub struct RemDb {
     low_power_memory_limit: usize,
     /// 全局快照版本号
     pub snapshot_version: u32,
+    /// 数据库监控指标
+    pub metrics: monitor::DbMetrics,
 }
 
 // 为RemDb实现Send和Sync trait
@@ -69,6 +73,18 @@ impl RemDb {
             config.total_memory
         };
 
+        // 初始化监控指标
+        let metrics = monitor::DbMetrics::new(config.total_memory);
+
+        // 计算初始内存使用（所有表的内存占用）
+        let mut initial_memory = 0;
+        for i in 0..tables.len() {
+            if let Some(table) = &tables[i] {
+                initial_memory += table.record_count * table.record_size;
+            }
+        }
+        metrics.set_used_memory(initial_memory);
+
         RemDb {
             config,
             tables,
@@ -77,6 +93,7 @@ impl RemDb {
             low_power_mode: false, // 默认不启用低功耗模式
             low_power_memory_limit,
             snapshot_version: 0, // 初始快照版本为0
+            metrics,
         }
     }
     
@@ -541,8 +558,46 @@ impl RemDb {
         // 更新全局快照版本号
         self.snapshot_version = base_version;
         
-        // 简化实现，跳过CRC32校验
+        ///// 简化实现，跳过CRC32校验
         Ok(())
+    }
+    
+    /// 获取当前监控指标
+    pub fn get_metrics(&self) -> &monitor::DbMetrics {
+        &self.metrics
+    }
+    
+    /// 创建指标快照
+    pub fn metrics_snapshot(&self) -> monitor::DbMetricsSnapshot {
+        self.metrics.snapshot()
+    }
+    
+    /// 重置所有监控指标
+    pub fn reset_metrics(&self) {
+        self.metrics.reset()
+    }
+    
+    /// 执行健康检查
+    pub fn health_check(&self) -> monitor::HealthCheckResult {
+        let metrics = self.metrics.snapshot();
+        
+        // 健康检查逻辑
+        let memory_usage = metrics.used_memory as f64 / metrics.total_memory as f64;
+        
+        let (status, details) = if memory_usage > 0.9 {
+            (monitor::HealthStatus::Unhealthy, alloc::string::String::from("内存使用率过高"))
+        } else if memory_usage > 0.7 {
+            (monitor::HealthStatus::Warning, alloc::string::String::from("内存使用率较高"))
+        } else {
+            (monitor::HealthStatus::Healthy, alloc::string::String::from("数据库运行正常"))
+        };
+        
+        monitor::HealthCheckResult::new(status, metrics, details)
+    }
+    
+    /// 将指标输出为文本格式
+    pub fn dump_metrics(&self) -> alloc::string::String {
+        self.metrics.snapshot().to_text()
     }
     
     /// 保存增量快照到文件

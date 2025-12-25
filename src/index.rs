@@ -131,8 +131,9 @@ impl PrimaryIndex {
     }
     
     /// 插入索引项
-    pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()>
-    {
+    pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
+        // 增加索引插入计数
+        crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         
@@ -216,8 +217,9 @@ impl PrimaryIndex {
     }
     
     /// 删除索引项
-    pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()>
-    {
+    pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
+        // 增加索引删除计数
+        crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         
@@ -414,6 +416,8 @@ impl SecondaryIndex {
     /// 插入索引项
     pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()>
     {
+        // 增加索引插入计数
+        crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         
@@ -505,6 +509,8 @@ impl SecondaryIndex {
     /// 删除索引项
     pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()>
     {
+        // 增加索引删除计数
+        crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         
