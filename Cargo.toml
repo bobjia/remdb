@@ -1,3 +1,9 @@
+[workspace]
+members = [
+    ".",
+    "remdb-macros",
+]
+
 [package]
 name = "remdb"
 version = "0.1.3"
@@ -5,6 +11,9 @@ edition = "2021"
 authors = ["remdb contributors"]
 description = "嵌入式内存数据库"
 license = "MIT"
+documentation = "https://docs.rs/remdb"
+homepage = "https://github.com/bobjia/remdb"
+repository = "https://github.com/bobjia/remdb"
 
 [lib]
 name = "remdb"
@@ -15,7 +24,7 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 rand = { version = "0.8.5", optional = true }
-remdb-macros = { path = "./remdb-macros", version = "0.1.0" }
+remdb-macros = { path = "./remdb-macros", version = "0.1.3" }
 
 [dev-dependencies]
 criterion = "0.5"
