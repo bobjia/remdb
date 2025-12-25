@@ -1,0 +1,7 @@
+[target.thumbv7m-none-eabi]
+rustflags = [
+  "--C", "relocation-model=static",
+  "--C", "target-feature=+thumb2",
+  "--C", "target-cpu=cortex-m3",
+  "--C", "panic=abort",
+]
