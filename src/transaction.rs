@@ -587,6 +587,8 @@ impl TransactionManager {
         log_buffer: *mut LogItem,
         max_log_items: usize
     ) -> Result<NonNull<Transaction>> {
+        // 增加事务计数
+        crate::get_global_db().map(|db| db.metrics.inc_transactions());
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
@@ -636,6 +638,8 @@ impl TransactionManager {
     
     /// 提交事务
     pub unsafe fn commit(&mut self) -> Result<()> {
+        // 增加已提交事务计数
+        crate::get_global_db().map(|db| db.metrics.inc_committed_transactions());
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
@@ -698,6 +702,8 @@ impl TransactionManager {
     
     /// 回滚事务
     pub unsafe fn rollback(&mut self, db: &mut crate::RemDb) -> Result<()> {
+        // 增加已回滚事务计数
+        crate::get_global_db().map(|db| db.metrics.inc_rolled_back_transactions());
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }

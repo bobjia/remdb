@@ -1,6 +1,8 @@
 use remdb::table::*;
 use remdb::types::*;
 use remdb::platform::*;
+use remdb::{init_global_db, get_global_db, PrimaryIndex, SecondaryIndex};
+use remdb::config::DbConfig;
 use std::time::Instant;
 use rand::random;
 
@@ -156,19 +158,44 @@ fn test_large_table_performance() {
     let status_ptr = status_buffer.as_mut_ptr() as *mut RecordHeader;
     let free_slots_ptr = free_slots_buffer.as_mut_ptr();
     
+    // 创建数据库配置
+    static DB_CONFIG: DbConfig = DbConfig {
+        tables: &[LARGE_TABLE_DEF],
+        total_memory: 500_000_000, // 500MB
+        low_power_mode_supported: false,
+        low_power_max_records: Some(10000),
+    };
+    
+    // 静态表数组和索引数组
+    static mut TABLES: [Option<MemoryTable>; 1] = [None];
+    static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None];
+    static mut SECONDARY_INDICES: [Option<SecondaryIndex>; 1] = [None];
+    
     unsafe {
         // 创建表
-        let mut table = MemoryTable::new(
+        let table = MemoryTable::new(
             &LARGE_TABLE_DEF,
             data_buffer.as_mut_ptr(),
             status_ptr,
             free_slots_ptr
         ).unwrap();
         
+        // 存储表到静态数组
+        TABLES[0] = Some(table);
+        
+        // 初始化数据库实例
+        let db = init_global_db(&DB_CONFIG, &mut TABLES, &mut PRIMARY_INDICES, &mut SECONDARY_INDICES).unwrap();
+        
+        // 输出初始监控指标
+        println!("\n初始监控指标:");
+        println!("{}", db.dump_metrics());
+        
         // 1. 插入80,000条记录（达到80%容量）
         println!("\n1. 插入80,000条记录...");
         let start_time = Instant::now();
         
+        // 获取表引用
+        let table = db.get_table_mut(0).unwrap();
         let mut inserted_ids = Vec::with_capacity(80000);
         for i in 0..80000 {
             let mut record_data = [0u8; 40]; // 40字节记录
@@ -204,14 +231,25 @@ fn test_large_table_performance() {
             inserted_ids.push(result.unwrap());
         }
         
+        // 先获取当前记录数，然后释放表引用
+        let record_count = table.record_count();
+        drop(table); // 释放表的可变引用
+        
         let insert_duration = start_time.elapsed();
         println!("插入完成，耗时: {:?}", insert_duration);
         println!("插入速率: {:.2} 条/秒", 80000 as f64 / insert_duration.as_secs_f64());
-        println!("当前记录数: {}", table.record_count());
+        println!("当前记录数: {}", record_count);
+        
+        // 输出监控指标
+        println!("\n插入80,000条记录后的监控指标:");
+        println!("{}", db.dump_metrics());
         
         // 2. 测试查询性能（查询10,000条随机记录）
         println!("\n2. 查询性能测试（10,000条随机记录）...");
         let start_time = Instant::now();
+        
+        // 获取表引用
+        let table = db.get_table_mut(0).unwrap();
         
         let mut query_success = 0;
         for _ in 0..10000 {
@@ -232,10 +270,19 @@ fn test_large_table_performance() {
         println!("查询速率: {:.2} 条/秒", query_success as f64 / query_duration.as_secs_f64());
         println!("查询成功率: {:.2}%", (query_success as f64 / 10000.0) * 100.0);
         
+        // 释放表引用
+        drop(table);
+        
+        // 输出监控指标
+        println!("\n查询10,000条记录后的监控指标:");
+        println!("{}", db.dump_metrics());
+        
         // 3. 测试删除性能（删除10,000条记录）
         println!("\n3. 删除性能测试（10,000条记录）...");
         let start_time = Instant::now();
         
+        // 获取表引用
+        let table = db.get_table_mut(0).unwrap();
         let mut delete_success = 0;
         let mut deleted_ids = Vec::with_capacity(10000);
         for i in 0..10000 {
@@ -248,15 +295,25 @@ fn test_large_table_performance() {
             }
         }
         
+        let record_count_after_delete = table.record_count();
         let delete_duration = start_time.elapsed();
         println!("删除完成，耗时: {:?}", delete_duration);
         println!("删除速率: {:.2} 条/秒", delete_success as f64 / delete_duration.as_secs_f64());
-        println!("当前记录数: {}", table.record_count());
+        println!("当前记录数: {}", record_count_after_delete);
+        
+        // 释放表引用
+        drop(table);
+        
+        // 输出监控指标
+        println!("\n删除10,000条记录后的监控指标:");
+        println!("{}", db.dump_metrics());
         
         // 4. 测试插入性能（插入10,000条新记录，填充被删除的空间）
         println!("\n4. 插入性能测试（10,000条新记录）...");
         let start_time = Instant::now();
         
+        // 获取表引用
+        let table = db.get_table_mut(0).unwrap();
         let mut insert_success = 0;
         for i in 80000..90000 {
             let mut record_data = [0u8; 40];
@@ -293,15 +350,25 @@ fn test_large_table_performance() {
             }
         }
         
+        let record_count_after_insert = table.record_count();
         let second_insert_duration = start_time.elapsed();
         println!("插入完成，耗时: {:?}", second_insert_duration);
         println!("插入速率: {:.2} 条/秒", insert_success as f64 / second_insert_duration.as_secs_f64());
-        println!("当前记录数: {}", table.record_count());
+        println!("当前记录数: {}", record_count_after_insert);
+        
+        // 释放表引用
+        drop(table);
+        
+        // 输出监控指标
+        println!("\n第二次插入10,000条记录后的监控指标:");
+        println!("{}", db.dump_metrics());
         
         // 5. 测试批量查询性能（顺序查询10,000条记录）
         println!("\n5. 批量查询性能测试（顺序查询10,000条记录）...");
         let start_time = Instant::now();
         
+        // 获取表引用
+        let table = db.get_table_mut(0).unwrap();
         let mut batch_query_success = 0;
         for i in 10000..20000 {
             // 使用预先保存的记录ID查询
@@ -318,6 +385,27 @@ fn test_large_table_performance() {
         let batch_query_duration = start_time.elapsed();
         println!("批量查询完成，耗时: {:?}", batch_query_duration);
         println!("批量查询速率: {:.2} 条/秒", batch_query_success as f64 / batch_query_duration.as_secs_f64());
+        
+        // 释放表引用
+        drop(table);
+        
+        // 输出监控指标
+        println!("\n批量查询10,000条记录后的监控指标:");
+        println!("{}", db.dump_metrics());
+        
+        // 执行健康检查
+        println!("\n健康检查结果:");
+        let health_result = db.health_check();
+        println!("{}", health_result.to_text());
+        
+        // 输出最终指标快照
+        println!("\n测试完成，最终指标快照:");
+        let snapshot = db.metrics_snapshot();
+        println!("{}", snapshot.to_text());
+        
+        // 重置指标
+        db.reset_metrics();
+        println!("\n指标已重置，准备下次测试");
         
         println!("\n=== 大表性能测试结束 ===");
     }
