@@ -1,7 +1,7 @@
 #![cfg(feature = "baremetal")]
 
-use core::ptr;
 use super::Platform;
+use super::{FileMode, FileHandle, SeekWhence, FileResult};
 
 /// 裸机平台实现
 pub struct BareMetalPlatform;
@@ -90,15 +90,14 @@ impl Platform for BareMetalPlatform {
     fn delay_ms(&self, ms: u32) {
         // 简单的忙等待延迟
         // 实际应用中应该使用硬件定时器
-        let cycles_per_ms = 168_000; // 假设168MHz时钟
-        let total_cycles = cycles_per_ms * ms as usize;
+        let delay_cycles = ms as u32 * 1000;
         
+        // 使用简单的循环延迟，避免依赖rdtsc
         unsafe {
-            let start = core::arch::asm!("rdtsc", out(reg) _, options(nomem, nostack));
-            let end = start + total_cycles as u64;
-            
-            while core::arch::asm!("rdtsc", out(reg) _, options(nomem, nostack)) < end {
+            let mut i = 0;
+            while i < delay_cycles {
                 core::hint::spin_loop();
+                i += 1;
             }
         }
     }
@@ -106,17 +105,56 @@ impl Platform for BareMetalPlatform {
     /// 延迟（微秒）
     fn delay_us(&self, us: u32) {
         // 简单的忙等待延迟
-        let cycles_per_us = 168; // 假设168MHz时钟
-        let total_cycles = cycles_per_us * us as usize;
+        let delay_cycles = us;
         
+        // 使用简单的循环延迟，避免依赖rdtsc
         unsafe {
-            let start = core::arch::asm!("rdtsc", out(reg) _, options(nomem, nostack));
-            let end = start + total_cycles as u64;
-            
-            while core::arch::asm!("rdtsc", out(reg) _, options(nomem, nostack)) < end {
+            let mut i = 0;
+            while i < delay_cycles {
                 core::hint::spin_loop();
+                i += 1;
             }
         }
+    }
+    
+    /// 打开文件 - 裸机环境下返回错误
+    fn file_open(&self, _path: &str, _mode: FileMode) -> FileResult<FileHandle> {
+        Err(())
+    }
+    
+    /// 关闭文件 - 裸机环境下返回错误
+    fn file_close(&self, _handle: FileHandle) -> FileResult<()> {
+        Err(())
+    }
+    
+    /// 写入文件 - 裸机环境下返回错误
+    fn file_write(&self, _handle: FileHandle, _buffer: *const u8, _size: usize) -> FileResult<usize> {
+        Err(())
+    }
+    
+    /// 读取文件 - 裸机环境下返回错误
+    fn file_read(&self, _handle: FileHandle, _buffer: *mut u8, _size: usize) -> FileResult<usize> {
+        Err(())
+    }
+    
+    /// 文件定位 - 裸机环境下返回错误
+    fn file_seek(&self, _handle: FileHandle, _offset: i64, _whence: SeekWhence) -> FileResult<u64> {
+        Err(())
+    }
+    
+    /// 删除文件 - 裸机环境下返回错误
+    fn file_remove(&self, _path: &str) -> FileResult<()> {
+        Err(())
+    }
+    
+    /// 获取文件大小 - 裸机环境下返回错误
+    fn file_size(&self, _path: &str) -> FileResult<usize> {
+        Err(())
+    }
+    
+    /// 计算CRC32校验和 - 裸机环境下返回0
+    fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+        0
     }
 }
 

@@ -902,8 +902,10 @@ impl MemoryTable {
             return Ok(0);
         }
         
-        // 创建一个数组来存储记录ID和时间值
-        let mut record_times = Vec::with_capacity(self.record_count);
+        // 创建一个固定大小的数组来存储记录ID和时间值
+        // 使用最大记录数作为数组大小
+        let mut record_times = [(0usize, 0u64); 1024]; // 假设最大记录数不超过1024
+        let mut record_count = 0;
         
         // 遍历所有记录，收集记录ID和时间值
         for i in 0..self.def.max_records {
@@ -922,14 +924,22 @@ impl MemoryTable {
                 _ => return Err(RemDbError::TypeMismatch),
             };
             
-            record_times.push((i, timestamp));
+            record_times[record_count] = (i, timestamp);
+            record_count += 1;
         }
         
         // 按时间值降序排序
-        record_times.sort_by(|a, b| b.1.cmp(&a.1));
+        // 使用冒泡排序，避免依赖标准库的sort方法
+        for i in 0..record_count {
+            for j in i+1..record_count {
+                if record_times[i].1 < record_times[j].1 {
+                    record_times.swap(i, j);
+                }
+            }
+        }
         
         // 拷贝最新的count条记录到输出缓冲区
-        let actual_count = core::cmp::min(count, record_times.len());
+        let actual_count = core::cmp::min(count, record_count);
         for i in 0..actual_count {
             let (record_id, _) = record_times[i];
             let src_ptr = self.data_start.as_ptr().add(record_id * self.record_size);
@@ -965,8 +975,9 @@ impl MemoryTable {
             return Ok(0);
         }
         
-        // 创建一个数组来存储符合时间范围的记录ID和时间值
-        let mut matched_records = Vec::new();
+        // 创建一个固定大小的数组来存储符合时间范围的记录ID和时间值
+        let mut matched_records = [(0usize, 0u64); 1024]; // 假设最大记录数不超过1024
+        let mut match_count = 0;
         
         // 遍历所有记录，收集符合时间范围的记录
         for i in 0..self.def.max_records {
@@ -986,15 +997,23 @@ impl MemoryTable {
             };
             
             if timestamp >= start_time && timestamp <= end_time {
-                matched_records.push((i, timestamp));
+                matched_records[match_count] = (i, timestamp);
+                match_count += 1;
             }
         }
         
         // 按时间值升序排序
-        matched_records.sort_by(|a, b| a.1.cmp(&b.1));
+        // 使用冒泡排序，避免依赖标准库的sort方法
+        for i in 0..match_count {
+            for j in i+1..match_count {
+                if matched_records[i].1 > matched_records[j].1 {
+                    matched_records.swap(i, j);
+                }
+            }
+        }
         
-        // 拷贝结果到输出缓冲区
-        let actual_count = core::cmp::min(max_records, matched_records.len());
+        // 拷贝符合条件的记录到输出缓冲区
+        let actual_count = core::cmp::min(max_records, match_count);
         for i in 0..actual_count {
             let (record_id, _) = matched_records[i];
             let src_ptr = self.data_start.as_ptr().add(record_id * self.record_size);
@@ -1007,6 +1026,7 @@ impl MemoryTable {
     
     /// 按时间窗口聚合
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间，window_size - 窗口大小（毫秒）
+    #[cfg(feature = "std")]
     pub unsafe fn get_aggregate_in_time_window(
         &self,
         time_field_index: usize,
@@ -1084,6 +1104,20 @@ impl MemoryTable {
         }
         
         Ok(result)
+    }
+    
+    /// no_std环境下不支持的聚合函数
+    #[cfg(not(feature = "std"))]
+    pub unsafe fn get_aggregate_in_time_window(
+        &self,
+        _time_field_index: usize,
+        _value_field_index: usize,
+        _start_time: u64,
+        _end_time: u64,
+        _window_size: u64
+    ) -> Result<()> {
+        // no_std环境下不支持Vec和BTreeMap，返回错误
+        Err(RemDbError::UnsupportedOperation)
     }
 }
 

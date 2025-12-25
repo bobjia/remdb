@@ -1,7 +1,94 @@
 use core::ptr::NonNull;
 use crate::memory::{MemoryBlock, MemoryStats};
 use crate::types::Result;
-use std::sync::{OnceLock, Mutex};
+
+// 使用条件编译，在std环境下使用std::sync::OnceLock，在no_std环境下使用platform::OnceLock
+#[cfg(feature = "std")]
+use std::sync::OnceLock;
+
+#[cfg(not(feature = "std"))]
+use crate::platform::OnceLock;
+
+// 根据是否启用std特性选择不同的同步机制
+#[cfg(feature = "std")]
+use std::sync::Mutex;
+
+// no_std环境下的简单自旋锁实现
+#[cfg(not(feature = "std"))]
+pub struct Mutex<T> {
+    data: core::cell::UnsafeCell<T>,
+    lock: u32,
+}
+
+#[cfg(not(feature = "std"))]
+impl<T> Mutex<T> {
+    pub fn new(data: T) -> Self {
+        Mutex {
+            data: core::cell::UnsafeCell::new(data),
+            lock: 0,
+        }
+    }
+    
+    pub fn lock(&self) -> core::result::Result<MutexGuard<'_, T>, ()> {
+        // 简单的自旋锁实现
+        while unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&self.lock as *const u32 as *mut u32)
+                .compare_exchange(0, 1, 
+                                 core::sync::atomic::Ordering::Acquire,
+                                 core::sync::atomic::Ordering::Relaxed)
+                .is_err()
+        } {
+            core::hint::spin_loop();
+        }
+        
+        Ok(MutexGuard {
+            mutex: self,
+        })
+    }
+}
+
+#[cfg(not(feature = "std"))]
+pub struct MutexGuard<'a, T> {
+    mutex: &'a Mutex<T>,
+}
+
+#[cfg(not(feature = "std"))]
+impl<'a, T> core::ops::Deref for MutexGuard<'a, T> {
+    type Target = T;
+    
+    fn deref(&self) -> &Self::Target {
+        unsafe {
+            &*self.mutex.data.get()
+        }
+    }
+}
+
+#[cfg(not(feature = "std"))]
+impl<'a, T> core::ops::DerefMut for MutexGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe {
+            &mut *self.mutex.data.get()
+        }
+    }
+}
+
+#[cfg(not(feature = "std"))]
+impl<'a, T> Drop for MutexGuard<'a, T> {
+    fn drop(&mut self) {
+        unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&self.mutex.lock as *const u32 as *mut u32)
+                .store(0, core::sync::atomic::Ordering::Release);
+        }
+    }
+}
+
+// 为Mutex添加Sync trait实现
+#[cfg(not(feature = "std"))]
+unsafe impl<T: Send> Sync for Mutex<T> {}
+
+// 为Mutex添加Send trait实现
+#[cfg(not(feature = "std"))]
+unsafe impl<T: Send> Send for Mutex<T> {}
 
 /// 静态内存分配器
 pub struct StaticAllocator {
@@ -282,3 +369,26 @@ pub fn get_memory_stats() -> MemoryStats {
         free_count: 0,
     }
 }
+
+// 为no_std环境实现全局内存分配器
+#[cfg(not(feature = "std"))]
+pub struct GlobalAllocator;
+
+#[cfg(not(feature = "std"))]
+unsafe impl core::alloc::GlobalAlloc for GlobalAllocator {
+    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
+        match crate::memory::allocator::alloc(layout.size()) {
+            Ok(ptr) => ptr.as_ptr(),
+            Err(_) => core::ptr::null_mut(),
+        }
+    }
+    
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: core::alloc::Layout) {
+        crate::memory::allocator::free(core::ptr::NonNull::new_unchecked(ptr));
+    }
+}
+
+// 声明全局内存分配器
+#[cfg(not(feature = "std"))]
+#[global_allocator]
+pub static GLOBAL_ALLOC: GlobalAllocator = GlobalAllocator;

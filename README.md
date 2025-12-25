@@ -194,6 +194,32 @@ cargo test
 cargo check --tests --no-default-features
 ```
 
+在baremetal环境下检查编译：
+
+```bash
+cargo check --no-default-features --features=baremetal
+```
+
+### 在baremetal环境下运行测试
+
+由于测试框架依赖std库，直接运行`cargo test`在baremetal环境下会失败。但你可以通过以下步骤验证代码在baremetal环境下的正确性：
+
+1. 确保代码可以成功编译：
+   ```bash
+   cargo check --no-default-features --features=baremetal
+   ```
+
+2. 对于实际的baremetal硬件测试，你可能需要：
+   - 使用交叉编译工具链
+   - 编写针对目标硬件的测试代码
+   - 配置适当的链接脚本
+   - 使用烧录工具将可执行文件写入硬件
+
+3. 示例交叉编译命令（以ARM Cortex-M为例）：
+   ```bash
+   cargo build --target thumbv7m-none-eabi --no-default-features --features=baremetal
+   ```
+
 ## 示例
 
 查看`examples`目录下的示例代码：

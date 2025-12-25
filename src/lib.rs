@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use std::ptr::NonNull;
+use core::ptr::NonNull;
 
 // 导出公共API
 pub mod types;

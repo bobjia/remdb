@@ -194,6 +194,32 @@ Check compilation in no_std environment:
 cargo check --tests --no-default-features
 ```
 
+Check compilation in baremetal environment:
+
+```bash
+cargo check --no-default-features --features=baremetal
+```
+
+### Running Tests in Baremetal Environment
+
+Directly running `cargo test` in baremetal environment will fail because the test framework depends on the std library. However, you can verify the correctness of the code in baremetal environment through the following steps:
+
+1. Ensure the code compiles successfully:
+   ```bash
+   cargo check --no-default-features --features=baremetal
+   ```
+
+2. For actual baremetal hardware testing, you may need:
+   - Cross-compilation toolchain
+   - Test code written for the target hardware
+   - Appropriate linker script configuration
+   - Flashing tool to write the executable to hardware
+
+3. Example cross-compilation command (for ARM Cortex-M):
+   ```bash
+   cargo build --target thumbv7m-none-eabi --no-default-features --features=baremetal
+   ```
+
 ## Examples
 
 Check the examples directory for sample code:

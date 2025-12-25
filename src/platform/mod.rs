@@ -1,4 +1,52 @@
+// 使用条件编译，在std环境下使用std::sync::OnceLock，在no_std环境下使用自定义实现
+#[cfg(feature = "std")]
 use std::sync::OnceLock;
+
+// no_std环境下的简单OnceLock实现
+#[cfg(not(feature = "std"))]
+pub struct OnceLock<T> {
+    data: core::cell::UnsafeCell<Option<T>>,
+    initialized: core::sync::atomic::AtomicBool,
+}
+
+// 为OnceLock添加Sync trait实现
+#[cfg(not(feature = "std"))]
+unsafe impl<T: Sync + Send> Sync for OnceLock<T> {}
+
+// 为OnceLock添加Send trait实现
+#[cfg(not(feature = "std"))]
+unsafe impl<T: Send> Send for OnceLock<T> {}
+
+#[cfg(not(feature = "std"))]
+impl<T> OnceLock<T> {
+    pub const fn new() -> Self {
+        OnceLock {
+            data: core::cell::UnsafeCell::new(None),
+            initialized: core::sync::atomic::AtomicBool::new(false),
+        }
+    }
+    
+    pub fn get(&self) -> Option<&T> {
+        if self.initialized.load(core::sync::atomic::Ordering::Acquire) {
+            unsafe {
+                (*self.data.get()).as_ref()
+            }
+        } else {
+            None
+        }
+    }
+    
+    pub fn set(&self, value: T) -> core::result::Result<(), T> {
+        if self.initialized.swap(true, core::sync::atomic::Ordering::AcqRel) {
+            Err(value)
+        } else {
+            unsafe {
+                *self.data.get() = Some(value);
+            }
+            Ok(())
+        }
+    }
+}
 
 /// 文件操作结果类型
 pub type FileResult<T> = core::result::Result<T, ()>;
