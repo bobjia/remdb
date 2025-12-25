@@ -74,8 +74,34 @@ pub const fn table_memory_usage(table: &TableDef) -> usize {
     
     // 辅助索引内存（如果有）
     let secondary_index_memory = if table.secondary_index.is_some() {
-        let primary_key_field = &table.fields[table.primary_key];
-        table.max_records * (primary_key_field.size + size_of::<u16>())
+        match table.secondary_index_type {
+            // 有序数组索引
+            crate::types::IndexType::SortedArray => {
+                let primary_key_field = &table.fields[table.primary_key];
+                table.max_records * (primary_key_field.size + size_of::<u16>())
+            },
+            // B-Tree索引
+            crate::types::IndexType::BTree => {
+                // B-Tree节点大小
+                const BTREE_NODE_SIZE: usize = 1 + 1 + (64 * 4) + ((size_of::<usize>() * 5) / 8);
+                // 假设每个节点平均使用50%的空间，每个节点平均2个键
+                let max_nodes = table.max_records / 2;
+                max_nodes * BTREE_NODE_SIZE
+            },
+            // T-Tree索引
+            crate::types::IndexType::TTree => {
+                // T-Tree节点大小
+                const TTREE_NODE_SIZE: usize = 1 + (64 * 3) + (size_of::<usize>() * 3);
+                // 假设每个节点平均使用50%的空间，每个节点平均2个键
+                let max_nodes = table.max_records / 2;
+                max_nodes * TTREE_NODE_SIZE
+            },
+            // 其他索引类型（默认）
+            _ => {
+                let primary_key_field = &table.fields[table.primary_key];
+                table.max_records * (primary_key_field.size + size_of::<u16>())
+            }
+        }
     } else {
         0
     };

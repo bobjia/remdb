@@ -13,9 +13,9 @@ pub mod platform;
 pub mod monitor;
 
 // 导出核心类型
-pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError};
+pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType};
 pub use table::MemoryTable;
-pub use index::{PrimaryIndex, SecondaryIndex, IndexStats};
+pub use index::{PrimaryIndex, SecondaryIndex, BTreeIndex, TTreeIndex, IndexStats, AnySecondaryIndex};
 pub use transaction::{Transaction, TransactionType, TransactionManager};
 pub use monitor::{DbMetrics, DbMetricsSnapshot, HealthStatus, HealthCheckResult};
 
@@ -36,7 +36,7 @@ pub struct RemDb {
     /// 主键索引数组
     primary_indices: &'static mut [Option<PrimaryIndex>],
     /// 辅助索引数组
-    secondary_indices: &'static mut [Option<SecondaryIndex>],
+    secondary_indices: &'static mut [Option<AnySecondaryIndex>],
     /// 是否处于低功耗模式
     low_power_mode: bool,
     /// 低功耗模式下的内存使用限制
@@ -63,7 +63,7 @@ impl RemDb {
         config: &'static config::DbConfig,
         tables: &'static mut [Option<MemoryTable>],
         primary_indices: &'static mut [Option<PrimaryIndex>],
-        secondary_indices: &'static mut [Option<SecondaryIndex>]
+        secondary_indices: &'static mut [Option<AnySecondaryIndex>]
     ) -> Self {
         // 计算低功耗模式下的内存限制（如果启用）
         let low_power_memory_limit = if config.low_power_mode_supported {
@@ -146,7 +146,7 @@ impl RemDb {
     }
     
     /// 获取辅助索引
-    pub fn get_secondary_index(&self, table_id: usize) -> Result<&SecondaryIndex> {
+    pub fn get_secondary_index(&self, table_id: usize) -> Result<&AnySecondaryIndex> {
         if table_id >= self.secondary_indices.len() {
             return Err(RemDbError::RecordNotFound);
         }
@@ -158,7 +158,7 @@ impl RemDb {
     }
     
     /// 获取辅助索引（可变）
-    pub fn get_secondary_index_mut(&mut self, table_id: usize) -> Result<&mut SecondaryIndex> {
+    pub fn get_secondary_index_mut(&mut self, table_id: usize) -> Result<&mut AnySecondaryIndex> {
         if table_id >= self.secondary_indices.len() {
             return Err(RemDbError::RecordNotFound);
         }
@@ -752,7 +752,7 @@ pub fn init_global_db(
     config: &'static config::DbConfig,
     tables: &'static mut [Option<MemoryTable>],
     primary_indices: &'static mut [Option<PrimaryIndex>],
-    secondary_indices: &'static mut [Option<SecondaryIndex>]
+    secondary_indices: &'static mut [Option<AnySecondaryIndex>]
 ) -> Result<&'static mut RemDb> {
     unsafe {
         // 无论是否已经初始化过，都创建一个新的数据库实例

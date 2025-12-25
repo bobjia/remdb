@@ -47,7 +47,7 @@ const TABLE_MEM_SIZE: usize = TABLE_DATA_SIZE + STATUS_ARRAY_SIZE + FREE_SLOTS_S
 static mut TABLE_MEM: [u8; TABLE_MEM_SIZE] = [0; TABLE_MEM_SIZE];
 static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
 static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-static mut SECONDARY_INDICES: [Option<SecondaryIndex>; 1] = [None; 1];
+static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None; 1];
 
 fn main() {
     unsafe {

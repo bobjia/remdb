@@ -9,7 +9,12 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **In-Memory Table Storage**: Efficient in-memory table implementation supporting insert, delete, query, and traversal operations
 - **Indexing Mechanisms**:
   - Hash-based primary key index providing O(1) query performance
-  - Ordered array-based secondary index supporting range queries
+  - Multiple secondary index types:
+    - Hash
+    - SortedArray
+    - BTree (default)
+    - TTree
+  - Support for range queries with SortedArray, BTree and TTree indices
 - **Transaction Support**: Complete ACID transaction support, including:
   - Atomicity: Transactions are either fully committed or fully rolled back
   - Consistency: Ensures data integrity and correctness
@@ -36,7 +41,8 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Compatible with existing snapshot format
 - **Rust-based Compile-time DDL Parsing and Type-safe Code Generation**:
   - Parses SQLite3 syntax-compatible DDL files and generates type-safe Rust code
-  - Supports core SQLite3 DDL syntax: `CREATE TABLE`, column definitions, `PRIMARY KEY`, `NOT NULL`, `UNIQUE` constraints
+  - Supports core SQLite3 DDL syntax: `CREATE TABLE`, `CREATE INDEX`, column definitions, `PRIMARY KEY`, `NOT NULL`, `UNIQUE` constraints
+  - Supports multiple index types in `CREATE INDEX` statements: `HASH`, `SORTEDARRAY`, `BTREE` (default), `TTREE`
   - Performs syntax and semantic checks at compile time with clear error messages
   - Generates strongly typed Rust structs with field names and types strictly corresponding to DDL definitions
   - Generates static table metadata for database runtime use
@@ -230,9 +236,11 @@ db.exit_low_power_mode().unwrap();
 ```rust
 use remdb_macros::MemdbTable;
 
-// Define table using inline DDL
+// Define table with indexes using inline DDL
 #[derive(MemdbTable)]
-#[memdb_schema(ddl = "CREATE TABLE user (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER, active BOOLEAN);")]
+#[memdb_schema(ddl = "CREATE TABLE user (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER, active BOOLEAN);
+CREATE INDEX idx_user_name ON user USING btree (name);
+CREATE INDEX idx_user_age ON user USING hash (age);")]
 struct UserTable;
 
 fn main() {
@@ -262,7 +270,7 @@ fn main() {
 ```rust
 use remdb_macros::MemdbTable;
 
-// Define tables using external DDL file
+// Define tables with indexes using external DDL file
 #[derive(MemdbTable)]
 #[memdb_schema(file = "./schema.ddl")]
 struct MyDatabase;
@@ -274,12 +282,18 @@ struct MyDatabase;
 //     email TEXT UNIQUE NOT NULL
 // );
 //
+// CREATE INDEX idx_user_name ON user USING btree (name);
+// CREATE INDEX idx_user_email ON user (email); -- Default to BTree
+//
 // CREATE TABLE product (
 //     id INTEGER PRIMARY KEY,
 //     name TEXT NOT NULL,
 //     price REAL NOT NULL,
 //     category TEXT
 // );
+//
+// CREATE INDEX idx_product_price ON product USING ttree (price);
+// CREATE INDEX idx_product_category ON product USING sortedarray (category);
 ```
 
 ## Platform Support

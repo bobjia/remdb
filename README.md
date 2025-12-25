@@ -9,7 +9,12 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
 - **内存表存储**：高效的内存表实现，支持插入、删除、查询和遍历操作
 - **索引机制**：
   - 基于哈希的主键索引，提供O(1)的查询性能
-  - 基于有序数组的辅助索引，支持范围查询
+  - 多种辅助索引类型：
+    - Hash
+    - SortedArray
+    - BTree（默认）
+    - TTree
+  - SortedArray、BTree和TTree索引支持范围查询
 - **事务支持**：完整的ACID事务支持，包括：
   - 原子性：事务要么全部提交，要么全部回滚
   - 一致性：确保数据的完整性和正确性
@@ -36,7 +41,8 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 兼容现有快照格式
 - **基于Rust的编译期DDL解析与类型安全代码生成**：
   - 解析SQLite3语法兼容的DDL文件，生成类型安全的Rust代码
-  - 支持核心SQLite3 DDL语法：`CREATE TABLE`、列定义、`PRIMARY KEY`、`NOT NULL`、`UNIQUE`约束
+  - 支持核心SQLite3 DDL语法：`CREATE TABLE`、`CREATE INDEX`、列定义、`PRIMARY KEY`、`NOT NULL`、`UNIQUE`约束
+  - 支持在`CREATE INDEX`语句中指定多种索引类型：`HASH`、`SORTEDARRAY`、`BTREE`（默认）、`TTREE`
   - 编译期执行语法和语义检查，提供清晰错误信息
   - 生成强类型Rust结构体，字段名称、类型与DDL定义严格对应
   - 生成静态表元数据，供数据库运行时使用
@@ -230,9 +236,11 @@ db.exit_low_power_mode().unwrap();
 ```rust
 use remdb_macros::MemdbTable;
 
-// 使用内联DDL定义表
+// 使用内联DDL定义带索引的表
 #[derive(MemdbTable)]
-#[memdb_schema(ddl = "CREATE TABLE user (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER, active BOOLEAN);")]
+#[memdb_schema(ddl = "CREATE TABLE user (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER, active BOOLEAN);
+CREATE INDEX idx_user_name ON user USING btree (name);
+CREATE INDEX idx_user_age ON user USING hash (age);")]
 struct UserTable;
 
 fn main() {
@@ -262,7 +270,7 @@ fn main() {
 ```rust
 use remdb_macros::MemdbTable;
 
-// 使用外部DDL文件定义表
+// 使用外部DDL文件定义带索引的表
 #[derive(MemdbTable)]
 #[memdb_schema(file = "./schema.ddl")]
 struct MyDatabase;
@@ -274,12 +282,18 @@ struct MyDatabase;
 //     email TEXT UNIQUE NOT NULL
 // );
 //
+// CREATE INDEX idx_user_name ON user USING btree (name);
+// CREATE INDEX idx_user_email ON user (email); -- 默认使用BTree
+//
 // CREATE TABLE product (
 //     id INTEGER PRIMARY KEY,
 //     name TEXT NOT NULL,
 //     price REAL NOT NULL,
 //     category TEXT
 // );
+//
+// CREATE INDEX idx_product_price ON product USING ttree (price);
+// CREATE INDEX idx_product_category ON product USING sortedarray (category);
 ```
 
 ## 平台支持

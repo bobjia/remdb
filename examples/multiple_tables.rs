@@ -51,6 +51,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
     ],
     primary_key: 0,
     secondary_index: Some(1),
+    secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 112, // 正确的记录大小：4 + 32 + 64 + 1 + 1 + 8 = 110字节（对齐到8字节是112字节）
     max_records: 100,
 };
@@ -105,6 +106,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
     ],
     primary_key: 0,
     secondary_index: Some(1),
+    secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 112, // 正确的记录大小：8 + 4 + 64 + 4 + 8 + 16 + 8 = 112字节
     max_records: 200,
 };
@@ -153,6 +155,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
     ],
     primary_key: 0,
     secondary_index: Some(1),
+    secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 216, // 正确的记录大小：4 + 64 + 128 + 8 + 4 + 1 = 209字节（对齐到8字节是216字节）
     max_records: 150,
 };
@@ -317,19 +320,19 @@ fn main() {
         // 初始化表和索引数组
         static mut TABLES: [Option<MemoryTable>; 3] = [const { None }; 3];
         static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 3] = [const { None }; 3];
-        static mut SECONDARY_INDICES: [Option<SecondaryIndex>; 3] = [const { None }; 3];
+        static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 3] = [const { None }; 3];
         
         TABLES[0] = Some(users_table);
         PRIMARY_INDICES[0] = Some(users_primary_index);
-        SECONDARY_INDICES[0] = Some(users_secondary_index);
+        SECONDARY_INDICES[0] = Some(AnySecondaryIndex::SortedArray(users_secondary_index));
         
         TABLES[1] = Some(orders_table);
         PRIMARY_INDICES[1] = Some(orders_primary_index);
-        SECONDARY_INDICES[1] = Some(orders_secondary_index);
+        SECONDARY_INDICES[1] = Some(AnySecondaryIndex::SortedArray(orders_secondary_index));
         
         TABLES[2] = Some(products_table);
         PRIMARY_INDICES[2] = Some(products_primary_index);
-        SECONDARY_INDICES[2] = Some(products_secondary_index);
+        SECONDARY_INDICES[2] = Some(AnySecondaryIndex::SortedArray(products_secondary_index));
         
         // 初始化全局数据库
         let db = init_global_db(

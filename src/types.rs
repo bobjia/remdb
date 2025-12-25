@@ -142,6 +142,20 @@ pub struct FieldDef {
     pub offset: usize,
 }
 
+/// 索引类型枚举
+#[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum IndexType {
+    /// 哈希索引（仅用于主键）
+    Hash = 0,
+    /// 有序数组索引
+    SortedArray = 1,
+    /// B-Tree索引
+    BTree = 2,
+    /// T-Tree索引
+    TTree = 3,
+}
+
 /// 表定义
 #[derive(Copy, Clone)]
 pub struct TableDef {
@@ -155,6 +169,8 @@ pub struct TableDef {
     pub primary_key: usize,
     /// 辅助索引字段索引（可选）
     pub secondary_index: Option<usize>,
+    /// 辅助索引类型
+    pub secondary_index_type: IndexType,
     /// 单条记录大小
     pub record_size: usize,
     /// 最大记录数

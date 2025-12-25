@@ -117,6 +117,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     ],
     primary_key: 0,
     secondary_index: None,
+    secondary_index_type: IndexType::SortedArray,
     record_size: 8,
     max_records: 100,
 };
@@ -391,6 +392,7 @@ static SMALL_TABLE_DEF: TableDef = TableDef {
     ],
     primary_key: 0,
     secondary_index: None,
+    secondary_index_type: IndexType::SortedArray,
     record_size: 4,
     max_records: 2,
 };

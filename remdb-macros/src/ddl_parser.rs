@@ -90,12 +90,22 @@ impl ColumnDef {
     }
 }
 
+/// 索引定义
+#[derive(Debug, Clone)]
+pub struct IndexDef {
+    pub name: String,
+    pub table_name: String,
+    pub index_type: String,
+    pub column_name: String,
+}
+
 /// 表定义
 #[derive(Debug, Clone)]
 pub struct TableDef {
     pub name: String,
     pub columns: Vec<ColumnDef>,
     pub primary_key: Option<String>,
+    pub indices: Vec<IndexDef>,
 }
 
 impl TableDef {
@@ -104,6 +114,7 @@ impl TableDef {
             name,
             columns: Vec::new(),
             primary_key: None,
+            indices: Vec::new(),
         }
     }
     
@@ -160,14 +171,17 @@ impl DdlParser {
                 break;
             }
             
-            // 解析CREATE TABLE语句
+            // 解析CREATE语句
             if self.match_keyword("CREATE") {
                 self.skip_whitespace();
                 if self.match_keyword("TABLE") {
                     let table = self.parse_create_table()?;
                     tables.push(table);
+                } else if self.match_keyword("INDEX") {
+                    let index = self.parse_create_index()?;
+                    self.add_index_to_table(&index, &mut tables)?;
                 } else {
-                    return Err(self.error("Expected 'TABLE' after 'CREATE'"));
+                    return Err(self.error("Expected 'TABLE' or 'INDEX' after 'CREATE'"));
                 }
             } else {
                 // 跳过未知语句
@@ -176,6 +190,71 @@ impl DdlParser {
         }
         
         Ok(tables)
+    }
+    
+    /// 解析CREATE INDEX语句
+    fn parse_create_index(&mut self) -> Result<IndexDef, DdlParseError> {
+        self.skip_whitespace();
+        
+        // 解析索引名称
+        let index_name = self.parse_identifier()?;
+        
+        self.skip_whitespace();
+        self.expect_keyword("ON")?;
+        
+        self.skip_whitespace();
+        // 解析表名
+        let table_name = self.parse_identifier()?;
+        
+        self.skip_whitespace();
+        
+        // 解析索引类型（可选）
+        let mut index_type = "BTree".to_string();
+        if self.match_keyword("USING") {
+            self.skip_whitespace();
+            let type_name = self.parse_word()?.to_uppercase();
+            // 验证索引类型
+            match type_name.as_str() {
+                "HASH" | "SORTEDARRAY" | "BTREE" | "TTREE" => {
+                    index_type = type_name;
+                },
+                _ => {
+                    return Err(self.error(&format!("Unsupported index type: {}", type_name)));
+                }
+            }
+        }
+        
+        self.skip_whitespace();
+        self.expect_char('(')?;
+        
+        self.skip_whitespace();
+        // 解析索引列
+        let column_name = self.parse_identifier()?;
+        
+        self.skip_whitespace();
+        self.expect_char(')')?;
+        
+        // 跳过语句结束符
+        self.skip_statement();
+        
+        Ok(IndexDef {
+            name: index_name,
+            table_name: table_name,
+            index_type: index_type,
+            column_name: column_name,
+        })
+    }
+    
+    /// 将索引添加到对应的表
+    fn add_index_to_table(&self, index: &IndexDef, tables: &mut Vec<TableDef>) -> Result<(), DdlParseError> {
+        for table in tables {
+            if table.name == index.table_name {
+                table.indices.push(index.clone());
+                return Ok(());
+            }
+        }
+        
+        Err(self.error(&format!("Table not found: {}", index.table_name)))
     }
     
     /// 解析CREATE TABLE语句

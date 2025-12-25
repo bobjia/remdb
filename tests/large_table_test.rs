@@ -1,7 +1,7 @@
 use remdb::table::*;
 use remdb::types::*;
 use remdb::platform::*;
-use remdb::{init_global_db, get_global_db, PrimaryIndex, SecondaryIndex};
+use remdb::{init_global_db, get_global_db, PrimaryIndex, AnySecondaryIndex};
 use remdb::config::DbConfig;
 use std::time::Instant;
 use rand::random;
@@ -32,6 +32,7 @@ static LARGE_TABLE_DEF: TableDef = TableDef {
     ],
     primary_key: 0,
     secondary_index: None,
+    secondary_index_type: IndexType::SortedArray,
     record_size: 4 + 4 + 32, // 40字节记录
     max_records: 500000,
 };
@@ -169,7 +170,7 @@ fn test_large_table_performance() {
     // 静态表数组和索引数组
     static mut TABLES: [Option<MemoryTable>; 1] = [None];
     static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None];
-    static mut SECONDARY_INDICES: [Option<SecondaryIndex>; 1] = [None];
+    static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None];
     
     unsafe {
         // 创建表

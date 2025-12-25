@@ -289,6 +289,7 @@ impl TableInput {
                 ],
                 primary_key: #primary_key,
                 secondary_index: #secondary_index,
+                secondary_index_type: remdb::types::IndexType::SortedArray,
                 record_size: #total_record_size as usize,
                 max_records: #max_records,
             };

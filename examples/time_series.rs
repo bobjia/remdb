@@ -147,12 +147,12 @@ fn main() {
             256,
             1000
         );
-        let secondary_index = SecondaryIndex::new(&config.tables[0], secondary_index_items_ptr, 1000);
+        let secondary_index = AnySecondaryIndex::SortedArray(SecondaryIndex::new(&config.tables[0], secondary_index_items_ptr, 1000));
         
         // 初始化表和索引数组
         static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
         static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-        static mut SECONDARY_INDICES: [Option<SecondaryIndex>; 1] = [None; 1];
+        static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None; 1];
         
         TABLES[0] = Some(table);
         PRIMARY_INDICES[0] = Some(primary_index);

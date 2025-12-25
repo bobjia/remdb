@@ -33,7 +33,7 @@ static mut TABLE_MEM: [u8; TABLE_MEM_SIZE] = [0; TABLE_MEM_SIZE];
 // 静态表数组，具有'static生命周期
 static mut TABLES: [Option<remdb::MemoryTable>; 8] = [const { None }; 8];
 static mut PRIMARY_INDICES: [Option<remdb::PrimaryIndex>; 8] = [const { None }; 8];
-static mut SECONDARY_INDICES: [Option<remdb::SecondaryIndex>; 8] = [const { None }; 8];
+static mut SECONDARY_INDICES: [Option<remdb::AnySecondaryIndex>; 8] = [const { None }; 8];
 
 fn main() -> Result<()> 
 {

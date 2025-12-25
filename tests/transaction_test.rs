@@ -120,6 +120,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     ],
     primary_key: 0,
     secondary_index: None,
+    secondary_index_type: IndexType::SortedArray,
     record_size: 8,
     max_records: 100,
 };
@@ -135,7 +136,7 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
 // 静态缓冲区用于测试
 static mut TABLES_BUFFER: [Option<MemoryTable>; 1] = [None];
 static mut PRIMARY_INDICES_BUFFER: [Option<PrimaryIndex>; 1] = [None];
-static mut SECONDARY_INDICES_BUFFER: [Option<SecondaryIndex>; 1] = [None];
+static mut SECONDARY_INDICES_BUFFER: [Option<AnySecondaryIndex>; 1] = [None];
 static mut TABLE_DATA_BUFFER: [u8; 8 * 100] = [0u8; 8 * 100]; // 8字节记录 * 100条
 static mut TABLE_STATUS_BUFFER: [MaybeUninit<RecordHeader>; 100] = [const { MaybeUninit::uninit() }; 100];
 static mut TABLE_FREE_SLOTS_BUFFER: [usize; 100] = [0usize; 100];

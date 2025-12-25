@@ -80,6 +80,37 @@ pub fn generate_table_code(table: &TableDef, max_records: usize) -> TokenStream 
     let primary_key = primary_key_index.unwrap_or(0);
     let total_record_size = current_offset;
     
+    // 处理索引
+    let mut secondary_index_value = None;
+    let mut index_type_ident = Ident::new("BTree", Span::call_site()); // 默认BTree
+    
+    // 如果表有索引，使用第一个索引作为辅助索引
+    if !table.indices.is_empty() {
+        let index = &table.indices[0];
+        // 查找索引列在表中的位置
+        for (col_index, col) in table.columns.iter().enumerate() {
+            if col.name == index.column_name {
+                secondary_index_value = Some(col_index);
+                break;
+            }
+        }
+        
+        // 映射索引类型
+        index_type_ident = match index.index_type.as_str() {
+            "HASH" => Ident::new("Hash", Span::call_site()),
+            "SORTEDARRAY" => Ident::new("SortedArray", Span::call_site()),
+            "BTREE" => Ident::new("BTree", Span::call_site()),
+            "TTREE" => Ident::new("TTree", Span::call_site()),
+            _ => Ident::new("BTree", Span::call_site()), // 默认BTree
+        };
+    }
+    
+    // 生成secondary_index表达式
+    let secondary_index_expr = match secondary_index_value {
+        Some(index) => quote! {Some(#index)},
+        None => quote! {None},
+    };
+    
     // 生成API函数
     let api_functions = generate_api_functions(table, &struct_name_ident, &module_name_ident);
     
@@ -99,7 +130,8 @@ pub fn generate_table_code(table: &TableDef, max_records: usize) -> TokenStream 
                 #(#field_defs),*
             ],
             primary_key: #primary_key,
-            secondary_index: None,
+            secondary_index: #secondary_index_expr,
+            secondary_index_type: remdb::types::IndexType::#index_type_ident,
             record_size: #total_record_size,
             max_records: #max_records,
         };

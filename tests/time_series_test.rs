@@ -145,14 +145,14 @@ unsafe fn init_test_env() -> &'static mut RemDb {
         )
     };
     let secondary_index = unsafe {
-        SecondaryIndex::new(&config.tables[0], secondary_index_items_ptr, 1000)
+        AnySecondaryIndex::SortedArray(SecondaryIndex::new(&config.tables[0], secondary_index_items_ptr, 1000))
     };
     
     // 声明静态变量，用于存储表和索引
     // 注意：这些变量在每次函数调用时会被重新赋值
     static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
     static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-    static mut SECONDARY_INDICES: [Option<SecondaryIndex>; 1] = [None; 1];
+    static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None; 1];
     
     // 设置新的表和索引
     TABLES[0] = Some(table);
