@@ -123,9 +123,25 @@ impl Clone for StaticAllocator {
 impl StaticAllocator {
     /// 创建新的静态内存分配器
     pub fn new(start_ptr: *mut u8, size: usize) -> Option<Self> {
+        // 计算MemoryBlock所需的对齐值
+        const ALIGNMENT: usize = core::mem::align_of::<MemoryBlock>();
+        
+        // 对齐start_ptr到MemoryBlock的对齐要求
+        let start_addr = start_ptr as usize;
+        let aligned_addr = (start_addr + ALIGNMENT - 1) & !(ALIGNMENT - 1);
+        let aligned_ptr = aligned_addr as *mut u8;
+        
+        // 计算对齐后的可用大小
+        let aligned_size = size - (aligned_addr - start_addr);
+        
+        // 确保对齐后的大小足够容纳至少一个MemoryBlock
+        if aligned_size < MemoryBlock::SIZE {
+            return None;
+        }
+        
         let mut allocator = StaticAllocator {
-            start_ptr: NonNull::new(start_ptr)?,
-            size,
+            start_ptr: NonNull::new(aligned_ptr)?,
+            size: aligned_size,
             used: 0,
             free_list: None,
             alloc_count: 0,
