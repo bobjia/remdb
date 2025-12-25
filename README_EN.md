@@ -26,7 +26,7 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Supports entering and exiting low power mode
   - Optimized memory usage in low power mode
   - Reduced transaction log write frequency, lowering disk I/O
-  - Automatically overwrites oldest records when the record count exceeds limits
+  - Automatically overwrites oldest records when record count exceeds limits
 - **Incremental Snapshot**:
   - Supports both full snapshot and incremental snapshot
   - Incremental snapshot only saves records with changed version numbers
@@ -34,6 +34,20 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Supports restoring data from incremental snapshots
   - Version management mechanism to track data changes
   - Compatible with existing snapshot format
+- **Rust-based Compile-time DDL Parsing and Type-safe Code Generation**:
+  - Parses SQLite3 syntax-compatible DDL files and generates type-safe Rust code
+  - Supports core SQLite3 DDL syntax: `CREATE TABLE`, column definitions, `PRIMARY KEY`, `NOT NULL`, `UNIQUE` constraints
+  - Performs syntax and semantic checks at compile time with clear error messages
+  - Generates strongly typed Rust structs with field names and types strictly corresponding to DDL definitions
+  - Generates static table metadata for database runtime use
+  - Generates type-safe API prototypes: `insert`, `get_by_id`, `update`, `delete` functions
+  - Zero runtime overhead, implemented using procedural macros
+- **Rust Procedural Macro-based Zero-cost DDL Integration**:
+  - Provides `MemdbTable` procedural macro supporting `#[derive(MemdbTable)]` syntax
+  - Supports inline mode: write DDL directly in attributes
+  - Supports file mode: associate external DDL files
+  - Maps SQL constraints to Rust type system constraints, catching errors at compile time
+  - Generated code is `#[repr(C)]` with memory layout identical to handwritten code
 
 ## Technical Characteristics
 
@@ -209,6 +223,63 @@ for i in 0..150 {
 
 // Exit low power mode
 db.exit_low_power_mode().unwrap();
+```
+
+### DDL Macro Usage Example
+
+```rust
+use remdb_macros::MemdbTable;
+
+// Define table using inline DDL
+#[derive(MemdbTable)]
+#[memdb_schema(ddl = "CREATE TABLE user (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER, active BOOLEAN);")]
+struct UserTable;
+
+fn main() {
+    // Test generated User struct
+    let user = User {
+        id: 1,
+        name: "Alice".to_string(),
+        age: Some(30),
+        active: Some(true),
+    };
+    
+    println!("Generated User struct: {:?}", user);
+    println!("User name: {}", user.name);
+    println!("User age: {:?}", user.age);
+    
+    // Test database configuration
+    println!("Database tables count: {}", DATABASE.tables.len());
+    
+    // Test API functions (placeholder implementation)
+    // user::insert(&mut db, user);
+    // let result = user::get_by_id(&db, 1);
+}
+```
+
+#### File Mode Usage Example
+
+```rust
+use remdb_macros::MemdbTable;
+
+// Define tables using external DDL file
+#[derive(MemdbTable)]
+#[memdb_schema(file = "./schema.ddl")]
+struct MyDatabase;
+
+// schema.ddl content:
+// CREATE TABLE user (
+//     id INTEGER PRIMARY KEY,
+//     name TEXT NOT NULL,
+//     email TEXT UNIQUE NOT NULL
+// );
+//
+// CREATE TABLE product (
+//     id INTEGER PRIMARY KEY,
+//     name TEXT NOT NULL,
+//     price REAL NOT NULL,
+//     category TEXT
+// );
 ```
 
 ## Platform Support

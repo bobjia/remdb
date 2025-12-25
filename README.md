@@ -34,6 +34,20 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 支持从增量快照恢复数据
   - 版本管理机制，跟踪数据变化
   - 兼容现有快照格式
+- **基于Rust的编译期DDL解析与类型安全代码生成**：
+  - 解析SQLite3语法兼容的DDL文件，生成类型安全的Rust代码
+  - 支持核心SQLite3 DDL语法：`CREATE TABLE`、列定义、`PRIMARY KEY`、`NOT NULL`、`UNIQUE`约束
+  - 编译期执行语法和语义检查，提供清晰错误信息
+  - 生成强类型Rust结构体，字段名称、类型与DDL定义严格对应
+  - 生成静态表元数据，供数据库运行时使用
+  - 生成类型安全的API原型：`insert`、`get_by_id`、`update`、`delete`函数
+  - 零运行时开销，使用过程宏实现
+- **基于Rust过程宏的零成本DDL集成**：
+  - 提供`MemdbTable`过程宏，支持`#[derive(MemdbTable)]`语法
+  - 支持内联模式：直接在属性中编写DDL
+  - 支持文件模式：关联外部DDL文件
+  - 将SQL约束映射为Rust类型系统约束，编译期捕获错误
+  - 生成的代码`#[repr(C)]`，内存布局与手写代码完全一致
 
 ## 技术特点
 
@@ -209,6 +223,63 @@ for i in 0..150 {
 
 // 退出低功耗模式
 db.exit_low_power_mode().unwrap();
+```
+
+### DDL宏使用示例
+
+```rust
+use remdb_macros::MemdbTable;
+
+// 使用内联DDL定义表
+#[derive(MemdbTable)]
+#[memdb_schema(ddl = "CREATE TABLE user (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER, active BOOLEAN);")]
+struct UserTable;
+
+fn main() {
+    // 测试生成的User结构体
+    let user = User {
+        id: 1,
+        name: "Alice".to_string(),
+        age: Some(30),
+        active: Some(true),
+    };
+    
+    println!("生成的User结构体: {:?}", user);
+    println!("用户名: {}", user.name);
+    println!("年龄: {:?}", user.age);
+    
+    // 测试数据库配置
+    println!("数据库表数量: {}", DATABASE.tables.len());
+    
+    // 测试API函数（占位符实现）
+    // user::insert(&mut db, user);
+    // let result = user::get_by_id(&db, 1);
+}
+```
+
+#### 文件模式使用示例
+
+```rust
+use remdb_macros::MemdbTable;
+
+// 使用外部DDL文件定义表
+#[derive(MemdbTable)]
+#[memdb_schema(file = "./schema.ddl")]
+struct MyDatabase;
+
+// schema.ddl内容:
+// CREATE TABLE user (
+//     id INTEGER PRIMARY KEY,
+//     name TEXT NOT NULL,
+//     email TEXT UNIQUE NOT NULL
+// );
+//
+// CREATE TABLE product (
+//     id INTEGER PRIMARY KEY,
+//     name TEXT NOT NULL,
+//     price REAL NOT NULL,
+//     category TEXT
+// );
 ```
 
 ## 平台支持

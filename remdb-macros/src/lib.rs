@@ -2,35 +2,125 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::Token;
+use syn::parse_macro_input;
+use syn::{Ident, Lit, Meta, Token};
+use syn::meta::ParseNestedMeta;
 
+// 导入新模块
+mod ddl_parser;
+mod codegen;
+
+// 导出现有宏
 /// Proc-macro for table configuration
 #[proc_macro]
 pub fn table(input: TokenStream) -> TokenStream {
-    let parsed = syn::parse_macro_input!(input as TableInput);
+    let parsed = parse_macro_input!(input as TableInput);
     parsed.generate().into()
 }
 
 /// Proc-macro for database configuration
 #[proc_macro]
 pub fn database(input: TokenStream) -> TokenStream {
-    let parsed = syn::parse_macro_input!(input as DatabaseInput);
+    let parsed = parse_macro_input!(input as DatabaseInput);
     parsed.generate().into()
 }
 
+/// 模式配置
+enum SchemaConfig {
+    Inline(String), // 内联DDL
+    File(String),   // 外部DDL文件路径
+}
+
+/// 支持从DDL生成类型安全代码的派生宏
+#[proc_macro_derive(MemdbTable, attributes(memdb_schema))]
+pub fn memdb_table_derive(input: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(input as syn::ItemStruct);
+    
+    // 查找memdb_schema属性
+    let mut schema_attr = None;
+    for attr in &item.attrs {
+        let path = attr.path();
+        let path_str = path.segments.iter().map(|s| s.ident.to_string()).collect::<Vec<_>>().join("::");
+        if path_str == "memdb_schema" {
+            schema_attr = Some(attr.clone());
+            break;
+        }
+    }
+    
+    let schema_attr = schema_attr.ok_or_else(|| {
+        syn::Error::new(item.span(), "memdb_table_derive requires a #[memdb_schema] attribute")
+    }).unwrap();
+    
+    // 解析属性参数
+    let mut schema_config = None;
+    schema_attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("ddl") {
+            let value = meta.value()?.parse::<syn::LitStr>()?;
+            schema_config = Some(SchemaConfig::Inline(value.value()));
+        } else if meta.path.is_ident("file") {
+            let value = meta.value()?.parse::<syn::LitStr>()?;
+            schema_config = Some(SchemaConfig::File(value.value()));
+        }
+        Ok(())
+    }).unwrap();
+    
+    let schema_config = schema_config.ok_or_else(|| {
+        syn::Error::new(item.span(), "Expected either ddl or file argument in memdb_schema attribute")
+    }).unwrap();
+    
+    // 根据配置生成代码
+    let generated_code = match schema_config {
+        SchemaConfig::Inline(ddl) => {
+            // 解析内联DDL
+            let mut parser = ddl_parser::DdlParser::new(ddl);
+            let tables = parser.parse().unwrap();
+            generate_code_from_tables(&tables)
+        },
+        SchemaConfig::File(path) => {
+            // 读取文件并解析DDL
+            let content = std::fs::read_to_string(path).unwrap();
+            let mut parser = ddl_parser::DdlParser::new(content);
+            let tables = parser.parse().unwrap();
+            generate_code_from_tables(&tables)
+        },
+    };
+    
+    generated_code.into()
+}
+
+/// 生成表代码
+fn generate_code_from_tables(tables: &[ddl_parser::TableDef]) -> proc_macro2::TokenStream {
+    let mut table_names = Vec::new();
+    let mut table_defs = Vec::new();
+    
+    for table in tables {
+        table_names.push(table.name.clone());
+        let table_code = codegen::generate_table_code(table, 1000); // 默认最大记录数1000
+        table_defs.push(table_code);
+    }
+    
+    // 生成数据库配置
+    let database_code = codegen::generate_database_code(&table_names, &table_defs);
+    
+    quote! {
+        #database_code
+    }
+}
+
+// 保留现有代码
 // Table macro input structure
 struct TableInput {
-    table_name: syn::Ident,
+    table_name: Ident,
     max_records: syn::Expr,
-    primary_key: syn::Ident,
-    secondary_index: Option<syn::Ident>,
+    primary_key: Ident,
+    secondary_index: Option<Ident>,
     fields: Vec<FieldDef>,
 }
 
 impl syn::parse::Parse for TableInput {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         // Parse table name: `TEST_TABLE`
-        let table_name: syn::Ident = input.parse()?;
+        let table_name: Ident = input.parse()?;
         input.parse::<Token![,]>()?;
         
         // Parse max records: `100`
@@ -38,19 +128,19 @@ impl syn::parse::Parse for TableInput {
         input.parse::<Token![,]>()?;
         
         // Parse primary key: `primary_key: id`
-        let _: syn::Ident = input.parse()?; // "primary_key"
+        let _: Ident = input.parse()?; // "primary_key"
         input.parse::<Token![:]>()?;
-        let primary_key: syn::Ident = input.parse()?;
+        let primary_key: Ident = input.parse()?;
         input.parse::<Token![,]>()?;
         
         // Parse secondary index if present: `secondary_index: name`
         let mut secondary_index = None;
-        if input.peek(syn::Ident) {
+        if input.peek(Ident) {
             let fork = input.fork();
-            let ident: syn::Ident = fork.parse()?;
+            let ident: Ident = fork.parse()?;
             
             if ident.to_string() == "secondary_index" {
-                let _: syn::Ident = input.parse()?; // "secondary_index"
+                let _: Ident = input.parse()?; // "secondary_index"
                 input.parse::<Token![:]>()?;
                 secondary_index = Some(input.parse()?);
                 input.parse::<Token![,]>()?;
@@ -58,7 +148,7 @@ impl syn::parse::Parse for TableInput {
         }
         
         // Parse fields: `fields: { ... }`
-        let _: syn::Ident = input.parse()?; // "fields"
+        let _: Ident = input.parse()?; // "fields"
         input.parse::<Token![:]>()?;
         
         // Parse opening brace
@@ -211,15 +301,15 @@ impl TableInput {
 
 // Field definition structure
 struct FieldDef {
-    name: syn::Ident,
-    data_type: syn::Ident,
+    name: Ident,
+    data_type: Ident,
     size: syn::Expr,
 }
 
 impl syn::parse::Parse for FieldDef {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         // Parse field name
-        let name: syn::Ident = input.parse()?;
+        let name: Ident = input.parse()?;
         let name_span = name.span();
         
         // Parse colon
@@ -228,20 +318,20 @@ impl syn::parse::Parse for FieldDef {
         // We need to handle two cases: string types and numeric/bool types
         
         // Case 1: String type (str(20))
-        if input.peek(syn::Ident) {
+        if input.peek(Ident) {
             let fork = input.fork();
-            let ident: syn::Ident = fork.parse()?;
+            let ident: Ident = fork.parse()?;
             
             if ident.to_string() == "str" && fork.peek(syn::token::Paren) {
                 // It's a string type: str(20)
-                let _: syn::Ident = input.parse()?; // Consume "str"
+                let _: Ident = input.parse()?; // Consume "str"
                 let content;
                 syn::parenthesized!(content in input);
                 let len: syn::Expr = content.parse()?;
                 
                 return Ok(Self {
                     name,
-                    data_type: syn::Ident::new("String", name_span),
+                    data_type: Ident::new("String", name_span),
                     size: len,
                 });
             }
@@ -296,7 +386,7 @@ impl syn::parse::Parse for FieldDef {
         
         Ok(Self {
             name,
-            data_type: syn::Ident::new(data_type, name_span),
+            data_type: Ident::new(data_type, name_span),
             size: syn::parse_str(size)?,
         })
     }
@@ -306,19 +396,19 @@ impl syn::parse::Parse for FieldDef {
 
 // Database macro input structure
 struct DatabaseInput {
-    db_name: syn::Ident,
-    tables: Vec<syn::Ident>,
+    db_name: Ident,
+    tables: Vec<Ident>,
     low_power: bool,
     low_power_max_records: Option<usize>,
 }
 
 impl syn::parse::Parse for DatabaseInput {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let db_name: syn::Ident = input.parse()?;
+        let db_name: Ident = input.parse()?;
         input.parse::<Token![,]>()?;
         
         // Parse tables as identifier and verify
-        let tables_keyword: syn::Ident = input.parse()?;
+        let tables_keyword: Ident = input.parse()?;
         if tables_keyword.to_string() != "tables" {
             return Err(syn::Error::new(
                 tables_keyword.span(),
@@ -355,7 +445,7 @@ impl syn::parse::Parse for DatabaseInput {
                 break;
             }
             
-            let param_name: syn::Ident = input.parse()?;
+            let param_name: Ident = input.parse()?;
             input.parse::<Token![:]>()?;
             
             match param_name.to_string().as_str() {
@@ -408,3 +498,4 @@ impl DatabaseInput {
         }
     }
 }
+
