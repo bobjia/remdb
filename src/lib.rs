@@ -11,6 +11,7 @@ pub mod transaction;
 pub mod memory;
 pub mod platform;
 pub mod monitor;
+pub mod sql;
 
 // 导出核心类型
 pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType};
@@ -598,6 +599,26 @@ impl RemDb {
     /// 将指标输出为文本格式
     pub fn dump_metrics(&self) -> alloc::string::String {
         self.metrics.snapshot().to_text()
+    }
+    
+    /// 执行SQL查询
+    pub fn sql_query(&self, sql: &str) -> Result<sql::ResultSet> {
+        // 解析SQL查询
+        let query = crate::sql::parse_sql_query(sql)
+            .map_err(|_| RemDbError::InvalidSqlQuery)?;
+        
+        // 执行查询
+        let result_set = crate::sql::execute_query(self, &query)
+            .map_err(|err| {
+                match err {
+                    crate::sql::QueryExecutionError::TableNotFound => RemDbError::TableNotFound,
+                    crate::sql::QueryExecutionError::FieldNotFound => RemDbError::FieldNotFound,
+                    crate::sql::QueryExecutionError::TypeMismatch => RemDbError::TypeMismatch,
+                    _ => RemDbError::UnsupportedOperation,
+                }
+            })?;
+        
+        Ok(result_set)
     }
     
     /// 保存增量快照到文件

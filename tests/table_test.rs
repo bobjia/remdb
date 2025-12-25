@@ -104,7 +104,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     fields: &[
         FieldDef {
             name: "id",
-            data_type: DataType::Int32,
+            data_type: DataType::UInt32,
             size: 4,
             offset: 0,
         },
@@ -149,14 +149,14 @@ fn test_table_insert_delete() {
         
         // 创建测试记录
         let mut record_data = [0u8; 8];
-        let id: i32 = 1;
+        let id: u32 = 1;
         let value: f32 = 3.14;
         
         core::ptr::copy_nonoverlapping(
-            &id as *const i32 as *const u8,
-            record_data.as_mut_ptr(),
-            4
-        );
+                &id as *const u32 as *const u8,
+                record_data.as_mut_ptr(),
+                4
+            );
         core::ptr::copy_nonoverlapping(
             &value as *const f32 as *const u8,
             record_data.as_mut_ptr().add(4),
@@ -172,7 +172,7 @@ fn test_table_insert_delete() {
         let mut result_data = [0u8; 8];
         table.get_by_id(record_id, result_data.as_mut_ptr()).unwrap();
         
-        let result_id = core::ptr::read(result_data.as_ptr() as *const i32);
+        let result_id = core::ptr::read(result_data.as_ptr() as *const u32);
         let result_value = core::ptr::read(result_data.as_ptr().add(4) as *const f32);
         
         assert_eq!(result_id, id);
@@ -216,14 +216,14 @@ fn test_table_get_field() {
         
         // 创建测试记录
         let mut record_data = [0u8; 8];
-        let id: i32 = 1;
+        let id: u32 = 1;
         let value: f32 = 3.14;
         
         core::ptr::copy_nonoverlapping(
-            &id as *const i32 as *const u8,
-            record_data.as_mut_ptr(),
-            4
-        );
+                &id as *const u32 as *const u8,
+                record_data.as_mut_ptr(),
+                4
+            );
         core::ptr::copy_nonoverlapping(
             &value as *const f32 as *const u8,
             record_data.as_mut_ptr().add(4),
@@ -239,7 +239,7 @@ fn test_table_get_field() {
         
         // 测试获取字段值
         let id_value = table.get_field(result_data.as_ptr(), 0).unwrap();
-        assert_eq!(id_value.int32, id);
+        assert_eq!(id_value.u32, id);
         
         let value_value = table.get_field(result_data.as_ptr(), 1).unwrap();
         assert_eq!(value_value.float32, value);
@@ -278,14 +278,14 @@ fn test_table_set_field() {
         
         // 创建测试记录
         let mut record_data = [0u8; 8];
-        let id: i32 = 1;
+        let id: u32 = 1;
         let value: f32 = 3.14;
         
         core::ptr::copy_nonoverlapping(
-            &id as *const i32 as *const u8,
-            record_data.as_mut_ptr(),
-            4
-        );
+                &id as *const u32 as *const u8,
+                record_data.as_mut_ptr(),
+                4
+            );
         core::ptr::copy_nonoverlapping(
             &value as *const f32 as *const u8,
             record_data.as_mut_ptr().add(4),
@@ -342,11 +342,11 @@ fn test_table_iterate() {
         // 插入多条记录
         for i in 0..5 {
             let mut record_data = [0u8; 8];
-            let id: i32 = (i + 1) as i32;
+            let id: u32 = (i + 1) as u32;
             let value: f32 = (i as f32) * 1.0;
             
             core::ptr::copy_nonoverlapping(
-                &id as *const i32 as *const u8,
+                &id as *const u32 as *const u8,
                 record_data.as_mut_ptr(),
                 4
             );
@@ -364,7 +364,7 @@ fn test_table_iterate() {
         let mut sum = 0.0;
         
         table.iterate(|_id, data_ptr| {
-            let id = core::ptr::read(data_ptr as *const i32);
+            let id = core::ptr::read(data_ptr as *const u32);
             let value = core::ptr::read(data_ptr.add(4) as *const f32);
             
             count += 1;
@@ -385,7 +385,7 @@ static SMALL_TABLE_DEF: TableDef = TableDef {
     fields: &[
         FieldDef {
             name: "id",
-            data_type: DataType::Int32,
+            data_type: DataType::UInt32,
             size: 4,
             offset: 0,
         },
@@ -424,13 +424,13 @@ fn test_table_full() {
         
         // 创建测试记录
         let mut record_data = [0u8; 4];
-        let id: i32 = 1;
+        let id: u32 = 1;
         
         core::ptr::copy_nonoverlapping(
-            &id as *const i32 as *const u8,
-            record_data.as_mut_ptr(),
-            4
-        );
+                &id as *const u32 as *const u8,
+                record_data.as_mut_ptr(),
+                4
+            );
         
         // 插入两条记录（表满）
         let record_id1 = table.insert(record_data.as_ptr()).unwrap();

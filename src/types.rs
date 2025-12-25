@@ -5,30 +5,42 @@ use core::mem::size_of;
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum DataType {
+    /// 8位无符号整数
+    UInt8 = 0,
+    /// 16位无符号整数
+    UInt16 = 1,
+    /// 32位无符号整数
+    UInt32 = 2,
+    /// 64位无符号整数
+    UInt64 = 3,
     /// 8位有符号整数
-    Int8 = 0,
+    Int8 = 4,
     /// 16位有符号整数
-    Int16 = 1,
+    Int16 = 5,
     /// 32位有符号整数
-    Int32 = 2,
+    Int32 = 6,
     /// 64位有符号整数
-    Int64 = 3,
+    Int64 = 7,
     /// 32位浮点数
-    Float32 = 4,
+    Float32 = 8,
     /// 64位浮点数
-    Float64 = 5,
+    Float64 = 9,
     /// 布尔值
-    Bool = 6,
+    Bool = 10,
     /// 时间戳（毫秒）
-    Timestamp = 7,
+    Timestamp = 11,
     /// 定长字符串
-    String = 8,
+    String = 12,
 }
 
 impl DataType {
     /// 获取数据类型的大小（字节）
     pub const fn size(&self) -> usize {
         match self {
+            DataType::UInt8 => 1,
+            DataType::UInt16 => 2,
+            DataType::UInt32 => 4,
+            DataType::UInt64 => 8,
             DataType::Int8 => 1,
             DataType::Int16 => 2,
             DataType::Int32 => 4,
@@ -114,10 +126,14 @@ pub mod time_utils {
 /// 通用值类型
 #[repr(C)]
 pub union Value {
-    pub int8: i8,
-    pub int16: i16,
-    pub int32: i32,
-    pub int64: i64,
+    pub u8: u8,
+    pub u16: u16,
+    pub u32: u32,
+    pub u64: u64,
+    pub i8: i8,
+    pub i16: i16,
+    pub i32: i32,
+    pub i64: i64,
     pub float32: f32,
     pub float64: f64,
     pub bool: bool,
@@ -144,7 +160,7 @@ pub struct FieldDef {
 
 /// 索引类型枚举
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum IndexType {
     /// 哈希索引（仅用于主键）
     Hash = 0,
@@ -265,6 +281,8 @@ pub enum RemDbError {
     TableNotFound,
     /// 记录大小无效
     InvalidRecordSize,
+    /// 无效的SQL查询
+    InvalidSqlQuery,
 }
 
 impl fmt::Display for RemDbError {
@@ -288,6 +306,7 @@ impl fmt::Display for RemDbError {
             RemDbError::LockTimeout => write!(f, "Lock timeout"),
             RemDbError::TableNotFound => write!(f, "Table not found"),
             RemDbError::InvalidRecordSize => write!(f, "Invalid record size"),
+            RemDbError::InvalidSqlQuery => write!(f, "Invalid SQL query"),
         }
     }
 }

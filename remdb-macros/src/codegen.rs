@@ -54,7 +54,14 @@ pub fn generate_table_code(table: &TableDef, max_records: usize) -> TokenStream 
         let data_type_ident = Ident::new(&data_type, Span::call_site());
         
         let field_size = match col.sql_type {
-            SqlType::Integer => 8,
+            SqlType::Int8 => 1,
+            SqlType::Int16 => 2,
+            SqlType::Int32 => 4,
+            SqlType::Int64 => 8,
+            SqlType::UInt8 => 1,
+            SqlType::UInt16 => 2,
+            SqlType::UInt32 => 4,
+            SqlType::UInt64 => 8,
             SqlType::Text => 32, // 固定长度字符串，暂时硬编码为32字节
             SqlType::Real => 8,
             SqlType::Boolean => 1,

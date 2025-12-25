@@ -346,17 +346,29 @@ impl MemoryTable {
         
         // 根据字段类型获取值
         let value = match field.data_type {
+            crate::types::DataType::UInt8 => {
+                Value { u8: *field_ptr as u8 }
+            }
+            crate::types::DataType::UInt16 => {
+                Value { u16: core::ptr::read_unaligned(field_ptr as *const u16) }
+            }
+            crate::types::DataType::UInt32 => {
+                Value { u32: core::ptr::read_unaligned(field_ptr as *const u32) }
+            }
+            crate::types::DataType::UInt64 => {
+                Value { u64: core::ptr::read_unaligned(field_ptr as *const u64) }
+            }
             crate::types::DataType::Int8 => {
-                Value { int8: *field_ptr as i8 }
+                Value { i8: *field_ptr as i8 }
             }
             crate::types::DataType::Int16 => {
-                Value { int16: core::ptr::read_unaligned(field_ptr as *const i16) }
+                Value { i16: core::ptr::read_unaligned(field_ptr as *const i16) }
             }
             crate::types::DataType::Int32 => {
-                Value { int32: core::ptr::read_unaligned(field_ptr as *const i32) }
+                Value { i32: core::ptr::read_unaligned(field_ptr as *const i32) }
             }
             crate::types::DataType::Int64 => {
-                Value { int64: core::ptr::read_unaligned(field_ptr as *const i64) }
+                Value { i64: core::ptr::read_unaligned(field_ptr as *const i64) }
             }
             crate::types::DataType::Float32 => {
                 Value { float32: core::ptr::read_unaligned(field_ptr as *const f32) }
@@ -397,17 +409,29 @@ impl MemoryTable {
         
         // 根据字段类型设置值
         match field.data_type {
+            crate::types::DataType::UInt8 => {
+                *(field_ptr as *mut u8) = value.u8;
+            }
+            crate::types::DataType::UInt16 => {
+                *(field_ptr as *mut u16) = value.u16;
+            }
+            crate::types::DataType::UInt32 => {
+                *(field_ptr as *mut u32) = value.u32;
+            }
+            crate::types::DataType::UInt64 => {
+                *(field_ptr as *mut u64) = value.u64;
+            }
             crate::types::DataType::Int8 => {
-                *(field_ptr as *mut i8) = value.int8;
+                *(field_ptr as *mut i8) = value.i8;
             }
             crate::types::DataType::Int16 => {
-                *(field_ptr as *mut i16) = value.int16;
+                *(field_ptr as *mut i16) = value.i16;
             }
             crate::types::DataType::Int32 => {
-                *(field_ptr as *mut i32) = value.int32;
+                *(field_ptr as *mut i32) = value.i32;
             }
             crate::types::DataType::Int64 => {
-                *(field_ptr as *mut i64) = value.int64;
+                *(field_ptr as *mut i64) = value.i64;
             }
             crate::types::DataType::Float32 => {
                 *(field_ptr as *mut f32) = value.float32;
@@ -749,7 +773,7 @@ impl MemoryTable {
             // 使用get_field方法获取时间值，避免直接访问偏移量
             let time_value = self.get_field(record_ptr, time_field_index)?;
             let timestamp: u64 = match time_value {
-                Value { int64: v } => v as u64,
+                Value { u64: v } => v as u64,
                 Value { timestamp: v } => v,
                 _ => return Err(RemDbError::TypeMismatch),
             };
@@ -790,19 +814,19 @@ impl MemoryTable {
             // 使用get_field方法获取时间值
             let time_value = self.get_field(record_ptr, time_field_index)?;
             let timestamp: u64 = match time_value {
-                Value { int64: v } => v as u64,
-                Value { timestamp: v } => v,
-                _ => return Err(RemDbError::TypeMismatch),
-            };
+                    Value { u64: v } => v as u64,
+                    Value { timestamp: v } => v,
+                    _ => return Err(RemDbError::TypeMismatch),
+                };
             
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
                 let value = self.get_field(record_ptr, value_field_index)?;
                 let numeric_value = match self.def.fields[value_field_index].data_type {
-                    crate::types::DataType::Int8 => value.int8 as f64,
-                    crate::types::DataType::Int16 => value.int16 as f64,
-                    crate::types::DataType::Int32 => value.int32 as f64,
-                    crate::types::DataType::Int64 => value.int64 as f64,
+                    crate::types::DataType::UInt8 => value.u8 as f64,
+                    crate::types::DataType::UInt16 => value.u16 as f64,
+                    crate::types::DataType::UInt32 => value.u32 as f64,
+                    crate::types::DataType::UInt64 => value.u64 as f64,
                     crate::types::DataType::Float32 => value.float32 as f64,
                     crate::types::DataType::Float64 => value.float64,
                     _ => return Err(RemDbError::TypeMismatch),
@@ -844,19 +868,19 @@ impl MemoryTable {
             // 使用get_field方法获取时间值
             let time_value = self.get_field(record_ptr, time_field_index)?;
             let timestamp: u64 = match time_value {
-                Value { int64: v } => v as u64,
-                Value { timestamp: v } => v,
-                _ => return Err(RemDbError::TypeMismatch),
-            };
+                    Value { u64: v } => v as u64,
+                    Value { timestamp: v } => v,
+                    _ => return Err(RemDbError::TypeMismatch),
+                };
             
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
                 let value = self.get_field(record_ptr, value_field_index)?;
                 let numeric_value = match self.def.fields[value_field_index].data_type {
-                    crate::types::DataType::Int8 => value.int8 as f64,
-                    crate::types::DataType::Int16 => value.int16 as f64,
-                    crate::types::DataType::Int32 => value.int32 as f64,
-                    crate::types::DataType::Int64 => value.int64 as f64,
+                    crate::types::DataType::UInt8 => value.u8 as f64,
+                    crate::types::DataType::UInt16 => value.u16 as f64,
+                    crate::types::DataType::UInt32 => value.u32 as f64,
+                    crate::types::DataType::UInt64 => value.u64 as f64,
                     crate::types::DataType::Float32 => value.float32 as f64,
                     crate::types::DataType::Float64 => value.float64,
                     _ => return Err(RemDbError::TypeMismatch),
@@ -902,19 +926,19 @@ impl MemoryTable {
             // 使用get_field方法获取时间值
             let time_value = self.get_field(record_ptr, time_field_index)?;
             let timestamp: u64 = match time_value {
-                Value { int64: v } => v as u64,
-                Value { timestamp: v } => v,
-                _ => return Err(RemDbError::TypeMismatch),
-            };
+                    Value { u64: v } => v as u64,
+                    Value { timestamp: v } => v,
+                    _ => return Err(RemDbError::TypeMismatch),
+                };
             
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
                 let value = self.get_field(record_ptr, value_field_index)?;
                 let numeric_value = match self.def.fields[value_field_index].data_type {
-                    crate::types::DataType::Int8 => value.int8 as f64,
-                    crate::types::DataType::Int16 => value.int16 as f64,
-                    crate::types::DataType::Int32 => value.int32 as f64,
-                    crate::types::DataType::Int64 => value.int64 as f64,
+                    crate::types::DataType::UInt8 => value.u8 as f64,
+                    crate::types::DataType::UInt16 => value.u16 as f64,
+                    crate::types::DataType::UInt32 => value.u32 as f64,
+                    crate::types::DataType::UInt64 => value.u64 as f64,
                     crate::types::DataType::Float32 => value.float32 as f64,
                     crate::types::DataType::Float64 => value.float64,
                     _ => return Err(RemDbError::TypeMismatch),
@@ -961,19 +985,19 @@ impl MemoryTable {
             // 使用get_field方法获取时间值
             let time_value = self.get_field(record_ptr, time_field_index)?;
             let timestamp: u64 = match time_value {
-                Value { int64: v } => v as u64,
-                Value { timestamp: v } => v,
-                _ => return Err(RemDbError::TypeMismatch),
-            };
+                    Value { u64: v } => v as u64,
+                    Value { timestamp: v } => v,
+                    _ => return Err(RemDbError::TypeMismatch),
+                };
             
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
                 let value = self.get_field(record_ptr, value_field_index)?;
                 let numeric_value = match self.def.fields[value_field_index].data_type {
-                    crate::types::DataType::Int8 => value.int8 as f64,
-                    crate::types::DataType::Int16 => value.int16 as f64,
-                    crate::types::DataType::Int32 => value.int32 as f64,
-                    crate::types::DataType::Int64 => value.int64 as f64,
+                    crate::types::DataType::UInt8 => value.u8 as f64,
+                    crate::types::DataType::UInt16 => value.u16 as f64,
+                    crate::types::DataType::UInt32 => value.u32 as f64,
+                    crate::types::DataType::UInt64 => value.u64 as f64,
                     crate::types::DataType::Float32 => value.float32 as f64,
                     crate::types::DataType::Float64 => value.float64,
                     _ => return Err(RemDbError::TypeMismatch),
@@ -1032,10 +1056,10 @@ impl MemoryTable {
             // 使用get_field方法获取时间值
             let time_value = self.get_field(record_ptr, time_field_index)?;
             let timestamp: u64 = match time_value {
-                Value { int64: v } => v as u64,
-                Value { timestamp: v } => v,
-                _ => return Err(RemDbError::TypeMismatch),
-            };
+                    Value { u64: v } => v as u64,
+                    Value { timestamp: v } => v,
+                    _ => return Err(RemDbError::TypeMismatch),
+                };
             
             record_times[record_count] = (i, timestamp);
             record_count += 1;
@@ -1104,10 +1128,10 @@ impl MemoryTable {
             // 使用get_field方法获取时间值，与get_latest_records保持一致
             let time_value = self.get_field(record_ptr, time_field_index)?;
             let timestamp: u64 = match time_value {
-                Value { int64: v } => v as u64,
-                Value { timestamp: v } => v,
-                _ => return Err(RemDbError::TypeMismatch),
-            };
+                    Value { u64: v } => v as u64,
+                    Value { timestamp: v } => v,
+                    _ => return Err(RemDbError::TypeMismatch),
+                };
             
             if timestamp >= start_time && timestamp <= end_time {
                 matched_records[match_count] = (i, timestamp);
@@ -1158,7 +1182,7 @@ impl MemoryTable {
         
         // 检查时间字段类型
         if time_field.data_type != crate::types::DataType::Timestamp && 
-           time_field.data_type != crate::types::DataType::Int64 {
+           time_field.data_type != crate::types::DataType::UInt64 {
             return Err(RemDbError::TypeMismatch);
         }
         
@@ -1178,7 +1202,7 @@ impl MemoryTable {
             // 获取时间值
             let time_value = self.get_field(record_ptr, time_field_index)?;
             let time_value: u64 = match time_value {
-                Value { int64: v } => v as u64,
+                Value { u64: v } => v as u64,
                 Value { timestamp: v } => v,
                 _ => return Err(RemDbError::TypeMismatch),
             };
@@ -1187,10 +1211,10 @@ impl MemoryTable {
                 // 获取数值
                 let value = self.get_field(record_ptr, value_field_index)?;
                 let numeric_value = match value_field.data_type {
-                    crate::types::DataType::Int8 => value.int8 as f64,
-                    crate::types::DataType::Int16 => value.int16 as f64,
-                    crate::types::DataType::Int32 => value.int32 as f64,
-                    crate::types::DataType::Int64 => value.int64 as f64,
+                    crate::types::DataType::UInt8 => value.u8 as f64,
+                    crate::types::DataType::UInt16 => value.u16 as f64,
+                    crate::types::DataType::UInt32 => value.u32 as f64,
+                    crate::types::DataType::UInt64 => value.u64 as f64,
                     crate::types::DataType::Float32 => value.float32 as f64,
                     crate::types::DataType::Float64 => value.float64,
                     _ => return Err(RemDbError::TypeMismatch),

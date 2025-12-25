@@ -8,10 +8,10 @@ use crate::transaction::{TransactionType, IsolationLevel};
 #[repr(u8)]
 #[derive(Copy, Clone)]
 pub enum RemDbDataType {
-    Int8 = 0,
-    Int16 = 1,
-    Int32 = 2,
-    Int64 = 3,
+    UInt8 = 0,
+    UInt16 = 1,
+    UInt32 = 2,
+    UInt64 = 3,
     Float32 = 4,
     Float64 = 5,
     Bool = 6,
@@ -22,10 +22,10 @@ pub enum RemDbDataType {
 impl From<RemDbDataType> for DataType {
     fn from(c_type: RemDbDataType) -> Self {
         match c_type {
-            RemDbDataType::Int8 => DataType::Int8,
-            RemDbDataType::Int16 => DataType::Int16,
-            RemDbDataType::Int32 => DataType::Int32,
-            RemDbDataType::Int64 => DataType::Int64,
+            RemDbDataType::UInt8 => DataType::UInt8,
+            RemDbDataType::UInt16 => DataType::UInt16,
+            RemDbDataType::UInt32 => DataType::UInt32,
+            RemDbDataType::UInt64 => DataType::UInt64,
             RemDbDataType::Float32 => DataType::Float32,
             RemDbDataType::Float64 => DataType::Float64,
             RemDbDataType::Bool => DataType::Bool,
@@ -41,10 +41,10 @@ pub const REMDB_MAX_STRING_LEN: usize = 64;
 /// C API: 通用值类型
 #[repr(C)]
 pub union RemDbValue {
-    pub int8: i8,
-    pub int16: i16,
-    pub int32: i32,
-    pub int64: i64,
+    pub u8: u8,
+    pub u16: u16,
+    pub u32: u32,
+    pub u64: u64,
     pub float32: f32,
     pub float64: f64,
     pub bool: u8,
@@ -56,10 +56,10 @@ impl From<Value> for RemDbValue {
     fn from(rust_value: Value) -> Self {
         unsafe {
             match rust_value {
-                Value { int8: v } => RemDbValue { int8: v },
-                Value { int16: v } => RemDbValue { int16: v },
-                Value { int32: v } => RemDbValue { int32: v },
-                Value { int64: v } => RemDbValue { int64: v },
+                Value { u8: v } => RemDbValue { u8: v },
+                Value { u16: v } => RemDbValue { u16: v },
+                Value { u32: v } => RemDbValue { u32: v },
+                Value { u64: v } => RemDbValue { u64: v },
                 Value { float32: v } => RemDbValue { float32: v },
                 Value { float64: v } => RemDbValue { float64: v },
                 Value { bool: v } => RemDbValue { bool: v as u8 },
@@ -80,7 +80,7 @@ impl From<RemDbValue> for Value {
         // 在实际使用中，应该根据字段的数据类型来选择合适的变体
         // 这里提供一个默认实现，实际使用时需要根据上下文调整
         unsafe {
-            Value { int32: c_value.int32 }
+            Value { u32: c_value.u32 }
         }
     }
 }
@@ -99,10 +99,10 @@ impl From<&FieldDef> for RemDbFieldDef {
         RemDbFieldDef {
             name: rust_field.name.as_ptr(),
             data_type: match rust_field.data_type {
-                DataType::Int8 => RemDbDataType::Int8,
-                DataType::Int16 => RemDbDataType::Int16,
-                DataType::Int32 => RemDbDataType::Int32,
-                DataType::Int64 => RemDbDataType::Int64,
+                DataType::UInt8 => RemDbDataType::UInt8,
+                DataType::UInt16 => RemDbDataType::UInt16,
+                DataType::UInt32 => RemDbDataType::UInt32,
+                DataType::UInt64 => RemDbDataType::UInt64,
                 DataType::Float32 => RemDbDataType::Float32,
                 DataType::Float64 => RemDbDataType::Float64,
                 DataType::Bool => RemDbDataType::Bool,

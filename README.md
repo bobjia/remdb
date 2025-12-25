@@ -54,6 +54,11 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 支持文件模式：关联外部DDL文件
   - 将SQL约束映射为Rust类型系统约束，编译期捕获错误
   - 生成的代码`#[repr(C)]`，内存布局与手写代码完全一致
+- **SQL查询支持**：
+  - 支持标准SQL SELECT语句查询内存数据库的数据
+  - 支持基本查询、条件查询、排序和LIMIT限制
+  - 支持比较运算符：`=`、`!=`、`<`、`<=`、`>`、`>=`
+  - 提供友好的结果集接口，支持迭代访问和字段获取
 
 ## 技术特点
 
@@ -189,6 +194,26 @@ fn main() {
         
         // 使用数据库...
     }
+}
+
+### SQL查询示例
+
+```rust
+// 执行SQL查询获取所有用户
+let result = db.sql_query("SELECT * FROM users").unwrap();
+println!("{}", result.to_string());
+
+// 执行带条件的SQL查询
+let result = db.sql_query("SELECT name, age FROM users WHERE age > 25 ORDER BY name ASC LIMIT 10").unwrap();
+for row in result {
+    println!("{}: {}", row.get(0), row.get(1));
+}
+
+// 执行带条件和排序的SQL查询
+let result = db.sql_query("SELECT * FROM users WHERE active = true ORDER BY created_at DESC").unwrap();
+for row in result {
+    println!("ID: {}, Name: {}, Age: {}, Active: {}", 
+             row.get(0), row.get(1), row.get(2), row.get(3));
 }
 ```
 
@@ -364,6 +389,7 @@ cargo check --no-default-features --features=baremetal
 - `low_power_mode.rs`：低功耗模式示例，展示如何配置和使用低功耗模式
 - `incremental_snapshot.rs`：增量快照示例，展示如何保存和恢复增量快照
 - `generate_snapshot.rs`：快照生成示例，展示如何生成和使用快照
+- `sql_query.rs`：SQL查询示例，展示如何使用SQL查询内存数据库
 
 ## 项目结构
 
@@ -376,6 +402,11 @@ remdb/
 │   ├── table.rs            # 内存表实现
 │   ├── index.rs            # 索引实现
 │   ├── transaction.rs      # 事务管理
+│   ├── sql/
+│   │   ├── mod.rs           # SQL查询模块
+│   │   ├── query_parser.rs  # SQL查询解析器
+│   │   ├── query_executor.rs # SQL查询执行器
+│   │   └── result_set.rs    # 结果集处理
 │   ├── memory/
 │   │   ├── allocator.rs    # 静态内存分配器
 │   │   ├── pool.rs         # 内存池

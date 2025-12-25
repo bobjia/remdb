@@ -1,0 +1,261 @@
+//! SQL查询示例
+//! 
+//! 该示例展示了如何使用remdb的SQL查询功能。
+
+// 引入alloc模块
+extern crate alloc;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
+use core::alloc::Layout;
+use core::ptr::NonNull;
+use remdb::*;
+
+// 定义内存缓冲区
+static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
+
+// 定义表结构
+remdb::table!(
+    users,
+    100, // 最大记录数
+    primary_key: id,
+    secondary_index: name,
+    fields: {
+        id: i32,
+        name: str(32), // 32字节定长字符串
+        age: i8,
+        active: bool,
+        created_at: u64
+    }
+);
+
+// 定义数据库配置
+remdb::database!(
+    TEST_DB,
+    tables: [users]
+);
+
+fn main() {
+    unsafe {
+        // 获取数据库配置
+        let config = &TEST_DB;
+        
+        // 初始化内存分配器
+        memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        );
+        
+        // 初始化平台抽象层
+        // 使用一个简单的平台实现
+        struct DummyPlatform;
+        impl platform::Platform for DummyPlatform {
+            fn get_timestamp(&self) -> u64 {
+                0
+            }
+            fn get_timestamp_us(&self) -> u64 {
+                0
+            }
+            fn spin_lock(&self, _lock: &mut u32) {
+            }
+            fn spin_unlock(&self, _lock: &mut u32) {
+            }
+            fn compiler_barrier(&self) {
+            }
+            fn full_memory_barrier(&self) {
+            }
+            fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
+                unsafe {
+                    core::ptr::copy_nonoverlapping(src, dest, size);
+                }
+            }
+            fn memset(&self, dest: *mut u8, value: u8, size: usize) {
+                unsafe {
+                    core::ptr::write_bytes(dest, value, size);
+                }
+            }
+            fn delay_ms(&self, _ms: u32) {
+            }
+            fn delay_us(&self, _us: u32) {
+            }
+            fn file_open(&self, _path: &str, _mode: platform::FileMode) -> platform::FileResult<platform::FileHandle> {
+                Err(())
+            }
+            fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
+                Err(())
+            }
+            fn file_write(&self, _handle: platform::FileHandle, _buffer: *const u8, _size: usize) -> platform::FileResult<usize> {
+                Err(())
+            }
+            fn file_read(&self, _handle: platform::FileHandle, _buffer: *mut u8, _size: usize) -> platform::FileResult<usize> {
+                Err(())
+            }
+            fn file_seek(&self, _handle: platform::FileHandle, _offset: i64, _whence: platform::SeekWhence) -> platform::FileResult<u64> {
+                Err(())
+            }
+            fn file_remove(&self, _path: &str) -> platform::FileResult<()> {
+                Err(())
+            }
+            fn file_size(&self, _path: &str) -> platform::FileResult<usize> {
+                Err(())
+            }
+            fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+                0
+            }
+        }
+        static DUMMY_PLATFORM: DummyPlatform = DummyPlatform;
+        platform::init_platform(&DUMMY_PLATFORM);
+        
+        // 计算所需内存大小
+        let table_size = MemoryTable::calculate_memory_size(
+            &config.tables[0]
+        );
+        let primary_index_size = PrimaryIndex::calculate_memory_size(
+            &config.tables[0],
+            128, // 哈希表大小
+            100  // 最大索引项数量
+        );
+        let secondary_index_size = SecondaryIndex::calculate_memory_size(100);
+        
+        // 分配内存
+        let table_ptr = memory::allocator::alloc(table_size).unwrap().as_ptr() as *mut u8;
+        let status_ptr = memory::allocator::alloc(
+            core::mem::size_of::<types::RecordHeader>() * config.tables[0].max_records
+        ).unwrap().as_ptr() as *mut types::RecordHeader;
+        let free_slots_ptr = memory::allocator::alloc(
+            core::mem::size_of::<usize>() * config.tables[0].max_records
+        ).unwrap().as_ptr() as *mut usize;
+        
+        let hash_table_ptr = memory::allocator::alloc(
+            128 * core::mem::size_of::<Option<NonNull<index::PrimaryIndexItem>>>()
+        ).unwrap().as_ptr() as *mut Option<NonNull<index::PrimaryIndexItem>>;
+        
+        let primary_index_items_ptr = memory::allocator::alloc(
+            100 * core::mem::size_of::<index::PrimaryIndexItem>()
+        ).unwrap().as_ptr() as *mut index::PrimaryIndexItem;
+        
+        let secondary_index_items_ptr = memory::allocator::alloc(
+            100 * core::mem::size_of::<index::SecondaryIndexItem>()
+        ).unwrap().as_ptr() as *mut index::SecondaryIndexItem;
+        
+        // 创建表和索引
+        let mut table = MemoryTable::new(&config.tables[0], table_ptr, status_ptr, free_slots_ptr).unwrap();
+        let mut primary_index = unsafe {
+            PrimaryIndex::new(
+                &config.tables[0],
+                hash_table_ptr,
+                primary_index_items_ptr,
+                128,
+                100
+            )
+        };
+        let mut secondary_index = unsafe {
+            SecondaryIndex::new(
+                &config.tables[0],
+                secondary_index_items_ptr,
+                100
+            )
+        };
+        
+        // 初始化表和索引数组
+        static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
+        static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
+        static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None; 1];
+        
+        TABLES[0] = Some(table);
+        PRIMARY_INDICES[0] = Some(primary_index);
+        SECONDARY_INDICES[0] = Some(AnySecondaryIndex::SortedArray(secondary_index));
+        
+        // 初始化全局数据库
+        let db = init_global_db(
+            config,
+            &mut TABLES,
+            &mut PRIMARY_INDICES,
+            &mut SECONDARY_INDICES
+        ).unwrap();
+        
+        // 插入测试数据
+        #[repr(C)]
+        struct UserRecord {
+            id: i32,
+            name: [u8; 32],
+            age: i8,
+            active: bool,
+            created_at: u64,
+        }
+        
+        // 准备测试数据
+        let test_users = [
+            (1, "Alice", 25, true, 1620000000000),
+            (2, "Bob", 30, true, 1620000001000),
+            (3, "Charlie", 35, false, 1620000002000),
+            (4, "David", 22, true, 1620000003000),
+            (5, "Eve", 28, false, 1620000004000),
+        ];
+        
+        for (id, name, age, active, created_at) in test_users {
+            // 构建记录数据
+            let mut record = UserRecord {
+                id,
+                name: [0u8; 32],
+                age,
+                active,
+                created_at,
+            };
+            
+            // 复制名字到记录
+            let name_bytes = name.as_bytes();
+            record.name[..name_bytes.len()].copy_from_slice(name_bytes);
+            
+            // 插入记录
+            let insert_id = db.get_table_mut(0).unwrap().insert(&record as *const _ as *const u8).unwrap();
+            println!("插入用户 {} 成功，记录ID: {}", name, insert_id);
+        }
+        
+        // 执行SQL查询
+        println!("\n=== SQL查询示例 ===");
+        
+        // 1. 查询所有用户
+        println!("\n1. 查询所有用户:");
+        let result = db.sql_query("SELECT * FROM users").unwrap();
+        println!("{}", result.to_string());
+        
+        // 2. 查询指定列
+        println!("\n2. 查询指定列:");
+        let result = db.sql_query("SELECT name, age FROM users").unwrap();
+        println!("{}", result.to_string());
+        
+        // 3. 查询带条件
+        println!("\n3. 查询带条件 (age > 25):");
+        let result = db.sql_query("SELECT * FROM users WHERE age > 25").unwrap();
+        println!("{}", result.to_string());
+        
+        // 4. 查询带条件和排序
+        println!("\n4. 查询带条件和排序 (active = true, 按年龄降序):");
+        let result = db.sql_query("SELECT * FROM users WHERE active = true ORDER BY age DESC").unwrap();
+        println!("{}", result.to_string());
+        
+        // 5. 查询带LIMIT
+        println!("\n5. 查询带LIMIT (前2条记录):");
+        let result = db.sql_query("SELECT * FROM users ORDER BY id ASC LIMIT 2").unwrap();
+        println!("{}", result.to_string());
+        
+        // 6. 使用迭代器访问结果
+        println!("\n6. 使用迭代器访问结果:");
+        let result = db.sql_query("SELECT name, active FROM users WHERE age < 30").unwrap();
+        for row in result.iter() {
+            // 从结果行中获取字段值
+            let name = row.get(0).unwrap();
+            let active = row.get(1).unwrap();
+            
+            // 转换为合适的类型
+            let name_str = String::from_utf8_lossy(&name.string).trim_end_matches(char::from(0)).to_string();
+            let active_val = active.bool;
+            
+            println!("用户名: {}, 活跃: {}", name_str, active_val);
+        }
+        
+        println!("\n=== SQL查询示例完成 ===");
+    }
+}

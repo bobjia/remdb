@@ -54,6 +54,11 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Supports file mode: associate external DDL files
   - Maps SQL constraints to Rust type system constraints, catching errors at compile time
   - Generated code is `#[repr(C)]` with memory layout identical to handwritten code
+- **SQL Query Support**:
+  - Supports standard SQL SELECT statements to query data in memory database
+  - Supports basic queries, conditional queries, sorting, and LIMIT constraints
+  - Supports comparison operators: `=`, `!=`, `<`, `<=`, `>`, `>=`
+  - Provides user-friendly result set interface, supporting iterative access and field retrieval
 
 ## Technical Characteristics
 
@@ -189,6 +194,26 @@ fn main() {
         
         // Use database...
     }
+}
+
+### SQL Query Example
+
+```rust
+// Execute SQL query to get all users
+let result = db.sql_query("SELECT * FROM users").unwrap();
+println!("{}", result.to_string());
+
+// Execute SQL query with condition
+let result = db.sql_query("SELECT name, age FROM users WHERE age > 25 ORDER BY name ASC LIMIT 10").unwrap();
+for row in result {
+    println!("{}: {}", row.get(0), row.get(1));
+}
+
+// Execute SQL query with condition and sorting
+let result = db.sql_query("SELECT * FROM users WHERE active = true ORDER BY created_at DESC").unwrap();
+for row in result {
+    println!("ID: {}, Name: {}, Age: {}, Active: {}", 
+             row.get(0), row.get(1), row.get(2), row.get(3));
 }
 ```
 
@@ -364,6 +389,7 @@ Check the examples directory for sample code:
 - `low_power_mode.rs`: Low power mode example demonstrating how to configure and use low power mode
 - `incremental_snapshot.rs`: Incremental snapshot example demonstrating how to save and restore incremental snapshots
 - `generate_snapshot.rs`: Snapshot generation example demonstrating how to generate and use snapshots
+- `sql_query.rs`: SQL query example demonstrating how to use SQL to query the in-memory database
 
 ## Project Structure
 
@@ -376,6 +402,11 @@ remdb/
 │   ├── table.rs            # In-memory table implementation
 │   ├── index.rs            # Index implementation
 │   ├── transaction.rs      # Transaction management
+│   ├── sql/
+│   │   ├── mod.rs           # SQL query module
+│   │   ├── query_parser.rs  # SQL query parser
+│   │   ├── query_executor.rs # SQL query executor
+│   │   └── result_set.rs    # Result set handling
 │   ├── memory/
 │   │   ├── allocator.rs    # Static memory allocator
 │   │   ├── pool.rs         # Memory pool

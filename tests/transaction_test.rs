@@ -107,7 +107,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     fields: &[
         FieldDef {
             name: "id",
-            data_type: DataType::Int32,
+            data_type: DataType::UInt32,
             size: 4,
             offset: 0,
         },

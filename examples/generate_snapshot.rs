@@ -7,9 +7,9 @@ table!(
     primary_key: id,
     secondary_index: name,
     fields: {
-        id: i64,
+        id: u64,
         name: str(20),
-        value: i32
+        value: u32
     }
 );
 
@@ -245,7 +245,7 @@ fn main() -> Result<()>
             let table = db.get_table_mut(0)?;
             
             // 设置字段值
-            let value = remdb::Value { int64: i as i64 };
+            let value = remdb::Value { u64: i as u64 };
             table.set_field(record.0.as_mut_ptr(), 0, &value)?;
             
             let name = format!("item_{}", i);
@@ -263,7 +263,7 @@ fn main() -> Result<()>
             } };
             table.set_field(record.0.as_mut_ptr(), 1, &name_value)?;
             
-            let value_value = remdb::Value { int32: i * 100 };
+            let value_value = remdb::Value { u32: (i * 100) as u32 };
             table.set_field(record.0.as_mut_ptr(), 2, &value_value)?;
             
             // 插入记录

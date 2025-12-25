@@ -6,7 +6,14 @@ use proc_macro2::Span;
 /// SQL数据类型
 #[derive(Debug, Clone, PartialEq)]
 pub enum SqlType {
-    Integer,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
     Text,
     Real,
     Boolean,
@@ -17,7 +24,14 @@ impl SqlType {
     /// 将SQL类型转换为Rust类型
     pub fn to_rust_type(&self, not_null: bool) -> String {
         let base_type = match self {
-            SqlType::Integer => "i64",
+            SqlType::Int8 => "i8",
+            SqlType::Int16 => "i16",
+            SqlType::Int32 => "i32",
+            SqlType::Int64 => "i64",
+            SqlType::UInt8 => "u8",
+            SqlType::UInt16 => "u16",
+            SqlType::UInt32 => "u32",
+            SqlType::UInt64 => "u64",
             SqlType::Text => "String",
             SqlType::Real => "f64",
             SqlType::Boolean => "bool",
@@ -34,7 +48,14 @@ impl SqlType {
     /// 将SQL类型转换为remdb DataType
     pub fn to_data_type(&self) -> String {
         match self {
-            SqlType::Integer => "Int64".to_string(),
+            SqlType::Int8 => "Int8".to_string(),
+            SqlType::Int16 => "Int16".to_string(),
+            SqlType::Int32 => "Int32".to_string(),
+            SqlType::Int64 => "Int64".to_string(),
+            SqlType::UInt8 => "UInt8".to_string(),
+            SqlType::UInt16 => "UInt16".to_string(),
+            SqlType::UInt32 => "UInt32".to_string(),
+            SqlType::UInt64 => "UInt64".to_string(),
             SqlType::Text => "String".to_string(),
             SqlType::Real => "Float64".to_string(),
             SqlType::Boolean => "Bool".to_string(),
@@ -341,7 +362,15 @@ impl DdlParser {
         let type_name = self.parse_word()?.to_uppercase();
         
         match type_name.as_str() {
-            "INTEGER" => Ok(SqlType::Integer),
+            "INT8" => Ok(SqlType::Int8),
+            "INT16" => Ok(SqlType::Int16),
+            "INT32" => Ok(SqlType::Int32),
+            "INT64" => Ok(SqlType::Int64),
+            "UINT8" => Ok(SqlType::UInt8),
+            "UINT16" => Ok(SqlType::UInt16),
+            "UINT32" => Ok(SqlType::UInt32),
+            "UINT64" => Ok(SqlType::UInt64),
+            "INTEGER" => Ok(SqlType::Int64), // 向后兼容，INTEGER映射为Int64
             "TEXT" => Ok(SqlType::Text),
             "REAL" => Ok(SqlType::Real),
             "BOOLEAN" => Ok(SqlType::Boolean),
@@ -491,12 +520,12 @@ impl DdlParser {
     
     /// 查看当前字符
     fn peek_char(&self) -> Option<char> {
-        self.input.chars().nth(self.position)
+        self.input.as_bytes().get(self.position).map(|&b| b as char)
     }
     
     /// 查看第n个字符
     fn peek_nth_char(&self, n: usize) -> Option<char> {
-        self.input.chars().nth(self.position + n)
+        self.input.as_bytes().get(self.position + n).map(|&b| b as char)
     }
     
     /// 获取下一个字符

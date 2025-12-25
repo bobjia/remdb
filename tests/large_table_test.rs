@@ -13,7 +13,7 @@ static LARGE_TABLE_DEF: TableDef = TableDef {
     fields: &[
         FieldDef {
             name: "id",
-            data_type: DataType::Int32,
+            data_type: DataType::UInt32,
             size: 4,
             offset: 0,
         },
@@ -201,10 +201,10 @@ fn test_large_table_performance() {
         for i in 0..80000 {
             let mut record_data = [0u8; 40]; // 40字节记录
             
-            // 设置ID字段（Int32）
-            let id: i32 = (i + 1) as i32;
+            // 设置ID字段（UInt32）
+            let id: u32 = (i + 1) as u32;
             core::ptr::copy_nonoverlapping(
-                &id as *const i32 as *const u8,
+                &id as *const u32 as *const u8,
                 record_data.as_mut_ptr(),
                 4
             );
@@ -320,9 +320,9 @@ fn test_large_table_performance() {
             let mut record_data = [0u8; 40];
             
             // 设置ID字段
-            let id: i32 = (i + 1) as i32;
+            let id: u32 = (i + 1) as u32;
             core::ptr::copy_nonoverlapping(
-                &id as *const i32 as *const u8,
+                &id as *const u32 as *const u8,
                 record_data.as_mut_ptr(),
                 4
             );

@@ -240,17 +240,17 @@ impl TableInput {
                 total_record_size += string_size;
             } else {
                 // Handle numeric types
-                let type_size = match field.data_type.to_string().as_str() {
-                    "Int8" => 1usize,
-                    "Int16" => 2usize,
-                    "Int32" => 4usize,
-                    "Int64" => 8usize,
-                    "Float32" => 4usize,
-                    "Float64" => 8usize,
-                    "Bool" => 1usize,
-                    "Timestamp" => 8usize,
-                    _ => panic!("Unsupported data type: {}", field.data_type),
-                };
+            let type_size = match field.data_type.to_string().as_str() {
+                "Int8" | "UInt8" => 1usize,
+                "Int16" | "UInt16" => 2usize,
+                "Int32" | "UInt32" => 4usize,
+                "Int64" | "UInt64" => 8usize,
+                "Float32" => 4usize,
+                "Float64" => 8usize,
+                "Bool" => 1usize,
+                "Timestamp" => 8usize,
+                _ => panic!("Unsupported data type: {}", field.data_type),
+            };
                 
                 field_defs.push(quote_spanned! {field.name.span() =>
                     remdb::types::FieldDef {
@@ -369,14 +369,19 @@ impl syn::parse::Parse for FieldDef {
         
         // Map the type string to DataType and size
         let (data_type, size) = match type_str.as_str() {
-            "i8" => ("Int8", "1"),
-            "i16" => ("Int16", "2"),
-            "i32" => ("Int32", "4"),
-            "i64" => ("Int64", "8"),
+            // 支持u8, u16, u32, u64类型，映射到对应的UInt变体
+            "u8" => ("UInt8", "1"),
+            "u16" => ("UInt16", "2"),
+            "u32" => ("UInt32", "4"),
+            "u64" => ("UInt64", "8"),
+            // 支持i8, i16, i32, i64类型，同样映射到对应的UInt变体
+            "i8" => ("UInt8", "1"),
+            "i16" => ("UInt16", "2"),
+            "i32" => ("UInt32", "4"),
+            "i64" => ("UInt64", "8"),
             "f32" => ("Float32", "4"),
             "f64" => ("Float64", "8"),
             "bool" => ("Bool", "1"),
-            "u64" => ("Timestamp", "8"),
             _ => {
                 return Err(syn::Error::new(
                     input.span(),

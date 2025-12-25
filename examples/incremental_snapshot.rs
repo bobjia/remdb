@@ -243,7 +243,7 @@ fn main() -> Result<()>
             let table = db.get_table_mut(0)?;
             
             // 设置字段值
-            let value = remdb::Value { int64: i as i64 };
+            let value = remdb::Value { u64: i as u64 };
             table.set_field(record.0.as_mut_ptr(), 0, &value)?;
             
             let name = format!("item_{}", i);
@@ -261,7 +261,7 @@ fn main() -> Result<()>
             } };
             table.set_field(record.0.as_mut_ptr(), 1, &name_value)?;
             
-            let value_value = remdb::Value { int32: i * 100 };
+            let value_value = remdb::Value { u32: i * 100 };
             table.set_field(record.0.as_mut_ptr(), 2, &value_value)?;
             
             // 插入记录
@@ -285,7 +285,7 @@ fn main() -> Result<()>
             let mut record = AlignedRecord([0; 32]);
             
             table.get_by_id(5, record.0.as_mut_ptr())?;
-            let value_value = remdb::Value { int32: 5555 };
+            let value_value = remdb::Value { u32: 5555 };
             table.set_field(record.0.as_mut_ptr(), 2, &value_value)?;
             
             table.delete(5)?;
@@ -293,7 +293,7 @@ fn main() -> Result<()>
             
             // 新增一条记录
             let mut new_record = AlignedRecord([0; 32]);
-            let id_value = remdb::Value { int64: 10 };
+            let id_value = remdb::Value { u64: 10 };
             table.set_field(new_record.0.as_mut_ptr(), 0, &id_value)?;
             
             let name = "item_10";
@@ -310,7 +310,7 @@ fn main() -> Result<()>
             } };
             table.set_field(new_record.0.as_mut_ptr(), 1, &name_value)?;
             
-            let value_value = remdb::Value { int32: 1000 };
+            let value_value = remdb::Value { u32: 1000 };
             table.set_field(new_record.0.as_mut_ptr(), 2, &value_value)?;
             
             table.insert(new_record.0.as_ptr())?;
@@ -333,7 +333,7 @@ fn main() -> Result<()>
             let mut record = AlignedRecord([0; 32]);
             
             table.get_by_id(6, record.0.as_mut_ptr())?;
-            let value_value = remdb::Value { int32: 6666 };
+            let value_value = remdb::Value { u32: 6666 };
             table.set_field(record.0.as_mut_ptr(), 2, &value_value)?;
             
             table.delete(6)?;
@@ -372,11 +372,11 @@ fn main() -> Result<()>
                 let value_value = table.get_field(record.0.as_ptr(), 2)?;
                 
                 // 提取值
-                let id = id_value.int64 as u64;
+                let id = id_value.u64 as u64;
                 let name_bytes = name_value.string.as_slice();
                 let name_len = name_bytes.iter().position(|&c| c == 0).unwrap_or(name_bytes.len());
                 let name = std::str::from_utf8(&name_bytes[..name_len]).unwrap_or("invalid_utf8");
-                let value = value_value.int32;
+                let value = value_value.u32;
                 
                 println!("记录索引 {}: id={}, name={:?}, value={}", i, id, name, value);
                 

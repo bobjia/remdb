@@ -14,7 +14,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
     fields: &[
         remdb::types::FieldDef {
             name: "id",
-            data_type: remdb::types::DataType::Int32,
+            data_type: remdb::types::DataType::UInt32,
             size: 4,
             offset: 0,
         },
@@ -32,7 +32,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
         },
         remdb::types::FieldDef {
             name: "age",
-            data_type: remdb::types::DataType::Int8,
+            data_type: remdb::types::DataType::UInt8,
             size: 1,
             offset: 100,
         },
@@ -63,13 +63,13 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
     fields: &[
         remdb::types::FieldDef {
             name: "id",
-            data_type: remdb::types::DataType::Int64,
+            data_type: remdb::types::DataType::UInt64,
             size: 8,
             offset: 0,
         },
         remdb::types::FieldDef {
             name: "user_id",
-            data_type: remdb::types::DataType::Int32,
+            data_type: remdb::types::DataType::UInt32,
             size: 4,
             offset: 8,
         },
@@ -81,7 +81,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
         },
         remdb::types::FieldDef {
             name: "quantity",
-            data_type: remdb::types::DataType::Int32,
+            data_type: remdb::types::DataType::UInt32,
             size: 4,
             offset: 76,
         },
@@ -118,7 +118,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
     fields: &[
         remdb::types::FieldDef {
             name: "id",
-            data_type: remdb::types::DataType::Int32,
+            data_type: remdb::types::DataType::UInt32,
             size: 4,
             offset: 0,
         },
@@ -142,7 +142,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
         },
         remdb::types::FieldDef {
             name: "stock",
-            data_type: remdb::types::DataType::Int32,
+            data_type: remdb::types::DataType::UInt32,
             size: 4,
             offset: 204,
         },

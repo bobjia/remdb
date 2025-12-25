@@ -118,6 +118,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     ],
     primary_key: 0,
     secondary_index: None,
+    secondary_index_type: IndexType::Hash,
     record_size: 8,
     max_records: 100, // 基准测试使用较小的记录数
 };
@@ -160,6 +161,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
     ],
     primary_key: 0,
     secondary_index: Some(3), // 时间戳作为辅助索引
+    secondary_index_type: IndexType::SortedArray,
     record_size: 116, // 4 + 32 + 8 + 8 + 64 = 116字节
     max_records: 1000, // 时间序列测试使用较大的记录数
 };
