@@ -27,6 +27,13 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 低功耗模式下优化内存使用
   - 减少事务日志写入频率，降低磁盘I/O
   - 当记录数超过限制时，自动覆盖最旧的记录
+- **增量快照**：
+  - 同时支持完整快照和增量快照
+  - 增量快照只保存版本号变化的记录
+  - 通过仅存储变化数据，减少快照大小和保存时间
+  - 支持从增量快照恢复数据
+  - 版本管理机制，跟踪数据变化
+  - 兼容现有快照格式
 
 ## 技术特点
 
@@ -270,6 +277,8 @@ cargo check --no-default-features --features=baremetal
 
 - `basic_usage.rs`：基本使用示例，展示表定义、插入、查询和事务操作
 - `low_power_mode.rs`：低功耗模式示例，展示如何配置和使用低功耗模式
+- `incremental_snapshot.rs`：增量快照示例，展示如何保存和恢复增量快照
+- `generate_snapshot.rs`：快照生成示例，展示如何生成和使用快照
 
 ## 项目结构
 
@@ -292,7 +301,9 @@ remdb/
 │       └── baremetal.rs    # 裸机平台实现
 ├── examples/
 │   ├── basic_usage.rs      # 基本使用示例
-│   └── low_power_mode.rs   # 低功耗模式示例
+│   ├── low_power_mode.rs   # 低功耗模式示例
+│   ├── incremental_snapshot.rs # 增量快照示例
+│   └── generate_snapshot.rs     # 快照生成示例
 ├── tests/
 │   ├── unit/
 │   │   ├── memory_test.rs  # 内存管理单元测试

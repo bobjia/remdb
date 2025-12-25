@@ -28,6 +28,8 @@ pub struct MemoryTable {
     pub low_power_mode: bool,
     /// 低功耗模式下的最大记录数
     pub low_power_max_records: Option<usize>,
+    /// 表快照版本号
+    pub snapshot_version: u32,
 }
 
 impl MemoryTable {
@@ -77,6 +79,7 @@ impl MemoryTable {
             free_slot_count: def.max_records,
             low_power_mode: false, // 默认不启用低功耗模式
             low_power_max_records: None, // 默认使用表定义的最大记录数
+            snapshot_version: 0, // 初始快照版本为0
         })
     }
     

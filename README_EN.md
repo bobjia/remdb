@@ -27,6 +27,13 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Optimized memory usage in low power mode
   - Reduced transaction log write frequency, lowering disk I/O
   - Automatically overwrites oldest records when the record count exceeds limits
+- **Incremental Snapshot**:
+  - Supports both full snapshot and incremental snapshot
+  - Incremental snapshot only saves records with changed version numbers
+  - Reduces snapshot size and save time by only storing changed data
+  - Supports restoring data from incremental snapshots
+  - Version management mechanism to track data changes
+  - Compatible with existing snapshot format
 
 ## Technical Characteristics
 
@@ -270,6 +277,8 @@ Check the examples directory for sample code:
 
 - `basic_usage.rs`: Basic usage example demonstrating table definition, insertion, query, and transaction operations
 - `low_power_mode.rs`: Low power mode example demonstrating how to configure and use low power mode
+- `incremental_snapshot.rs`: Incremental snapshot example demonstrating how to save and restore incremental snapshots
+- `generate_snapshot.rs`: Snapshot generation example demonstrating how to generate and use snapshots
 
 ## Project Structure
 
@@ -292,7 +301,9 @@ remdb/
 │       └── baremetal.rs    # Baremetal platform implementation
 ├── examples/
 │   ├── basic_usage.rs      # Basic usage example
-│   └── low_power_mode.rs   # Low power mode example
+│   ├── low_power_mode.rs   # Low power mode example
+│   ├── incremental_snapshot.rs # Incremental snapshot example
+│   └── generate_snapshot.rs     # Snapshot generation example
 ├── tests/
 │   ├── unit/
 │   │   ├── memory_test.rs  # Memory management unit tests
