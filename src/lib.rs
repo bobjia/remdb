@@ -773,11 +773,9 @@ pub fn get_global_db() -> Option<&'static mut RemDb> {
     }
 }
 
-// 导出C接口（可选）
+// 导出C接口
 #[cfg(feature = "c-api")]
-extern "C" {
-    // C API 声明
-}
+mod c_api;
 
 // Panic handler for no_std environments
 #[cfg(not(feature = "std"))]
