@@ -3,7 +3,7 @@ use remdb::{database, table, Result}; use remdb::types::RecordHeader;
 // 定义测试表
 table!(
     TEST_TABLE,
-    100, // 最大记录数
+    100, 
     primary_key: id,
     secondary_index: name,
     fields: {

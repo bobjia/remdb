@@ -6,7 +6,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
 
-use crate::{RemDb, MemoryTable, Value, RemDbError};
+use crate::{RemDb, MemoryTable, Value, RemDbError, types::DataType};
 use crate::sql::{SqlQuery, ResultSet, WhereClause, Condition, ComparisonCondition, ComparisonOperator, OrderByClause, OrderDirection};
 
 /// 查询执行错误
@@ -73,32 +73,43 @@ fn execute_select_query(db: &RemDb, query: &SqlQuery) -> Result<ResultSet, Query
     
     // 4. 收集所有符合条件的行
     let mut matching_rows = Vec::new();
+    let mut total_records = 0;
+    let mut matched_records = 0;
     
     unsafe {
         // 遍历表中的所有记录
         let iterate_result = table.iterate(|id, record_ptr| {
+            total_records += 1;
+            println!("Processing record #{}", id);
+            
             // 检查记录是否符合WHERE条件
+            let mut matches = true;
             if let Some(where_clause) = &query.where_clause {
-                if !evaluate_condition(table, record_ptr, &where_clause.condition) {
-                    return true; // 继续遍历
-                }
+                matches = evaluate_condition(table, record_ptr, &where_clause.condition);
+                println!("Record {} matches condition: {}", id, matches);
             }
             
-            // 收集记录ID和数据
-            let mut row_data = Vec::with_capacity(columns.len());
-            for column_name in &columns {
-                match get_field_value(table, record_ptr, column_name) {
-                    Ok(value) => row_data.push(value),
-                    Err(_) => return true, // 跳过错误记录，继续遍历
+            if matches {
+                matched_records += 1;
+                // 收集记录ID和数据
+                let mut row_data = Vec::with_capacity(columns.len());
+                for column_name in &columns {
+                    match get_field_value(table, record_ptr, column_name) {
+                        Ok(value) => row_data.push(value),
+                        Err(_) => return true, // 跳过错误记录，继续遍历
+                    }
                 }
+                
+                matching_rows.push((id, row_data));
+                println!("Added record {} to results", id);
             }
-            
-            matching_rows.push((id, row_data));
             
             true // 继续遍历
         });
         iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
     }
+    
+    println!("Total records processed: {}, matched: {}", total_records, matched_records);
     
     // 5. 对结果进行排序
     if let Some(order_by) = &query.order_by {
@@ -117,9 +128,8 @@ fn execute_select_query(db: &RemDb, query: &SqlQuery) -> Result<ResultSet, Query
         // 由于Value是union类型，无法直接Clone，我们需要手动创建新的Vec
         let mut new_row = Vec::with_capacity(row_data.len());
         for value in row_data.iter() {
-            // 复制每个Value的值
-            let new_value = crate::Value { u64: unsafe { value.u64 } };
-            new_row.push(new_value);
+            // 直接复制Value，因为Value是Copy类型
+            new_row.push(*value);
         }
         result_set.add_row(new_row);
     }
@@ -260,44 +270,177 @@ unsafe fn evaluate_condition(table: &MemoryTable, record_ptr: *const u8, conditi
 
 /// 评估比较条件
 unsafe fn evaluate_comparison(table: &MemoryTable, record_ptr: *const u8, comp: &ComparisonCondition) -> bool {
+    // 获取字段索引
+    let field_index = match table.def.fields
+        .iter()
+        .position(|field| field.name == &comp.field) {
+        Some(index) => index,
+        None => return false, // 字段不存在，条件不成立
+    };
+    
+    let field_type = table.def.fields[field_index].data_type;
+    
     // 获取字段值
     match get_field_value(table, record_ptr, &comp.field) {
         Ok(field_value) => {
-            // 比较字段值和条件值
-            compare_values(&field_value, &comp.operator, &comp.value)
+            // 比较字段值和条件值，传入字段类型
+            compare_values(&field_value, field_type, &comp.operator, &comp.value)
         },
         Err(_) => false,
     }
 }
 
-/// 比较两个值 - 简化实现，仅比较数值类型
-fn compare_values(field_value: &Value, operator: &ComparisonOperator, condition_value: &crate::sql::Value) -> bool {
-    // 由于Value是union类型，我们需要根据条件值类型进行比较
-    match condition_value {
-        crate::sql::Value::Integer(c_int) => {
-            // 假设字段值也是整数类型，比较u64字段
-            let f_int = unsafe { field_value.u64 }; // 安全，因为我们假设字段类型匹配
-            compare_numbers(f_int, *c_int as u64, operator)
+/// 比较两个值 - 修复了类型不匹配的bug
+fn compare_values(field_value: &Value, field_type: DataType, operator: &ComparisonOperator, condition_value: &crate::sql::Value) -> bool {
+    // 根据字段类型从Value union中读取正确的字段值，然后与条件值进行比较
+    match field_type {
+        // 无符号整数类型
+        DataType::UInt8 => {
+            let f_val = unsafe { field_value.u8 }; // 读取u8字段
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int as u8;
+                    compare_numbers(f_val, c_val, operator)
+                },
+                _ => false, // 类型不匹配
+            }
         },
-        crate::sql::Value::Float(c_float) => {
-            // 假设字段值也是浮点数类型，比较float64字段
-            let f_float = unsafe { field_value.float64 }; // 安全，因为我们假设字段类型匹配
-            compare_numbers(f_float, *c_float, operator)
+        DataType::UInt16 => {
+            let f_val = unsafe { field_value.u16 }; // 读取u16字段
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int as u16;
+                    compare_numbers(f_val, c_val, operator)
+                },
+                _ => false, // 类型不匹配
+            }
         },
-        crate::sql::Value::String(c_str) => {
-            // 假设字段值也是字符串类型，比较string字段
-            let f_str = unsafe { &field_value.string }; // 安全，因为我们假设字段类型匹配
+        DataType::UInt32 => {
+            let f_val = unsafe { field_value.u32 }; // 读取u32字段
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int as u32;
+                    compare_numbers(f_val, c_val, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        DataType::UInt64 => {
+            let f_val = unsafe { field_value.u64 }; // 读取u64字段
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int as u64;
+                    compare_numbers(f_val, c_val, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        
+        // 有符号整数类型
+        DataType::Int8 => {
+            let f_val = unsafe { field_value.i8 }; // 读取i8字段
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int as i8;
+                    // 调试输出
+                    println!("Int8 comparison: field_value={}, condition_value={}, operator={:?}", f_val, c_val, operator);
+                    let result = compare_numbers(f_val, c_val, operator);
+                    println!("Comparison result: {}", result);
+                    result
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        DataType::Int16 => {
+            let f_val = unsafe { field_value.i16 }; // 读取i16字段
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int as i16;
+                    compare_numbers(f_val, c_val, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        DataType::Int32 => {
+            let f_val = unsafe { field_value.i32 }; // 读取i32字段
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int as i32;
+                    compare_numbers(f_val, c_val, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        DataType::Int64 => {
+            let f_val = unsafe { field_value.i64 }; // 读取i64字段
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int;
+                    compare_numbers(f_val, c_val, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        
+        // 浮点数类型
+        DataType::Float32 => {
+            let f_val = unsafe { field_value.float32 }; // 读取float32字段
+            match condition_value {
+                crate::sql::Value::Float(c_float) => {
+                    compare_numbers(f_val as f64, *c_float, operator)
+                },
+                crate::sql::Value::Integer(c_int) => {
+                    compare_numbers(f_val as f64, *c_int as f64, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        DataType::Float64 => {
+            let f_val = unsafe { field_value.float64 }; // 读取float64字段
+            match condition_value {
+                crate::sql::Value::Float(c_float) => {
+                    compare_numbers(f_val, *c_float, operator)
+                },
+                crate::sql::Value::Integer(c_int) => {
+                    compare_numbers(f_val, *c_int as f64, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        
+        // 布尔类型
+        DataType::Bool => {
+            let f_val = unsafe { field_value.bool }; // 读取bool字段
+            match condition_value {
+                crate::sql::Value::Boolean(c_bool) => {
+                    compare_booleans(f_val, *c_bool, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        
+        // 时间戳类型
+        DataType::Timestamp => {
+            let f_val = unsafe { field_value.timestamp }; // 读取timestamp字段
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int as u64;
+                    compare_numbers(f_val, c_val, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        
+        // 字符串类型
+        DataType::String => {
+            let f_str = unsafe { &field_value.string }; // 读取string字段
             let f_str = String::from_utf8_lossy(f_str).trim_end_matches(char::from(0)).to_string();
-            compare_strings(&f_str, c_str, operator)
-        },
-        crate::sql::Value::Boolean(c_bool) => {
-            // 假设字段值也是布尔类型，比较bool字段
-            let f_bool = unsafe { field_value.bool }; // 安全，因为我们假设字段类型匹配
-            compare_booleans(f_bool, *c_bool, operator)
-        },
-        crate::sql::Value::Null => {
-            // NULL值比较总是返回false
-            false
+            match condition_value {
+                crate::sql::Value::String(c_str) => {
+                    compare_strings(&f_str, c_str, operator)
+                },
+                _ => false, // 类型不匹配
+            }
         },
     }
 }

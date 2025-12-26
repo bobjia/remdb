@@ -124,8 +124,8 @@ remdb::database!(
 
 #[test]
 fn test_sql_query() {
-    // 初始化内存缓冲区
-    let mut db_memory = [0u8; 65536];
+    // 初始化内存缓冲区 - 增加大小以避免内存覆盖问题
+    let mut db_memory = [0u8; 131072];
     
     // 初始化内存分配器
     unsafe {
@@ -221,13 +221,15 @@ fn test_sql_query() {
     };
     
     // 插入测试数据
+    // 确保TestRecord的内存布局与table!宏生成的字段偏移量匹配
+    // 使用精确的#[repr(C)]布局，确保字段顺序和大小与table!宏定义一致
     #[repr(C)]
     struct TestRecord {
-        id: i32,
-        name: [u8; 32],
-        age: i8,
-        active: bool,
-        created_at: u64,
+        id: i32,          // 4字节
+        name: [u8; 32],   // 32字节
+        age: i8,          // 1字节
+        active: u8,       // 1字节（bool在C中通常是1字节）
+        created_at: u64,  // 8字节
     }
     
     // 准备测试数据
@@ -244,7 +246,7 @@ fn test_sql_query() {
             id,
             name: [0u8; 32],
             age,
-            active,
+            active: if active { 1 } else { 0 }, // 将bool转换为u8
             created_at,
         };
         

@@ -125,6 +125,7 @@ pub mod time_utils {
 
 /// 通用值类型
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub union Value {
     pub u8: u8,
     pub u16: u16,

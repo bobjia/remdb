@@ -62,19 +62,13 @@ impl MemoryTable {
             }
         }
         
-        // 计算记录大小
-        let mut record_size = 0;
-        for field in def.fields {
-            record_size += field.size;
-        }
-        
         Some(MemoryTable {
             def,
             data_start,
             status_array,
             record_count: 0,
             lock: 0,
-            record_size,
+            record_size: def.record_size, // 使用表定义中已经计算好的record_size
             free_slots,
             free_slot_count: def.max_records,
             low_power_mode: false, // 默认不启用低功耗模式
@@ -359,7 +353,7 @@ impl MemoryTable {
                 Value { u64: core::ptr::read_unaligned(field_ptr as *const u64) }
             }
             crate::types::DataType::Int8 => {
-                Value { i8: *field_ptr as i8 }
+                Value { i8: core::ptr::read_unaligned(field_ptr as *const i8) }
             }
             crate::types::DataType::Int16 => {
                 Value { i16: core::ptr::read_unaligned(field_ptr as *const i16) }
@@ -760,6 +754,7 @@ impl MemoryTable {
         }
         
         let mut count = 0;
+        let time_field = &self.def.fields[time_field_index];
         
         // 遍历所有记录，统计符合时间范围的记录数
         for i in 0..self.def.max_records {
@@ -770,12 +765,32 @@ impl MemoryTable {
             
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
             
-            // 使用get_field方法获取时间值，避免直接访问偏移量
-            let time_value = self.get_field(record_ptr, time_field_index)?;
-            let timestamp: u64 = match time_value {
-                Value { u64: v } => v as u64,
-                Value { timestamp: v } => v,
-                _ => return Err(RemDbError::TypeMismatch),
+            // 根据字段类型读取时间值
+            let timestamp = match time_field.data_type {
+                crate::types::DataType::UInt64 => {
+                    core::ptr::read_unaligned(
+                        record_ptr.add(time_field.offset) as *const u64
+                    )
+                },
+                crate::types::DataType::Timestamp => {
+                    core::ptr::read_unaligned(
+                        record_ptr.add(time_field.offset) as *const u64
+                    )
+                },
+                _ => {
+                    // 对于其他数值类型，先读取为i64，再转换为u64
+                    let field_ptr = record_ptr.add(time_field.offset);
+                    match time_field.data_type {
+                        crate::types::DataType::UInt8 => core::ptr::read_unaligned(field_ptr as *const u8) as u64,
+                        crate::types::DataType::UInt16 => core::ptr::read_unaligned(field_ptr as *const u16) as u64,
+                        crate::types::DataType::UInt32 => core::ptr::read_unaligned(field_ptr as *const u32) as u64,
+                        crate::types::DataType::Int8 => core::ptr::read_unaligned(field_ptr as *const i8) as u64,
+                        crate::types::DataType::Int16 => core::ptr::read_unaligned(field_ptr as *const i16) as u64,
+                        crate::types::DataType::Int32 => core::ptr::read_unaligned(field_ptr as *const i32) as u64,
+                        crate::types::DataType::Int64 => core::ptr::read_unaligned(field_ptr as *const i64) as u64,
+                        _ => continue, // 跳过非数值类型
+                    }
+                }
             };
             
             if timestamp >= start_time && timestamp <= end_time {
@@ -811,13 +826,34 @@ impl MemoryTable {
             
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
             
-            // 使用get_field方法获取时间值
-            let time_value = self.get_field(record_ptr, time_field_index)?;
-            let timestamp: u64 = match time_value {
-                    Value { u64: v } => v as u64,
-                    Value { timestamp: v } => v,
-                    _ => return Err(RemDbError::TypeMismatch),
-                };
+            // 根据字段类型读取时间值
+            let time_field = &self.def.fields[time_field_index];
+            let timestamp = match time_field.data_type {
+                crate::types::DataType::UInt64 => {
+                    core::ptr::read_unaligned(
+                        record_ptr.add(time_field.offset) as *const u64
+                    )
+                },
+                crate::types::DataType::Timestamp => {
+                    core::ptr::read_unaligned(
+                        record_ptr.add(time_field.offset) as *const u64
+                    )
+                },
+                _ => {
+                    // 对于其他数值类型，先读取对应类型，再转换为u64
+                    let field_ptr = record_ptr.add(time_field.offset);
+                    match time_field.data_type {
+                        crate::types::DataType::UInt8 => core::ptr::read_unaligned(field_ptr as *const u8) as u64,
+                        crate::types::DataType::UInt16 => core::ptr::read_unaligned(field_ptr as *const u16) as u64,
+                        crate::types::DataType::UInt32 => core::ptr::read_unaligned(field_ptr as *const u32) as u64,
+                        crate::types::DataType::Int8 => core::ptr::read_unaligned(field_ptr as *const i8) as u64,
+                        crate::types::DataType::Int16 => core::ptr::read_unaligned(field_ptr as *const i16) as u64,
+                        crate::types::DataType::Int32 => core::ptr::read_unaligned(field_ptr as *const i32) as u64,
+                        crate::types::DataType::Int64 => core::ptr::read_unaligned(field_ptr as *const i64) as u64,
+                        _ => continue, // 跳过非数值类型
+                    }
+                }
+            };
             
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
@@ -865,13 +901,34 @@ impl MemoryTable {
             
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
             
-            // 使用get_field方法获取时间值
-            let time_value = self.get_field(record_ptr, time_field_index)?;
-            let timestamp: u64 = match time_value {
-                    Value { u64: v } => v as u64,
-                    Value { timestamp: v } => v,
-                    _ => return Err(RemDbError::TypeMismatch),
-                };
+            // 根据字段类型读取时间值
+            let time_field = &self.def.fields[time_field_index];
+            let timestamp = match time_field.data_type {
+                crate::types::DataType::UInt64 => {
+                    core::ptr::read_unaligned(
+                        record_ptr.add(time_field.offset) as *const u64
+                    )
+                },
+                crate::types::DataType::Timestamp => {
+                    core::ptr::read_unaligned(
+                        record_ptr.add(time_field.offset) as *const u64
+                    )
+                },
+                _ => {
+                    // 对于其他数值类型，先读取对应类型，再转换为u64
+                    let field_ptr = record_ptr.add(time_field.offset);
+                    match time_field.data_type {
+                        crate::types::DataType::UInt8 => core::ptr::read_unaligned(field_ptr as *const u8) as u64,
+                        crate::types::DataType::UInt16 => core::ptr::read_unaligned(field_ptr as *const u16) as u64,
+                        crate::types::DataType::UInt32 => core::ptr::read_unaligned(field_ptr as *const u32) as u64,
+                        crate::types::DataType::Int8 => core::ptr::read_unaligned(field_ptr as *const i8) as u64,
+                        crate::types::DataType::Int16 => core::ptr::read_unaligned(field_ptr as *const i16) as u64,
+                        crate::types::DataType::Int32 => core::ptr::read_unaligned(field_ptr as *const i32) as u64,
+                        crate::types::DataType::Int64 => core::ptr::read_unaligned(field_ptr as *const i64) as u64,
+                        _ => continue, // 跳过非数值类型
+                    }
+                }
+            };
             
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
@@ -923,13 +980,34 @@ impl MemoryTable {
             
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
             
-            // 使用get_field方法获取时间值
-            let time_value = self.get_field(record_ptr, time_field_index)?;
-            let timestamp: u64 = match time_value {
-                    Value { u64: v } => v as u64,
-                    Value { timestamp: v } => v,
-                    _ => return Err(RemDbError::TypeMismatch),
-                };
+            // 根据字段类型读取时间值
+            let time_field = &self.def.fields[time_field_index];
+            let timestamp = match time_field.data_type {
+                crate::types::DataType::UInt64 => {
+                    core::ptr::read_unaligned(
+                        record_ptr.add(time_field.offset) as *const u64
+                    )
+                },
+                crate::types::DataType::Timestamp => {
+                    core::ptr::read_unaligned(
+                        record_ptr.add(time_field.offset) as *const u64
+                    )
+                },
+                _ => {
+                    // 对于其他数值类型，先读取对应类型，再转换为u64
+                    let field_ptr = record_ptr.add(time_field.offset);
+                    match time_field.data_type {
+                        crate::types::DataType::UInt8 => core::ptr::read_unaligned(field_ptr as *const u8) as u64,
+                        crate::types::DataType::UInt16 => core::ptr::read_unaligned(field_ptr as *const u16) as u64,
+                        crate::types::DataType::UInt32 => core::ptr::read_unaligned(field_ptr as *const u32) as u64,
+                        crate::types::DataType::Int8 => core::ptr::read_unaligned(field_ptr as *const i8) as u64,
+                        crate::types::DataType::Int16 => core::ptr::read_unaligned(field_ptr as *const i16) as u64,
+                        crate::types::DataType::Int32 => core::ptr::read_unaligned(field_ptr as *const i32) as u64,
+                        crate::types::DataType::Int64 => core::ptr::read_unaligned(field_ptr as *const i64) as u64,
+                        _ => continue, // 跳过非数值类型
+                    }
+                }
+            };
             
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
@@ -957,6 +1035,59 @@ impl MemoryTable {
         min_value.ok_or(RemDbError::RecordNotFound)
     }
     
+    /// 辅助函数：根据字段类型读取时间值
+    unsafe fn read_timestamp_value(&self, record_ptr: *const u8, time_field_index: usize) -> Option<u64> {
+        let time_field = &self.def.fields[time_field_index];
+        match time_field.data_type {
+            crate::types::DataType::UInt64 => Some(
+                core::ptr::read_unaligned(
+                    record_ptr.add(time_field.offset) as *const u64
+                )
+            ),
+            crate::types::DataType::Timestamp => Some(
+                core::ptr::read_unaligned(
+                    record_ptr.add(time_field.offset) as *const u64
+                )
+            ),
+            crate::types::DataType::UInt8 => Some(
+                core::ptr::read_unaligned(
+                    record_ptr.add(time_field.offset) as *const u8
+                ) as u64
+            ),
+            crate::types::DataType::UInt16 => Some(
+                core::ptr::read_unaligned(
+                    record_ptr.add(time_field.offset) as *const u16
+                ) as u64
+            ),
+            crate::types::DataType::UInt32 => Some(
+                core::ptr::read_unaligned(
+                    record_ptr.add(time_field.offset) as *const u32
+                ) as u64
+            ),
+            crate::types::DataType::Int8 => Some(
+                core::ptr::read_unaligned(
+                    record_ptr.add(time_field.offset) as *const i8
+                ) as u64
+            ),
+            crate::types::DataType::Int16 => Some(
+                core::ptr::read_unaligned(
+                    record_ptr.add(time_field.offset) as *const i16
+                ) as u64
+            ),
+            crate::types::DataType::Int32 => Some(
+                core::ptr::read_unaligned(
+                    record_ptr.add(time_field.offset) as *const i32
+                ) as u64
+            ),
+            crate::types::DataType::Int64 => Some(
+                core::ptr::read_unaligned(
+                    record_ptr.add(time_field.offset) as *const i64
+                ) as u64
+            ),
+            _ => None, // 跳过非数值类型
+        }
+    }
+
     /// 时间序列聚合：计算时间范围内数值字段最大值
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间
     pub unsafe fn aggregate_max(
@@ -982,13 +1113,10 @@ impl MemoryTable {
             
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
             
-            // 使用get_field方法获取时间值
-            let time_value = self.get_field(record_ptr, time_field_index)?;
-            let timestamp: u64 = match time_value {
-                    Value { u64: v } => v as u64,
-                    Value { timestamp: v } => v,
-                    _ => return Err(RemDbError::TypeMismatch),
-                };
+            // 使用辅助函数读取时间值
+            let Some(timestamp) = self.read_timestamp_value(record_ptr, time_field_index) else {
+                continue;
+            };
             
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
@@ -1053,16 +1181,11 @@ impl MemoryTable {
             
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
             
-            // 使用get_field方法获取时间值
-            let time_value = self.get_field(record_ptr, time_field_index)?;
-            let timestamp: u64 = match time_value {
-                    Value { u64: v } => v as u64,
-                    Value { timestamp: v } => v,
-                    _ => return Err(RemDbError::TypeMismatch),
-                };
-            
-            record_times[record_count] = (i, timestamp);
-            record_count += 1;
+            // 使用辅助函数读取时间值
+            if let Some(timestamp) = self.read_timestamp_value(record_ptr, time_field_index) {
+                record_times[record_count] = (i, timestamp);
+                record_count += 1;
+            };
         }
         
         // 按时间值降序排序
@@ -1125,18 +1248,13 @@ impl MemoryTable {
             
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
             
-            // 使用get_field方法获取时间值，与get_latest_records保持一致
-            let time_value = self.get_field(record_ptr, time_field_index)?;
-            let timestamp: u64 = match time_value {
-                    Value { u64: v } => v as u64,
-                    Value { timestamp: v } => v,
-                    _ => return Err(RemDbError::TypeMismatch),
-                };
-            
-            if timestamp >= start_time && timestamp <= end_time {
-                matched_records[match_count] = (i, timestamp);
-                match_count += 1;
-            }
+            // 使用辅助函数读取时间值
+            if let Some(timestamp) = self.read_timestamp_value(record_ptr, time_field_index) {
+                if timestamp >= start_time && timestamp <= end_time {
+                    matched_records[match_count] = (i, timestamp);
+                    match_count += 1;
+                }
+            };
         }
         
         // 按时间值升序排序
@@ -1199,12 +1317,9 @@ impl MemoryTable {
             
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
             
-            // 获取时间值
-            let time_value = self.get_field(record_ptr, time_field_index)?;
-            let time_value: u64 = match time_value {
-                Value { u64: v } => v as u64,
-                Value { timestamp: v } => v,
-                _ => return Err(RemDbError::TypeMismatch),
+            // 使用辅助函数读取时间值
+            let Some(time_value) = self.read_timestamp_value(record_ptr, time_field_index) else {
+                continue;
             };
             
             if time_value >= start_time && time_value <= end_time {
