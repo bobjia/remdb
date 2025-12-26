@@ -1,0 +1,4 @@
+[submodule "remdb-macros"]
+	path = remdb-macros
+	url = https://gitee.com/totaltrust/remdb.git
+	branch = main
