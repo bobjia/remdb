@@ -1,9 +1,13 @@
 mod codegen;
 mod ddl_parser;
 
+use proc_macro::TokenStream;
+use syn::parse_macro_input;
+use quote::quote;
+
 #[proc_macro]
-pub fn define_schema(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = syn::parse_macro_input!(input as syn::LitStr);
+pub fn define_schema(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as syn::LitStr);
     let schema = input.value();
     
     match ddl_parser::parse_ddl(&schema) {
@@ -17,9 +21,45 @@ pub fn define_schema(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
     }
 }
 
-use syn::{parse_macro_input, LitInt, Ident, Token};
+#[proc_macro_derive(MemdbTable, attributes(memdb_schema))]
+pub fn derive_memdb_table(input: TokenStream) -> TokenStream {
+    let derive_input = parse_macro_input!(input as syn::DeriveInput);
+    
+    // 查找memdb_schema属性
+    let mut ddl = String::new();
+    
+    for attr in &derive_input.attrs {
+        if attr.path().is_ident("memdb_schema") {
+            // 使用正确的syn 2.0 API解析属性
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("ddl") {
+                    let lit = meta.value()?;
+                    let lit_str = lit.parse::<syn::LitStr>()?;
+                    ddl = lit_str.value();
+                }
+                Ok(())
+            }).unwrap();
+        }
+    }
+    
+    if ddl.is_empty() {
+        panic!("memdb_schema attribute with ddl parameter is required");
+    }
+    
+    // 解析DDL并生成代码
+    match ddl_parser::parse_ddl(&ddl) {
+        Ok(table_defs) => {
+            let generated_code = codegen::generate_code(table_defs);
+            generated_code.into()
+        },
+        Err(e) => {
+            panic!("Failed to parse DDL: {}", e);
+        }
+    }
+}
+
+use syn::{LitInt, Ident, Token};
 use syn::parse::{Parse, ParseStream};
-use quote::quote;
 
 // 字段定义
 struct Field {

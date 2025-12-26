@@ -2,56 +2,30 @@ extern crate alloc;
 
 use core::ptr::NonNull;
 use remdb::*;
+use remdb_macros::MemdbTable;
 
-// 定义sensor_data表
-remdb::table!(
-    sensor_data,
-    1000, // 最大记录数
-    primary_key: id,
-    secondary_index: timestamp,
-    secondary_index_type: btree,
-    fields: {
-        id: i32,
-        timestamp: u64,
-        sensor_id: str(32),
-        value_int64: i64,
-        value_uint64: u64,
-        value_int32: i32,
-        value_uint32: u32,
-        value_int16: i16,
-        value_uint16: u16,
-        value_int8: i8,
-        value_uint8: u8,
-        value_real: f64,
-        value_bool: bool,
-        value_string: str(64)
-    }
+// 使用DDL定义表结构和数据库
+#[derive(MemdbTable)]
+#[memdb_schema(ddl = "CREATE TABLE sensor_data (
+    id INTEGER PRIMARY KEY,
+    timestamp BIGINT NOT NULL,
+    sensor_id TEXT(32) NOT NULL,
+    value_int64 BIGINT,
+    value_uint64 UNSIGNED BIGINT,
+    value_int32 INTEGER,
+    value_uint32 UNSIGNED INTEGER,
+    value_int16 SMALLINT,
+    value_uint16 UNSIGNED SMALLINT,
+    value_int8 TINYINT,
+    value_uint8 UNSIGNED TINYINT,
+    value_real DOUBLE PRECISION,
+    value_bool BOOLEAN,
+    value_string TEXT(64)
 );
+CREATE INDEX idx_sensor_timestamp ON sensor_data USING btree (timestamp);")]
+struct Database;
 
-// 定义数据库配置
-remdb::database!(
-    DATABASE,
-    tables: [sensor_data]
-);
-
-// 定义SensorData结构体
-#[repr(C)]
-struct SensorData {
-    id: i32,
-    timestamp: u64,
-    sensor_id: [u8; 32],
-    value_int64: i64,
-    value_uint64: u64,
-    value_int32: i32,
-    value_uint32: u32,
-    value_int16: i16,
-    value_uint16: u16,
-    value_int8: i8,
-    value_uint8: u8,
-    value_real: f64,
-    value_bool: bool,
-    value_string: [u8; 64]
-}
+// SensorData结构体将由MemdbTable宏自动生成
 
 // 定义内存缓冲区
 static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
@@ -207,40 +181,30 @@ fn main() {
         for i in 0..10 {
             let timestamp = base_time + i * 1000; // 每秒一条数据
             let sensor_id_str = format!("sensor_{}", i % 3);
+            let sensor_id_copy = sensor_id_str.clone();
             
-            // 初始化SensorData结构体
-            let mut record = SensorData {
+            // 初始化自动生成的SensorData结构体
+            let record = SensorData {
                 id: i as i32,
                 timestamp: timestamp,
-                sensor_id: [0; 32],
-                value_int64: i as i64 * 100,
-                value_uint64: i as u64 * 200,
-                value_int32: i as i32 * 30,
-                value_uint32: i as u32 * 40,
-                value_int16: i as i16 * 5,
-                value_uint16: i as u16 * 10,
-                value_int8: i as i8 * 2,
-                value_uint8: i as u8 * 3,
-                value_real: i as f64 * 1.5,
-                value_bool: i % 2 == 0,
-                value_string: [0; 64]
+                sensor_id: sensor_id_str,
+                value_int64: Some(i as i64 * 100),
+                value_uint64: Some(i as u64 * 200),
+                value_int32: Some(i as i32 * 30),
+                value_uint32: Some(i as u32 * 40),
+                value_int16: Some(i as i16 * 5),
+                value_uint16: Some(i as u16 * 10),
+                value_int8: Some(i as i8 * 2),
+                value_uint8: Some(i as u8 * 3),
+                value_real: Some(i as f64 * 1.5),
+                value_bool: Some(i % 2 == 0),
+                value_string: Some(format!("data_point_{}", i))
             };
-            
-            // 填充sensor_id
-            let sensor_id_bytes = sensor_id_str.as_bytes();
-            let sensor_id_len = core::cmp::min(sensor_id_bytes.len(), 32);
-            record.sensor_id[..sensor_id_len].copy_from_slice(&sensor_id_bytes[..sensor_id_len]);
-            
-            // 填充value_string
-            let value_str = format!("data_point_{}", i);
-            let value_str_bytes = value_str.as_bytes();
-            let value_str_len = core::cmp::min(value_str_bytes.len(), 64);
-            record.value_string[..value_str_len].copy_from_slice(&value_str_bytes[..value_str_len]);
             
             // 使用API插入数据
             let table_mut = db.get_table_mut(0).unwrap();
             let record_id = table_mut.insert(&record as *const SensorData as *const u8).unwrap();
-            println!("   Inserted data point {} for sensor {}, record_id: {}", i, sensor_id_str, record_id);
+            println!("   Inserted data point {} for sensor {}, record_id: {}", i, sensor_id_copy, record_id);
         }
         
         // 3. 使用API查询
@@ -254,7 +218,12 @@ fn main() {
             // 读取并打印结果
             let result_id = core::ptr::read(result_data.as_ptr() as *const i32);
             let result_timestamp = core::ptr::read(result_data.as_ptr().add(4) as *const u64);
-            let result_sensor_id = core::str::from_utf8(&result_data[12..44]).unwrap().trim_end_matches(char::from(0));
+            
+            // 安全处理字符串字段：先找到第一个零字节，再转换为字符串
+            let sensor_id_slice = &result_data[12..44];
+            let sensor_id_len = sensor_id_slice.iter().position(|&c| c == 0).unwrap_or(sensor_id_slice.len());
+            let result_sensor_id = core::str::from_utf8(&sensor_id_slice[..sensor_id_len]).unwrap_or("<invalid-utf8>");
+            
             let result_value_real = core::ptr::read(result_data.as_ptr().add(164) as *const f64);
             println!("      Found: ID={}, Timestamp={}, SensorID={}, ValueReal={}",
                      result_id, result_timestamp, result_sensor_id, result_value_real);
@@ -302,40 +271,30 @@ fn main() {
         for i in 10..15 {
             let timestamp = base_time + i * 1000;
             let sensor_id_str = format!("sensor_{}", i % 3);
+            let sensor_id_copy = sensor_id_str.clone();
             
-            // 初始化SensorData结构体
-            let mut record = SensorData {
+            // 初始化自动生成的SensorData结构体
+            let record = SensorData {
                 id: i as i32,
                 timestamp: timestamp,
-                sensor_id: [0; 32],
-                value_int64: i as i64 * 100,
-                value_uint64: i as u64 * 200,
-                value_int32: i as i32 * 30,
-                value_uint32: i as u32 * 40,
-                value_int16: i as i16 * 5,
-                value_uint16: i as u16 * 10,
-                value_int8: i as i8 * 2,
-                value_uint8: i as u8 * 3,
-                value_real: i as f64 * 1.5,
-                value_bool: i % 2 == 0,
-                value_string: [0; 64]
+                sensor_id: sensor_id_str,
+                value_int64: Some(i as i64 * 100),
+                value_uint64: Some(i as u64 * 200),
+                value_int32: Some(i as i32 * 30),
+                value_uint32: Some(i as u32 * 40),
+                value_int16: Some(i as i16 * 5),
+                value_uint16: Some(i as u16 * 10),
+                value_int8: Some(i as i8 * 2),
+                value_uint8: Some(i as u8 * 3),
+                value_real: Some(i as f64 * 1.5),
+                value_bool: Some(i % 2 == 0),
+                value_string: Some(format!("data_point_{}", i))
             };
-            
-            // 填充sensor_id
-            let sensor_id_bytes = sensor_id_str.as_bytes();
-            let sensor_id_len = core::cmp::min(sensor_id_bytes.len(), 32);
-            record.sensor_id[..sensor_id_len].copy_from_slice(&sensor_id_bytes[..sensor_id_len]);
-            
-            // 填充value_string
-            let value_str = format!("data_point_{}", i);
-            let value_str_bytes = value_str.as_bytes();
-            let value_str_len = core::cmp::min(value_str_bytes.len(), 64);
-            record.value_string[..value_str_len].copy_from_slice(&value_str_bytes[..value_str_len]);
             
             // 插入数据
             let table_mut = db.get_table_mut(0).unwrap();
             let record_id = table_mut.insert(&record as *const SensorData as *const u8).unwrap();
-            println!("   Inserted data point {} for sensor {}, record_id: {}", i, sensor_id_str, record_id);
+            println!("   Inserted data point {} for sensor {}, record_id: {}", i, sensor_id_copy, record_id);
         }
         
         // 7. 保持增量快照

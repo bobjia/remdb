@@ -2,12 +2,12 @@ use remdb_macros::MemdbTable;
 
 // 使用内联DDL定义表，包含不同类型的索引
 #[derive(MemdbTable)]
-#[memdb_schema(ddl = "CREATE TABLE user (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER, active BOOLEAN);
+#[memdb_schema(ddl = "CREATE TABLE user (id BIGINT PRIMARY KEY, name TEXT NOT NULL, age BIGINT, active BOOLEAN);
 CREATE INDEX idx_user_name ON user USING btree (name);
 CREATE INDEX idx_user_age ON user USING hash (age);
 CREATE INDEX idx_user_active ON user USING sortedarray (active);
 
-CREATE TABLE product (id INTEGER PRIMARY KEY, name TEXT NOT NULL, price REAL NOT NULL, category TEXT);
+CREATE TABLE product (id BIGINT PRIMARY KEY, name TEXT NOT NULL, price REAL NOT NULL, category TEXT);
 CREATE INDEX idx_product_price ON product USING ttree (price);
 CREATE INDEX idx_product_category ON product (category); -- 默认BTree")]
 struct Database;
