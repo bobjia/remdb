@@ -22,6 +22,10 @@ pub struct SqlQuery {
     pub order_by: Option<OrderByClause>,
     /// 结果限制
     pub limit: Option<usize>,
+    /// 要插入的字段列表
+    pub insert_columns: Vec<String>,
+    /// 要插入的值列表
+    pub values: Vec<Vec<Value>>,
 }
 
 /// 查询类型
@@ -29,6 +33,10 @@ pub struct SqlQuery {
 pub enum QueryType {
     /// SELECT查询
     Select,
+    /// INSERT查询
+    Insert,
+    /// DELETE查询
+    Delete,
     /// DESCRIBE TABLE查询
     Describe,
     /// 其他查询类型（暂不支持）
@@ -186,6 +194,8 @@ impl SqlParser {
         
         match query_type {
             QueryType::Select => self.parse_select_query(),
+            QueryType::Insert => self.parse_insert_query(),
+            QueryType::Delete => self.parse_delete_query(),
             QueryType::Describe => self.parse_describe_query(),
             QueryType::Other => Err(QueryParseError::UnsupportedKeyword),
         }
@@ -209,6 +219,137 @@ impl SqlParser {
             where_clause: None,
             order_by: None,
             limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+        })
+    }
+    
+    /// 解析INSERT查询
+    fn parse_insert_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析INTO关键字
+        self.skip_whitespace();
+        self.expect_keyword("INTO")?;
+        
+        // 解析表名
+        self.skip_whitespace();
+        let table_name = self.parse_identifier()?;
+        
+        // 解析插入的字段列表（可选）
+        let insert_columns = self.parse_insert_columns()?;
+        
+        // 解析VALUES关键字
+        self.skip_whitespace();
+        self.expect_keyword("VALUES")?;
+        
+        // 解析值列表
+        let values = self.parse_values()?;
+        
+        Ok(SqlQuery {
+            query_type: QueryType::Insert,
+            table_name,
+            columns: Vec::new(),
+            select_all: false,
+            where_clause: None,
+            order_by: None,
+            limit: None,
+            insert_columns,
+            values,
+        })
+    }
+    
+    /// 解析插入的字段列表
+    fn parse_insert_columns(&mut self) -> Result<Vec<String>, QueryParseError> {
+        self.skip_whitespace();
+        
+        if self.match_char('(') {
+            // 解析字段列表
+            let mut columns = Vec::new();
+            
+            loop {
+                self.skip_whitespace();
+                let column = self.parse_identifier()?;
+                columns.push(column);
+                
+                self.skip_whitespace();
+                if self.match_char(')') {
+                    break;
+                }
+                
+                if !self.match_char(',') {
+                    return Err(QueryParseError::InvalidSyntax);
+                }
+            }
+            
+            Ok(columns)
+        } else {
+            // 没有指定字段，返回空列表
+            Ok(Vec::new())
+        }
+    }
+    
+    /// 解析值列表
+    fn parse_values(&mut self) -> Result<Vec<Vec<Value>>, QueryParseError> {
+        let mut all_values = Vec::new();
+        
+        loop {
+            self.skip_whitespace();
+            
+            // 解析一个值列表
+            if !self.match_char('(') {
+                return Err(QueryParseError::InvalidSyntax);
+            }
+            
+            let mut values = Vec::new();
+            
+            loop {
+                self.skip_whitespace();
+                let value = self.parse_value()?;
+                values.push(value);
+                
+                self.skip_whitespace();
+                if self.match_char(')') {
+                    break;
+                }
+                
+                if !self.match_char(',') {
+                    return Err(QueryParseError::InvalidSyntax);
+                }
+            }
+            
+            all_values.push(values);
+            
+            self.skip_whitespace();
+            if !self.match_char(',') {
+                break;
+            }
+        }
+        
+        Ok(all_values)
+    }
+    
+    /// 解析DELETE查询
+    fn parse_delete_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析FROM关键字
+        self.skip_whitespace();
+        self.expect_keyword("FROM")?;
+        
+        // 解析表名
+        self.skip_whitespace();
+        let table_name = self.parse_identifier()?;
+        
+        // 解析WHERE子句（可选）
+        let where_clause = self.parse_where_clause()?;
+        
+        Ok(SqlQuery {
+            query_type: QueryType::Delete,
+            table_name,
+            columns: Vec::new(),
+            select_all: false,
+            where_clause,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
         })
     }
 
@@ -216,6 +357,10 @@ impl SqlParser {
     fn parse_query_type(&mut self) -> Result<QueryType, QueryParseError> {
         if self.match_keyword("SELECT") {
             Ok(QueryType::Select)
+        } else if self.match_keyword("INSERT") {
+            Ok(QueryType::Insert)
+        } else if self.match_keyword("DELETE") {
+            Ok(QueryType::Delete)
         } else if self.match_keyword("DESCRIBE") {
             Ok(QueryType::Describe)
         } else {
@@ -248,6 +393,8 @@ impl SqlParser {
             where_clause,
             order_by,
             limit,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
         })
     }
 

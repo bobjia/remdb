@@ -256,6 +256,52 @@ fn main() {
             println!("用户名: {}, 活跃: {}", name_str, active_val);
         }
         
-        println!("\n=== SQL查询示例完成 ===");
+        // 7. 执行SQL INSERT语句
+        println!("\n=== SQL INSERT示例 ===");
+        
+        // 7.1 插入一条新记录
+        println!("\n7.1 插入一条新记录:");
+        let result = db.sql_query("INSERT INTO users VALUES (6, 'Frank', 33, true, 1620000005000)").unwrap();
+        println!("插入结果: {}", result.to_string());
+        
+        // 7.2 插入多条记录
+        println!("\n7.2 插入多条记录:");
+        let result = db.sql_query("INSERT INTO users VALUES (7, 'Grace', 27, true, 1620000006000), (8, 'Henry', 31, false, 1620000007000)").unwrap();
+        println!("插入结果: {}", result.to_string());
+        
+        // 7.3 插入指定列
+        println!("\n7.3 插入指定列:");
+        let result = db.sql_query("INSERT INTO users (id, name, age, active) VALUES (9, 'Ivy', 29, true)").unwrap();
+        println!("插入结果: {}", result.to_string());
+        
+        // 7.4 验证插入结果
+        println!("\n7.4 验证插入结果:");
+        let result = db.sql_query("SELECT * FROM users ORDER BY id ASC").unwrap();
+        println!("{}", result.to_string());
+        
+        // 8. 执行SQL DELETE语句
+        println!("\n=== SQL DELETE示例 ===");
+        
+        // 8.1 删除符合条件的记录
+        println!("\n8.1 删除符合条件的记录 (age > 30):");
+        let result = db.sql_query("DELETE FROM users WHERE age > 30").unwrap();
+        println!("删除结果: {}", result.to_string());
+        
+        // 8.2 验证删除结果
+        println!("\n8.2 验证删除结果:");
+        let result = db.sql_query("SELECT * FROM users ORDER BY id ASC").unwrap();
+        println!("{}", result.to_string());
+        
+        // 8.3 删除所有记录
+        println!("\n8.3 删除所有记录:");
+        let result = db.sql_query("DELETE FROM users").unwrap();
+        println!("删除结果: {}", result.to_string());
+        
+        // 8.4 验证所有记录已删除
+        println!("\n8.4 验证所有记录已删除:");
+        let result = db.sql_query("SELECT * FROM users").unwrap();
+        println!("{}", result.to_string());
+        
+        println!("\n=== SQL示例完成 ===");
     }
 }

@@ -602,7 +602,7 @@ impl RemDb {
     }
     
     /// 执行SQL查询
-    pub fn sql_query(&self, sql: &str) -> Result<sql::ResultSet> {
+    pub fn sql_query(&mut self, sql: &str) -> Result<sql::ResultSet> {
         // 解析SQL查询
         let query = crate::sql::parse_sql_query(sql)
             .map_err(|_| RemDbError::InvalidSqlQuery)?;

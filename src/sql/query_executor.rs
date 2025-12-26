@@ -42,16 +42,18 @@ impl core::fmt::Display for QueryExecutionError {
 impl core::error::Error for QueryExecutionError {} 
 
 /// 执行SQL查询
-pub fn execute_query(db: &RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
     match query.query_type {
         crate::sql::QueryType::Select => execute_select_query(db, query),
+        crate::sql::QueryType::Insert => execute_insert_query(db, query),
+        crate::sql::QueryType::Delete => execute_delete_query(db, query),
         crate::sql::QueryType::Describe => execute_describe_query(db, query),
         _ => Err(QueryExecutionError::InternalError),
     }
 }
 
 /// 执行SELECT查询
-fn execute_select_query(db: &RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
     // 1. 查找要查询的表
     let table = find_table_by_name(db, &query.table_name)?;
     
@@ -164,7 +166,7 @@ fn validate_columns(table: &MemoryTable, columns: &[String]) -> Result<(), Query
 
 
 /// 执行DESCRIBE TABLE查询
-fn execute_describe_query(db: &RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
     // 1. 查找要查询的表
     let table = find_table_by_name(db, &query.table_name)?;
     
@@ -251,6 +253,313 @@ fn execute_describe_query(db: &RemDb, query: &SqlQuery) -> Result<ResultSet, Que
     }
     
     Ok(result_set)
+}
+
+/// 执行INSERT查询
+fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 1. 查找要插入的表的ID
+    let table_id = db.tables
+        .iter()
+        .position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == query.table_name
+            } else {
+                false
+            }
+        })
+        .ok_or(QueryExecutionError::TableNotFound)?;
+    
+    // 2. 获取可变表引用
+    let table = db.get_table_mut(table_id).map_err(|_| QueryExecutionError::InternalError)?;
+    
+    // 3. 验证插入的字段名
+    if !query.insert_columns.is_empty() {
+        // 插入指定列，验证列名是否存在
+        for col_name in &query.insert_columns {
+            table.def.fields
+                .iter()
+                .position(|field| field.name == col_name)
+                .ok_or(QueryExecutionError::FieldNotFound)?;
+        }
+    }
+    
+    // 4. 执行插入操作
+    let mut affected_rows = 0;
+    
+    for values in &query.values {
+        // 5. 创建记录数据缓冲区
+        let mut record_data = Vec::with_capacity(table.record_size);
+        unsafe {
+            record_data.set_len(table.record_size);
+        }
+        
+        // 6. 将字段值写入缓冲区
+        for (i, field) in table.def.fields.iter().enumerate() {
+            let field_value = if !query.insert_columns.is_empty() {
+                // 插入指定列
+                if let Some(col_index) = query.insert_columns.iter().position(|col| col == field.name) {
+                    if col_index < values.len() {
+                        Some(&values[col_index])
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                // 插入所有列
+                if i < values.len() {
+                    Some(&values[i])
+                } else {
+                    None
+                }
+            };
+            
+            // 转换并设置字段值
+            if let Some(sql_value) = field_value {
+                set_field_value(&mut record_data, field.offset, field.data_type, field.size, sql_value)?;
+            }
+        }
+        
+        // 7. 调用表的插入方法
+        match table.insert(record_data.as_ptr()) {
+            Ok(_) => affected_rows += 1,
+            Err(_) => return Err(QueryExecutionError::OutOfMemory),
+        }
+    }
+    
+    // 8. 创建结果集，返回受影响的行数
+    let columns = vec!["affected_rows".to_string()];
+    let mut result_set = ResultSet::new(columns);
+    
+    let row_data = vec![crate::Value { u64: affected_rows as u64 }];
+    result_set.add_row(row_data);
+    
+    Ok(result_set)
+}
+
+/// 执行DELETE查询
+fn execute_delete_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 1. 查找要删除的表的ID
+    let table_id = db.tables
+        .iter()
+        .position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == query.table_name
+            } else {
+                false
+            }
+        })
+        .ok_or(QueryExecutionError::TableNotFound)?;
+    
+    // 2. 获取表引用（用于遍历）
+    let table_ref = db.tables[table_id].as_ref().ok_or(QueryExecutionError::TableNotFound)?;
+    
+    // 3. 遍历表中的所有记录，收集要删除的记录ID
+    let mut to_delete = Vec::new();
+    
+    unsafe {
+        // 遍历表中的所有记录
+        let iterate_result = table_ref.iterate(|id, record_ptr| {
+            // 检查记录是否符合WHERE条件
+            let mut matches = true;
+            if let Some(where_clause) = &query.where_clause {
+                matches = evaluate_condition(table_ref, record_ptr, &where_clause.condition);
+            }
+            
+            if matches {
+                to_delete.push(id);
+            }
+            
+            true // 继续遍历
+        });
+        iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
+    }
+    
+    // 4. 获取可变表引用（用于删除）
+    let table_mut = db.get_table_mut(table_id).map_err(|_| QueryExecutionError::InternalError)?;
+    
+    // 5. 执行删除操作
+    let mut affected_rows = 0;
+    for id in to_delete {
+        match unsafe { table_mut.delete(id) } {
+            Ok(_) => affected_rows += 1,
+            Err(_) => continue, // 跳过删除失败的记录
+        }
+    }
+    
+    // 6. 创建结果集，返回受影响的行数
+    let columns = vec!["affected_rows".to_string()];
+    let mut result_set = ResultSet::new(columns);
+    
+    let row_data = vec![crate::Value { u64: affected_rows as u64 }];
+    result_set.add_row(row_data);
+    
+    Ok(result_set)
+}
+
+/// 设置字段值
+fn set_field_value(record_data: &mut Vec<u8>, offset: usize, data_type: DataType, field_size: usize, sql_value: &crate::sql::Value) -> Result<(), QueryExecutionError> {
+    unsafe {
+        match data_type {
+            // 无符号整数类型
+            DataType::UInt8 => {
+                let value = match sql_value {
+                    crate::sql::Value::Integer(i) => *i as u8,
+                    crate::sql::Value::Float(f) => *f as u8,
+                    crate::sql::Value::Boolean(b) => *b as u8,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // u8不需要对齐，直接复制
+                record_data[offset] = value;
+            },
+            DataType::UInt16 => {
+                let value = match sql_value {
+                    crate::sql::Value::Integer(i) => *i as u16,
+                    crate::sql::Value::Float(f) => *f as u16,
+                    crate::sql::Value::Boolean(b) => *b as u16,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut u16, value);
+            },
+            DataType::UInt32 => {
+                let value = match sql_value {
+                    crate::sql::Value::Integer(i) => *i as u32,
+                    crate::sql::Value::Float(f) => *f as u32,
+                    crate::sql::Value::Boolean(b) => *b as u32,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut u32, value);
+            },
+            DataType::UInt64 => {
+                let value = match sql_value {
+                    crate::sql::Value::Integer(i) => *i as u64,
+                    crate::sql::Value::Float(f) => *f as u64,
+                    crate::sql::Value::Boolean(b) => *b as u64,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut u64, value);
+            },
+            
+            // 有符号整数类型
+            DataType::Int8 => {
+                let value = match sql_value {
+                    crate::sql::Value::Integer(i) => *i as i8,
+                    crate::sql::Value::Float(f) => *f as i8,
+                    crate::sql::Value::Boolean(b) => *b as i8,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // i8不需要对齐，直接复制
+                record_data[offset] = value as u8;
+            },
+            DataType::Int16 => {
+                let value = match sql_value {
+                    crate::sql::Value::Integer(i) => *i as i16,
+                    crate::sql::Value::Float(f) => *f as i16,
+                    crate::sql::Value::Boolean(b) => *b as i16,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut i16, value);
+            },
+            DataType::Int32 => {
+                let value = match sql_value {
+                    crate::sql::Value::Integer(i) => *i as i32,
+                    crate::sql::Value::Float(f) => *f as i32,
+                    crate::sql::Value::Boolean(b) => *b as i32,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut i32, value);
+            },
+            DataType::Int64 => {
+                let value = match sql_value {
+                    crate::sql::Value::Integer(i) => *i,
+                    crate::sql::Value::Float(f) => *f as i64,
+                    crate::sql::Value::Boolean(b) => *b as i64,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut i64, value);
+            },
+            
+            // 浮点数类型
+            DataType::Float32 => {
+                let value = match sql_value {
+                    crate::sql::Value::Float(f) => *f as f32,
+                    crate::sql::Value::Integer(i) => *i as f32,
+                    crate::sql::Value::Boolean(b) => (*b as u8) as f32,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut f32, value);
+            },
+            DataType::Float64 => {
+                let value = match sql_value {
+                    crate::sql::Value::Float(f) => *f,
+                    crate::sql::Value::Integer(i) => *i as f64,
+                    crate::sql::Value::Boolean(b) => (*b as u8) as f64,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut f64, value);
+            },
+            
+            // 布尔类型
+            DataType::Bool => {
+                let value = match sql_value {
+                    crate::sql::Value::Boolean(b) => *b,
+                    crate::sql::Value::Integer(i) => *i != 0,
+                    crate::sql::Value::Float(f) => *f != 0.0,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // bool不需要对齐，直接复制
+                record_data[offset] = value as u8;
+            },
+            
+            // 时间戳类型
+            DataType::Timestamp => {
+                let value = match sql_value {
+                    crate::sql::Value::Integer(i) => *i as u64,
+                    crate::sql::Value::Float(f) => *f as u64,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut u64, value);
+            },
+            
+            // 字符串类型
+            DataType::String => {
+                let str_value = match sql_value {
+                    crate::sql::Value::String(s) => s,
+                    crate::sql::Value::Integer(i) => &i.to_string(),
+                    crate::sql::Value::Float(f) => &f.to_string(),
+                    crate::sql::Value::Boolean(b) => &b.to_string(),
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                
+                let ptr = record_data.as_mut_ptr().add(offset);
+                // 复制字符串到缓冲区，确保不超过字段大小
+                let max_len = field_size;
+                for (i, c) in str_value.as_bytes().iter().enumerate() {
+                    if i < max_len {
+                        *ptr.add(i) = *c;
+                    } else {
+                        break;
+                    }
+                }
+                // 填充剩余空间为0
+                for i in str_value.len()..max_len {
+                    *ptr.add(i) = 0;
+                }
+            },
+        }
+    }
+    
+    Ok(())
 }
 
 /// 评估条件
