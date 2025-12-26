@@ -200,23 +200,28 @@ fn test_sql_query() {
     };
     
     // 初始化表和索引数组
-    static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
-    static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-    static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None; 1];
+    // 使用局部变量而非static，避免测试并行运行时的竞态条件
+    let mut tables = [None; 1];
+    let mut primary_indices = [None; 1];
+    let mut secondary_indices = [None; 1];
     
-    unsafe {
-        TABLES[0] = Some(table);
-        PRIMARY_INDICES[0] = Some(primary_index);
-        SECONDARY_INDICES[0] = Some(AnySecondaryIndex::SortedArray(secondary_index));
-    }
+    tables[0] = Some(table);
+    primary_indices[0] = Some(primary_index);
+    secondary_indices[0] = Some(AnySecondaryIndex::SortedArray(secondary_index));
+    
+    // 将局部数组转换为静态引用，用于初始化全局数据库
+    // 注意：这是安全的，因为我们在测试函数结束前不会释放这些数组
+    let static_tables_ptr: *mut [Option<MemoryTable>; 1] = &mut tables;
+    let static_primary_indices_ptr: *mut [Option<PrimaryIndex>; 1] = &mut primary_indices;
+    let static_secondary_indices_ptr: *mut [Option<AnySecondaryIndex>; 1] = &mut secondary_indices;
     
     // 初始化数据库
     let db = unsafe {
         init_global_db(
             config,
-            &mut TABLES,
-            &mut PRIMARY_INDICES,
-            &mut SECONDARY_INDICES
+            &mut *static_tables_ptr,
+            &mut *static_primary_indices_ptr,
+            &mut *static_secondary_indices_ptr
         ).unwrap()
     };
     
@@ -381,23 +386,28 @@ fn test_sql_query_syntax() {
     };
     
     // 初始化表和索引数组
-    static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
-    static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-    static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None; 1];
+    // 使用局部变量而非static，避免测试并行运行时的竞态条件
+    let mut tables = [None; 1];
+    let mut primary_indices = [None; 1];
+    let mut secondary_indices = [None; 1];
     
-    unsafe {
-        TABLES[0] = Some(table);
-        PRIMARY_INDICES[0] = Some(primary_index);
-        SECONDARY_INDICES[0] = Some(AnySecondaryIndex::SortedArray(secondary_index));
-    }
+    tables[0] = Some(table);
+    primary_indices[0] = Some(primary_index);
+    secondary_indices[0] = Some(AnySecondaryIndex::SortedArray(secondary_index));
+    
+    // 将局部数组转换为静态引用，用于初始化全局数据库
+    // 注意：这是安全的，因为我们在测试函数结束前不会释放这些数组
+    let static_tables_ptr: *mut [Option<MemoryTable>; 1] = &mut tables;
+    let static_primary_indices_ptr: *mut [Option<PrimaryIndex>; 1] = &mut primary_indices;
+    let static_secondary_indices_ptr: *mut [Option<AnySecondaryIndex>; 1] = &mut secondary_indices;
     
     // 初始化数据库
     let db = unsafe {
         init_global_db(
             config,
-            &mut TABLES,
-            &mut PRIMARY_INDICES,
-            &mut SECONDARY_INDICES
+            &mut *static_tables_ptr,
+            &mut *static_primary_indices_ptr,
+            &mut *static_secondary_indices_ptr
         ).unwrap()
     };
     
