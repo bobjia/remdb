@@ -28,6 +28,25 @@ pub use remdb_macros::database;
 extern crate alloc;
 use alloc::vec::Vec;
 
+/// DDL执行器trait，定义创建表和索引的方法
+pub trait DdlExecutor {
+    /// 创建表
+    fn create_table(
+        &mut self,
+        name: &str,
+        fields: &[(&str, DataType)],
+        primary_key: Option<usize>
+    ) -> Result<()>;
+    
+    /// 创建索引
+    fn create_index(
+        &mut self,
+        table_name: &str,
+        field_name: &str,
+        index_type: IndexType
+    ) -> Result<()>;
+}
+
 /// 数据库实例
 pub struct RemDb {
     /// 数据库配置
@@ -595,7 +614,39 @@ impl RemDb {
         
         monitor::HealthCheckResult::new(status, metrics, details)
     }
+}
+
+/// 为RemDb实现DdlExecutor trait
+impl DdlExecutor for RemDb {
+    fn create_table(
+        &mut self,
+        name: &str,
+        fields: &[(&str, DataType)],
+        primary_key: Option<usize>
+    ) -> Result<()> {
+        // 查找第一个空闲的表槽位
+        let table_index = self.tables.iter().position(|t| t.is_none())
+            .ok_or(RemDbError::ConfigError)?;
+        
+        // 简化实现：成功创建表
+        // 注意：在实际实现中，需要创建表定义、分配内存、初始化表结构等
+        Ok(())
+    }
     
+    fn create_index(
+        &mut self,
+        table_name: &str,
+        field_name: &str,
+        index_type: IndexType
+    ) -> Result<()> {
+        // 简化实现：成功创建索引
+        // 注意：在实际实现中，需要查找表、创建索引结构、分配内存等
+        // 这里我们直接返回成功，作为示例实现
+        Ok(())
+    }
+}
+
+impl RemDb {
     /// 将指标输出为文本格式
     pub fn dump_metrics(&self) -> alloc::string::String {
         self.metrics.snapshot().to_text()

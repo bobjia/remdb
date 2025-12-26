@@ -1,6 +1,29 @@
 use core::mem::size_of;
 use crate::types::TableDef;
 
+/// 默认内存分配器实现
+pub struct DefaultMemoryAllocator;
+
+impl MemoryAllocator for DefaultMemoryAllocator {
+    fn allocate(&self, _size: usize) -> Option<core::ptr::NonNull<u8>> {
+        // 默认实现，返回None表示分配失败
+        None
+    }
+    
+    fn deallocate(&self, _ptr: core::ptr::NonNull<u8>, _size: usize) {
+        // 默认实现，不做任何操作
+    }
+}
+
+/// 内存分配器接口
+pub trait MemoryAllocator: Sync {
+    /// 分配内存
+    fn allocate(&self, size: usize) -> Option<core::ptr::NonNull<u8>>;
+    
+    /// 释放内存
+    fn deallocate(&self, ptr: core::ptr::NonNull<u8>, size: usize);
+}
+
 /// 数据库全局配置
 pub struct DbConfig {
     /// 表定义列表
@@ -11,6 +34,8 @@ pub struct DbConfig {
     pub low_power_mode_supported: bool,
     /// 低功耗模式下的最大记录数（可选）
     pub low_power_max_records: Option<usize>,
+    /// 内存分配器
+    pub memory_allocator: &'static dyn MemoryAllocator,
 }
 
 

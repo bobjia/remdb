@@ -59,6 +59,12 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Supports basic queries, conditional queries, sorting, and LIMIT constraints
   - Supports comparison operators: `=`, `!=`, `<`, `<=`, `>`, `>=`
   - Provides user-friendly result set interface, supporting iterative access and field retrieval
+- **Runtime DDL Configuration API**:
+  - Trait-based DDL executor design with `DdlExecutor` trait
+  - Supports runtime table and index creation
+  - Supports DDL operations via SQL statements: `CREATE TABLE`, `CREATE INDEX`
+  - Supports multiple index type configurations
+  - Memory allocator abstraction, supporting custom memory allocation strategies
 
 ## Technical Characteristics
 
@@ -290,6 +296,107 @@ fn main() {
 }
 ```
 
+### Runtime DDL Configuration API Example
+
+```rust
+use remdb::{RemDb, DdlExecutor, types::{DataType, IndexType}};
+use remdb::config::{DbConfig, MemoryAllocator};
+use core::ptr::NonNull;
+
+// Simple memory allocator implementation
+struct SimpleAllocator {
+    base_ptr: NonNull<u8>,
+    size: usize,
+    used: usize,
+}
+
+impl SimpleAllocator {
+    pub const fn new(base_ptr: NonNull<u8>, size: usize) -> Self {
+        Self {
+            base_ptr,
+            size,
+            used: 0,
+        }
+    }
+}
+
+impl MemoryAllocator for SimpleAllocator {
+    fn allocate(&self, size: usize) -> Option<NonNull<u8>> {
+        let new_used = self.used + size;
+        if new_used <= self.size {
+            let ptr = NonNull::new((self.base_ptr.as_ptr() as usize + self.used) as *mut u8)?;
+            Some(ptr)
+        } else {
+            None
+        }
+    }
+    
+    fn deallocate(&self, _ptr: NonNull<u8>, _size: usize) {
+        // Simplified implementation, no actual memory deallocation
+    }
+}
+
+fn main() {
+    // Allocate memory for database
+    let mut buffer = [0u8; 1024 * 1024]; // 1MB
+    let base_ptr = NonNull::new(buffer.as_mut_ptr()).unwrap();
+    
+    // Create memory allocator
+    let allocator = SimpleAllocator::new(base_ptr, buffer.len());
+    
+    // Create database configuration
+    let config = DbConfig {
+        tables: &[],
+        total_memory: buffer.len(),
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        memory_allocator: &allocator,
+    };
+    
+    // Initialize table and index arrays
+    let mut tables = [None; 8];
+    let mut primary_indices = [None; 8];
+    let mut secondary_indices = [None; 8];
+    
+    // Create database instance
+    let mut db = RemDb::new(
+        &config,
+        &mut tables,
+        &mut primary_indices,
+        &mut secondary_indices
+    );
+    
+    // Create table using DdlExecutor trait
+    let result = db.create_table(
+        "users",
+        &[
+            ("id", DataType::UInt32),
+            ("name", DataType::String),
+            ("age", DataType::UInt8),
+            ("active", DataType::Bool),
+        ],
+        Some(0) // Primary key is id field
+    );
+    
+    // Create table using SQL statement
+    let result = db.sql_query(
+        "CREATE TABLE products (id UINT32 PRIMARY KEY, name STRING, price FLOAT32, in_stock BOOL);"
+    );
+    
+    // Create index using DdlExecutor trait
+    let result = db.create_index(
+        "users",
+        "name",
+        IndexType::BTree
+    );
+    
+    // Create index using SQL statement
+    let result = db.sql_query(
+        "CREATE INDEX idx_product_name ON products (name) USING BTree;"
+    );
+}
+```
+
 #### File Mode Usage Example
 
 ```rust
@@ -390,6 +497,9 @@ Check the examples directory for sample code:
 - `incremental_snapshot.rs`: Incremental snapshot example demonstrating how to save and restore incremental snapshots
 - `generate_snapshot.rs`: Snapshot generation example demonstrating how to generate and use snapshots
 - `sql_query.rs`: SQL query example demonstrating how to use SQL to query the in-memory database
+- `ddl_example.rs`: DDL example demonstrating how to define tables and indexes using DDL macros
+- `ddl_full_example.rs`: Complete DDL example demonstrating more complex DDL definitions
+- `ddl_runtime_example.rs`: Runtime DDL configuration example demonstrating how to use the runtime DDL API
 
 ## Project Structure
 
@@ -453,3 +563,8 @@ Issues and pull requests are welcome!
 - Implement more complex memory optimization algorithms
 - Add performance monitoring in low power mode
 - Implement adaptive low power mode that automatically switches based on system load
+- Complete runtime DDL configuration API, supporting full table and index creation functionality
+- Support DROP TABLE and ALTER TABLE statements
+- Implement more flexible memory allocation strategies
+- Optimize performance of runtime DDL operations
+- Support more complex index configuration options

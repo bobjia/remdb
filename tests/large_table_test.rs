@@ -1,7 +1,7 @@
 use remdb::table::*;
 use remdb::types::*;
 use remdb::platform::*;
-use remdb::{init_global_db, get_global_db, PrimaryIndex, AnySecondaryIndex};
+use remdb::{init_global_db, get_global_db, PrimaryIndex, AnySecondaryIndex}; use remdb::config::DefaultMemoryAllocator;
 use remdb::config::DbConfig;
 use std::time::Instant;
 use rand::random;
@@ -165,6 +165,10 @@ fn test_large_table_performance() {
         total_memory: 500_000_000, // 500MB
         low_power_mode_supported: false,
         low_power_max_records: Some(10000),
+        memory_allocator: unsafe {
+            static mut DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
+            &mut DEFAULT_ALLOCATOR
+        },
     };
     
     // 静态表数组和索引数组

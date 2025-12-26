@@ -75,6 +75,10 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
             total_memory: 65536,
             low_power_mode_supported: false,
             low_power_max_records: None,
+            memory_allocator: unsafe {
+                static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
+                &mut DEFAULT_ALLOCATOR
+            },
         };
     };
     

@@ -26,6 +26,14 @@ pub struct SqlQuery {
     pub insert_columns: Vec<String>,
     /// 要插入的值列表
     pub values: Vec<Vec<Value>>,
+    /// 表字段定义（用于CREATE TABLE）
+    pub table_def: Vec<(String, String)>,
+    /// 主键字段名（用于CREATE TABLE）
+    pub primary_key: Option<String>,
+    /// 索引字段名（用于CREATE INDEX）
+    pub index_column: Option<String>,
+    /// 索引类型（用于CREATE INDEX）
+    pub index_type: Option<String>,
 }
 
 /// 查询类型
@@ -39,6 +47,10 @@ pub enum QueryType {
     Delete,
     /// DESCRIBE TABLE查询
     Describe,
+    /// CREATE TABLE查询
+    CreateTable,
+    /// CREATE INDEX查询
+    CreateIndex,
     /// 其他查询类型（暂不支持）
     Other,
 }
@@ -197,6 +209,8 @@ impl SqlParser {
             QueryType::Insert => self.parse_insert_query(),
             QueryType::Delete => self.parse_delete_query(),
             QueryType::Describe => self.parse_describe_query(),
+            QueryType::CreateTable => self.parse_create_table_query(),
+            QueryType::CreateIndex => self.parse_create_index_query(),
             QueryType::Other => Err(QueryParseError::UnsupportedKeyword),
         }
     }
@@ -221,6 +235,10 @@ impl SqlParser {
             limit: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
         })
     }
     
@@ -254,6 +272,10 @@ impl SqlParser {
             limit: None,
             insert_columns,
             values,
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
         })
     }
     
@@ -350,6 +372,119 @@ impl SqlParser {
             limit: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+        })
+    }
+    
+    /// 解析CREATE TABLE查询
+    fn parse_create_table_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析表名
+        self.skip_whitespace();
+        let table_name = self.parse_identifier()?;
+        
+        // 解析左括号
+        self.skip_whitespace();
+        self.expect_char('(')?;
+        
+        // 解析字段定义
+        let mut table_def = Vec::new();
+        let mut primary_key = None;
+        
+        loop {
+            self.skip_whitespace();
+            let field_name = self.parse_identifier()?;
+            
+            self.skip_whitespace();
+            let data_type = self.parse_identifier()?.to_uppercase();
+            
+            // 检查是否为主键
+            self.skip_whitespace();
+            if self.match_keyword("PRIMARY") {
+                self.skip_whitespace();
+                self.expect_keyword("KEY")?;
+                primary_key = Some(field_name.clone());
+            }
+            
+            table_def.push((field_name, data_type));
+            
+            self.skip_whitespace();
+            if self.match_char(')') {
+                break;
+            }
+            
+            if !self.match_char(',') {
+                return Err(QueryParseError::InvalidSyntax);
+            }
+        }
+        
+        Ok(SqlQuery {
+            query_type: QueryType::CreateTable,
+            table_name,
+            columns: Vec::new(),
+            select_all: false,
+            where_clause: None,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def,
+            primary_key,
+            index_column: None,
+            index_type: None,
+        })
+    }
+    
+    /// 解析CREATE INDEX查询
+    fn parse_create_index_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析索引名称（可选）
+        self.skip_whitespace();
+        let _index_name = self.parse_identifier()?;
+        
+        // 解析ON关键字
+        self.skip_whitespace();
+        self.expect_keyword("ON")?;
+        
+        // 解析表名
+        self.skip_whitespace();
+        let table_name = self.parse_identifier()?;
+        
+        // 解析左括号
+        self.skip_whitespace();
+        self.expect_char('(')?;
+        
+        // 解析索引字段
+        self.skip_whitespace();
+        let index_column = self.parse_identifier()?;
+        
+        // 解析右括号
+        self.skip_whitespace();
+        self.expect_char(')')?;
+        
+        // 解析索引类型（可选）
+        let mut index_type = None;
+        self.skip_whitespace();
+        if self.match_keyword("USING") {
+            self.skip_whitespace();
+            index_type = Some(self.parse_identifier()?.to_uppercase());
+        }
+        
+        Ok(SqlQuery {
+            query_type: QueryType::CreateIndex,
+            table_name,
+            columns: Vec::new(),
+            select_all: false,
+            where_clause: None,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: Some(index_column),
+            index_type,
         })
     }
 
@@ -363,6 +498,15 @@ impl SqlParser {
             Ok(QueryType::Delete)
         } else if self.match_keyword("DESCRIBE") {
             Ok(QueryType::Describe)
+        } else if self.match_keyword("CREATE") {
+            self.skip_whitespace();
+            if self.match_keyword("TABLE") {
+                Ok(QueryType::CreateTable)
+            } else if self.match_keyword("INDEX") {
+                Ok(QueryType::CreateIndex)
+            } else {
+                Ok(QueryType::Other)
+            }
         } else {
             Ok(QueryType::Other)
         }
@@ -395,6 +539,10 @@ impl SqlParser {
             limit,
             insert_columns: Vec::new(),
             values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
         })
     }
 
@@ -722,6 +870,15 @@ impl SqlParser {
     /// 是否已到达输入末尾
     fn is_eof(&self) -> bool {
         self.position >= self.input.len()
+    }
+    
+    /// 期望匹配指定字符
+    fn expect_char(&mut self, c: char) -> Result<(), QueryParseError> {
+        if self.match_char(c) {
+            Ok(())
+        } else {
+            Err(QueryParseError::InvalidSyntax)
+        }
     }
 }
 

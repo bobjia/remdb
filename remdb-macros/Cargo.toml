@@ -1,6 +1,6 @@
 [package]
 name = "remdb-macros"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
 authors = ["remdb contributors"]
 description = "remdb macros"

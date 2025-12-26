@@ -401,6 +401,11 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             total_memory: 65536,
             low_power_mode_supported: #low_power,
             low_power_max_records: #low_power_max_records,
+            memory_allocator: unsafe {
+                // 使用默认的内存分配器实现，这里返回一个空指针的静态引用
+                static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
+                &mut DEFAULT_ALLOCATOR
+            },
         };
     };
     

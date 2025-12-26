@@ -284,6 +284,8 @@ pub enum RemDbError {
     InvalidRecordSize,
     /// 无效的SQL查询
     InvalidSqlQuery,
+    /// 内部错误
+    InternalError,
 }
 
 impl fmt::Display for RemDbError {
@@ -308,6 +310,7 @@ impl fmt::Display for RemDbError {
             RemDbError::TableNotFound => write!(f, "Table not found"),
             RemDbError::InvalidRecordSize => write!(f, "Invalid record size"),
             RemDbError::InvalidSqlQuery => write!(f, "Invalid SQL query"),
+            RemDbError::InternalError => write!(f, "Internal error"),
         }
     }
 }

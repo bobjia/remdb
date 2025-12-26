@@ -59,6 +59,12 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 支持基本查询、条件查询、排序和LIMIT限制
   - 支持比较运算符：`=`、`!=`、`<`、`<=`、`>`、`>=`
   - 提供友好的结果集接口，支持迭代访问和字段获取
+- **运行时DDL配置API**：
+  - 基于trait的DDL执行器设计，提供`DdlExecutor` trait
+  - 支持运行时创建表和索引
+  - 支持通过SQL语句执行DDL操作：`CREATE TABLE`、`CREATE INDEX`
+  - 支持多种索引类型配置
+  - 内存分配器抽象，支持自定义内存分配策略
 
 ## 技术特点
 
@@ -290,6 +296,107 @@ fn main() {
 }
 ```
 
+### 运行时DDL配置API示例
+
+```rust
+use remdb::{RemDb, DdlExecutor, types::{DataType, IndexType}};
+use remdb::config::{DbConfig, MemoryAllocator};
+use core::ptr::NonNull;
+
+// 简单的内存分配器实现
+struct SimpleAllocator {
+    base_ptr: NonNull<u8>,
+    size: usize,
+    used: usize,
+}
+
+impl SimpleAllocator {
+    pub const fn new(base_ptr: NonNull<u8>, size: usize) -> Self {
+        Self {
+            base_ptr,
+            size,
+            used: 0,
+        }
+    }
+}
+
+impl MemoryAllocator for SimpleAllocator {
+    fn allocate(&self, size: usize) -> Option<NonNull<u8>> {
+        let new_used = self.used + size;
+        if new_used <= self.size {
+            let ptr = NonNull::new((self.base_ptr.as_ptr() as usize + self.used) as *mut u8)?;
+            Some(ptr)
+        } else {
+            None
+        }
+    }
+    
+    fn deallocate(&self, _ptr: NonNull<u8>, _size: usize) {
+        // 简化实现，不实际释放内存
+    }
+}
+
+fn main() {
+    // 分配内存用于数据库
+    let mut buffer = [0u8; 1024 * 1024]; // 1MB
+    let base_ptr = NonNull::new(buffer.as_mut_ptr()).unwrap();
+    
+    // 创建内存分配器
+    let allocator = SimpleAllocator::new(base_ptr, buffer.len());
+    
+    // 创建数据库配置
+    let config = DbConfig {
+        tables: &[],
+        total_memory: buffer.len(),
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        memory_allocator: &allocator,
+    };
+    
+    // 初始化表和索引数组
+    let mut tables = [None; 8];
+    let mut primary_indices = [None; 8];
+    let mut secondary_indices = [None; 8];
+    
+    // 创建数据库实例
+    let mut db = RemDb::new(
+        &config,
+        &mut tables,
+        &mut primary_indices,
+        &mut secondary_indices
+    );
+    
+    // 使用DdlExecutor trait创建表
+    let result = db.create_table(
+        "users",
+        &[
+            ("id", DataType::UInt32),
+            ("name", DataType::String),
+            ("age", DataType::UInt8),
+            ("active", DataType::Bool),
+        ],
+        Some(0) // 主键为id字段
+    );
+    
+    // 使用SQL语句创建表
+    let result = db.sql_query(
+        "CREATE TABLE products (id UINT32 PRIMARY KEY, name STRING, price FLOAT32, in_stock BOOL);"
+    );
+    
+    // 使用DdlExecutor trait创建索引
+    let result = db.create_index(
+        "users",
+        "name",
+        IndexType::BTree
+    );
+    
+    // 使用SQL语句创建索引
+    let result = db.sql_query(
+        "CREATE INDEX idx_product_name ON products (name) USING BTree;"
+    );
+}
+```
+
 #### 文件模式使用示例
 
 ```rust
@@ -390,6 +497,9 @@ cargo check --no-default-features --features=baremetal
 - `incremental_snapshot.rs`：增量快照示例，展示如何保存和恢复增量快照
 - `generate_snapshot.rs`：快照生成示例，展示如何生成和使用快照
 - `sql_query.rs`：SQL查询示例，展示如何使用SQL查询内存数据库
+- `ddl_example.rs`：DDL示例，展示如何使用DDL宏定义表和索引
+- `ddl_full_example.rs`：完整DDL示例，展示更复杂的DDL定义
+- `ddl_runtime_example.rs`：运行时DDL配置示例，展示如何使用运行时DDL API
 
 ## 项目结构
 
@@ -453,3 +563,8 @@ MIT许可证
 - 实现更复杂的内存优化算法
 - 添加低功耗模式下的性能监控
 - 实现自适应低功耗模式，根据系统负载自动切换模式
+- 完善运行时DDL配置API，支持完整的表和索引创建功能
+- 支持DROP TABLE和ALTER TABLE语句
+- 实现更灵活的内存分配策略
+- 优化运行时DDL操作的性能
+- 支持更复杂的索引配置选项

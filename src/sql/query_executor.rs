@@ -4,10 +4,9 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::collections::BTreeMap;
 
-use crate::{RemDb, MemoryTable, Value, RemDbError, types::DataType};
-use crate::sql::{SqlQuery, ResultSet, WhereClause, Condition, ComparisonCondition, ComparisonOperator, OrderByClause, OrderDirection};
+use crate::{RemDb, MemoryTable, Value, RemDbError, types::DataType, IndexType, DdlExecutor};
+use crate::sql::{SqlQuery, ResultSet, Condition, ComparisonCondition, ComparisonOperator, OrderByClause};
 
 /// 查询执行错误
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +47,8 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         crate::sql::QueryType::Insert => execute_insert_query(db, query),
         crate::sql::QueryType::Delete => execute_delete_query(db, query),
         crate::sql::QueryType::Describe => execute_describe_query(db, query),
+        crate::sql::QueryType::CreateTable => execute_create_table_query(db, query),
+        crate::sql::QueryType::CreateIndex => execute_create_index_query(db, query),
         _ => Err(QueryExecutionError::InternalError),
     }
 }
@@ -135,6 +136,90 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         }
         result_set.add_row(new_row);
     }
+    
+    Ok(result_set)
+}
+
+/// 执行CREATE TABLE查询
+fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 将SQL数据类型转换为RemDb DataType
+    let mut fields = Vec::new();
+    for (field_name, data_type_str) in &query.table_def {
+        let data_type = match data_type_str.as_str() {
+            "UINT8" => DataType::UInt8,
+            "UINT16" => DataType::UInt16,
+            "UINT32" => DataType::UInt32,
+            "UINT64" => DataType::UInt64,
+            "INT8" => DataType::Int8,
+            "INT16" => DataType::Int16,
+            "INT32" => DataType::Int32,
+            "INT64" => DataType::Int64,
+            "FLOAT32" => DataType::Float32,
+            "FLOAT64" => DataType::Float64,
+            "BOOL" => DataType::Bool,
+            "TIMESTAMP" => DataType::Timestamp,
+            "STRING" => DataType::String,
+            _ => return Err(QueryExecutionError::TypeMismatch),
+        };
+        fields.push((field_name.as_str(), data_type));
+    }
+    
+    // 查找主键字段索引
+    let primary_key_index = query.primary_key.as_ref().and_then(|pk| {
+        query.table_def.iter().position(|(name, _)| name == pk)
+    });
+    
+    // 调用DdlExecutor的create_table方法
+    db.create_table(
+        &query.table_name,
+        &fields,
+        primary_key_index
+    ).map_err(|e| {
+        match e {
+            RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
+            RemDbError::FieldNotFound => QueryExecutionError::FieldNotFound,
+            RemDbError::TypeMismatch => QueryExecutionError::TypeMismatch,
+            RemDbError::OutOfMemory => QueryExecutionError::OutOfMemory,
+            _ => QueryExecutionError::InternalError,
+        }
+    })?;
+    
+    // 创建结果集，返回成功消息
+    let columns = vec!["status".to_string()];
+    let mut result_set = ResultSet::new(columns);
+    result_set.add_row(vec![Value { string: [b'0'; 64] }]);
+    
+    Ok(result_set)
+}
+
+/// 执行CREATE INDEX查询
+fn execute_create_index_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 将SQL索引类型转换为RemDb IndexType
+    let index_type = match query.index_type.as_deref() {
+        Some("BTREE") => IndexType::BTree,
+        Some("TTREE") => IndexType::TTree,
+        Some("SORTEDARRAY") => IndexType::SortedArray,
+        _ => IndexType::BTree, // 默认值
+    };
+    
+    // 调用DdlExecutor的create_index方法
+    let field_name = query.index_column.as_ref().ok_or(QueryExecutionError::InvalidCondition)?;
+    db.create_index(
+        &query.table_name,
+        field_name,
+        index_type
+    ).map_err(|e| {
+        match e {
+            RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
+            RemDbError::FieldNotFound => QueryExecutionError::FieldNotFound,
+            _ => QueryExecutionError::InternalError,
+        }
+    })?;
+    
+    // 创建结果集，返回成功消息
+    let columns = vec!["status".to_string()];
+    let mut result_set = ResultSet::new(columns);
+    result_set.add_row(vec![Value { string: [b'0'; 64] }]);
     
     Ok(result_set)
 }

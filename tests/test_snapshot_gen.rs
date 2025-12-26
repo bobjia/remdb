@@ -34,6 +34,10 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     total_memory: 1024 * 1024, // 1MB
     low_power_mode_supported: false,
     low_power_max_records: None,
+    memory_allocator: unsafe {
+        static mut DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
+        &mut DEFAULT_ALLOCATOR
+    },
 };
 
 // 静态缓冲区用于测试
