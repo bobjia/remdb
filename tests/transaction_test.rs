@@ -235,6 +235,9 @@ fn test_transaction_begin_commit() {
         // 验证记录已插入
         let table = db.get_table(0).unwrap();
         assert_eq!(table.record_count(), 1);
+        
+        // 显式重置数据库实例，确保所有资源被正确释放
+        remdb::reset_global_db();
     }
 }
 
@@ -327,6 +330,9 @@ fn test_transaction_rollback() {
         // 验证记录已回滚
         let table = db.get_table(0).unwrap();
         assert_eq!(table.record_count(), 0);
+        
+        // 显式重置数据库实例，确保所有资源被正确释放
+        remdb::reset_global_db();
     }
 }
 
@@ -443,6 +449,9 @@ fn test_transaction_update_rollback() {
         
         assert_eq!(result_id, id);
         assert_eq!(result_value, value);
+        
+        // 显式重置数据库实例，确保所有资源被正确释放
+        remdb::reset_global_db();
     }
 }
 
@@ -541,5 +550,8 @@ fn test_transaction_delete_rollback() {
         let mut result_data = [0u8; 8];
         let result = table.get_by_id(record_id, result_data.as_mut_ptr());
         assert!(result.is_ok());
+        
+        // 显式重置数据库实例，确保所有资源被正确释放
+        remdb::reset_global_db();
     }
 }
