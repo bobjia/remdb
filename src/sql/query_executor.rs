@@ -71,30 +71,27 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         query.columns.clone()
     };
     
-    // 3. 创建结果集
+    // 3. 创建结果集，预分配足够的行空间
     let mut result_set = ResultSet::new(columns.clone());
     
-    // 4. 收集所有符合条件的行
-    let mut matching_rows = Vec::new();
-    let mut total_records = 0;
-    let mut matched_records = 0;
+    // 4. 直接在遍历记录时将结果添加到结果集，避免使用中间向量
+    let limit = query.limit.unwrap_or(table.def.max_records);
     
+    // 直接遍历表中的所有记录
     unsafe {
-        // 遍历表中的所有记录
+        // 预先创建一个足够大的向量来存储匹配的记录
+        let mut matched_rows = Vec::with_capacity(table.def.max_records);
+        
+        // 遍历表中的所有记录，收集匹配的记录
         let iterate_result = table.iterate(|id, record_ptr| {
-            total_records += 1;
-            println!("Processing record #{}", id);
-            
             // 检查记录是否符合WHERE条件
             let mut matches = true;
             if let Some(where_clause) = &query.where_clause {
                 matches = evaluate_condition(table, record_ptr, &where_clause.condition);
-                println!("Record {} matches condition: {}", id, matches);
             }
             
             if matches {
-                matched_records += 1;
-                // 收集记录ID和数据
+                // 直接从记录中提取字段值，创建行数据
                 let mut row_data = Vec::with_capacity(columns.len());
                 for column_name in &columns {
                     match get_field_value(table, record_ptr, column_name) {
@@ -103,38 +100,23 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                     }
                 }
                 
-                matching_rows.push((id, row_data));
-                println!("Added record {} to results", id);
+                // 将匹配的记录添加到向量中
+                matched_rows.push(row_data);
+                
+                // 检查是否达到LIMIT限制
+                if matched_rows.len() >= limit {
+                    return false; // 停止遍历
+                }
             }
             
             true // 继续遍历
         });
         iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
-    }
-    
-    println!("Total records processed: {}, matched: {}", total_records, matched_records);
-    
-    // 5. 对结果进行排序
-    if let Some(order_by) = &query.order_by {
-        sort_rows(&mut matching_rows, table, order_by)?;
-    }
-    
-    // 6. 应用LIMIT限制
-    let limited_rows = if let Some(limit) = query.limit {
-        &matching_rows[..core::cmp::min(limit, matching_rows.len())]
-    } else {
-        &matching_rows[..]
-    };
-    
-    // 7. 将结果添加到结果集
-    for (_, row_data) in limited_rows.iter() {
-        // 由于Value是union类型，无法直接Clone，我们需要手动创建新的Vec
-        let mut new_row = Vec::with_capacity(row_data.len());
-        for value in row_data.iter() {
-            // 直接复制Value，因为Value是Copy类型
-            new_row.push(*value);
+        
+        // 将收集到的记录添加到结果集
+        for row_data in matched_rows {
+            result_set.add_row(row_data);
         }
-        result_set.add_row(new_row);
     }
     
     Ok(result_set)

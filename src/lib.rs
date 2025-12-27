@@ -93,10 +93,10 @@ impl RemDb {
         // 初始化监控指标
         let metrics = monitor::DbMetrics::new(config.total_memory);
 
-        // 初始化空的表和索引数组
-        let tables = Vec::new();
-        let primary_indices = Vec::new();
-        let secondary_indices = Vec::new();
+        // 初始化表和索引数组，并预分配足够的容量，避免后续内存重新分配
+        let tables = Vec::with_capacity(config.tables.len());
+        let primary_indices = Vec::with_capacity(config.tables.len());
+        let secondary_indices = Vec::with_capacity(config.tables.len());
 
         RemDb {
             config,

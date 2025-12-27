@@ -193,8 +193,29 @@ fn test_sql_query() {
     
     // 测试SQL查询
     
+    // 调试信息：打印表名和字段名
+    let table = unsafe { db.get_table_mut(0).unwrap() };
+    println!("表名: {}", table.def.name);
+    println!("记录大小: {}", table.def.record_size);
+    for (i, field) in table.def.fields.iter().enumerate() {
+        println!("字段 {}: 名称={}, 大小={}, 偏移={}", i, field.name, field.size, field.offset);
+    }
+    
+    // 调试：手动遍历表记录
+    println!("=== 手动遍历表记录 ===");
+    let mut count = 0;
+    unsafe {
+        table.iterate(|id, record_ptr| {
+            println!("记录 {} (ID: {}) 存在", count, id);
+            count += 1;
+            true
+        }).unwrap();
+    }
+    println!("找到 {} 条记录", count);
+    
     // 1. 测试基本SELECT查询
     let result = db.sql_query("SELECT * FROM TEST_TABLE").unwrap();
+    println!("查询结果行数: {}", result.row_count());
     assert_eq!(result.row_count(), 5);
     assert_eq!(result.column_count(), 5);
     

@@ -108,6 +108,16 @@ unsafe fn init_test_env() -> &'static mut RemDb {
     db
 }
 
+// 辅助函数：根据字段名获取字段索引
+unsafe fn get_field_index(table: &crate::table::MemoryTable, field_name: &str) -> usize {
+    for (i, field) in table.def.fields.iter().enumerate() {
+        if field.name == field_name {
+            return i;
+        }
+    }
+    panic!("字段 {} 未找到", field_name);
+}
+
 // 测试时间序列批量插入
 #[test]
 #[serial]
@@ -116,8 +126,30 @@ fn test_time_series_batch_insert() {
         let db = init_test_env();
         let table_mut = db.get_table_mut(0).unwrap();
         
+        // 打印字段偏移信息
+        println!("=== 字段偏移信息 ===");
+        println!("记录大小: {}", table_mut.record_size);
+        for (i, field) in table_mut.def.fields.iter().enumerate() {
+            println!("字段 {}: 名称={}, 大小={}, 偏移={}", 
+                     i, field.name, field.size, field.offset);
+        }
+        
+        // 获取字段索引
+        let id_field_index = get_field_index(table_mut, "id");
+        let metric_name_field_index = get_field_index(table_mut, "metric_name");
+        let value_field_index = get_field_index(table_mut, "value");
+        let timestamp_field_index = get_field_index(table_mut, "timestamp");
+        let tags_field_index = get_field_index(table_mut, "tags");
+        
+        println!("=== 字段索引 ===");
+        println!("id: {}", id_field_index);
+        println!("metric_name: {}", metric_name_field_index);
+        println!("value: {}", value_field_index);
+        println!("timestamp: {}", timestamp_field_index);
+        println!("tags: {}", tags_field_index);
+        
         // 生成测试数据
-        let mut records_buffer = [0u8; 116 * 100]; // 100条记录
+        let mut records_buffer = [0u8; 120 * 100]; // 100条记录，使用正确的记录大小
         let mut record_ids = [0usize; 100];
         
         for i in 0..100 {
@@ -129,12 +161,12 @@ fn test_time_series_batch_insert() {
             let tags = "host=server01,region=us-west";
             
             // 手动填充记录数据
-            let record_ptr = records_buffer.as_mut_ptr().add(i * 116);
+            let record_ptr = records_buffer.as_mut_ptr().add(i * table_mut.record_size);
             
             // 填充id
             core::ptr::copy_nonoverlapping(
                 &id as *const i32 as *const u8,
-                record_ptr,
+                record_ptr.add(table_mut.def.fields[id_field_index].offset),
                 4
             );
             
@@ -142,21 +174,21 @@ fn test_time_series_batch_insert() {
             let name_bytes = metric_name.as_bytes();
             core::ptr::copy_nonoverlapping(
                 name_bytes.as_ptr(),
-                record_ptr.add(4),
+                record_ptr.add(table_mut.def.fields[metric_name_field_index].offset),
                 name_bytes.len()
             );
             
             // 填充value
             core::ptr::copy_nonoverlapping(
                 &value as *const f64 as *const u8,
-                record_ptr.add(36),
+                record_ptr.add(table_mut.def.fields[value_field_index].offset),
                 8
             );
             
             // 填充timestamp
             core::ptr::copy_nonoverlapping(
                 &timestamp as *const u64 as *const u8,
-                record_ptr.add(44),
+                record_ptr.add(table_mut.def.fields[timestamp_field_index].offset),
                 8
             );
             
@@ -164,7 +196,7 @@ fn test_time_series_batch_insert() {
             let tags_bytes = tags.as_bytes();
             core::ptr::copy_nonoverlapping(
                 tags_bytes.as_ptr(),
-                record_ptr.add(52),
+                record_ptr.add(table_mut.def.fields[tags_field_index].offset),
                 tags_bytes.len()
             );
         }
@@ -189,8 +221,15 @@ fn test_time_range_query() {
         let db = init_test_env();
         let table_mut = db.get_table_mut(0).unwrap();
         
+        // 获取字段索引
+        let id_field_index = get_field_index(table_mut, "id");
+        let metric_name_field_index = get_field_index(table_mut, "metric_name");
+        let value_field_index = get_field_index(table_mut, "value");
+        let timestamp_field_index = get_field_index(table_mut, "timestamp");
+        let tags_field_index = get_field_index(table_mut, "tags");
+        
         // 生成测试数据
-        let mut records_buffer = [0u8; 116 * 100]; // 100条记录
+        let mut records_buffer = [0u8; 120 * 100]; // 使用正确的记录大小
         let mut record_ids = [0usize; 100];
         
         for i in 0..100 {
@@ -202,12 +241,12 @@ fn test_time_range_query() {
             let tags = "host=server01,region=us-west";
             
             // 手动填充记录数据
-            let record_ptr = records_buffer.as_mut_ptr().add(i * 116);
+            let record_ptr = records_buffer.as_mut_ptr().add(i * table_mut.record_size);
             
             // 填充id
             core::ptr::copy_nonoverlapping(
                 &id as *const i32 as *const u8,
-                record_ptr,
+                record_ptr.add(table_mut.def.fields[id_field_index].offset),
                 4
             );
             
@@ -215,21 +254,21 @@ fn test_time_range_query() {
             let name_bytes = metric_name.as_bytes();
             core::ptr::copy_nonoverlapping(
                 name_bytes.as_ptr(),
-                record_ptr.add(4),
+                record_ptr.add(table_mut.def.fields[metric_name_field_index].offset),
                 name_bytes.len()
             );
             
             // 填充value
             core::ptr::copy_nonoverlapping(
                 &value as *const f64 as *const u8,
-                record_ptr.add(36),
+                record_ptr.add(table_mut.def.fields[value_field_index].offset),
                 8
             );
             
             // 填充timestamp
             core::ptr::copy_nonoverlapping(
                 &timestamp as *const u64 as *const u8,
-                record_ptr.add(44),
+                record_ptr.add(table_mut.def.fields[timestamp_field_index].offset),
                 8
             );
             
@@ -237,7 +276,7 @@ fn test_time_range_query() {
             let tags_bytes = tags.as_bytes();
             core::ptr::copy_nonoverlapping(
                 tags_bytes.as_ptr(),
-                record_ptr.add(52),
+                record_ptr.add(table_mut.def.fields[tags_field_index].offset),
                 tags_bytes.len()
             );
         }
@@ -253,9 +292,9 @@ fn test_time_range_query() {
         let start_time = 1609459200000;
         let end_time = 1609459200000 + 30 * 60000; // 30分钟
         
-        let mut result_buffer = [0u8; 116 * 50];
+        let mut result_buffer = [0u8; 120 * 50]; // 使用正确的记录大小
         let found_count = table_mut.get_records_in_time_window(
-            3, // timestamp字段索引
+            timestamp_field_index, // 使用正确的timestamp字段索引
             start_time,
             end_time,
             result_buffer.as_mut_ptr(),
@@ -265,10 +304,10 @@ fn test_time_range_query() {
         assert_eq!(found_count, 31, "时间范围查询失败，预期找到31条，实际找到{}", found_count);
         
         // 验证第一条记录
-        let first_record = &result_buffer[0..116];
-        let id = core::ptr::read(first_record.as_ptr() as *const i32);
-        let value = core::ptr::read(first_record.as_ptr().add(36) as *const f64);
-        let timestamp = core::ptr::read(first_record.as_ptr().add(44) as *const u64);
+        let first_record = &result_buffer[0..table_mut.record_size];
+        let id = core::ptr::read(first_record.as_ptr().add(table_mut.def.fields[id_field_index].offset) as *const i32);
+        let value = core::ptr::read(first_record.as_ptr().add(table_mut.def.fields[value_field_index].offset) as *const f64);
+        let timestamp = core::ptr::read(first_record.as_ptr().add(table_mut.def.fields[timestamp_field_index].offset) as *const u64);
         
         assert_eq!(id, 1, "第一条记录ID不符，预期1，实际{}", id);
         assert_eq!(value, 50.0, "第一条记录value不符，预期50.0，实际{}", value);
@@ -284,8 +323,15 @@ fn test_aggregation_functions() {
         let db = init_test_env();
         let table_mut = db.get_table_mut(0).unwrap();
         
+        // 获取字段索引
+        let id_field_index = get_field_index(table_mut, "id");
+        let metric_name_field_index = get_field_index(table_mut, "metric_name");
+        let value_field_index = get_field_index(table_mut, "value");
+        let timestamp_field_index = get_field_index(table_mut, "timestamp");
+        let tags_field_index = get_field_index(table_mut, "tags");
+        
         // 生成测试数据
-        let mut records_buffer = [0u8; 116 * 10]; // 10条记录
+        let mut records_buffer = [0u8; 120 * 10]; // 使用正确的记录大小
         let mut record_ids = [0usize; 10];
         
         for i in 0..10 {
@@ -297,12 +343,12 @@ fn test_aggregation_functions() {
             let tags = "host=server01,region=us-west";
             
             // 手动填充记录数据
-            let record_ptr = records_buffer.as_mut_ptr().add(i * 116);
+            let record_ptr = records_buffer.as_mut_ptr().add(i * table_mut.record_size);
             
             // 填充id
             core::ptr::copy_nonoverlapping(
                 &id as *const i32 as *const u8,
-                record_ptr,
+                record_ptr.add(table_mut.def.fields[id_field_index].offset),
                 4
             );
             
@@ -310,21 +356,21 @@ fn test_aggregation_functions() {
             let name_bytes = metric_name.as_bytes();
             core::ptr::copy_nonoverlapping(
                 name_bytes.as_ptr(),
-                record_ptr.add(4),
+                record_ptr.add(table_mut.def.fields[metric_name_field_index].offset),
                 name_bytes.len()
             );
             
             // 填充value
             core::ptr::copy_nonoverlapping(
                 &value as *const f64 as *const u8,
-                record_ptr.add(36),
+                record_ptr.add(table_mut.def.fields[value_field_index].offset),
                 8
             );
             
             // 填充timestamp
             core::ptr::copy_nonoverlapping(
                 &timestamp as *const u64 as *const u8,
-                record_ptr.add(44),
+                record_ptr.add(table_mut.def.fields[timestamp_field_index].offset),
                 8
             );
             
@@ -332,7 +378,7 @@ fn test_aggregation_functions() {
             let tags_bytes = tags.as_bytes();
             core::ptr::copy_nonoverlapping(
                 tags_bytes.as_ptr(),
-                record_ptr.add(52),
+                record_ptr.add(table_mut.def.fields[tags_field_index].offset),
                 tags_bytes.len()
             );
         }
@@ -349,23 +395,23 @@ fn test_aggregation_functions() {
         let end_time = 1609459200000 + 10 * 60000; // 10分钟
         
         // 测试count
-        let count = table_mut.aggregate_count(3, start_time, end_time).unwrap();
+        let count = table_mut.aggregate_count(timestamp_field_index, start_time, end_time).unwrap();
         assert_eq!(count, 10, "聚合count失败，预期10，实际{}", count);
         
         // 测试sum
-        let sum = table_mut.aggregate_sum(3, 2, start_time, end_time).unwrap();
+        let sum = table_mut.aggregate_sum(timestamp_field_index, value_field_index, start_time, end_time).unwrap();
         assert_eq!(sum, 55.0, "聚合sum失败，预期55.0，实际{}", sum);
         
         // 测试avg
-        let avg = table_mut.aggregate_avg(3, 2, start_time, end_time).unwrap();
+        let avg = table_mut.aggregate_avg(timestamp_field_index, value_field_index, start_time, end_time).unwrap();
         assert_eq!(avg, 5.5, "聚合avg失败，预期5.5，实际{}", avg);
         
         // 测试min
-        let min = table_mut.aggregate_min(3, 2, start_time, end_time).unwrap();
+        let min = table_mut.aggregate_min(timestamp_field_index, value_field_index, start_time, end_time).unwrap();
         assert_eq!(min, 1.0, "聚合min失败，预期1.0，实际{}", min);
         
         // 测试max
-        let max = table_mut.aggregate_max(3, 2, start_time, end_time).unwrap();
+        let max = table_mut.aggregate_max(timestamp_field_index, value_field_index, start_time, end_time).unwrap();
         assert_eq!(max, 10.0, "聚合max失败，预期10.0，实际{}", max);
     }
 }
@@ -378,8 +424,15 @@ fn test_get_latest_records() {
         let db = init_test_env();
         let table_mut = db.get_table_mut(0).unwrap();
         
+        // 获取字段索引
+        let id_field_index = get_field_index(table_mut, "id");
+        let metric_name_field_index = get_field_index(table_mut, "metric_name");
+        let value_field_index = get_field_index(table_mut, "value");
+        let timestamp_field_index = get_field_index(table_mut, "timestamp");
+        let tags_field_index = get_field_index(table_mut, "tags");
+        
         // 生成测试数据
-        let mut records_buffer = [0u8; 116 * 50]; // 50条记录
+        let mut records_buffer = [0u8; 120 * 50]; // 使用正确的记录大小
         let mut record_ids = [0usize; 50];
         
         for i in 0..50 {
@@ -391,12 +444,12 @@ fn test_get_latest_records() {
             let tags = "host=server01,region=us-west";
             
             // 手动填充记录数据
-            let record_ptr = records_buffer.as_mut_ptr().add(i * 116);
+            let record_ptr = records_buffer.as_mut_ptr().add(i * table_mut.record_size);
             
             // 填充id
             core::ptr::copy_nonoverlapping(
                 &id as *const i32 as *const u8,
-                record_ptr,
+                record_ptr.add(table_mut.def.fields[id_field_index].offset),
                 4
             );
             
@@ -404,21 +457,21 @@ fn test_get_latest_records() {
             let name_bytes = metric_name.as_bytes();
             core::ptr::copy_nonoverlapping(
                 name_bytes.as_ptr(),
-                record_ptr.add(4),
+                record_ptr.add(table_mut.def.fields[metric_name_field_index].offset),
                 name_bytes.len()
             );
             
             // 填充value
             core::ptr::copy_nonoverlapping(
                 &value as *const f64 as *const u8,
-                record_ptr.add(36),
+                record_ptr.add(table_mut.def.fields[value_field_index].offset),
                 8
             );
             
             // 填充timestamp
             core::ptr::copy_nonoverlapping(
                 &timestamp as *const u64 as *const u8,
-                record_ptr.add(44),
+                record_ptr.add(table_mut.def.fields[timestamp_field_index].offset),
                 8
             );
             
@@ -426,7 +479,7 @@ fn test_get_latest_records() {
             let tags_bytes = tags.as_bytes();
             core::ptr::copy_nonoverlapping(
                 tags_bytes.as_ptr(),
-                record_ptr.add(52),
+                record_ptr.add(table_mut.def.fields[tags_field_index].offset),
                 tags_bytes.len()
             );
         }
@@ -439,9 +492,9 @@ fn test_get_latest_records() {
         ).unwrap();
         
         // 测试获取最新记录
-        let mut latest_buffer = [0u8; 116 * 10];
+        let mut latest_buffer = [0u8; 120 * 10]; // 使用正确的记录大小
         let latest_count = table_mut.get_latest_records(
-            3, // timestamp字段索引
+            timestamp_field_index, // 使用正确的timestamp字段索引
             10,
             latest_buffer.as_mut_ptr()
         ).unwrap();
@@ -452,8 +505,8 @@ fn test_get_latest_records() {
         assert_eq!(latest_count, 10, "获取最新记录失败，预期10条，实际{}", latest_count);
         
         // 验证第一条最新记录（应该是timestamp最大的）
-        let latest_record = &latest_buffer[0..116];
-        let timestamp = core::ptr::read(latest_record.as_ptr().add(44) as *const u64);
+        let latest_record = &latest_buffer[0..table_mut.record_size];
+        let timestamp = core::ptr::read(latest_record.as_ptr().add(table_mut.def.fields[timestamp_field_index].offset) as *const u64);
         
         // 验证时间戳是否为最大的
         let expected_max_timestamp = 1609459200000 + 49 * 60000;
@@ -462,8 +515,8 @@ fn test_get_latest_records() {
         // 验证所有记录的时间戳是降序排列的
         let mut prev_timestamp = u64::MAX;
         for i in 0..latest_count {
-            let record = &latest_buffer[i * 116..(i + 1) * 116];
-            let current_timestamp = core::ptr::read(record.as_ptr().add(44) as *const u64);
+            let record = &latest_buffer[i * table_mut.record_size..(i + 1) * table_mut.record_size];
+            let current_timestamp = core::ptr::read(record.as_ptr().add(table_mut.def.fields[timestamp_field_index].offset) as *const u64);
             assert!(current_timestamp <= prev_timestamp, "记录时间戳不是降序排列");
             prev_timestamp = current_timestamp;
         }
@@ -478,8 +531,15 @@ fn test_time_window_aggregation() {
         let db = init_test_env();
         let table_mut = db.get_table_mut(0).unwrap();
         
+        // 获取字段索引
+        let id_field_index = get_field_index(table_mut, "id");
+        let metric_name_field_index = get_field_index(table_mut, "metric_name");
+        let value_field_index = get_field_index(table_mut, "value");
+        let timestamp_field_index = get_field_index(table_mut, "timestamp");
+        let tags_field_index = get_field_index(table_mut, "tags");
+        
         // 生成测试数据
-        let mut records_buffer = [0u8; 116 * 60]; // 60条记录
+        let mut records_buffer = [0u8; 120 * 60]; // 使用正确的记录大小
         let mut record_ids = [0usize; 60];
         
         for i in 0..60 {
@@ -491,12 +551,12 @@ fn test_time_window_aggregation() {
             let tags = "host=server01,region=us-west";
             
             // 手动填充记录数据
-            let record_ptr = records_buffer.as_mut_ptr().add(i * 116);
+            let record_ptr = records_buffer.as_mut_ptr().add(i * table_mut.record_size);
             
             // 填充id
             core::ptr::copy_nonoverlapping(
                 &id as *const i32 as *const u8,
-                record_ptr,
+                record_ptr.add(table_mut.def.fields[id_field_index].offset),
                 4
             );
             
@@ -504,21 +564,21 @@ fn test_time_window_aggregation() {
             let name_bytes = metric_name.as_bytes();
             core::ptr::copy_nonoverlapping(
                 name_bytes.as_ptr(),
-                record_ptr.add(4),
+                record_ptr.add(table_mut.def.fields[metric_name_field_index].offset),
                 name_bytes.len()
             );
             
             // 填充value
             core::ptr::copy_nonoverlapping(
                 &value as *const f64 as *const u8,
-                record_ptr.add(36),
+                record_ptr.add(table_mut.def.fields[value_field_index].offset),
                 8
             );
             
             // 填充timestamp
             core::ptr::copy_nonoverlapping(
                 &timestamp as *const u64 as *const u8,
-                record_ptr.add(44),
+                record_ptr.add(table_mut.def.fields[timestamp_field_index].offset),
                 8
             );
             
@@ -526,7 +586,7 @@ fn test_time_window_aggregation() {
             let tags_bytes = tags.as_bytes();
             core::ptr::copy_nonoverlapping(
                 tags_bytes.as_ptr(),
-                record_ptr.add(52),
+                record_ptr.add(table_mut.def.fields[tags_field_index].offset),
                 tags_bytes.len()
             );
         }
@@ -543,8 +603,8 @@ fn test_time_window_aggregation() {
         let end_time = 1609459200000 + 60 * 60000; // 60分钟
         
         let window_aggregates = table_mut.get_aggregate_in_time_window(
-            3, // timestamp字段索引
-            2, // value字段索引
+            timestamp_field_index, // 使用正确的timestamp字段索引
+            value_field_index, // 使用正确的value字段索引
             start_time,
             end_time,
             120000 // 2分钟窗口
