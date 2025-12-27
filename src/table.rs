@@ -516,7 +516,7 @@ impl MemoryTable {
     }
     
     /// 获取记录数据可变指针
-    pub unsafe fn get_record_ptr_mut(&self, index: usize) -> *mut u8 {
+    pub unsafe fn get_record_ptr_mut(&mut self, index: usize) -> *mut u8 {
         self.data_start.as_ptr().add(index * self.record_size) as *mut u8
     }
     

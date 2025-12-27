@@ -403,7 +403,9 @@ unsafe impl core::alloc::GlobalAlloc for GlobalAllocator {
     }
     
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: core::alloc::Layout) {
-        crate::memory::allocator::free(core::ptr::NonNull::new_unchecked(ptr));
+        if let Some(non_null_ptr) = core::ptr::NonNull::new(ptr) {
+            crate::memory::allocator::free(non_null_ptr);
+        }
     }
 }
 
