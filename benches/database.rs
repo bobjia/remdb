@@ -1,7 +1,10 @@
+extern crate alloc;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use remdb::table::*;
 use remdb::types::*;
 use remdb::platform::*;
+use remdb::memory::allocator;
+use alloc::sync::Arc;
 
 // 测试用Platform实现
 struct TestPlatform;
@@ -171,101 +174,27 @@ fn bench_table_insert(c: &mut Criterion) {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 1024 * 1024; // 1MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
     let mut group = c.benchmark_group("table_insert");
-    group.sample_size(1000);
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
     
     group.bench_function("single_insert", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 8 * 100]; // 8字节记录 * 100条
-            let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 100];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
-            // 创建测试记录
-            let mut record_data = [0u8; 8];
-            let id: i32 = 1;
-            let value: f32 = 3.14;
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
             
-            unsafe {
-                // 初始化测试记录
-                core::ptr::copy_nonoverlapping(
-                    &id as *const i32 as *const u8,
-                    record_data.as_mut_ptr(),
-                    4
-                );
-                core::ptr::copy_nonoverlapping(
-                    &value as *const f32 as *const u8,
-                    record_data.as_mut_ptr().add(4),
-                    4
-                );
-                
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TEST_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
-                
-                // 只插入一条记录进行测试
-                black_box(table.insert(record_data.as_ptr()).unwrap());
-            }
-        })
-    });
-    
-    group.bench_function("batch_insert", |b| {
-        b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 8 * 100]; // 8字节记录 * 100条
-            let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 100];
-            
-            // 创建测试记录数组
-            let mut records = [0u8; 8 * 10]; // 10条记录
-            let mut out_ids = [0usize; 10];
-            
-            unsafe {
-                // 初始化测试记录数组
-                for i in 0..10 {
-                    let record_ptr = records.as_mut_ptr().add(i * 8);
-                    let id: i32 = i as i32;
-                    let value: f32 = i as f32 * 1.0;
-                    
-                    core::ptr::copy_nonoverlapping(
-                        &id as *const i32 as *const u8,
-                        record_ptr,
-                        4
-                    );
-                    core::ptr::copy_nonoverlapping(
-                        &value as *const f32 as *const u8,
-                        record_ptr.add(4),
-                        4
-                    );
-                }
-                
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TEST_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
-                
-                // 执行批量插入
-                black_box(table.batch_insert(records.as_ptr(), 10, out_ids.as_mut_ptr()).unwrap());
-            }
+            // 只插入一条简单记录
+            let record_data = [1u8; 8];
+            // insert方法是安全的，不需要unsafe块
+            black_box(table.insert(record_data.as_ptr()).unwrap());
         })
     });
     
@@ -277,37 +206,31 @@ fn bench_table_query(c: &mut Criterion) {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 1024 * 1024; // 1MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
     let mut group = c.benchmark_group("table_query");
-    group.sample_size(100); // 减少样本大小，避免内存问题
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
     
     group.bench_function("get_by_id", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 8 * 100]; // 8字节记录 * 100条
-            let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 100];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
-            unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TEST_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据
+            for i in 0..100 {
+                let mut record_data = [0u8; 8];
+                let id: i32 = i as i32;
+                let value: f32 = i as f32 * 1.0;
                 
-                // 插入测试数据
-                for i in 0..100 {
-                    let mut record_data = [0u8; 8];
-                    let id: i32 = i as i32;
-                    let value: f32 = i as f32 * 1.0;
-                    
+                // 指针操作需要unsafe块
+                unsafe {
                     core::ptr::copy_nonoverlapping(
                         &id as *const i32 as *const u8,
                         record_data.as_mut_ptr(),
@@ -321,10 +244,12 @@ fn bench_table_query(c: &mut Criterion) {
                     
                     table.insert(record_data.as_ptr()).unwrap();
                 }
-                
-                let mut result_data = [0u8; 8];
-                
-                // 查询一条记录
+            }
+            
+            let mut result_data = [0u8; 8];
+            
+            // 查询一条记录，get_by_id方法是unsafe的
+            unsafe {
                 black_box(table.get_by_id(50, result_data.as_mut_ptr()).unwrap());
             }
         })
@@ -332,32 +257,20 @@ fn bench_table_query(c: &mut Criterion) {
     
     group.bench_function("iterate", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 8 * 100]; // 8字节记录 * 100条
-            let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 100];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
-            unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TEST_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据
+            for i in 0..100 {
+                let mut record_data = [0u8; 8];
+                let id: i32 = i as i32;
+                let value: f32 = i as f32 * 1.0;
                 
-                // 插入测试数据
-                for i in 0..100 {
-                    let mut record_data = [0u8; 8];
-                    let id: i32 = i as i32;
-                    let value: f32 = i as f32 * 1.0;
-                    
+                // 指针操作需要unsafe块
+                unsafe {
                     core::ptr::copy_nonoverlapping(
                         &id as *const i32 as *const u8,
                         record_data.as_mut_ptr(),
@@ -371,10 +284,12 @@ fn bench_table_query(c: &mut Criterion) {
                     
                     table.insert(record_data.as_ptr()).unwrap();
                 }
-                
-                let mut count = 0;
-                
-                // 遍历记录
+            }
+            
+            let mut count = 0;
+            
+            // 遍历记录，iterate方法是unsafe的
+            unsafe {
                 table.iterate(|_id, data_ptr| {
                     let _id = core::ptr::read(data_ptr as *const i32);
                     let _value = core::ptr::read(data_ptr.add(4) as *const f32);
@@ -383,9 +298,9 @@ fn bench_table_query(c: &mut Criterion) {
                     
                     true // 继续遍历
                 }).unwrap();
-                
-                black_box(count);
             }
+            
+            black_box(count);
         })
     });
     
@@ -397,37 +312,31 @@ fn bench_table_update_delete(c: &mut Criterion) {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 1024 * 1024; // 1MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
     let mut group = c.benchmark_group("table_update_delete");
-    group.sample_size(100); // 减少样本大小，避免内存问题
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
     
     group.bench_function("update_record", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 8 * 100]; // 8字节记录 * 100条
-            let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 100];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
-            unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TEST_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据
+            for i in 0..100 {
+                let mut record_data = [0u8; 8];
+                let id: i32 = i as i32;
+                let value: f32 = i as f32 * 1.0;
                 
-                // 插入测试数据
-                for i in 0..100 {
-                    let mut record_data = [0u8; 8];
-                    let id: i32 = i as i32;
-                    let value: f32 = i as f32 * 1.0;
-                    
+                // 指针操作需要unsafe块
+                unsafe {
                     core::ptr::copy_nonoverlapping(
                         &id as *const i32 as *const u8,
                         record_data.as_mut_ptr(),
@@ -441,12 +350,15 @@ fn bench_table_update_delete(c: &mut Criterion) {
                     
                     table.insert(record_data.as_ptr()).unwrap();
                 }
-                
-                // 创建更新用的记录数据
-                let mut update_data = [0u8; 8];
-                let id: i32 = 1;
-                let new_value: f32 = 6.28;
-                
+            }
+            
+            // 创建更新用的记录数据
+            let mut update_data = [0u8; 8];
+            let id: i32 = 1;
+            let new_value: f32 = 6.28;
+            
+            // 指针操作需要unsafe块
+            unsafe {
                 core::ptr::copy_nonoverlapping(
                     &id as *const i32 as *const u8,
                     update_data.as_mut_ptr(),
@@ -458,7 +370,7 @@ fn bench_table_update_delete(c: &mut Criterion) {
                     4
                 );
                 
-                // 更新一条记录
+                // 更新一条记录，update方法是unsafe的
                 black_box(table.update(50, update_data.as_ptr()).unwrap());
             }
         })
@@ -466,32 +378,20 @@ fn bench_table_update_delete(c: &mut Criterion) {
     
     group.bench_function("delete_record", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 8 * 100]; // 8字节记录 * 100条
-            let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 100];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
-            unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TEST_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据
+            for i in 0..100 {
+                let mut record_data = [0u8; 8];
+                let id: i32 = i as i32;
+                let value: f32 = i as f32 * 1.0;
                 
-                // 插入测试数据
-                for i in 0..100 {
-                    let mut record_data = [0u8; 8];
-                    let id: i32 = i as i32;
-                    let value: f32 = i as f32 * 1.0;
-                    
+                // 指针操作需要unsafe块
+                unsafe {
                     core::ptr::copy_nonoverlapping(
                         &id as *const i32 as *const u8,
                         record_data.as_mut_ptr(),
@@ -505,8 +405,10 @@ fn bench_table_update_delete(c: &mut Criterion) {
                     
                     table.insert(record_data.as_ptr()).unwrap();
                 }
-                
-                // 删除一条记录
+            }
+            
+            // 删除一条记录，delete方法是unsafe的
+            unsafe {
                 black_box(table.delete(50).unwrap());
                 
                 black_box(table.record_count());
@@ -522,36 +424,30 @@ fn bench_table_field_operations(c: &mut Criterion) {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 1024 * 1024; // 1MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
     let mut group = c.benchmark_group("table_field_operations");
-    group.sample_size(100); // 减少样本大小，避免内存问题
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
     
     group.bench_function("get_field", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 8 * 100]; // 8字节记录 * 100条
-            let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 100];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据
+            let mut record_data = [0u8; 8];
+            let id: i32 = 1;
+            let value: f32 = 3.14;
+            
+            // 指针操作需要unsafe块
             unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TEST_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
-                
-                // 插入测试数据
-                let mut record_data = [0u8; 8];
-                let id: i32 = 1;
-                let value: f32 = 3.14;
-                
                 core::ptr::copy_nonoverlapping(
                     &id as *const i32 as *const u8,
                     record_data.as_mut_ptr(),
@@ -564,12 +460,14 @@ fn bench_table_field_operations(c: &mut Criterion) {
                 );
                 
                 table.insert(record_data.as_ptr()).unwrap();
-                
-                // 获取记录数据
-                let mut result_data = [0u8; 8];
+            }
+            
+            // 获取记录数据，get_by_id方法是unsafe的
+            let mut result_data = [0u8; 8];
+            unsafe {
                 table.get_by_id(0, result_data.as_mut_ptr()).unwrap();
                 
-                // 获取一个字段值
+                // 获取一个字段值，get_field方法是unsafe的
                 black_box(table.get_field(result_data.as_ptr(), 0).unwrap());
             }
         })
@@ -577,31 +475,19 @@ fn bench_table_field_operations(c: &mut Criterion) {
     
     group.bench_function("set_field", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 8 * 100]; // 8字节记录 * 100条
-            let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 100];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据
+            let mut record_data = [0u8; 8];
+            let id: i32 = 1;
+            let value: f32 = 3.14;
+            
+            // 指针操作需要unsafe块
             unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TEST_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
-                
-                // 插入测试数据
-                let mut record_data = [0u8; 8];
-                let id: i32 = 1;
-                let value: f32 = 3.14;
-                
                 core::ptr::copy_nonoverlapping(
                     &id as *const i32 as *const u8,
                     record_data.as_mut_ptr(),
@@ -614,15 +500,17 @@ fn bench_table_field_operations(c: &mut Criterion) {
                 );
                 
                 table.insert(record_data.as_ptr()).unwrap();
-                
-                // 获取记录数据
-                let mut result_data = [0u8; 8];
+            }
+            
+            // 获取记录数据，get_by_id方法是unsafe的
+            let mut result_data = [0u8; 8];
+            unsafe {
                 table.get_by_id(0, result_data.as_mut_ptr()).unwrap();
                 
                 // 创建测试值
                 let float_value = Value { float32: 6.28 };
                 
-                // 设置一个字段值
+                // 设置一个字段值，set_field方法是unsafe的
                 black_box(table.set_field(result_data.as_mut_ptr(), 1, &float_value).unwrap());
             }
         })
@@ -636,47 +524,40 @@ fn bench_time_series_insert(c: &mut Criterion) {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 4 * 1024 * 1024; // 4MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
     let mut group = c.benchmark_group("time_series_insert");
-    group.sample_size(500);
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
     
     group.bench_function("single_metric_insert", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 116 * 1000]; // 116字节记录 * 1000条
-            let mut status_buffer: [RecordHeader; 1000] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 1000];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 准备时间序列数据
+            let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
+            let id: i32 = 1;
+            let metric_name = "cpu_usage";
+            let value: f64 = 45.5;
+            let timestamp: u64 = 1234567890;
+            let tags = "host=server1,env=prod";
+            
+            // 设置字段值，指针操作需要unsafe块
             unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TIME_SERIES_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
-                
-                // 准备时间序列数据
-                let mut metric_data = [0u8; 116];
-                let id: i32 = 1;
-                let metric_name = "cpu_usage";
-                let value: f64 = 45.5;
-                let timestamp: u64 = 1234567890;
-                let tags = "host=server1,env=prod";
-                
-                // 设置字段值
                 core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
                 core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
                 core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
                 core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
                 core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
                 
-                // 插入单条时间序列数据
+                // 插入单条时间序列数据，insert方法是unsafe的
                 black_box(table.insert(metric_data.as_ptr()).unwrap());
             }
         })
@@ -684,31 +565,18 @@ fn bench_time_series_insert(c: &mut Criterion) {
     
     group.bench_function("batch_metric_insert", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 116 * 1000]; // 116字节记录 * 1000条
-            let mut status_buffer: [RecordHeader; 1000] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 1000];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 准备批量时间序列数据
+            let mut metrics_data = vec![0u8; 116 * 10]; // 10条记录，使用vec!在堆上分配
+            let mut out_ids = [0usize; 10];
+            
+            // 初始化测试数据，指针操作需要unsafe块
             unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TIME_SERIES_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
-                
-                // 准备批量时间序列数据
-                let mut metrics_data = [0u8; 116 * 10]; // 10条记录
-                let mut out_ids = [0usize; 10];
-                
-                // 初始化测试数据
                 for i in 0..10 {
                     let record_ptr = metrics_data.as_mut_ptr().add(i * 116);
                     let id: i32 = i as i32;
@@ -724,7 +592,7 @@ fn bench_time_series_insert(c: &mut Criterion) {
                     core::ptr::copy_nonoverlapping(tags.as_ptr(), record_ptr.add(52), tags.len());
                 }
                 
-                // 执行批量插入
+                // 执行批量插入，batch_insert方法是unsafe的
                 black_box(table.batch_insert(metrics_data.as_ptr(), 10, out_ids.as_mut_ptr()).unwrap());
             }
         })
@@ -738,34 +606,27 @@ fn bench_time_series_query(c: &mut Criterion) {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 8 * 1024 * 1024; // 8MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
     let mut group = c.benchmark_group("time_series_query");
-    group.sample_size(200);
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
     
     group.bench_function("query_by_id", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 116 * 1000]; // 116字节记录 * 1000条
-            let mut status_buffer: [RecordHeader; 1000] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 1000];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据，指针操作需要unsafe块
             unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TIME_SERIES_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
-                
-                // 插入测试数据
                 for i in 0..500 {
-                    let mut metric_data = [0u8; 116];
+                    let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
                     let id: i32 = i as i32;
                     let metric_name = "cpu_usage";
                     let value: f64 = 45.5 + i as f64;
@@ -780,10 +641,11 @@ fn bench_time_series_query(c: &mut Criterion) {
                     
                     table.insert(metric_data.as_ptr()).unwrap();
                 }
-                
-                let mut result_data = [0u8; 116];
-                
-                // 查询指定ID的时间序列数据
+            }
+            
+            // 查询指定ID的时间序列数据，get_by_id方法是unsafe的
+            let mut result_data = vec![0u8; 116]; // 使用vec!在堆上分配
+            unsafe {
                 black_box(table.get_by_id(250, result_data.as_mut_ptr()).unwrap());
             }
         })
@@ -791,29 +653,16 @@ fn bench_time_series_query(c: &mut Criterion) {
     
     group.bench_function("iterate_metrics", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 116 * 1000]; // 116字节记录 * 1000条
-            let mut status_buffer: [RecordHeader; 1000] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 1000];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据，指针操作需要unsafe块
             unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TIME_SERIES_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
-                
-                // 插入测试数据
                 for i in 0..500 {
-                    let mut metric_data = [0u8; 116];
+                    let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
                     let id: i32 = i as i32;
                     let metric_name = "cpu_usage";
                     let value: f64 = 45.5 + i as f64;
@@ -828,11 +677,13 @@ fn bench_time_series_query(c: &mut Criterion) {
                     
                     table.insert(metric_data.as_ptr()).unwrap();
                 }
-                
-                let mut count = 0;
-                let mut sum = 0.0;
-                
-                // 遍历时间序列数据，模拟聚合计算
+            }
+            
+            let mut count = 0;
+            let mut sum = 0.0;
+            
+            // 遍历时间序列数据，模拟聚合计算，iterate方法是unsafe的
+            unsafe {
                 table.iterate(|_id, data_ptr| {
                     let value = core::ptr::read(data_ptr.add(36) as *const f64);
                     sum += value;
@@ -840,9 +691,9 @@ fn bench_time_series_query(c: &mut Criterion) {
                     
                     true // 继续遍历
                 }).unwrap();
-                
-                black_box((count, sum));
             }
+            
+            black_box((count, sum));
         })
     });
     
@@ -854,34 +705,27 @@ fn bench_time_series_aggregation(c: &mut Criterion) {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 16 * 1024 * 1024; // 16MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
     let mut group = c.benchmark_group("time_series_aggregation");
-    group.sample_size(100);
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
     
     group.bench_function("simple_aggregation", |b| {
         b.iter(|| {
-            // 每个迭代创建新的内存缓冲区和表实例
-            let mut data_buffer = [0u8; 116 * 1000]; // 116字节记录 * 1000条
-            let mut status_buffer: [RecordHeader; 1000] = core::array::from_fn(|_| RecordHeader {
-                status: RecordStatus::Free,
-                version: 0,
-                lock_type: LockType::None,
-                lock_owner: 0,
-                lock_count: 0
-            });
-            let mut free_slots_buffer = [0usize; 1000];
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
             
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据，指针操作需要unsafe块
             unsafe {
-                // 创建表
-                let mut table = MemoryTable::new(
-                    &TIME_SERIES_TABLE_DEF,
-                    data_buffer.as_mut_ptr(),
-                    status_buffer.as_mut_ptr(),
-                    free_slots_buffer.as_mut_ptr()
-                ).unwrap();
-                
-                // 插入测试数据
                 for i in 0..1000 {
-                    let mut metric_data = [0u8; 116];
+                    let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
                     let id: i32 = i as i32;
                     let metric_name = "cpu_usage";
                     let value: f64 = 40.0 + (i % 20) as f64;
@@ -896,13 +740,15 @@ fn bench_time_series_aggregation(c: &mut Criterion) {
                     
                     table.insert(metric_data.as_ptr()).unwrap();
                 }
-                
-                let mut min_value = f64::MAX;
-                let mut max_value = f64::MIN;
-                let mut sum_value = 0.0;
-                let mut count = 0;
-                
-                // 遍历计算聚合值
+            }
+            
+            let mut min_value = f64::MAX;
+            let mut max_value = f64::MIN;
+            let mut sum_value = 0.0;
+            let mut count = 0;
+            
+            // 遍历计算聚合值，iterate方法是unsafe的
+            unsafe {
                 table.iterate(|_id, data_ptr| {
                     let value = core::ptr::read(data_ptr.add(36) as *const f64);
                     let timestamp = core::ptr::read(data_ptr.add(44) as *const u64);
@@ -917,11 +763,11 @@ fn bench_time_series_aggregation(c: &mut Criterion) {
                     
                     true // 继续遍历
                 }).unwrap();
-                
-                let avg_value = if count > 0 { sum_value / count as f64 } else { 0.0 };
-                
-                black_box((min_value, max_value, avg_value, count));
             }
+            
+            let avg_value = if count > 0 { sum_value / count as f64 } else { 0.0 };
+            
+            black_box((min_value, max_value, avg_value, count));
         })
     });
     

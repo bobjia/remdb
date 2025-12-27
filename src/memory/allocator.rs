@@ -389,6 +389,16 @@ pub fn get_memory_stats() -> MemoryStats {
     }
 }
 
+/// 重置全局内存分配器
+pub fn reset_global_allocator() -> Result<()> {
+    if let Some(allocator) = GLOBAL_ALLOCATOR.get() {
+        let mut allocator_guard = allocator.lock().map_err(|_| crate::types::RemDbError::OutOfMemory)?;
+        allocator_guard.reset();
+    }
+    
+    Ok(())
+}
+
 // 为no_std环境实现全局内存分配器
 #[cfg(not(feature = "std"))]
 pub struct GlobalAllocator;
