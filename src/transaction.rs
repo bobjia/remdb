@@ -525,7 +525,7 @@ impl LogManager {
                         (*status_ptr).version += 1;
                     }
                 },
-            }
+        }
         }
         
         Ok(())
@@ -742,6 +742,11 @@ impl TransactionManager {
             
             let record_id = log_item.record_id as usize;
             
+            // 检查record_id是否有效
+            if record_id >= table.def.max_records {
+                continue;
+            }
+            
             // 根据日志类型执行相应的回滚操作
             match log_item.op_type {
                 LogOperation::Insert => {
@@ -756,12 +761,16 @@ impl TransactionManager {
                         let record_ptr = table.get_record_ptr_mut(record_id);
                         crate::platform::memset(record_ptr, 0, table.record_size);
                         
-                        // 将空闲槽压回栈中
-                        *table.free_slots.as_ptr().add(table.free_slot_count) = record_id;
-                        table.free_slot_count += 1;
+                        // 将空闲槽压回栈中，确保不超过数组大小
+                        if table.free_slot_count < table.def.max_records {
+                            *table.free_slots.as_ptr().add(table.free_slot_count) = record_id;
+                            table.free_slot_count += 1;
+                        }
                         
                         // 更新记录计数
-                        table.record_count -= 1;
+                        if table.record_count > 0 {
+                            table.record_count -= 1;
+                        }
                     }
                 },
                 LogOperation::Delete => {
@@ -779,10 +788,13 @@ impl TransactionManager {
                         // 更新状态
                         (*status_ptr).status = crate::types::RecordStatus::Used;
                         (*status_ptr).version += 1;
-                        table.record_count += 1;
                         
-                        // 从空闲槽栈中移除该槽
-                        // 这里简单处理，假设该槽是最近被释放的
+                        // 更新记录计数，确保不超过最大记录数
+                        if table.record_count < table.def.max_records {
+                            table.record_count += 1;
+                        }
+                        
+                        // 从空闲槽栈中移除该槽，确保不超过数组大小
                         if table.free_slot_count > 0 {
                             table.free_slot_count -= 1;
                         }
@@ -791,10 +803,11 @@ impl TransactionManager {
                 LogOperation::Update => {
                     // 回滚Update操作：直接恢复旧数据，不添加日志
                     let record_ptr = table.get_record_ptr_mut(record_id);
+                    let data_size = core::cmp::min(log_item.data_size as usize, table.record_size);
                     crate::platform::memcpy(
                         record_ptr,
                         log_item.old_data.as_ptr(),
-                        log_item.data_size as usize
+                        data_size
                     );
                     
                     // 更新版本号

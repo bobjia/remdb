@@ -306,9 +306,11 @@ impl MemoryTable {
         let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
         memset(record_ptr, 0, self.record_size);
         
-        // 将空闲槽压回栈中
-        *self.free_slots.as_ptr().add(self.free_slot_count) = id;
-        self.free_slot_count += 1;
+        // 将空闲槽压回栈中，确保不超过数组大小
+        if self.free_slot_count < self.def.max_records {
+            *self.free_slots.as_ptr().add(self.free_slot_count) = id;
+            self.free_slot_count += 1;
+        }
         
         // 更新记录计数
         self.record_count -= 1;
