@@ -148,6 +148,45 @@ fn test_sql_query() {
         init_global_db(config).unwrap()
     };
     
+    // 测试各种SQL语法
+    println!("=== 测试各种SQL语法 ===");
+    
+    // 1. 测试有效SQL语法
+    let valid_queries = [
+        "SELECT * FROM TEST_TABLE",
+        "SELECT name, age FROM TEST_TABLE",
+        "SELECT * FROM TEST_TABLE WHERE id = 1",
+        "SELECT * FROM TEST_TABLE WHERE age > 25 AND active = true",
+        "SELECT * FROM TEST_TABLE ORDER BY name ASC",
+        "SELECT * FROM TEST_TABLE ORDER BY age DESC",
+        "SELECT * FROM TEST_TABLE LIMIT 5",
+        "SELECT * FROM TEST_TABLE WHERE active = false LIMIT 2",
+    ];
+    
+    for query in valid_queries {
+        let result = db.sql_query(query);
+        assert!(result.is_ok(), "查询 '{}' 应该成功执行", query);
+    }
+    
+    // 2. 测试无效SQL语法
+    let invalid_queries = [
+        "SELECT", // 缺少FROM子句
+        "SELECT *", // 缺少FROM子句
+        "SELECT * FROM", // 缺少表名
+        "SELECT * FROM WHERE id = 1", // 缺少表名
+        "SELECT * FROM TEST_TABLE WHERE", // 缺少条件
+        "SELECT * FROM TEST_TABLE WHERE id", // 缺少比较运算符和值
+        "SELECT * FROM TEST_TABLE ORDER BY", // 缺少排序列
+        "SELECT * FROM TEST_TABLE LIMIT", // 缺少LIMIT值
+    ];
+    
+    for query in invalid_queries {
+        let result = db.sql_query(query);
+        assert!(result.is_err(), "查询 '{}' 应该失败", query);
+    }
+
+    println!("=== 插入测试数据和查询 ===");
+
     // 插入测试数据
     // 确保TestRecord的内存布局与table!宏生成的字段偏移量匹配
     // 使用精确的#[repr(C)]布局，确保字段顺序和大小与table!宏定义一致
@@ -252,72 +291,6 @@ fn test_sql_query() {
     assert!(result.is_err());
     if let Err(err) = result {
         assert!(matches!(err, RemDbError::FieldNotFound));
-    }
-    
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
-}
-
-#[cfg_attr(any(test, feature = "std"), test)]
-fn test_sql_query_syntax() {
-    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    // 使用不同名称的静态变量，避免与其他测试函数冲突
-    static mut DB_MEMORY_SYNTAX: [u8; 131072] = [0u8; 131072];
-    
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(
-            DB_MEMORY_SYNTAX.as_mut_ptr(),
-            DB_MEMORY_SYNTAX.len()
-        ).unwrap();
-    }
-    
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
-    
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-    
-    // 初始化数据库
-    let config = &TEST_DB;
-    let db = unsafe {
-        init_global_db(config).unwrap()
-    };
-    
-    // 测试各种SQL语法
-    
-    // 1. 测试有效SQL语法
-    let valid_queries = [
-        "SELECT * FROM TEST_TABLE",
-        "SELECT name, age FROM TEST_TABLE",
-        "SELECT * FROM TEST_TABLE WHERE id = 1",
-        "SELECT * FROM TEST_TABLE WHERE age > 25 AND active = true",
-        "SELECT * FROM TEST_TABLE ORDER BY name ASC",
-        "SELECT * FROM TEST_TABLE ORDER BY age DESC",
-        "SELECT * FROM TEST_TABLE LIMIT 5",
-        "SELECT * FROM TEST_TABLE WHERE active = false LIMIT 2",
-    ];
-    
-    for query in valid_queries {
-        let result = db.sql_query(query);
-        assert!(result.is_ok(), "查询 '{}' 应该成功执行", query);
-    }
-    
-    // 2. 测试无效SQL语法
-    let invalid_queries = [
-        "SELECT", // 缺少FROM子句
-        "SELECT *", // 缺少FROM子句
-        "SELECT * FROM", // 缺少表名
-        "SELECT * FROM WHERE id = 1", // 缺少表名
-        "SELECT * FROM TEST_TABLE WHERE", // 缺少条件
-        "SELECT * FROM TEST_TABLE WHERE id", // 缺少比较运算符和值
-        "SELECT * FROM TEST_TABLE ORDER BY", // 缺少排序列
-        "SELECT * FROM TEST_TABLE LIMIT", // 缺少LIMIT值
-    ];
-    
-    for query in invalid_queries {
-        let result = db.sql_query(query);
-        assert!(result.is_err(), "查询 '{}' 应该失败", query);
     }
     
     // 重置全局数据库实例，确保测试之间的隔离
