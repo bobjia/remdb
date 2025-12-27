@@ -103,68 +103,8 @@ fn main() {
             platform::init_platform(&DUMMY_PLATFORM);
         }
         
-        // 计算所需内存大小
-        let table_size = MemoryTable::calculate_memory_size(&config.tables[0]);
-        let primary_index_size = PrimaryIndex::calculate_memory_size(
-            &config.tables[0],
-            256, // 哈希表大小
-            1000  // 最大索引项数量
-        );
-        let secondary_index_size = SecondaryIndex::calculate_memory_size(1000);
-        
-        println!("Table size: {} bytes", table_size);
-        println!("Primary index size: {} bytes", primary_index_size);
-        println!("Secondary index size: {} bytes", secondary_index_size);
-        
-        // 分配内存
-        let table_ptr = memory::allocator::alloc(table_size).unwrap().as_ptr() as *mut u8;
-        let status_ptr = memory::allocator::alloc(
-            core::mem::size_of::<types::RecordHeader>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut types::RecordHeader;
-        
-        let free_slots_ptr = memory::allocator::alloc(
-            core::mem::size_of::<usize>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut usize;
-        
-        let hash_table_ptr = memory::allocator::alloc(
-            256 * core::mem::size_of::<Option<NonNull<index::PrimaryIndexItem>>>()
-        ).unwrap().as_ptr() as *mut Option<NonNull<index::PrimaryIndexItem>>;
-        
-        let primary_index_items_ptr = memory::allocator::alloc(
-            1000 * core::mem::size_of::<index::PrimaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::PrimaryIndexItem;
-        
-        let secondary_index_items_ptr = memory::allocator::alloc(
-            1000 * core::mem::size_of::<index::SecondaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::SecondaryIndexItem;
-        
-        // 创建表和索引
-        let table = MemoryTable::new(&config.tables[0], table_ptr, status_ptr, free_slots_ptr).unwrap();
-        let primary_index = PrimaryIndex::new(
-            &config.tables[0],
-            hash_table_ptr,
-            primary_index_items_ptr,
-            256,
-            1000
-        );
-        let secondary_index = AnySecondaryIndex::SortedArray(SecondaryIndex::new(&config.tables[0], secondary_index_items_ptr, 1000));
-        
-        // 初始化表和索引数组
-        static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
-        static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-        static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None; 1];
-        
-        TABLES[0] = Some(table);
-        PRIMARY_INDICES[0] = Some(primary_index);
-        SECONDARY_INDICES[0] = Some(secondary_index);
-        
         // 初始化全局数据库
-        let db = init_global_db(
-            config,
-            &mut TABLES,
-            &mut PRIMARY_INDICES,
-            &mut SECONDARY_INDICES
-        ).unwrap();
+        let db = init_global_db(config).unwrap();
         
         // 获取表引用
         let table_mut = db.get_table_mut(0).unwrap();
@@ -260,24 +200,36 @@ fn main() {
         println!("\n=== 时间序列聚合测试 ===");
         
         // 统计记录数
-        let count = table_mut.aggregate_count(3, start_time, end_time).unwrap();
-        println!("时间范围内记录数: {}", count);
-        
-        // 计算平均值
-        let avg = table_mut.aggregate_avg(3, 2, start_time, end_time).unwrap();
-        println!("时间范围内平均值: {:.2}", avg);
-        
-        // 计算总和
-        let sum = table_mut.aggregate_sum(3, 2, start_time, end_time).unwrap();
-        println!("时间范围内总和: {:.2}", sum);
-        
-        // 计算最小值
-        let min = table_mut.aggregate_min(3, 2, start_time, end_time).unwrap();
-        println!("时间范围内最小值: {:.2}", min);
-        
-        // 计算最大值
-        let max = table_mut.aggregate_max(3, 2, start_time, end_time).unwrap();
-        println!("时间范围内最大值: {:.2}", max);
+        match table_mut.aggregate_count(3, start_time, end_time) {
+            Ok(count) => {
+                println!("时间范围内记录数: {}", count);
+                
+                if count > 0 {
+                    // 计算平均值
+                    if let Ok(avg) = table_mut.aggregate_avg(3, 2, start_time, end_time) {
+                        println!("时间范围内平均值: {:.2}", avg);
+                    }
+                    
+                    // 计算总和
+                    if let Ok(sum) = table_mut.aggregate_sum(3, 2, start_time, end_time) {
+                        println!("时间范围内总和: {:.2}", sum);
+                    }
+                    
+                    // 计算最小值
+                    if let Ok(min) = table_mut.aggregate_min(3, 2, start_time, end_time) {
+                        println!("时间范围内最小值: {:.2}", min);
+                    }
+                    
+                    // 计算最大值
+                    if let Ok(max) = table_mut.aggregate_max(3, 2, start_time, end_time) {
+                        println!("时间范围内最大值: {:.2}", max);
+                    }
+                } else {
+                    println!("时间范围内没有记录，跳过聚合计算");
+                }
+            },
+            Err(e) => println!("统计记录数失败: {:?}", e)
+        }
         
         // 测试获取最新记录
         println!("\n=== 获取最新记录测试 ===");

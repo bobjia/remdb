@@ -1,11 +1,16 @@
 // 低功耗模式示例
+extern crate alloc;
+
 use remdb::*;
 use remdb::types::RecordHeader;
+
+// 定义内存缓冲区
+static mut DB_MEMORY: [u8; 262144] = [0u8; 262144]; // 256KB 内存缓冲区
 
 // 定义表结构
 remdb::table!(
     TEST_TABLE,
-    1000, // 最大记录数
+    100, // 减小最大记录数到100，降低内存需求
     primary_key: id,
     fields: {
         id: i32,
@@ -43,14 +48,16 @@ const STATUS_ARRAY_SIZE: usize = core::mem::size_of::<RecordHeader>() * TEST_TAB
 const FREE_SLOTS_SIZE: usize = core::mem::size_of::<usize>() * TEST_TABLE.max_records;
 const TABLE_MEM_SIZE: usize = TABLE_DATA_SIZE + STATUS_ARRAY_SIZE + FREE_SLOTS_SIZE;
 
-// 静态内存分配
-static mut TABLE_MEM: [u8; TABLE_MEM_SIZE] = [0; TABLE_MEM_SIZE];
-static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
-static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None; 1];
+
 
 fn main() {
     unsafe {
+        // 初始化内存分配器
+        let _ = memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        );
+        
         // 初始化平台
         #[cfg(feature = "posix")]
         remdb::platform::init_platform(remdb::platform::posix::get_posix_platform());
@@ -135,26 +142,8 @@ fn main() {
             remdb::platform::init_platform(&MINIMAL_PLATFORM);
         }
         
-        // 初始化表
-        let table_ptr = TABLE_MEM.as_mut_ptr();
-        let status_ptr = table_ptr.add(TABLE_DATA_SIZE);
-        let free_slots_ptr = status_ptr.add(STATUS_ARRAY_SIZE);
-        
-        // 初始化表，MemoryTable::new返回Option<MemoryTable>
-        TABLES[0] = remdb::MemoryTable::new(
-            &TEST_TABLE,
-            table_ptr,
-            status_ptr as *mut RecordHeader,
-            free_slots_ptr as *mut usize
-        );
-        
         // 初始化数据库
-        let db = remdb::init_global_db(
-            &TEST_DB,
-            &mut TABLES,
-            &mut PRIMARY_INDICES,
-            &mut SECONDARY_INDICES
-        ).unwrap();
+        let db = remdb::init_global_db(&TEST_DB).unwrap();
         
         println!("数据库初始化成功，支持低功耗模式: {}", TEST_DB.low_power_mode_supported);
         println!("低功耗模式下的最大记录数: {:?}", TEST_DB.low_power_max_records);

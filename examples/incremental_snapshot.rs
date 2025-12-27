@@ -1,4 +1,9 @@
-use remdb::{database, table, Result}; use remdb::types::RecordHeader;
+extern crate alloc;
+
+use remdb::{database, table, Result};
+
+// 定义内存缓冲区
+static mut DB_MEMORY: [u8; 262144] = [0u8; 262144]; // 256KB 内存缓冲区
 
 // 定义测试表
 table!(
@@ -18,22 +23,6 @@ database!(
     TEST_DB,
     tables: [TEST_TABLE]
 );
-
-// 手动计算表所需的总内存大小
-// 记录大小：id(8字节) + name(20字节) + value(4字节) = 32字节
-const RECORD_SIZE: usize = 8 + 20 + 4;
-const TABLE_DATA_SIZE: usize = RECORD_SIZE * TEST_TABLE.max_records;
-const STATUS_ARRAY_SIZE: usize = core::mem::size_of::<RecordHeader>() * TEST_TABLE.max_records;
-const FREE_SLOTS_SIZE: usize = core::mem::size_of::<usize>() * TEST_TABLE.max_records;
-const TABLE_MEM_SIZE: usize = TABLE_DATA_SIZE + STATUS_ARRAY_SIZE + FREE_SLOTS_SIZE;
-
-// 静态变量，具有'static生命周期
-static mut TABLE_MEM: [u8; TABLE_MEM_SIZE] = [0; TABLE_MEM_SIZE];
-
-// 静态表数组，具有'static生命周期
-static mut TABLES: [Option<remdb::MemoryTable>; 8] = [const { None }; 8];
-static mut PRIMARY_INDICES: [Option<remdb::PrimaryIndex>; 8] = [const { None }; 8];
-static mut SECONDARY_INDICES: [Option<remdb::AnySecondaryIndex>; 8] = [const { None }; 8];
 
 fn main() -> Result<()> 
 {
@@ -208,28 +197,17 @@ fn main() -> Result<()>
     static SIMPLE_PLATFORM: SimplePlatform = SimplePlatform;
     
     unsafe {
-        // 初始化平台
-        remdb::platform::init_platform(&SIMPLE_PLATFORM);
-        // 初始化表
-        let table_ptr = TABLE_MEM.as_mut_ptr();
-        let status_ptr = table_ptr.add(TABLE_DATA_SIZE);
-        let free_slots_ptr = status_ptr.add(STATUS_ARRAY_SIZE);
-        
-        // 初始化表，MemoryTable::new返回Option<MemoryTable>
-        TABLES[0] = remdb::MemoryTable::new(
-            &TEST_TABLE,
-            table_ptr,
-            status_ptr as *mut RecordHeader,
-            free_slots_ptr as *mut usize
+        // 初始化内存分配器
+        let _ = remdb::memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
         );
         
+        // 初始化平台
+        remdb::platform::init_platform(&SIMPLE_PLATFORM);
+        
         // 初始化数据库
-        let db = remdb::init_global_db(
-            &TEST_DB,
-            &mut TABLES,
-            &mut PRIMARY_INDICES,
-            &mut SECONDARY_INDICES
-        )?;
+        let db = remdb::init_global_db(&TEST_DB)?;
         
         // 插入测试数据
         println!("插入测试数据...");

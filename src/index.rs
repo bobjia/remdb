@@ -71,7 +71,7 @@ pub struct BTreeNode {
 /// B-Tree索引结构
 pub struct BTreeIndex {
     /// 表定义
-    pub def: &'static TableDef,
+    pub def: alloc::sync::Arc<TableDef>,
     /// 根节点
     pub root: Option<NonNull<BTreeNode>>,
     /// 节点池
@@ -104,7 +104,7 @@ pub struct TTreeNode {
 /// T-Tree索引结构
 pub struct TTreeIndex {
     /// 表定义
-    pub def: &'static TableDef,
+    pub def: alloc::sync::Arc<TableDef>,
     /// 根节点
     pub root: Option<NonNull<TTreeNode>>,
     /// 节点池
@@ -122,7 +122,7 @@ pub struct TTreeIndex {
 /// 主键哈希索引
 pub struct PrimaryIndex {
     /// 表定义
-    def: &'static TableDef,
+    def: alloc::sync::Arc<TableDef>,
     /// 哈希表数组
     hash_table: NonNull<Option<NonNull<PrimaryIndexItem>>>,
     /// 哈希表大小
@@ -140,7 +140,7 @@ pub struct PrimaryIndex {
 impl PrimaryIndex {
     /// 创建新的主键索引
     pub unsafe fn new(
-        def: &'static TableDef,
+        def: alloc::sync::Arc<TableDef>,
         hash_table_start: *mut Option<NonNull<PrimaryIndexItem>>,
         items_start: *mut PrimaryIndexItem,
         hash_table_size: usize,
@@ -184,7 +184,7 @@ impl PrimaryIndex {
     
     /// 计算主键索引所需的内存大小
     pub const fn calculate_memory_size(
-        _def: &'static TableDef,
+        _def: &TableDef,
         hash_table_size: usize,
         max_items: usize
     ) -> usize {
@@ -378,7 +378,7 @@ pub enum AnySecondaryIndex {
 impl AnySecondaryIndex {
     /// 创建新的辅助索引
     pub unsafe fn new(
-        def: &'static TableDef,
+        def: alloc::sync::Arc<TableDef>,
         memory_start: *mut u8,
         max_items: usize
     ) -> Result<Self> {
@@ -503,7 +503,7 @@ impl AnySecondaryIndex {
 /// 辅助有序索引
 pub struct SecondaryIndex {
     /// 表定义
-    def: &'static TableDef,
+    def: alloc::sync::Arc<TableDef>,
     /// 索引项数组
     items: NonNull<SecondaryIndexItem>,
     /// 当前项数量
@@ -519,7 +519,7 @@ pub struct SecondaryIndex {
 impl SecondaryIndex {
     /// 创建新的辅助索引
     pub unsafe fn new(
-        def: &'static TableDef,
+        def: alloc::sync::Arc<TableDef>,
         items_start: *mut SecondaryIndexItem,
         max_items: usize
     ) -> Self {
@@ -971,7 +971,7 @@ impl SecondaryIndex {
 impl BTreeIndex {
     /// 创建新的B-Tree索引
     pub unsafe fn new(
-        def: &'static TableDef,
+        def: alloc::sync::Arc<TableDef>,
         nodes_start: *mut BTreeNode,
         max_nodes: usize
     ) -> Self {
@@ -1570,7 +1570,7 @@ impl BTreeIndex {
 impl TTreeIndex {
     /// 创建新的T-Tree索引
     pub unsafe fn new(
-        def: &'static TableDef,
+        def: alloc::sync::Arc<TableDef>,
         nodes_start: *mut TTreeNode,
         max_nodes: usize
     ) -> Self {

@@ -104,75 +104,9 @@ fn main() {
         static DUMMY_PLATFORM: DummyPlatform = DummyPlatform;
         platform::init_platform(&DUMMY_PLATFORM);
         
-        // 计算所需内存大小
-        println!("   Calculating memory requirements...");
-        let table_size = MemoryTable::calculate_memory_size(&config.tables[0]);
-        let primary_index_size = PrimaryIndex::calculate_memory_size(
-            &config.tables[0],
-            128, // 哈希表大小
-            200  // 最大索引项数量
-        );
-        let secondary_index_size = SecondaryIndex::calculate_memory_size(200);
-        
-        println!("   Table size: {} bytes", table_size);
-        println!("   Primary index size: {} bytes", primary_index_size);
-        println!("   Secondary index size: {} bytes", secondary_index_size);
-        
-        // 分配内存
-        println!("   Allocating memory...");
-        let table_ptr = memory::allocator::alloc(table_size).unwrap().as_ptr() as *mut u8;
-        let status_ptr = memory::allocator::alloc(
-            core::mem::size_of::<types::RecordHeader>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut types::RecordHeader;
-        
-        let free_slots_ptr = memory::allocator::alloc(
-            core::mem::size_of::<usize>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut usize;
-        
-        let hash_table_ptr = memory::allocator::alloc(
-            128 * core::mem::size_of::<Option<NonNull<index::PrimaryIndexItem>>>()
-        ).unwrap().as_ptr() as *mut Option<NonNull<index::PrimaryIndexItem>>;
-        
-        let primary_index_items_ptr = memory::allocator::alloc(
-            200 * core::mem::size_of::<index::PrimaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::PrimaryIndexItem;
-        
-        let secondary_index_items_ptr = memory::allocator::alloc(
-            200 * core::mem::size_of::<index::SecondaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::SecondaryIndexItem;
-        
-        // 创建表和索引
-        println!("   Creating table and indices...");
-        let table = MemoryTable::new(&config.tables[0], table_ptr, status_ptr, free_slots_ptr).unwrap();
-        let primary_index = unsafe {
-            PrimaryIndex::new(
-                &config.tables[0],
-                hash_table_ptr,
-                primary_index_items_ptr,
-                128,
-                200
-            )
-        };
-        let secondary_index = unsafe {
-            AnySecondaryIndex::SortedArray(SecondaryIndex::new(&config.tables[0], secondary_index_items_ptr, 200))
-        };
-        
-        // 初始化表和索引数组
-        static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
-        static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-        static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None; 1];
-        
-        TABLES[0] = Some(table);
-        PRIMARY_INDICES[0] = Some(primary_index);
-        SECONDARY_INDICES[0] = Some(secondary_index);
-        
         // 初始化全局数据库
-        let db = init_global_db(
-            config,
-            &mut TABLES,
-            &mut PRIMARY_INDICES,
-            &mut SECONDARY_INDICES
-        ).unwrap();
+        println!("   Creating database with simplified API...");
+        let db = init_global_db(config).unwrap();
         
         // 2. 插入时序数据
         println!("\n2. Inserting time series data...");

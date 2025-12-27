@@ -45,12 +45,7 @@ fn main() {
     static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 8] = [const { None }; 8];
     
     // 创建数据库实例
-    let mut db = RemDb::new(
-        &CONFIG,
-        unsafe { &mut TABLES },
-        unsafe { &mut PRIMARY_INDICES },
-        unsafe { &mut SECONDARY_INDICES }
-    );
+    let mut db = RemDb::new(&CONFIG);
     
     println!("1. Testing DDL API - DdlExecutor trait");
     println!("=========================================");

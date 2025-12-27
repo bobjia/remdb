@@ -14,9 +14,9 @@ pub mod monitor;
 pub mod sql;
 
 // 导出核心类型
-pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType};
+pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType, MAX_STRING_LEN};
 pub use table::MemoryTable;
-pub use index::{PrimaryIndex, SecondaryIndex, BTreeIndex, TTreeIndex, IndexStats, AnySecondaryIndex};
+pub use index::{PrimaryIndex, SecondaryIndex, BTreeIndex, TTreeIndex, IndexStats, AnySecondaryIndex, PrimaryIndexItem};
 pub use transaction::{Transaction, TransactionType, TransactionManager};
 pub use monitor::{DbMetrics, DbMetricsSnapshot, HealthStatus, HealthCheckResult};
 
@@ -52,11 +52,11 @@ pub struct RemDb {
     /// 数据库配置
     pub config: &'static config::DbConfig,
     /// 内存表数组
-    tables: &'static mut [Option<MemoryTable>],
+    tables: Vec<Option<MemoryTable>>,
     /// 主键索引数组
-    primary_indices: &'static mut [Option<PrimaryIndex>],
+    primary_indices: Vec<Option<PrimaryIndex>>,
     /// 辅助索引数组
-    secondary_indices: &'static mut [Option<AnySecondaryIndex>],
+    secondary_indices: Vec<Option<AnySecondaryIndex>>,
     /// 是否处于低功耗模式
     low_power_mode: bool,
     /// 低功耗模式下的内存使用限制
@@ -80,10 +80,7 @@ impl RemDb {
     
     /// 创建新的数据库实例
     pub fn new(
-        config: &'static config::DbConfig,
-        tables: &'static mut [Option<MemoryTable>],
-        primary_indices: &'static mut [Option<PrimaryIndex>],
-        secondary_indices: &'static mut [Option<AnySecondaryIndex>]
+        config: &'static config::DbConfig
     ) -> Self {
         // 计算低功耗模式下的内存限制（如果启用）
         let low_power_memory_limit = if config.low_power_mode_supported {
@@ -96,14 +93,10 @@ impl RemDb {
         // 初始化监控指标
         let metrics = monitor::DbMetrics::new(config.total_memory);
 
-        // 计算初始内存使用（所有表的内存占用）
-        let mut initial_memory = 0;
-        for i in 0..tables.len() {
-            if let Some(table) = &tables[i] {
-                initial_memory += table.record_count * table.record_size;
-            }
-        }
-        metrics.set_used_memory(initial_memory);
+        // 初始化空的表和索引数组
+        let tables = Vec::new();
+        let primary_indices = Vec::new();
+        let secondary_indices = Vec::new();
 
         RemDb {
             config,
@@ -624,12 +617,10 @@ impl DdlExecutor for RemDb {
         fields: &[(&str, DataType)],
         primary_key: Option<usize>
     ) -> Result<()> {
-        // 查找第一个空闲的表槽位
-        let table_index = self.tables.iter().position(|t| t.is_none())
-            .ok_or(RemDbError::ConfigError)?;
-        
-        // 简化实现：成功创建表
+        // 1. 简化实现：返回成功
         // 注意：在实际实现中，需要创建表定义、分配内存、初始化表结构等
+        // 当前实现中，我们无法在运行时安全地创建具有静态生命周期的字符串引用
+        // 完整实现需要更复杂的字符串管理系统
         Ok(())
     }
     
@@ -639,9 +630,64 @@ impl DdlExecutor for RemDb {
         field_name: &str,
         index_type: IndexType
     ) -> Result<()> {
-        // 简化实现：成功创建索引
-        // 注意：在实际实现中，需要查找表、创建索引结构、分配内存等
-        // 这里我们直接返回成功，作为示例实现
+        // 1. 查找表
+        let table_id = self.tables.iter().position(|t| {
+            if let Some(table) = t {
+                table.def.name == table_name
+            } else {
+                false
+            }
+        }).ok_or(RemDbError::TableNotFound)?;
+        
+        // 2. 查找字段
+        let table = self.tables[table_id].as_ref().ok_or(RemDbError::TableNotFound)?;
+        let field_index = table.def.fields.iter().position(|f| f.name == field_name)
+            .ok_or(RemDbError::FieldNotFound)?;
+        
+        // 3. 检查是否已存在索引
+        if self.secondary_indices[table_id].is_some() {
+            return Err(RemDbError::ConfigError);
+        }
+        
+        // 4. 创建新的表定义，包含索引信息
+        let mut new_fields = Vec::new();
+        for field in table.def.fields {
+            new_fields.push(FieldDef {
+                name: field.name,
+                data_type: field.data_type,
+                size: field.size,
+                offset: field.offset,
+            });
+        }
+        
+        let new_def = alloc::boxed::Box::new(TableDef {
+            id: table.def.id,
+            name: table.def.name,
+            fields: new_fields.leak(),
+            primary_key: table.def.primary_key,
+            secondary_index: Some(field_index),
+            secondary_index_type: index_type,
+            record_size: table.def.record_size,
+            max_records: table.def.max_records,
+        });
+        
+        // 5. 为索引分配内存
+        let max_items = table.def.max_records;
+        let index_size = AnySecondaryIndex::calculate_memory_size(new_def.as_ref(), max_items);
+        let index_memory = crate::memory::allocator::alloc(index_size)?;
+        
+        // 6. 创建索引
+        unsafe {
+            let index = AnySecondaryIndex::new(
+                alloc::sync::Arc::from(new_def),
+                index_memory.as_ptr(),
+                max_items
+            )?;
+            
+            // 7. 存储索引
+            self.secondary_indices[table_id] = Some(index);
+        }
+        
         Ok(())
     }
 }
@@ -821,15 +867,23 @@ static mut DB_INSTANCE: Option<RemDb> = None;
 /// 初始化数据库全局实例
 /// 注意：这是一个简化的实现，实际应用中应该根据需要创建数据库实例
 pub fn init_global_db(
-    config: &'static config::DbConfig,
-    tables: &'static mut [Option<MemoryTable>],
-    primary_indices: &'static mut [Option<PrimaryIndex>],
-    secondary_indices: &'static mut [Option<AnySecondaryIndex>]
+    config: &'static config::DbConfig
 ) -> Result<&'static mut RemDb> {
     unsafe {
         // 无论是否已经初始化过，都创建一个新的数据库实例
-        let mut db = RemDb::new(config, tables, primary_indices, secondary_indices);
+        let mut db = RemDb::new(config);
         db.init()?;
+        
+        // 从配置创建表
+        for table_def in config.tables {
+            // 创建表
+            let table = MemoryTable::new(alloc::sync::Arc::new(*table_def))?;
+            db.tables.push(Some(table));
+            
+            // 创建空的索引项，后续会在需要时自动创建
+            db.primary_indices.push(None);
+            db.secondary_indices.push(None);
+        }
         
         // 将新的数据库实例赋值给 DB_INSTANCE
         DB_INSTANCE = Some(db);
@@ -842,6 +896,14 @@ pub fn init_global_db(
 pub fn get_global_db() -> Option<&'static mut RemDb> {
     unsafe {
         DB_INSTANCE.as_mut()
+    }
+}
+
+/// 重置全局数据库实例
+/// 用于测试场景，确保测试之间的隔离
+pub fn reset_global_db() {
+    unsafe {
+        DB_INSTANCE = None;
     }
 }
 

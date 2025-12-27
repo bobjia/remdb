@@ -1,7 +1,7 @@
 use remdb::table::*;
 use remdb::types::*;
 use remdb::platform::*;
-use remdb::{init_global_db, get_global_db, PrimaryIndex, AnySecondaryIndex}; use remdb::config::DefaultMemoryAllocator;
+use remdb::{init_global_db, PrimaryIndex, AnySecondaryIndex}; use remdb::config::DefaultMemoryAllocator;
 use remdb::config::DbConfig;
 use std::time::Instant;
 use rand::random;
@@ -145,20 +145,6 @@ fn test_large_table_performance() {
         init_platform(&TEST_PLATFORM);
     }
     
-    // 计算所需的内存缓冲区大小
-    let data_buffer_size = LARGE_TABLE_DEF.record_size * LARGE_TABLE_DEF.max_records;
-    let status_buffer_size = LARGE_TABLE_DEF.max_records * core::mem::size_of::<RecordHeader>();
-    let free_slots_size = LARGE_TABLE_DEF.max_records * core::mem::size_of::<usize>();
-    
-    // 分配内存缓冲区
-    let mut data_buffer = vec![0u8; data_buffer_size];
-    let mut status_buffer = vec![0u8; status_buffer_size];
-    let mut free_slots_buffer = vec![0usize; LARGE_TABLE_DEF.max_records];
-    
-    // 将状态缓冲区转换为RecordHeader数组指针
-    let status_ptr = status_buffer.as_mut_ptr() as *mut RecordHeader;
-    let free_slots_ptr = free_slots_buffer.as_mut_ptr();
-    
     // 创建数据库配置
     static DB_CONFIG: DbConfig = DbConfig {
         tables: &[LARGE_TABLE_DEF],
@@ -171,25 +157,17 @@ fn test_large_table_performance() {
         },
     };
     
-    // 静态表数组和索引数组
-    static mut TABLES: [Option<MemoryTable>; 1] = [None];
-    static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None];
-    static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None];
-    
     unsafe {
-        // 创建表
-        let table = MemoryTable::new(
-            &LARGE_TABLE_DEF,
-            data_buffer.as_mut_ptr(),
-            status_ptr,
-            free_slots_ptr
+        // 预分配内存缓冲区并初始化全局分配器
+        let mut memory_buffer = Vec::with_capacity(DB_CONFIG.total_memory);
+        memory_buffer.set_len(DB_CONFIG.total_memory);
+        remdb::memory::allocator::init_global_allocator(
+            memory_buffer.as_mut_ptr(), 
+            DB_CONFIG.total_memory
         ).unwrap();
         
-        // 存储表到静态数组
-        TABLES[0] = Some(table);
-        
         // 初始化数据库实例
-        let db = init_global_db(&DB_CONFIG, &mut TABLES, &mut PRIMARY_INDICES, &mut SECONDARY_INDICES).unwrap();
+        let db = init_global_db(&DB_CONFIG).unwrap();
         
         // 输出初始监控指标
         println!("\n初始监控指标:");

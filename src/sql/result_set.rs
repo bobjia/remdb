@@ -207,71 +207,62 @@ pub fn string_to_columns(s: &str) -> Vec<String> {
 /// 将Value转换为字符串表示
 fn value_to_string_repr(value: &Value) -> String {
     unsafe {
-        // 由于Value是union类型，我们需要根据上下文来确定其实际类型
-        // 对于SELECT查询结果，我们尝试不同的字段访问方式
+        // 由于Value是union类型，无法直接知道其实际类型
+        // 我们需要尝试不同的访问方式，并根据结果判断
         
-        // 1. 首先检查字符串类型 - 这是最特殊的类型，需要优先处理
+        // 1. 首先检查是否是字符串类型
         let string_val = value.string;
-        // 尝试将其作为字符串处理，使用完整的MAX_STRING_LEN长度
-        let string_slice = core::str::from_utf8(&string_val[0..crate::types::MAX_STRING_LEN]).unwrap_or("");
+        // 只检查前32字节，避免读取过多无效数据
+        let string_slice = core::str::from_utf8(&string_val[0..32]).unwrap_or("");
         let trimmed = string_slice.trim_end_matches(char::from(0));
         
-        // 如果字符串非空且包含字母字符，优先作为字符串返回
-        // 字符串字段通常包含字母
-        if !trimmed.is_empty() && trimmed.chars().any(|c| c.is_ascii_alphabetic()) {
+        // 检查是否是真正的字符串：
+        // - 长度大于1
+        // - 包含至少一个字母字符
+        // - 不是纯数字（避免将ID等数字字段误判为字符串）
+        if trimmed.len() > 1 && 
+           trimmed.chars().any(|c| c.is_ascii_alphabetic()) && 
+           !trimmed.chars().all(|c| c.is_ascii_digit()) {
             return trimmed.to_string();
         }
         
-        // 2. 检查是否是u32值（ID字段）
-        let u32_val = value.u32;
-        // ID字段的值通常是正整数，且不会太大
-        if u32_val > 0 && u32_val < 10000 {
-            return format!("{}", u32_val);
+        // 2. 检查是否是时间戳（13位数字）
+        let is_timestamp = |val| val >= 1000000000000 && val < 10000000000000;
+        let timestamp_val = value.timestamp;
+        if is_timestamp(timestamp_val) {
+            return format!("{}", timestamp_val);
         }
         
-        // 3. 检查是否是i8值（age字段）
+        // 3. 检查是否是i32值（ID字段等）
+        let i32_val = value.i32;
+        // ID值通常是正整数，且不会太大
+        if i32_val > 0 && i32_val < 1000000 {
+            return format!("{}", i32_val);
+        }
+        
+        // 4. 检查是否是i8值（age字段，通常在0-120之间）
         let i8_val = value.i8;
-        // age字段的值通常在0-120之间
         if i8_val >= 0 && i8_val <= 120 {
             return format!("{}", i8_val);
         }
         
-        // 4. 检查是否是布尔值（active字段）
-        // 布尔值只有0和1两种可能，且内存布局特殊
+        // 5. 检查是否是布尔值（active字段）
+        let bool_val = value.bool;
+        // 布尔值只有true和false两种可能
+        // 我们需要确保这不是其他类型的0或1值
         let u8_val = value.u8;
-        if u8_val == 0 || u8_val == 1 {
-            // 检查内存布局是否符合布尔值特征
-            let bool_val = value.bool;
+        let u64_val = value.u64;
+        
+        // 如果整个8字节都是0或1，那么它可能是一个布尔值
+        if (bool_val == false && u8_val == 0 && u64_val == 0) || 
+           (bool_val == true && u8_val == 1 && u64_val == 1) {
             return format!("{}", bool_val);
         }
         
-        // 5. 检查是否是时间戳（created_at字段）
-        let u64_val = value.u64;
-        // 时间戳通常是很大的整数，且是13位或16位数字
-        if u64_val > 1000000000000 && u64_val < 100000000000000000 {
+        // 6. 检查是否是u64值（如affected_rows）
+        // 受影响的行数通常不会超过100万
+        if u64_val <= 1000000 {
             return format!("{}", u64_val);
-        }
-        
-        // 6. 检查是否是i32值
-        let i32_val = value.i32;
-        if i32_val > 0 && i32_val < 10000 {
-            return format!("{}", i32_val);
-        }
-        
-        // 7. 检查是否是u64值
-        if u64_val > 0 && u64_val < 10000 {
-            return format!("{}", u64_val);
-        }
-        
-        // 8. 检查是否是i64值
-        let i64_val = value.i64;
-        if i64_val > 0 && i64_val < 10000 {
-            return format!("{}", i64_val);
-        }
-        
-        // 9. 最后尝试作为字符串处理（可能是特殊字符串）
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
         }
         
         // 默认情况下，返回空字符串

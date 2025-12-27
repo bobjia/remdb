@@ -229,6 +229,14 @@ fn test_snapshot_gen() -> Result<()> {
         // 初始化平台
         init_platform(&TEST_PLATFORM);
         
+        // 预分配内存缓冲区并初始化全局分配器
+        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
+        memory_buffer.set_len(1000000);
+        remdb::memory::allocator::init_global_allocator(
+            memory_buffer.as_mut_ptr(), 
+            1000000
+        ).unwrap();
+        
         // 重置事务管理器
         transaction::TX_MANAGER.reset();
         
@@ -249,22 +257,8 @@ fn test_snapshot_gen() -> Result<()> {
             });
         }
         
-        // 创建表
-        let table = MemoryTable::new(
-            &TEST_TABLE_DEF,
-            TABLE_DATA_BUFFER.as_mut_ptr(),
-            TABLE_STATUS_BUFFER.as_mut_ptr() as *mut RecordHeader,
-            TABLE_FREE_SLOTS_BUFFER.as_mut_ptr()
-        ).unwrap();
-        TABLES_BUFFER[0] = Some(table);
-        
-        // 创建数据库实例
-        let mut db = RemDb::new(
-            &TEST_DB_CONFIG,
-            &mut TABLES_BUFFER,
-            &mut PRIMARY_INDICES_BUFFER,
-            &mut SECONDARY_INDICES_BUFFER
-        );
+        // 使用init_global_db初始化数据库
+        let mut db = remdb::init_global_db(&TEST_DB_CONFIG)?;
         
         // 插入测试数据
         for i in 0..5 {

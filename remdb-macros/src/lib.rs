@@ -315,6 +315,20 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             (quote!(remdb::types::DataType::Int32), 4)
         };
         
+        // 计算对齐要求
+        let alignment = if type_name == "u64" || type_name == "f64" || type_name == "i64" {
+            8
+        } else if type_name == "i32" || type_name == "u32" || type_name == "f32" {
+            4
+        } else if type_name == "i16" || type_name == "u16" {
+            2
+        } else {
+            1
+        };
+        
+        // 调整偏移量以满足对齐要求
+        offset = ((offset + alignment - 1) / alignment) * alignment;
+        
         // 生成字段定义
         let field_def = quote! {
             remdb::types::FieldDef {
@@ -340,8 +354,12 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         
         // 更新偏移量和记录大小
         offset += size_val;
-        record_size += size_val;
+        record_size = offset;
     }
+    
+    // 确保整个记录满足最大对齐要求（8字节对齐）
+    let max_alignment = 8;
+    record_size = ((record_size + max_alignment - 1) / max_alignment) * max_alignment;
     
     // 将max_records转换为usize
     let max_records_usize = max_records.base10_parse::<usize>().unwrap_or(100);

@@ -9,7 +9,7 @@ extern crate alloc;
 /// 内存表
 pub struct MemoryTable {
     /// 表定义
-    pub def: &'static TableDef,
+    pub def: alloc::sync::Arc<TableDef>,
     /// 表数据起始地址
     pub data_start: NonNull<u8>,
     /// 记录状态数组
@@ -32,21 +32,36 @@ pub struct MemoryTable {
     pub snapshot_version: u32,
 }
 
+// 添加Drop trait实现，用于释放动态分配的内存
+impl Drop for MemoryTable {
+    fn drop(&mut self) {
+        unsafe {
+            // 释放数据内存
+            crate::memory::allocator::free(self.data_start);
+            // 释放状态数组内存
+            crate::memory::allocator::free(self.status_array.cast());
+            // 释放空闲槽栈内存
+            crate::memory::allocator::free(self.free_slots.cast());
+        }
+    }
+}
+
 impl MemoryTable {
     /// 创建新的内存表
-    pub fn new(
-        def: &'static TableDef,
-        data_start: *mut u8,
-        status_start: *mut RecordHeader,
-        free_slots_start: *mut usize
-    ) -> Option<Self> {
-        // 检查指针是否有效
-        let data_start = NonNull::new(data_start)?;
-        let status_array = NonNull::new(status_start)?;
-        let free_slots = NonNull::new(free_slots_start)?;
+    pub fn new(def: alloc::sync::Arc<TableDef>) -> Result<Self> {
+        // 计算所需内存大小
+        let data_size = def.record_size * def.max_records;
+        let status_size = core::mem::size_of::<RecordHeader>() * def.max_records;
+        let free_slots_size = core::mem::size_of::<usize>() * def.max_records;
+        
+        // 动态分配内存
+        let data_start = crate::memory::allocator::alloc(data_size)?;
+        let status_start = crate::memory::allocator::alloc(status_size)?;
+        let free_slots_start = crate::memory::allocator::alloc(free_slots_size)?;
         
         // 初始化状态数组
         unsafe {
+            let status_array = status_start.cast::<RecordHeader>();
             for i in 0..def.max_records {
                 let status_ptr = status_array.as_ptr().add(i);
                 (*status_ptr).status = RecordStatus::Free;
@@ -57,19 +72,20 @@ impl MemoryTable {
             }
             
             // 初始化空闲记录槽栈，将所有记录槽压入栈中
+            let free_slots = free_slots_start.cast::<usize>();
             for i in 0..def.max_records {
                 *free_slots.as_ptr().add(i) = (def.max_records - 1 - i) as usize;
             }
         }
         
-        Some(MemoryTable {
-            def,
+        Ok(MemoryTable {
+            def: def.clone(),
             data_start,
-            status_array,
+            status_array: status_start.cast(),
             record_count: 0,
             lock: 0,
             record_size: def.record_size, // 使用表定义中已经计算好的record_size
-            free_slots,
+            free_slots: free_slots_start.cast(),
             free_slot_count: def.max_records,
             low_power_mode: false, // 默认不启用低功耗模式
             low_power_max_records: None, // 默认使用表定义的最大记录数
@@ -78,7 +94,7 @@ impl MemoryTable {
     }
     
     /// 计算表所需的总内存大小
-    pub const fn calculate_memory_size(def: &'static TableDef) -> usize {
+    pub const fn calculate_memory_size(def: &TableDef) -> usize {
         // 数据大小：记录大小 * 最大记录数
         let data_size = def.record_size * def.max_records;
         // 状态数组大小：RecordHeader大小 * 最大记录数

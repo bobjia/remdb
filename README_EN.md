@@ -23,8 +23,9 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Supports record-level locking (shared locks and exclusive locks)
   - Supports transaction logging and crash recovery
 - **Memory Management**:
-  - Static memory allocator with no dynamic memory allocation
+  - Supports static memory allocation and dynamic memory allocation
   - Fixed-size block memory pool enabling efficient memory management
+  - Dynamic memory allocator, supporting runtime DDL operations
 - **Platform Abstraction Layer**: Supports both POSIX and baremetal environments
 - **Compile-time Configuration**: Table and database configuration implemented via macros for performance optimization
 - **Low Power Mode**:
@@ -69,7 +70,7 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 ## Technical Characteristics
 
 - **Zero External Dependencies**: No external library dependencies, supports no_std environments
-- **Static Memory Allocation**: Predictable memory usage suitable for resource-constrained embedded systems
+- **Memory Allocation**: Supports both static and dynamic memory allocation with predictable memory usage suitable for resource-constrained embedded systems
 - **Compile-time Optimization**: Compile-time configuration via macros reduces runtime overhead
 - **Multi-platform Support**: Supports both POSIX and baremetal environments
 - **Type Safety**: Leverages Rust's type system to ensure data safety

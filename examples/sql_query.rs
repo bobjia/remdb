@@ -107,73 +107,8 @@ fn main() {
         static DUMMY_PLATFORM: DummyPlatform = DummyPlatform;
         platform::init_platform(&DUMMY_PLATFORM);
         
-        // 计算所需内存大小
-        let table_size = MemoryTable::calculate_memory_size(
-            &config.tables[0]
-        );
-        let primary_index_size = PrimaryIndex::calculate_memory_size(
-            &config.tables[0],
-            128, // 哈希表大小
-            100  // 最大索引项数量
-        );
-        let secondary_index_size = SecondaryIndex::calculate_memory_size(100);
-        
-        // 分配内存
-        let table_ptr = memory::allocator::alloc(table_size).unwrap().as_ptr() as *mut u8;
-        let status_ptr = memory::allocator::alloc(
-            core::mem::size_of::<types::RecordHeader>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut types::RecordHeader;
-        let free_slots_ptr = memory::allocator::alloc(
-            core::mem::size_of::<usize>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut usize;
-        
-        let hash_table_ptr = memory::allocator::alloc(
-            128 * core::mem::size_of::<Option<NonNull<index::PrimaryIndexItem>>>()
-        ).unwrap().as_ptr() as *mut Option<NonNull<index::PrimaryIndexItem>>;
-        
-        let primary_index_items_ptr = memory::allocator::alloc(
-            100 * core::mem::size_of::<index::PrimaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::PrimaryIndexItem;
-        
-        let secondary_index_items_ptr = memory::allocator::alloc(
-            100 * core::mem::size_of::<index::SecondaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::SecondaryIndexItem;
-        
-        // 创建表和索引
-        let mut table = MemoryTable::new(&config.tables[0], table_ptr, status_ptr, free_slots_ptr).unwrap();
-        let mut primary_index = unsafe {
-            PrimaryIndex::new(
-                &config.tables[0],
-                hash_table_ptr,
-                primary_index_items_ptr,
-                128,
-                100
-            )
-        };
-        let mut secondary_index = unsafe {
-            SecondaryIndex::new(
-                &config.tables[0],
-                secondary_index_items_ptr,
-                100
-            )
-        };
-        
-        // 初始化表和索引数组
-        static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
-        static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-        static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 1] = [None; 1];
-        
-        TABLES[0] = Some(table);
-        PRIMARY_INDICES[0] = Some(primary_index);
-        SECONDARY_INDICES[0] = Some(AnySecondaryIndex::SortedArray(secondary_index));
-        
         // 初始化全局数据库
-        let db = init_global_db(
-            config,
-            &mut TABLES,
-            &mut PRIMARY_INDICES,
-            &mut SECONDARY_INDICES
-        ).unwrap();
+        let db = init_global_db(config).unwrap();
         
         // 插入测试数据
         #[repr(C)]

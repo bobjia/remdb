@@ -1,6 +1,8 @@
+extern crate alloc;
 use remdb::table::*;
 use remdb::types::*;
 use remdb::platform::*;
+use alloc::sync::Arc;
 
 // 测试用Platform实现
 struct TestPlatform;
@@ -127,25 +129,21 @@ fn test_table_insert_delete() {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
-    // 分配内存缓冲区
-    let mut data_buffer = [0u8; 8 * 100]; // 8字节记录 * 100条
-    let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-        status: RecordStatus::Free,
-        version: 0,
-        lock_type: LockType::None,
-        lock_owner: 0,
-        lock_count: 0
-    });
-    let mut free_slots_buffer = [0usize; 100];
-    
     unsafe {
-        // 创建表
-        let mut table = MemoryTable::new(
-            &TEST_TABLE_DEF,
-            data_buffer.as_mut_ptr(),
-            status_buffer.as_mut_ptr(),
-            free_slots_buffer.as_mut_ptr()
+        // 预分配内存缓冲区并初始化全局分配器
+        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
+        memory_buffer.set_len(1000000);
+        remdb::memory::allocator::init_global_allocator(
+            memory_buffer.as_mut_ptr(), 
+            1000000
         ).unwrap();
+        
+        // 重置全局数据库实例，确保测试之间的隔离
+        remdb::reset_global_db();
+        
+        // 创建表
+        let table_def = Arc::new(TEST_TABLE_DEF);
+        let mut table = MemoryTable::new(table_def).unwrap();
         
         // 创建测试记录
         let mut record_data = [0u8; 8];
@@ -194,25 +192,21 @@ fn test_table_get_field() {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
-    // 分配内存缓冲区
-    let mut data_buffer = [0u8; 8 * 100];
-    let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-        status: RecordStatus::Free,
-        version: 0,
-        lock_type: LockType::None,
-        lock_owner: 0,
-        lock_count: 0
-    });
-    let mut free_slots_buffer = [0usize; 100];
-    
     unsafe {
-        // 创建表
-        let mut table = MemoryTable::new(
-            &TEST_TABLE_DEF,
-            data_buffer.as_mut_ptr(),
-            status_buffer.as_mut_ptr(),
-            free_slots_buffer.as_mut_ptr()
+        // 预分配内存缓冲区并初始化全局分配器
+        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
+        memory_buffer.set_len(1000000);
+        remdb::memory::allocator::init_global_allocator(
+            memory_buffer.as_mut_ptr(), 
+            1000000
         ).unwrap();
+        
+        // 重置全局数据库实例，确保测试之间的隔离
+        remdb::reset_global_db();
+        
+        // 创建表
+        let table_def = Arc::new(TEST_TABLE_DEF);
+        let mut table = MemoryTable::new(table_def).unwrap();
         
         // 创建测试记录
         let mut record_data = [0u8; 8];
@@ -256,25 +250,21 @@ fn test_table_set_field() {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
-    // 分配内存缓冲区
-    let mut data_buffer = [0u8; 8 * 100];
-    let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-        status: RecordStatus::Free,
-        version: 0,
-        lock_type: LockType::None,
-        lock_owner: 0,
-        lock_count: 0
-    });
-    let mut free_slots_buffer = [0usize; 100];
-    
     unsafe {
-        // 创建表
-        let mut table = MemoryTable::new(
-            &TEST_TABLE_DEF,
-            data_buffer.as_mut_ptr(),
-            status_buffer.as_mut_ptr(),
-            free_slots_buffer.as_mut_ptr()
+        // 预分配内存缓冲区并初始化全局分配器
+        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
+        memory_buffer.set_len(1000000);
+        remdb::memory::allocator::init_global_allocator(
+            memory_buffer.as_mut_ptr(), 
+            1000000
         ).unwrap();
+        
+        // 重置全局数据库实例，确保测试之间的隔离
+        remdb::reset_global_db();
+        
+        // 创建表
+        let table_def = Arc::new(TEST_TABLE_DEF);
+        let mut table = MemoryTable::new(table_def).unwrap();
         
         // 创建测试记录
         let mut record_data = [0u8; 8];
@@ -319,25 +309,21 @@ fn test_table_iterate() {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
-    // 分配内存缓冲区
-    let mut data_buffer = [0u8; 8 * 100];
-    let mut status_buffer: [RecordHeader; 100] = core::array::from_fn(|_| RecordHeader {
-        status: RecordStatus::Free,
-        version: 0,
-        lock_type: LockType::None,
-        lock_owner: 0,
-        lock_count: 0
-    });
-    let mut free_slots_buffer = [0usize; 100];
-    
     unsafe {
-        // 创建表
-        let mut table = MemoryTable::new(
-            &TEST_TABLE_DEF,
-            data_buffer.as_mut_ptr(),
-            status_buffer.as_mut_ptr(),
-            free_slots_buffer.as_mut_ptr()
+        // 预分配内存缓冲区并初始化全局分配器
+        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
+        memory_buffer.set_len(1000000);
+        remdb::memory::allocator::init_global_allocator(
+            memory_buffer.as_mut_ptr(), 
+            1000000
         ).unwrap();
+        
+        // 重置全局数据库实例，确保测试之间的隔离
+        remdb::reset_global_db();
+        
+        // 创建表
+        let table_def = Arc::new(TEST_TABLE_DEF);
+        let mut table = MemoryTable::new(table_def).unwrap();
         
         // 插入多条记录
         for i in 0..5 {
@@ -402,25 +388,21 @@ fn test_table_full() {
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
-    // 分配内存缓冲区
-    let mut data_buffer = [0u8; 4 * 2]; // 4字节记录 * 2条
-    let mut status_buffer: [RecordHeader; 2] = core::array::from_fn(|_| RecordHeader {
-        status: RecordStatus::Free,
-        version: 0,
-        lock_type: LockType::None,
-        lock_owner: 0,
-        lock_count: 0
-    });
-    let mut free_slots_buffer = [0usize; 2];
-    
     unsafe {
-        // 创建表
-        let mut table = MemoryTable::new(
-            &SMALL_TABLE_DEF,
-            data_buffer.as_mut_ptr(),
-            status_buffer.as_mut_ptr(),
-            free_slots_buffer.as_mut_ptr()
+        // 预分配内存缓冲区并初始化全局分配器
+        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
+        memory_buffer.set_len(1000000);
+        remdb::memory::allocator::init_global_allocator(
+            memory_buffer.as_mut_ptr(), 
+            1000000
         ).unwrap();
+        
+        // 重置全局数据库实例，确保测试之间的隔离
+        remdb::reset_global_db();
+        
+        // 创建表
+        let table_def = Arc::new(SMALL_TABLE_DEF);
+        let mut table = MemoryTable::new(table_def).unwrap();
         
         // 创建测试记录
         let mut record_data = [0u8; 4];

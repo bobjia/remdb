@@ -5,6 +5,7 @@
 #![cfg(feature = "std")]
 
 use remdb::*;
+use std::sync::Arc;
 
 // 简单的测试平台实现
 struct TestPlatform;
@@ -122,118 +123,42 @@ remdb::database!(
     tables: [TEST_TABLE]
 );
 
-#[test]
+#[cfg_attr(any(test, feature = "std"), test)]
 fn test_sql_query() {
-    // 初始化内存缓冲区 - 增加大小以避免内存覆盖问题
-    let mut db_memory = [0u8; 131072];
+    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
+    static mut DB_MEMORY: [u8; 131072] = [0u8; 131072];
     
     // 初始化内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
-            db_memory.as_mut_ptr(),
-            db_memory.len()
-        );
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).unwrap();
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
     
-    // 计算所需内存大小
-    let config = &TEST_DB;
-    let table_size = MemoryTable::calculate_memory_size(&config.tables[0]);
-    let primary_index_size = PrimaryIndex::calculate_memory_size(
-        &config.tables[0],
-        128, // 哈希表大小
-        100  // 最大索引项数量
-    );
-    let secondary_index_size = SecondaryIndex::calculate_memory_size(100);
-    
-    // 分配内存
-    let table_ptr = unsafe {
-        remdb::memory::allocator::alloc(table_size).unwrap().as_ptr() as *mut u8
-    };
-    let status_ptr = unsafe {
-        remdb::memory::allocator::alloc(
-            core::mem::size_of::<types::RecordHeader>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut types::RecordHeader
-    };
-    let free_slots_ptr = unsafe {
-        remdb::memory::allocator::alloc(
-            core::mem::size_of::<usize>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut usize
-    };
-    let hash_table_ptr = unsafe {
-        remdb::memory::allocator::alloc(
-            128 * core::mem::size_of::<Option<core::ptr::NonNull<index::PrimaryIndexItem>>>()
-        ).unwrap().as_ptr() as *mut Option<core::ptr::NonNull<index::PrimaryIndexItem>>
-    };
-    let primary_index_items_ptr = unsafe {
-        remdb::memory::allocator::alloc(
-            100 * core::mem::size_of::<index::PrimaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::PrimaryIndexItem
-    };
-    let secondary_index_items_ptr = unsafe {
-        remdb::memory::allocator::alloc(
-            100 * core::mem::size_of::<index::SecondaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::SecondaryIndexItem
-    };
-    
-    // 创建表和索引
-    let mut table = unsafe {
-        MemoryTable::new(&config.tables[0], table_ptr, status_ptr, free_slots_ptr).unwrap()
-    };
-    let mut primary_index = unsafe {
-        PrimaryIndex::new(
-            &config.tables[0],
-            hash_table_ptr,
-            primary_index_items_ptr,
-            128,
-            100
-        )
-    };
-    let mut secondary_index = unsafe {
-        SecondaryIndex::new(
-            &config.tables[0],
-            secondary_index_items_ptr,
-            100
-        )
-    };
-    
-    // 初始化表和索引数组
-    // 使用局部变量而非static，避免测试并行运行时的竞态条件
-    let mut tables = [None; 1];
-    let mut primary_indices = [None; 1];
-    let mut secondary_indices = [None; 1];
-    
-    tables[0] = Some(table);
-    primary_indices[0] = Some(primary_index);
-    secondary_indices[0] = Some(AnySecondaryIndex::SortedArray(secondary_index));
-    
-    // 将局部数组转换为静态引用，用于初始化全局数据库
-    // 注意：这是安全的，因为我们在测试函数结束前不会释放这些数组
-    let static_tables_ptr: *mut [Option<MemoryTable>; 1] = &mut tables;
-    let static_primary_indices_ptr: *mut [Option<PrimaryIndex>; 1] = &mut primary_indices;
-    let static_secondary_indices_ptr: *mut [Option<AnySecondaryIndex>; 1] = &mut secondary_indices;
-    
     // 初始化数据库
+    let config = &TEST_DB;
     let db = unsafe {
-        init_global_db(
-            config,
-            &mut *static_tables_ptr,
-            &mut *static_primary_indices_ptr,
-            &mut *static_secondary_indices_ptr
-        ).unwrap()
+        init_global_db(config).unwrap()
     };
     
     // 插入测试数据
     // 确保TestRecord的内存布局与table!宏生成的字段偏移量匹配
     // 使用精确的#[repr(C)]布局，确保字段顺序和大小与table!宏定义一致
+    // 添加2字节填充，因为created_at需要8字节对齐
     #[repr(C)]
     struct TestRecord {
         id: i32,          // 4字节
         name: [u8; 32],   // 32字节
         age: i8,          // 1字节
         active: u8,       // 1字节（bool在C中通常是1字节）
+        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐
         created_at: u64,  // 8字节
     }
     
@@ -252,6 +177,7 @@ fn test_sql_query() {
             name: [0u8; 32],
             age,
             active: if active { 1 } else { 0 }, // 将bool转换为u8
+            _padding: [0u8; 2], // 初始化填充字段为0
             created_at,
         };
         
@@ -306,109 +232,35 @@ fn test_sql_query() {
     if let Err(err) = result {
         assert!(matches!(err, RemDbError::FieldNotFound));
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
 }
 
-#[test]
+#[cfg_attr(any(test, feature = "std"), test)]
 fn test_sql_query_syntax() {
-    // 初始化内存缓冲区
-    let mut db_memory = [0u8; 65536];
+    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
+    // 使用不同名称的静态变量，避免与其他测试函数冲突
+    static mut DB_MEMORY_SYNTAX: [u8; 131072] = [0u8; 131072];
     
     // 初始化内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
-            db_memory.as_mut_ptr(),
-            db_memory.len()
-        );
+            DB_MEMORY_SYNTAX.as_mut_ptr(),
+            DB_MEMORY_SYNTAX.len()
+        ).unwrap();
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
     
-    // 计算所需内存大小
-    let config = &TEST_DB;
-    let table_size = MemoryTable::calculate_memory_size(&config.tables[0]);
-    let primary_index_size = PrimaryIndex::calculate_memory_size(
-        &config.tables[0],
-        128,
-        100
-    );
-    let secondary_index_size = SecondaryIndex::calculate_memory_size(100);
-    
-    // 分配内存
-    let table_ptr = unsafe {
-        remdb::memory::allocator::alloc(table_size).unwrap().as_ptr() as *mut u8
-    };
-    let status_ptr = unsafe {
-        remdb::memory::allocator::alloc(
-            core::mem::size_of::<types::RecordHeader>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut types::RecordHeader
-    };
-    let free_slots_ptr = unsafe {
-        remdb::memory::allocator::alloc(
-            core::mem::size_of::<usize>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut usize
-    };
-    let hash_table_ptr = unsafe {
-        remdb::memory::allocator::alloc(
-            128 * core::mem::size_of::<Option<core::ptr::NonNull<index::PrimaryIndexItem>>>()
-        ).unwrap().as_ptr() as *mut Option<core::ptr::NonNull<index::PrimaryIndexItem>>
-    };
-    let primary_index_items_ptr = unsafe {
-        remdb::memory::allocator::alloc(
-            100 * core::mem::size_of::<index::PrimaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::PrimaryIndexItem
-    };
-    let secondary_index_items_ptr = unsafe {
-        remdb::memory::allocator::alloc(
-            100 * core::mem::size_of::<index::SecondaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::SecondaryIndexItem
-    };
-    
-    // 创建表和索引
-    let mut table = unsafe {
-        MemoryTable::new(&config.tables[0], table_ptr, status_ptr, free_slots_ptr).unwrap()
-    };
-    let mut primary_index = unsafe {
-        PrimaryIndex::new(
-            &config.tables[0],
-            hash_table_ptr,
-            primary_index_items_ptr,
-            128,
-            100
-        )
-    };
-    let mut secondary_index = unsafe {
-        SecondaryIndex::new(
-            &config.tables[0],
-            secondary_index_items_ptr,
-            100
-        )
-    };
-    
-    // 初始化表和索引数组
-    // 使用局部变量而非static，避免测试并行运行时的竞态条件
-    let mut tables = [None; 1];
-    let mut primary_indices = [None; 1];
-    let mut secondary_indices = [None; 1];
-    
-    tables[0] = Some(table);
-    primary_indices[0] = Some(primary_index);
-    secondary_indices[0] = Some(AnySecondaryIndex::SortedArray(secondary_index));
-    
-    // 将局部数组转换为静态引用，用于初始化全局数据库
-    // 注意：这是安全的，因为我们在测试函数结束前不会释放这些数组
-    let static_tables_ptr: *mut [Option<MemoryTable>; 1] = &mut tables;
-    let static_primary_indices_ptr: *mut [Option<PrimaryIndex>; 1] = &mut primary_indices;
-    let static_secondary_indices_ptr: *mut [Option<AnySecondaryIndex>; 1] = &mut secondary_indices;
-    
     // 初始化数据库
+    let config = &TEST_DB;
     let db = unsafe {
-        init_global_db(
-            config,
-            &mut *static_tables_ptr,
-            &mut *static_primary_indices_ptr,
-            &mut *static_secondary_indices_ptr
-        ).unwrap()
+        init_global_db(config).unwrap()
     };
     
     // 测试各种SQL语法
@@ -446,4 +298,7 @@ fn test_sql_query_syntax() {
         let result = db.sql_query(query);
         assert!(result.is_err(), "查询 '{}' 应该失败", query);
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
 }

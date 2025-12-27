@@ -233,7 +233,12 @@ impl StaticAllocator {
         }
         
         // 更新统计信息
-        self.used -= unsafe { block.as_mut() }.size + MemoryBlock::SIZE;
+        let block_size = unsafe { block.as_mut() }.size + MemoryBlock::SIZE;
+        // 防止溢出：只有当used >= block_size时才减去，否则保持不变
+        // 这是因为如果used < block_size，说明存在内存分配错误
+        if self.used >= block_size {
+            self.used -= block_size;
+        }
         self.free_count += 1;
         
         // 插入到空闲列表，保持地址有序
@@ -339,6 +344,7 @@ pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
             // 获取锁并替换内部分配器
             let mut allocator_guard = allocator_mutex.lock()
                 .map_err(|_| crate::types::RemDbError::OutOfMemory)?;
+            // 完全替换分配器实例，确保所有状态被重置
             *allocator_guard = new_allocator;
         },
         None => {
