@@ -146,10 +146,11 @@ The example program demonstrates the following RemDB C API features:
 1. **Database Initialization**: How to initialize the RemDB database with table definitions
 2. **CRUD Operations**: How to insert, query, update, and delete records
 3. **Transactions**: How to use transactions to ensure data consistency
-4. **Snapshot Management**: How to save and restore database snapshots
+4. **Snapshot Management**: How to save and restore database snapshots, including incremental snapshots
 5. **Health Monitoring**: How to check the health status of the database
 6. **Metrics Collection**: How to collect and display database metrics
 7. **Low Power Mode**: How to enable and disable low power mode
+8. **Table Operations**: How to get table information and records by name
 
 ## Customizing the Example
 

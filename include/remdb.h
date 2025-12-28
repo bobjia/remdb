@@ -26,10 +26,10 @@ extern "C" {
  * @brief Data types supported by RemDB
  */
 enum RemDbDataType {
-    REMDB_TYPE_INT8 = 0,
-    REMDB_TYPE_INT16 = 1,
-    REMDB_TYPE_INT32 = 2,
-    REMDB_TYPE_INT64 = 3,
+    REMDB_TYPE_UINT8 = 0,
+    REMDB_TYPE_UINT16 = 1,
+    REMDB_TYPE_UINT32 = 2,
+    REMDB_TYPE_UINT64 = 3,
     REMDB_TYPE_FLOAT32 = 4,
     REMDB_TYPE_FLOAT64 = 5,
     REMDB_TYPE_BOOL = 6,
@@ -46,10 +46,10 @@ enum RemDbDataType {
  * @brief Universal value type for RemDB
  */
 typedef union RemDbValue {
-    int8_t int8;
-    int16_t int16;
-    int32_t int32;
-    int64_t int64;
+    uint8_t u8;
+    uint16_t u16;
+    uint32_t u32;
+    uint64_t u64;
     float float32;
     double float64;
     uint8_t bool;

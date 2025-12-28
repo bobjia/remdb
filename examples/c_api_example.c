@@ -16,9 +16,9 @@
 
 // Define a simple table structure for demonstration
 typedef struct User {
-    int32_t id;
+    uint32_t id;
     char name[32];
-    int32_t age;
+    uint32_t age;
 } User;
 
 // Define field names as constants
@@ -32,9 +32,9 @@ int main() {
 
     // Step 1: Define field definitions
     RemDbFieldDef user_fields[] = {
-        { USER_ID_FIELD, REMDB_TYPE_INT32, sizeof(int32_t), offsetof(User, id) },
+        { USER_ID_FIELD, REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(User, id) },
         { USER_NAME_FIELD, REMDB_TYPE_STRING, sizeof(((User*)0)->name), offsetof(User, name) },
-        { USER_AGE_FIELD, REMDB_TYPE_INT32, sizeof(int32_t), offsetof(User, age) }
+        { USER_AGE_FIELD, REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(User, age) }
     };
     size_t user_fields_count = sizeof(user_fields) / sizeof(user_fields[0]);
 
@@ -101,7 +101,7 @@ int main() {
     printf("Querying records...\n");
     
     RemDbValue key;
-    key.int32 = 2;
+    key.u32 = 2;
     User retrieved_user;
     
     err = remdb_table_get(handle, 0, &key, &retrieved_user);
@@ -188,7 +188,7 @@ int main() {
     // Delete a record
     printf("Deleting user 3...\n");
     RemDbValue delete_key;
-    delete_key.int32 = 3;
+    delete_key.u32 = 3;
     err = remdb_table_delete(handle, 0, &delete_key);
     if (err != REMDB_SUCCESS) {
         printf("Failed to delete user 3: error code %d\n", err);

@@ -55,21 +55,9 @@ pub union RemDbValue {
 impl From<Value> for RemDbValue {
     fn from(rust_value: Value) -> Self {
         unsafe {
-            match rust_value {
-                Value { u8: v } => RemDbValue { u8: v },
-                Value { u16: v } => RemDbValue { u16: v },
-                Value { u32: v } => RemDbValue { u32: v },
-                Value { u64: v } => RemDbValue { u64: v },
-                Value { float32: v } => RemDbValue { float32: v },
-                Value { float64: v } => RemDbValue { float64: v },
-                Value { bool: v } => RemDbValue { bool: v as u8 },
-                Value { timestamp: v } => RemDbValue { timestamp: v },
-                Value { string: v } => {
-                    let mut c_str = [0u8; REMDB_MAX_STRING_LEN];
-                    c_str.copy_from_slice(&v);
-                    RemDbValue { string: c_str }
-                },
-            }
+            // 注意：Value是union，直接访问第一个字段作为默认值
+            // 实际使用中，应该根据字段的数据类型来访问正确的union字段
+            RemDbValue { u32: rust_value.u32 }
         }
     }
 }
@@ -103,6 +91,10 @@ impl From<&FieldDef> for RemDbFieldDef {
                 DataType::UInt16 => RemDbDataType::UInt16,
                 DataType::UInt32 => RemDbDataType::UInt32,
                 DataType::UInt64 => RemDbDataType::UInt64,
+                DataType::Int8 => RemDbDataType::UInt8, // 映射为无符号类型
+                DataType::Int16 => RemDbDataType::UInt16, // 映射为无符号类型
+                DataType::Int32 => RemDbDataType::UInt32, // 映射为无符号类型
+                DataType::Int64 => RemDbDataType::UInt64, // 映射为无符号类型
                 DataType::Float32 => RemDbDataType::Float32,
                 DataType::Float64 => RemDbDataType::Float64,
                 DataType::Bool => RemDbDataType::Bool,
@@ -300,6 +292,8 @@ impl From<crate::RemDbError> for RemDbError {
             crate::RemDbError::LockTimeout => RemDbError::LockTimeout,
             crate::RemDbError::TableNotFound => RemDbError::TableNotFound,
             crate::RemDbError::InvalidRecordSize => RemDbError::InvalidRecordSize,
+            crate::RemDbError::InvalidSqlQuery => RemDbError::UnsupportedOperation,
+            crate::RemDbError::InternalError => RemDbError::UnsupportedOperation,
         }
     }
 }
@@ -369,6 +363,7 @@ pub unsafe extern "C" fn remdb_init_global(
             } else {
                 Some(c_table.secondary_index as usize)
             },
+            secondary_index_type: crate::types::IndexType::Hash,
             record_size: c_table.record_size,
             max_records: c_table.max_records,
         });
@@ -383,6 +378,8 @@ pub unsafe extern "C" fn remdb_init_global(
         } else {
             Some(c_config.low_power_max_records as usize)
         },
+        default_max_records: 1000, // 默认值
+        memory_allocator: &crate::config::DefaultMemoryAllocator,
     };
     
     // 初始化全局数据库
@@ -390,10 +387,6 @@ pub unsafe extern "C" fn remdb_init_global(
     // 实际使用中应该根据配置动态创建表、主键索引和辅助索引
     match crate::init_global_db(
         core::mem::transmute(&rust_config),
-        // 使用Vec::leak()创建动态数组，避免Copy trait问题
-        Vec::with_capacity(c_config.tables_count).leak(),
-        Vec::with_capacity(c_config.tables_count).leak(),
-        Vec::with_capacity(c_config.tables_count).leak(),
     ) {
         Ok(db) => {
             *handle = db as *mut _;

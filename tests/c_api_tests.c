@@ -16,7 +16,7 @@
 
 // Define a simple table structure for testing
 typedef struct TestRecord {
-    int32_t id;
+    uint32_t id;
     char name[16];
     float value;
 } TestRecord;
@@ -27,7 +27,7 @@ static void test_init_and_get() {
     
     // Define field definitions
     RemDbFieldDef fields[] = {
-        { "id", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(TestRecord, id) },
+        { "id", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(TestRecord, id) },
         { "name", REMDB_TYPE_STRING, sizeof(((TestRecord*)0)->name), offsetof(TestRecord, name) },
         { "value", REMDB_TYPE_FLOAT32, sizeof(float), offsetof(TestRecord, value) }
     };
@@ -75,7 +75,7 @@ static void test_table_operations() {
     
     // Define field definitions
     RemDbFieldDef fields[] = {
-        { "id", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(TestRecord, id) },
+        { "id", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(TestRecord, id) },
         { "name", REMDB_TYPE_STRING, sizeof(((TestRecord*)0)->name), offsetof(TestRecord, name) },
         { "value", REMDB_TYPE_FLOAT32, sizeof(float), offsetof(TestRecord, value) }
     };
@@ -122,7 +122,7 @@ static void test_table_operations() {
     // Test get
     TestRecord retrieved;
     RemDbValue key;
-    key.int32 = 1;
+    key.u32 = 1;
     err = remdb_table_get(handle, 0, &key, &retrieved);
     assert(err == REMDB_SUCCESS);
     assert(retrieved.id == record.id);
@@ -162,7 +162,7 @@ static void test_transactions() {
     
     // Define field definitions
     RemDbFieldDef fields[] = {
-        { "id", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(TestRecord, id) },
+        { "id", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(TestRecord, id) },
         { "name", REMDB_TYPE_STRING, sizeof(((TestRecord*)0)->name), offsetof(TestRecord, name) },
         { "value", REMDB_TYPE_FLOAT32, sizeof(float), offsetof(TestRecord, value) }
     };
@@ -246,7 +246,7 @@ static void test_low_power_mode() {
     
     // Define field definitions
     RemDbFieldDef fields[] = {
-        { "id", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(TestRecord, id) },
+        { "id", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(TestRecord, id) },
         { "name", REMDB_TYPE_STRING, sizeof(((TestRecord*)0)->name), offsetof(TestRecord, name) },
         { "value", REMDB_TYPE_FLOAT32, sizeof(float), offsetof(TestRecord, value) }
     };
@@ -311,7 +311,7 @@ static void test_metrics_and_health() {
     
     // Define field definitions
     RemDbFieldDef fields[] = {
-        { "id", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(TestRecord, id) },
+        { "id", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(TestRecord, id) },
         { "name", REMDB_TYPE_STRING, sizeof(((TestRecord*)0)->name), offsetof(TestRecord, name) },
         { "value", REMDB_TYPE_FLOAT32, sizeof(float), offsetof(TestRecord, value) }
     };
@@ -381,7 +381,7 @@ static void test_snapshot_management() {
     
     // Define field definitions
     RemDbFieldDef fields[] = {
-        { "id", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(TestRecord, id) },
+        { "id", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(TestRecord, id) },
         { "name", REMDB_TYPE_STRING, sizeof(((TestRecord*)0)->name), offsetof(TestRecord, name) },
         { "value", REMDB_TYPE_FLOAT32, sizeof(float), offsetof(TestRecord, value) }
     };
@@ -478,7 +478,7 @@ static void test_error_handling() {
     
     // Test record not found
     RemDbValue key;
-    key.int32 = 999;
+    key.u32 = 999;
     TestRecord retrieved;
     err = remdb_table_get(handle, 0, &key, &retrieved);
     assert(err == REMDB_RECORD_NOT_FOUND);
@@ -491,7 +491,7 @@ static void test_table_get_by_name() {
     
     // Define field definitions
     RemDbFieldDef fields[] = {
-        { "id", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(TestRecord, id) },
+        { "id", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(TestRecord, id) },
         { "name", REMDB_TYPE_STRING, sizeof(((TestRecord*)0)->name), offsetof(TestRecord, name) },
         { "value", REMDB_TYPE_FLOAT32, sizeof(float), offsetof(TestRecord, value) }
     };
