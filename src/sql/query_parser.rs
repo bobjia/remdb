@@ -398,7 +398,8 @@ impl SqlParser {
             let field_name = self.parse_identifier()?;
             
             self.skip_whitespace();
-            let data_type = self.parse_identifier()?.to_uppercase();
+            // 解析数据类型，支持复杂类型如 VARCHAR(255), INT UNSIGNED
+            let data_type = self.parse_data_type()?.to_uppercase();
             
             // 检查是否为主键
             self.skip_whitespace();
@@ -879,6 +880,47 @@ impl SqlParser {
     /// 是否已到达输入末尾
     fn is_eof(&self) -> bool {
         self.position >= self.input.len()
+    }
+    
+    /// 解析数据类型，支持复杂类型如 VARCHAR(255), INT UNSIGNED
+    fn parse_data_type(&mut self) -> Result<String, QueryParseError> {
+        let start = self.position;
+        
+        // 解析基本数据类型
+        let base_type = self.parse_identifier()?;
+        
+        // 检查是否有参数，如 VARCHAR(255)
+        self.skip_whitespace();
+        if self.match_char('(') {
+            // 跳过参数
+            let mut depth = 1;
+            while depth > 0 {
+                let c = self.next_char().ok_or(QueryParseError::InvalidSyntax)?;
+                if c == '(' {
+                    depth += 1;
+                } else if c == ')' {
+                    depth -= 1;
+                }
+            }
+        }
+        
+        // 检查是否有修饰符，如 UNSIGNED
+        self.skip_whitespace();
+        if self.peek_char().is_some() {
+            // 检查是否是修饰符（字母或下划线开头）
+            let c = self.peek_char().unwrap();
+            if c.is_ascii_alphabetic() || c == '_' {
+                // 添加空格分隔
+                self.position = self.position.min(self.input.len());
+                self.input.insert(self.position, ' ');
+                self.position += 1;
+                
+                // 解析修饰符
+                self.parse_identifier()?;
+            }
+        }
+        
+        Ok(self.input[start..self.position].to_string())
     }
     
     /// 期望匹配指定字符

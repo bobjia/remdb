@@ -127,20 +127,32 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
     // 将SQL数据类型转换为RemDb DataType
     let mut fields = Vec::new();
     for (field_name, data_type_str) in &query.table_def {
-        let data_type = match data_type_str.as_str() {
-            "UINT8" => DataType::UInt8,
-            "UINT16" => DataType::UInt16,
-            "UINT32" => DataType::UInt32,
-            "UINT64" => DataType::UInt64,
-            "INT8" => DataType::Int8,
-            "INT16" => DataType::Int16,
-            "INT32" => DataType::Int32,
-            "INT64" => DataType::Int64,
-            "FLOAT32" => DataType::Float32,
-            "FLOAT64" => DataType::Float64,
-            "BOOL" => DataType::Bool,
-            "TIMESTAMP" => DataType::Timestamp,
-            "STRING" => DataType::String,
+        let data_type = match data_type_str.to_uppercase().as_str() {
+            // 无符号整数类型
+            "UINT8" | "TINYINT UNSIGNED" => DataType::UInt8,
+            "UINT16" | "SMALLINT UNSIGNED" => DataType::UInt16,
+            "UINT32" | "MEDIUMINT UNSIGNED" | "INT UNSIGNED" | "INTEGER UNSIGNED" => DataType::UInt32,
+            "UINT64" | "BIGINT UNSIGNED" => DataType::UInt64,
+            
+            // 有符号整数类型
+            "INT8" | "TINYINT" => DataType::Int8,
+            "INT16" | "SMALLINT" => DataType::Int16,
+            "INT32" | "MEDIUMINT" | "INT" | "INTEGER" => DataType::Int32,
+            "INT64" | "BIGINT" => DataType::Int64,
+            
+            // 浮点数类型
+            "FLOAT32" | "FLOAT" => DataType::Float32,
+            "FLOAT64" | "DOUBLE" | "DOUBLE PRECISION" | "REAL" => DataType::Float64,
+            
+            // 布尔类型
+            "BOOL" | "BOOLEAN" => DataType::Bool,
+            
+            // 时间类型
+            "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => DataType::Timestamp,
+            
+            // 字符串类型
+            "STRING" | "TEXT" | "VARCHAR" | "NVARCHAR" | "CHAR" | "CLOB" => DataType::String,
+            
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         fields.push((field_name.as_str(), data_type));
