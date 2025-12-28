@@ -1,7 +1,8 @@
 // 运行时DDL配置示例
 
-use remdb::{RemDb, DdlExecutor, MemoryTable, PrimaryIndex, AnySecondaryIndex, types::{DataType, IndexType}};
+use remdb::{RemDb, DdlExecutor, types::{DataType, IndexType}};
 use remdb::config::{DbConfig, MemoryAllocator};
+use remdb::memory::allocator::init_global_allocator;
 use core::ptr::NonNull;
 
 // 简单的内存分配器实现
@@ -27,6 +28,13 @@ impl MemoryAllocator for SimpleAllocator {
 fn main() {
     println!("=== RemDb Runtime DDL Configuration Example ===\n");
     
+    // 初始化全局内存分配器
+    static mut MEMORY_BUFFER: [u8; 1024 * 1024] = [0; 1024 * 1024];
+    unsafe {
+        init_global_allocator(MEMORY_BUFFER.as_mut_ptr(), MEMORY_BUFFER.len())
+            .expect("Failed to initialize global allocator");
+    }
+    
     // 创建内存分配器
     static ALLOCATOR: SimpleAllocator = SimpleAllocator::new();
     
@@ -36,22 +44,20 @@ fn main() {
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
-        default_max_records: 100000,
+        default_max_records: 10, // 减少默认最大记录数，避免内存不足
         memory_allocator: &ALLOCATOR,
     };
-    
-    // 初始化表和索引数组
-    static mut TABLES: [Option<MemoryTable>; 8] = [const { None }; 8];
-    static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 8] = [const { None }; 8];
-    static mut SECONDARY_INDICES: [Option<AnySecondaryIndex>; 8] = [const { None }; 8];
     
     // 创建数据库实例
     let mut db = RemDb::new(&CONFIG);
     
+    // 初始化数据库和平台
+    db.init().expect("Failed to initialize database");
+    
     println!("1. Testing DDL API - DdlExecutor trait");
     println!("=========================================");
     
-    // 使用DdlExecutor trait创建表（当前实现返回UnsupportedOperation）
+    // 使用DdlExecutor trait创建表
     let result = db.create_table(
         "users",
         &[
@@ -65,10 +71,10 @@ fn main() {
     
     match result {
         Ok(_) => println!("   ✓ Table 'users' created successfully!"),
-        Err(e) => println!("   ✗ Failed to create table: {:?} (expected: UnsupportedOperation)", e),
+        Err(e) => println!("   ✗ Failed to create table: {:?} ", e),
     }
     
-    // 使用DdlExecutor trait创建索引（当前实现返回UnsupportedOperation）
+    // 使用DdlExecutor trait创建索引
     let result = db.create_index(
         "users",
         "name",
@@ -77,46 +83,31 @@ fn main() {
     
     match result {
         Ok(_) => println!("   ✓ Index on 'users.name' created successfully!"),
-        Err(e) => println!("   ✗ Failed to create index: {:?} (expected: UnsupportedOperation)", e),
+        Err(e) => println!("   ✗ Failed to create index: {:?} ", e),
     }
     
     println!("\n2. Testing SQL DDL Statements");
-    println!("============================");
+    println!("===========================");
     
-    // 使用SQL语句创建表（当前实现返回UnsupportedOperation）
+    // 使用SQL语句创建表
     let result = db.sql_query(
         "CREATE TABLE products (id UINT32 PRIMARY KEY, name STRING, price FLOAT32, in_stock BOOL);"
     );
     
     match result {
         Ok(_) => println!("   ✓ Table 'products' created successfully via SQL!"),
-        Err(e) => println!("   ✗ Failed to create table via SQL: {:?} (expected: UnsupportedOperation)", e),
+        Err(e) => println!("   ✗ Failed to create table via SQL: {:?} ", e),
     }
     
-    // 使用SQL语句创建索引（当前实现返回UnsupportedOperation）
+    // 使用SQL语句创建索引
     let result = db.sql_query(
         "CREATE INDEX idx_product_name ON products (name) USING BTree;"
     );
     
     match result {
         Ok(_) => println!("   ✓ Index 'idx_product_name' created successfully via SQL!"),
-        Err(e) => println!("   ✗ Failed to create index via SQL: {:?} (expected: UnsupportedOperation)", e),
+        Err(e) => println!("   ✗ Failed to create index via SQL: {:?}", e),
     }
-    
-    println!("\n3. API Design Overview");
-    println!("======================");
-    println!("The RemDb library now includes a DdlExecutor trait that provides:");
-    println!("  - create_table(name: &str, fields: &[(&str, DataType)], primary_key: Option<usize>) -> Result<()>");
-    println!("  - create_index(table_name: &str, field_name: &str, index_type: IndexType) -> Result<()>");
-    println!("  - SQL support for CREATE TABLE and CREATE INDEX statements");
-    
-    println!("\n4. Next Steps for Full Implementation");
-    println!("====================================");
-    println!("To fully implement runtime DDL support, the following changes are needed:");
-    println!("  1. Modify MemoryTable to support dynamic memory allocation");
-    println!("  2. Implement proper TableDef lifetime management");
-    println!("  3. Add support for dynamic index creation");
-    println!("  4. Update database initialization to handle empty initial tables array");
     
     println!("\n=== Example Completed ===");
 }
