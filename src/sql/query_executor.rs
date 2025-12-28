@@ -21,6 +21,8 @@ pub enum QueryExecutionError {
     InvalidCondition,
     /// 内存不足
     OutOfMemory,
+    /// 约束冲突
+    ConstraintsConflicts,
     /// 内部错误
     InternalError,
 }
@@ -33,6 +35,7 @@ impl core::fmt::Display for QueryExecutionError {
             QueryExecutionError::TypeMismatch => write!(f, "Type mismatch"),
             QueryExecutionError::InvalidCondition => write!(f, "Invalid condition"),
             QueryExecutionError::OutOfMemory => write!(f, "Out of memory"),
+            QueryExecutionError::ConstraintsConflicts => write!(f, "Constraints conflicts"),
             QueryExecutionError::InternalError => write!(f, "Internal error"),
         }
     }
@@ -428,7 +431,19 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         // 7. 调用表的插入方法
         match table.insert(record_data.as_ptr()) {
             Ok(_) => affected_rows += 1,
-            Err(_) => return Err(QueryExecutionError::OutOfMemory),
+            Err(e) => {
+                match e {
+                    RemDbError::InvalidRecordSize | RemDbError::DuplicateKey => {
+                        return Err(QueryExecutionError::ConstraintsConflicts);
+                    },
+                    RemDbError::OutOfMemory => {
+                        return Err(QueryExecutionError::OutOfMemory);
+                    },
+                    _ => {
+                        return Err(QueryExecutionError::InternalError);
+                    },
+                }
+            },
         }
     }
     

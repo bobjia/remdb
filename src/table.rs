@@ -135,8 +135,92 @@ impl MemoryTable {
             }
         }
         
-        // 暂时禁用主键唯一性检查，解决插入第一条记录时的DuplicateKey错误
-        // TODO: 修复主键唯一性检查逻辑
+        // 验证主键唯一性约束
+        let primary_key_index = self.def.primary_key;
+        if primary_key_index < self.def.fields.len() {
+            // 获取主键字段定义
+            let primary_key_field = &self.def.fields[primary_key_index];
+            let primary_key_offset = primary_key_field.offset;
+            let primary_key_data_type = primary_key_field.data_type;
+            
+            // 获取当前记录的主键值
+            let current_pk_value = self.get_field(record_data, primary_key_index)?;
+            
+            // 遍历所有记录，检查是否存在重复主键
+            let mut has_duplicate = false;
+            let iterate_result = self.iterate(|slot_id, other_record_ptr| {
+                // 跳过当前记录（如果是更新操作）
+                if Some(slot_id) == exclude_slot {
+                    return true;
+                }
+                
+                // 获取其他记录的主键值
+                if let Ok(other_pk_value) = self.get_field(other_record_ptr, primary_key_index) {
+                    // 比较主键值
+                    match primary_key_data_type {
+                        DataType::UInt8 => {
+                            if current_pk_value.u8 == other_pk_value.u8 {
+                                has_duplicate = true;
+                                return false;
+                            }
+                        },
+                        DataType::UInt16 => {
+                            if current_pk_value.u16 == other_pk_value.u16 {
+                                has_duplicate = true;
+                                return false;
+                            }
+                        },
+                        DataType::UInt32 => {
+                            if current_pk_value.u32 == other_pk_value.u32 {
+                                has_duplicate = true;
+                                return false;
+                            }
+                        },
+                        DataType::UInt64 => {
+                            if current_pk_value.u64 == other_pk_value.u64 {
+                                has_duplicate = true;
+                                return false;
+                            }
+                        },
+                        DataType::Int8 => {
+                            if current_pk_value.i8 == other_pk_value.i8 {
+                                has_duplicate = true;
+                                return false;
+                            }
+                        },
+                        DataType::Int16 => {
+                            if current_pk_value.i16 == other_pk_value.i16 {
+                                has_duplicate = true;
+                                return false;
+                            }
+                        },
+                        DataType::Int32 => {
+                            if current_pk_value.i32 == other_pk_value.i32 {
+                                has_duplicate = true;
+                                return false;
+                            }
+                        },
+                        DataType::Int64 => {
+                            if current_pk_value.i64 == other_pk_value.i64 {
+                                has_duplicate = true;
+                                return false;
+                            }
+                        },
+                        _ => {
+                            // 其他类型暂时不支持主键
+                        },
+                    }
+                }
+                
+                true
+            });
+            
+            iterate_result?;
+            
+            if has_duplicate {
+                return Err(RemDbError::DuplicateKey);
+            }
+        }
         
         Ok(())
     }

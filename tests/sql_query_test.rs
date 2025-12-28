@@ -293,6 +293,48 @@ fn test_sql_query() {
         assert!(matches!(err, RemDbError::FieldNotFound));
     }
     
+    // 9. 测试SQL INSERT语句
+    println!("=== 测试SQL INSERT语句 ===");
+    
+    // 先清空表，为INSERT测试做准备
+    let table = unsafe { db.get_table_mut(0).unwrap() };
+    let mut count = 0;
+    let mut to_delete = Vec::new();
+    unsafe {
+        table.iterate(|id, _| {
+            to_delete.push(id);
+            count += 1;
+            true
+        }).unwrap();
+        
+        for id in to_delete {
+            table.delete(id).unwrap();
+        }
+    }
+    
+    // 测试合法INSERT
+    let result = db.sql_query("INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (1, 'TestUser', 30, true, 1620000000000)");
+    assert!(result.is_ok(), "合法INSERT应该成功");
+    
+    // 测试重复主键INSERT，应该返回DuplicateKey（通过ConstraintsConflicts映射）
+    let result = db.sql_query("INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (1, 'DuplicateUser', 25, false, 1620000001000)");
+    assert!(result.is_err(), "重复主键INSERT应该失败");
+    if let Err(err) = result {
+        assert!(matches!(err, RemDbError::DuplicateKey), 
+               "重复主键应该返回DuplicateKey错误，实际返回: {:?}", err);
+    }
+    
+    // 测试插入多个记录，其中包含重复主键
+    let result = db.sql_query("INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES \
+                              (2, 'User2', 20, true, 1620000002000), \
+                              (3, 'User3', 25, false, 1620000003000), \
+                              (1, 'AnotherDuplicate', 40, true, 1620000004000)");
+    assert!(result.is_err(), "包含重复主键的批量INSERT应该失败");
+    if let Err(err) = result {
+        assert!(matches!(err, RemDbError::DuplicateKey), 
+               "批量INSERT中的重复主键应该返回DuplicateKey错误");
+    }
+    
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
 }

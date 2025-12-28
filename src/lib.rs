@@ -810,6 +810,7 @@ impl RemDb {
                     crate::sql::QueryExecutionError::TableNotFound => RemDbError::TableNotFound,
                     crate::sql::QueryExecutionError::FieldNotFound => RemDbError::FieldNotFound,
                     crate::sql::QueryExecutionError::TypeMismatch => RemDbError::TypeMismatch,
+                    crate::sql::QueryExecutionError::ConstraintsConflicts => RemDbError::DuplicateKey,
                     _ => RemDbError::UnsupportedOperation,
                 }
             })?;
