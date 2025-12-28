@@ -12,6 +12,7 @@ static TEST_CONFIG: config::DbConfig = unsafe {
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
+        default_max_records: 1000, // 减小值以避免内存不足
         memory_allocator: &mut DEFAULT_ALLOCATOR,
     }
 };

@@ -334,6 +334,9 @@ static GLOBAL_ALLOCATOR: OnceLock<Mutex<StaticAllocator>> = OnceLock::new();
 
 /// 初始化全局内存分配器
 pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
+    // 清除内存缓冲区，防止残留数据破坏分配器状态
+    unsafe { core::ptr::write_bytes(start_ptr, 0, size); }
+    
     // 强制重新初始化内存分配器，清空所有数据
     let new_allocator = StaticAllocator::new(start_ptr, size)
         .ok_or(crate::types::RemDbError::OutOfMemory)?;

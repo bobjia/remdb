@@ -36,6 +36,7 @@ fn main() {
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
+        default_max_records: 100000,
         memory_allocator: &ALLOCATOR,
     };
     

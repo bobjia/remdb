@@ -34,6 +34,8 @@ pub struct DbConfig {
     pub low_power_mode_supported: bool,
     /// 低功耗模式下的最大记录数（可选）
     pub low_power_max_records: Option<usize>,
+    /// 单表的最大记录数（用于动态创建表）
+    pub default_max_records: usize,
     /// 内存分配器
     pub memory_allocator: &'static dyn MemoryAllocator,
 }
@@ -52,6 +54,11 @@ pub const fn validate_config(config: &DbConfig) -> bool {
         if low_power_max > 100000 {
             return false;
         }
+    }
+    
+    // 检查默认最大记录数
+    if config.default_max_records > 500000 {
+        return false;
     }
     
     // 检查每个表（使用常量兼容的方式）

@@ -151,6 +151,7 @@ fn test_large_table_performance() {
         total_memory: 500_000_000, // 500MB
         low_power_mode_supported: false,
         low_power_max_records: Some(10000),
+        default_max_records: 100000,
         memory_allocator: unsafe {
             static mut DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
             &mut DEFAULT_ALLOCATOR

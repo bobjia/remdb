@@ -672,7 +672,7 @@ impl DdlExecutor for RemDb {
             secondary_index: None,
             secondary_index_type: IndexType::SortedArray,
             record_size,
-            max_records: 100, // 默认最大记录数，减少到100以避免测试卡住
+            max_records: self.config.default_max_records,
         };
         
         // 5. 创建内存表

@@ -202,6 +202,7 @@ struct DatabaseArgs {
     tables: Vec<Ident>,
     low_power: bool,
     low_power_max_records: Option<usize>,
+    default_max_records: usize,
 }
 
 impl Parse for DatabaseArgs {
@@ -237,6 +238,7 @@ impl Parse for DatabaseArgs {
         // 解析可选的low_power参数
         let mut low_power = false;
         let mut low_power_max_records = None;
+        let mut default_max_records = 100000; // 默认值
         
         // 检查是否还有更多参数
         while !input.is_empty() {
@@ -257,6 +259,10 @@ impl Parse for DatabaseArgs {
                 // 解析数字
                 let lit_int = input.parse::<syn::LitInt>()?;
                 low_power_max_records = Some(lit_int.base10_parse().unwrap_or(0));
+            } else if param_name == "default_max_records" {
+                // 解析数字
+                let lit_int = input.parse::<syn::LitInt>()?;
+                default_max_records = lit_int.base10_parse().unwrap_or(100000);
             }
         }
         
@@ -265,6 +271,7 @@ impl Parse for DatabaseArgs {
             tables,
             low_power,
             low_power_max_records,
+            default_max_records,
         })
     }
 }
@@ -404,6 +411,7 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let name = &args.name;
     let tables = &args.tables;
     let low_power = args.low_power;
+    let default_max_records = args.default_max_records;
     
     // 处理low_power_max_records，转换为Option<usize>
     let low_power_max_records = match args.low_power_max_records {
@@ -419,6 +427,7 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             total_memory: 65536,
             low_power_mode_supported: #low_power,
             low_power_max_records: #low_power_max_records,
+            default_max_records: #default_max_records,
             memory_allocator: unsafe {
                 // 使用默认的内存分配器实现，这里返回一个空指针的静态引用
                 static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
