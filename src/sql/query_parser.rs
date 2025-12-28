@@ -858,9 +858,18 @@ impl SqlParser {
 
     /// 跳过空白字符
     fn skip_whitespace(&mut self) {
+        // 添加安全检查，防止无限循环
+        let max_skips = self.input.len();
+        let mut skips = 0;
+        
         while let Some(c) = self.peek_char() {
+            if skips > max_skips {
+                break; // 防止无限循环
+            }
+            
             if c.is_whitespace() {
                 self.next_char();
+                skips += 1;
             } else {
                 break;
             }
