@@ -109,12 +109,18 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             data_type: DataType::UInt32,
             size: 4,
             offset: 0,
+            primary_key: true,
+            not_null: true,
+            unique: true,
         },
         FieldDef {
             name: "value",
             data_type: DataType::Float32,
             size: 4,
             offset: 4,
+            primary_key: false,
+            not_null: false,
+            unique: false,
         },
     ],
     primary_key: 0,
@@ -374,6 +380,9 @@ static SMALL_TABLE_DEF: TableDef = TableDef {
             data_type: DataType::UInt32,
             size: 4,
             offset: 0,
+            primary_key: true,
+            not_null: true,
+            unique: true,
         },
     ],
     primary_key: 0,
@@ -418,11 +427,28 @@ fn test_table_full() {
         let record_id1 = table.insert(record_data.as_ptr()).unwrap();
         assert_eq!(record_id1, 0);
         
-        let record_id2 = table.insert(record_data.as_ptr()).unwrap();
+        // 创建第二条记录，使用不同的id
+        let mut record_data2 = [0u8; 4];
+        let id2: u32 = 2;
+        core::ptr::copy_nonoverlapping(
+                &id2 as *const u32 as *const u8,
+                record_data2.as_mut_ptr(),
+                4
+            );
+        
+        let record_id2 = table.insert(record_data2.as_ptr()).unwrap();
         assert_eq!(record_id2, 1);
         
         // 尝试插入第三条记录（应该失败）
-        let result = table.insert(record_data.as_ptr());
+        // 使用新的id=3，这样会触发OutOfMemory错误，而不是DuplicateKey错误
+        let mut record_data3 = [0u8; 4];
+        let id3: u32 = 3;
+        core::ptr::copy_nonoverlapping(
+                &id3 as *const u32 as *const u8,
+                record_data3.as_mut_ptr(),
+                4
+            );
+        let result = table.insert(record_data3.as_ptr());
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), RemDbError::OutOfMemory);
         

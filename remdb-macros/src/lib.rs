@@ -336,6 +336,12 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         // 调整偏移量以满足对齐要求
         offset = ((offset + alignment - 1) / alignment) * alignment;
         
+        // 确定约束字段值
+        let is_primary_key = field_name == primary_key;
+        let primary_key_val = is_primary_key;
+        let not_null_val = is_primary_key; // 主键字段默认为非空
+        let unique_val = is_primary_key;
+        
         // 生成字段定义
         let field_def = quote! {
             remdb::types::FieldDef {
@@ -343,6 +349,9 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 data_type: #data_type,
                 size: #size_val as usize, // 确保是usize类型
                 offset: #offset as usize,  // 确保是usize类型
+                primary_key: #primary_key_val,
+                not_null: #not_null_val,
+                unique: #unique_val,
             }
         };
         

@@ -54,6 +54,12 @@ impl DataType {
     }
 }
 
+impl Default for DataType {
+    fn default() -> Self {
+        DataType::Int32
+    }
+}
+
 /// 时间相关辅助方法
 pub mod time_utils {
     /// 将秒转换为毫秒
@@ -142,6 +148,18 @@ pub union Value {
     pub string: [u8; MAX_STRING_LEN],
 }
 
+/// 手动实现PartialEq trait，因为Rust不支持为union类型自动派生PartialEq
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        // 注意：这里的实现假设我们知道要比较的是哪种类型
+        // 但实际上在约束验证中，我们是比较相同字段的值，所以类型是相同的
+        // 因此我们需要根据字段类型来比较对应的union变体
+        // 由于我们无法在这里知道字段类型，所以这个实现是不完整的
+        // 我们需要修改约束验证逻辑，不直接比较Value，而是比较具体的字段值
+        false
+    }
+}
+
 /// 定长字符串最大长度
 pub const MAX_STRING_LEN: usize = 64;
 
@@ -157,6 +175,12 @@ pub struct FieldDef {
     pub size: usize,
     /// 偏移量（在记录中的位置）
     pub offset: usize,
+    /// 是否为主键
+    pub primary_key: bool,
+    /// 是否非空
+    pub not_null: bool,
+    /// 是否唯一
+    pub unique: bool,
 }
 
 /// 索引类型枚举

@@ -634,7 +634,7 @@ impl DdlExecutor for RemDb {
         let mut offset = 0;
         let mut record_size = 0;
         
-        for (field_name, data_type) in fields {
+        for (i, (field_name, data_type)) in fields.iter().enumerate() {
             // 计算字段大小
             let field_size = match data_type {
                 DataType::String => MAX_STRING_LEN,
@@ -644,12 +644,15 @@ impl DdlExecutor for RemDb {
             // 将字段名转换为静态字符串
             let field_name_static = Box::leak(field_name.to_string().into_boxed_str());
             
-            // 创建字段定义
+            // 创建字段定义，设置默认约束
             let field_def = FieldDef {
                 name: field_name_static,
                 data_type: *data_type,
                 size: field_size,
                 offset,
+                primary_key: primary_key == Some(i), // 主键索引匹配当前字段
+                not_null: primary_key == Some(i), // 主键默认非空
+                unique: primary_key == Some(i), // 主键默认唯一
             };
             
             field_defs.push(field_def);
@@ -743,6 +746,9 @@ impl DdlExecutor for RemDb {
                 data_type: field.data_type,
                 size: field.size,
                 offset: field.offset,
+                primary_key: field.primary_key,
+                not_null: field.not_null,
+                unique: field.unique,
             });
         }
         

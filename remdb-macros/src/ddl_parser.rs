@@ -3,6 +3,7 @@ pub struct ColumnDef {
     pub typ: String,
     pub nullable: bool,
     pub primary_key: bool,
+    pub unique: bool,
 }
 
 pub struct IndexDef {
@@ -130,6 +131,7 @@ fn parse_columns(columns_part: &str) -> Result<Vec<ColumnDef>, String> {
         
         let mut nullable = true;
         let mut primary_key = false;
+        let mut unique = false;
         
         // 解析约束
         while let Some(part) = parts.next() {
@@ -146,6 +148,9 @@ fn parse_columns(columns_part: &str) -> Result<Vec<ColumnDef>, String> {
                         primary_key = true;
                     }
                 }
+                "unique" => {
+                    unique = true;
+                }
                 _ => {}
             }
         }
@@ -155,6 +160,7 @@ fn parse_columns(columns_part: &str) -> Result<Vec<ColumnDef>, String> {
             typ: full_typ,
             nullable,
             primary_key,
+            unique,
         });
     }
     

@@ -114,6 +114,9 @@ fn generate_field_defs(
         let name = &col.name;
         let data_type = convert_to_data_type(&col.typ);
         let size = get_type_size(&col.typ);
+        let primary_key = col.primary_key;
+        let not_null = !col.nullable; // nullable为false表示not null
+        let unique = col.unique;
         
         field_defs.push(quote! {
             remdb::types::FieldDef {
@@ -121,6 +124,9 @@ fn generate_field_defs(
                 data_type: #data_type,
                 size: #size,
                 offset: #offset,
+                primary_key: #primary_key,
+                not_null: #not_null,
+                unique: #unique,
             }
         });
         

@@ -26,8 +26,8 @@ pub struct SqlQuery {
     pub insert_columns: Vec<String>,
     /// 要插入的值列表
     pub values: Vec<Vec<Value>>,
-    /// 表字段定义（用于CREATE TABLE）
-    pub table_def: Vec<(String, String)>,
+    /// 表字段定义（用于CREATE TABLE）：(字段名, 类型, 主键, 非空, 唯一)
+    pub table_def: Vec<(String, String, bool, bool, bool)>,
     /// 主键字段名（用于CREATE TABLE）
     pub primary_key: Option<String>,
     /// 索引字段名（用于CREATE INDEX）
@@ -204,7 +204,7 @@ impl SqlParser {
         // 解析查询类型
         let query_type = self.parse_query_type()?;
         
-        match query_type {
+        let query = match query_type {
             QueryType::Select => self.parse_select_query(),
             QueryType::Insert => self.parse_insert_query(),
             QueryType::Delete => self.parse_delete_query(),
@@ -212,7 +212,13 @@ impl SqlParser {
             QueryType::CreateTable => self.parse_create_table_query(),
             QueryType::CreateIndex => self.parse_create_index_query(),
             QueryType::Other => Err(QueryParseError::UnsupportedKeyword),
-        }
+        }?;
+        
+        // 处理语句末尾可能存在的分号
+        self.skip_whitespace();
+        self.match_char(';');
+        
+        Ok(query)
     }
 
     /// 解析DESCRIBE TABLE查询
@@ -401,15 +407,33 @@ impl SqlParser {
             // 解析数据类型，支持复杂类型如 VARCHAR(255), INT UNSIGNED
             let data_type = self.parse_data_type()?.to_uppercase();
             
-            // 检查是否为主键
-            self.skip_whitespace();
-            if self.match_keyword("PRIMARY") {
+            // 初始化约束标志
+            let mut is_primary_key = false;
+            let mut is_not_null = false;
+            let mut is_unique = false;
+            
+            // 检查约束条件
+            loop {
                 self.skip_whitespace();
-                self.expect_keyword("KEY")?;
-                primary_key = Some(field_name.clone());
+                
+                if self.match_keyword("PRIMARY") {
+                    self.skip_whitespace();
+                    self.expect_keyword("KEY")?;
+                    is_primary_key = true;
+                    primary_key = Some(field_name.clone());
+                } else if self.match_keyword("NOT") {
+                    self.skip_whitespace();
+                    self.expect_keyword("NULL")?;
+                    is_not_null = true;
+                } else if self.match_keyword("UNIQUE") {
+                    is_unique = true;
+                } else {
+                    // 没有更多约束
+                    break;
+                }
             }
             
-            table_def.push((field_name, data_type));
+            table_def.push((field_name, data_type, is_primary_key, is_not_null, is_unique));
             
             self.skip_whitespace();
             if self.match_char(')') {
@@ -889,6 +913,8 @@ impl SqlParser {
         // 解析基本数据类型
         let base_type = self.parse_identifier()?;
         
+        let mut end = self.position;
+        
         // 检查是否有参数，如 VARCHAR(255)
         self.skip_whitespace();
         if self.match_char('(') {
@@ -901,26 +927,36 @@ impl SqlParser {
                 } else if c == ')' {
                     depth -= 1;
                 }
+                // 移动到下一个字符
+                self.position += 1;
             }
+            end = self.position;
         }
         
         // 检查是否有修饰符，如 UNSIGNED
+        let modifier_start = self.position;
         self.skip_whitespace();
         if self.peek_char().is_some() {
             // 检查是否是修饰符（字母或下划线开头）
             let c = self.peek_char().unwrap();
             if c.is_ascii_alphabetic() || c == '_' {
-                // 添加空格分隔
-                self.position = self.position.min(self.input.len());
-                self.input.insert(self.position, ' ');
-                self.position += 1;
-                
                 // 解析修饰符
-                self.parse_identifier()?;
+                let modifier = self.parse_identifier()?;
+                // 只接受 UNSIGNED 或 SIGNED 作为修饰符
+                if modifier.eq_ignore_ascii_case("UNSIGNED") || modifier.eq_ignore_ascii_case("SIGNED") {
+                    end = self.position;
+                } else {
+                    // 不是有效的修饰符，回滚
+                    self.position = modifier_start;
+                }
             }
         }
         
-        Ok(self.input[start..self.position].to_string())
+        // 回滚跳过的空格
+        self.position = modifier_start;
+        
+        // 返回解析的数据类型，不包含后面的空格
+        Ok(self.input[start..end].to_string())
     }
     
     /// 期望匹配指定字符

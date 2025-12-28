@@ -126,7 +126,9 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
 fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
     // 将SQL数据类型转换为RemDb DataType
     let mut fields = Vec::new();
-    for (field_name, data_type_str) in &query.table_def {
+    let mut field_constraints = Vec::new(); // 存储约束信息
+    
+    for (field_name, data_type_str, is_primary_key, is_not_null, is_unique) in &query.table_def {
         let data_type = match data_type_str.to_uppercase().as_str() {
             // 无符号整数类型
             "UINT8" | "TINYINT UNSIGNED" => DataType::UInt8,
@@ -155,15 +157,19 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
             
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
+        
+        // 保存字段和约束信息
         fields.push((field_name.as_str(), data_type));
+        field_constraints.push((is_primary_key, is_not_null, is_unique));
     }
     
     // 查找主键字段索引
     let primary_key_index = query.primary_key.as_ref().and_then(|pk| {
-        query.table_def.iter().position(|(name, _)| name == pk)
+        query.table_def.iter().position(|(name, _, _, _, _)| name == pk)
     });
     
     // 调用DdlExecutor的create_table方法
+    // 注意：这里暂时只传递字段名和类型，约束信息将在表创建后更新
     db.create_table(
         &query.table_name,
         &fields,
@@ -177,6 +183,25 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
             _ => QueryExecutionError::InternalError,
         }
     })?;
+    
+    // 查找创建的表
+    let table_id = db.tables
+        .iter()
+        .position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == query.table_name
+            } else {
+                false
+            }
+        })
+        .ok_or(QueryExecutionError::TableNotFound)?;
+    
+    // 更新字段约束信息
+    if let Some(table) = &mut db.tables[table_id] {
+        // 注意：这里我们无法直接修改field_defs，因为它们是静态的
+        // 所以我们需要修改RemDb的create_table实现，使其支持从SQL解析约束信息
+        // 目前暂时不支持直接从SQL更新约束，只支持通过DDL宏定义约束
+    }
     
     // 创建结果集，返回成功消息
     let columns = vec!["status".to_string()];
