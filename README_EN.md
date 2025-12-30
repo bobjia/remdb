@@ -66,6 +66,11 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Supports DDL operations via SQL statements: `CREATE TABLE`, `CREATE INDEX`
   - Supports multiple index type configurations
   - Memory allocator abstraction, supporting custom memory allocation strategies
+- **SQL Export Functionality**:
+  - Supports exporting complete DDL files (table structures and index definitions)
+  - Supports exporting table data as SQL INSERT statements
+  - Output is compatible with SQLite3 syntax while preserving project-specific keywords
+  - Supports writing export results to files or memory buffers
 
 ## Technical Characteristics
 
@@ -395,6 +400,29 @@ fn main() {
     let result = db.sql_query(
         "CREATE INDEX idx_product_name ON products (name) USING BTree;"
     );
+}
+```
+
+### SQL Export Functionality Example
+
+```rust
+// Export DDL (table structures and indexes) to file
+let result = db.export_ddl("./exported_ddl.sql");
+if result.is_ok() {
+    println!("DDL exported successfully!");
+}
+
+// Export table data to file
+let result = db.export_data("./exported_data.sql");
+if result.is_ok() {
+    println!("Data exported successfully!");
+}
+
+// Export data for specific tables
+// Parameters: filename, table name (optional, None means export all tables)
+let result = db.export_data_with_table("./exported_users.sql", Some("users"));
+if result.is_ok() {
+    println!("Users table data exported successfully!");
 }
 ```
 

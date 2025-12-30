@@ -52,6 +52,30 @@ impl DataType {
             DataType::String => panic!("String size is variable at compile time"),
         }
     }
+    
+    /// 将数据类型转换为SQL类型字符串（SQLite3兼容）
+    pub fn to_sql_type(&self, size: usize) -> &'static str {
+        match self {
+            // SQLite3使用INTEGER存储所有整数类型
+            DataType::UInt8 => "INTEGER",
+            DataType::UInt16 => "INTEGER",
+            DataType::UInt32 => "INTEGER",
+            DataType::UInt64 => "INTEGER",
+            DataType::Int8 => "INTEGER",
+            DataType::Int16 => "INTEGER",
+            DataType::Int32 => "INTEGER",
+            DataType::Int64 => "INTEGER",
+            // SQLite3使用REAL存储浮点数
+            DataType::Float32 => "REAL",
+            DataType::Float64 => "REAL",
+            // SQLite3使用INTEGER(0/1)存储布尔值
+            DataType::Bool => "INTEGER",
+            // SQLite3使用INTEGER存储时间戳（毫秒）
+            DataType::Timestamp => "INTEGER",
+            // SQLite3使用TEXT存储字符串
+            DataType::String => "TEXT",
+        }
+    }
 }
 
 impl Default for DataType {
@@ -183,6 +207,31 @@ pub struct FieldDef {
     pub unique: bool,
     /// 是否自增
     pub auto_increment: bool,
+}
+
+impl FieldDef {
+    /// 生成字段的SQL约束字符串
+    pub fn constraints_to_sql(&self) -> alloc::string::String {
+        let mut constraints = alloc::string::String::new();
+        
+        if self.primary_key {
+            constraints.push_str(" PRIMARY KEY");
+        }
+        
+        if self.auto_increment {
+            constraints.push_str(" AUTO_INCREMENT");
+        }
+        
+        if self.not_null {
+            constraints.push_str(" NOT NULL");
+        }
+        
+        if self.unique && !self.primary_key {
+            constraints.push_str(" UNIQUE");
+        }
+        
+        constraints
+    }
 }
 
 /// 索引类型枚举

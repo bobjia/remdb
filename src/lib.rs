@@ -793,11 +793,11 @@ impl DdlExecutor for RemDb {
             )?;
             
             // 7. 存储索引
-            self.secondary_indices[table_id] = Some(index);
-        }
-        
-        Ok(())
+        self.secondary_indices[table_id] = Some(index);
     }
+    
+    Ok(())
+}
 }
 
 impl RemDb {
@@ -825,6 +825,147 @@ impl RemDb {
             })?;
         
         Ok(result_set)
+    }
+    
+    /// 导出完整的DDL文件
+    pub fn export_ddl(&self, path: &str) -> Result<()> {
+        // 使用标准库的文件操作
+        use std::fs::File;
+        use std::io::Write;
+        
+        let mut file = File::create(path).map_err(|_| RemDbError::FileIoError)?;
+        
+        // 遍历所有表
+        for table_id in 0..self.tables.len() {
+            if let Some(table) = &self.tables[table_id] {
+                // 生成CREATE TABLE语句，表名转换为小写
+                let mut create_table_sql = alloc::string::String::new();
+                create_table_sql.push_str(&format!("CREATE TABLE {} (\n", table.def.name.to_lowercase()));
+                
+                // 添加字段定义
+                let mut fields_sql = Vec::new();
+                for field in table.def.fields {
+                    let field_sql = format!("    {} {} {}", 
+                        field.name,
+                        field.data_type.to_sql_type(field.size),
+                        field.constraints_to_sql());
+                    fields_sql.push(field_sql);
+                }
+                
+                // 连接字段定义
+                create_table_sql.push_str(&fields_sql.join(",\n"));
+                create_table_sql.push_str("\n);\n\n");
+                
+                // 写入CREATE TABLE语句
+                file.write_all(create_table_sql.as_bytes()).map_err(|_| RemDbError::FileIoError)?;
+                
+                // 生成CREATE INDEX语句（如果有辅助索引）
+                if let Some(secondary_index) = table.def.secondary_index {
+                    if secondary_index < table.def.fields.len() {
+                        let index_field = &table.def.fields[secondary_index];
+                        let index_name = format!("idx_{}_{}", table.def.name.to_lowercase(), index_field.name);
+                        let index_type = match table.def.secondary_index_type {
+                            IndexType::Hash => "hash",
+                            IndexType::SortedArray => "sortedarray",
+                            IndexType::BTree => "btree",
+                            IndexType::TTree => "ttree",
+                        };
+                        
+                        let create_index_sql = format!("CREATE INDEX {} ON {} USING {} ({});\n\n", 
+                            index_name, table.def.name.to_lowercase(), index_type, index_field.name);
+                        
+                        // 写入CREATE INDEX语句
+                        file.write_all(create_index_sql.as_bytes()).map_err(|_| RemDbError::FileIoError)?;
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// 导出数据到文件
+    pub fn export_data(&self, path: &str) -> Result<()> {
+        // 使用标准库的文件操作
+        use std::fs::File;
+        use std::io::Write;
+        
+        // 先收集所有SQL语句，避免在unsafe块内进行文件I/O
+        let mut sql_statements = alloc::string::String::new();
+        
+        // 遍历所有表
+        for table_id in 0..self.tables.len() {
+            if let Some(table) = &self.tables[table_id] {
+                // 遍历表中的所有记录
+                let table_ref = table.def.clone();
+                
+                // 使用iterate方法遍历记录
+                unsafe {
+                    table.iterate(|_id, record_ptr| {
+                        // 生成INSERT语句，表名转换为小写
+                        let mut insert_sql = alloc::string::String::new();
+                        insert_sql.push_str(&format!("INSERT INTO {} (", table_ref.name.to_lowercase()));
+                        
+                        // 添加字段名
+                        let mut field_names = Vec::new();
+                        let mut field_values = Vec::new();
+                        
+                        for field in table_ref.fields {
+                            field_names.push(field.name);
+                            
+                            // 获取字段值
+                            let field_ptr = record_ptr.add(field.offset);
+                            let value_str = match field.data_type {
+                                DataType::UInt8 => format!("{}", *field_ptr as u8),
+                                DataType::UInt16 => format!("{}", core::ptr::read_unaligned(field_ptr as *const u16)),
+                                DataType::UInt32 => format!("{}", core::ptr::read_unaligned(field_ptr as *const u32)),
+                                DataType::UInt64 => format!("{}", core::ptr::read_unaligned(field_ptr as *const u64)),
+                                DataType::Int8 => format!("{}", core::ptr::read_unaligned(field_ptr as *const i8)),
+                                DataType::Int16 => format!("{}", core::ptr::read_unaligned(field_ptr as *const i16)),
+                                DataType::Int32 => format!("{}", core::ptr::read_unaligned(field_ptr as *const i32)),
+                                DataType::Int64 => format!("{}", core::ptr::read_unaligned(field_ptr as *const i64)),
+                                DataType::Float32 => format!("{}", core::ptr::read_unaligned(field_ptr as *const f32)),
+                                DataType::Float64 => format!("{}", core::ptr::read_unaligned(field_ptr as *const f64)),
+                                DataType::Bool => format!("{}", *field_ptr != 0),
+                                DataType::Timestamp => format!("{}", core::ptr::read_unaligned(field_ptr as *const u64)),
+                                DataType::String => {
+                                    // 读取字符串并去除尾部的0字节
+                                    let mut str_value = alloc::string::String::new();
+                                    for i in 0..field.size {
+                                        let c = *field_ptr.add(i);
+                                        if c == 0 {
+                                            break;
+                                        }
+                                        str_value.push(c as char);
+                                    }
+                                    format!("'{}'", str_value)
+                                },
+                            };
+                            
+                            field_values.push(value_str);
+                        }
+                        
+                        // 连接字段名和值
+                        insert_sql.push_str(&field_names.join(", "));
+                        insert_sql.push_str(") VALUES (");
+                        insert_sql.push_str(&field_values.join(", "));
+                        insert_sql.push_str(");\n");
+                        
+                        // 将SQL语句添加到集合中
+                        sql_statements.push_str(&insert_sql);
+                        
+                        // 继续遍历
+                        true
+                    }).unwrap_or(());
+                }
+            }
+        }
+        
+        // 现在将所有SQL语句写入文件
+        let mut file = File::create(path).map_err(|_| RemDbError::FileIoError)?;
+        file.write_all(sql_statements.as_bytes()).map_err(|_| RemDbError::FileIoError)?;
+        
+        Ok(())
     }
     
     /// 保存增量快照到文件

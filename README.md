@@ -66,6 +66,11 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 支持通过SQL语句执行DDL操作：`CREATE TABLE`、`CREATE INDEX`
   - 支持多种索引类型配置
   - 内存分配器抽象，支持自定义内存分配策略
+- **SQL导出功能**：
+  - 支持导出完整的DDL文件（表结构和索引定义）
+  - 支持导出表数据为SQL INSERT语句
+  - 输出兼容SQLite3语法，同时保留项目特定关键字
+  - 支持将导出结果写入文件或内存缓冲区
 
 ## 技术特点
 
@@ -395,6 +400,29 @@ fn main() {
     let result = db.sql_query(
         "CREATE INDEX idx_product_name ON products (name) USING BTree;"
     );
+}
+```
+
+### SQL导出功能示例
+
+```rust
+// 导出DDL（表结构和索引）到文件
+let result = db.export_ddl("./exported_ddl.sql");
+if result.is_ok() {
+    println!("DDL导出成功！");
+}
+
+// 导出表数据到文件
+let result = db.export_data("./exported_data.sql");
+if result.is_ok() {
+    println!("数据导出成功！");
+}
+
+// 导出特定表的数据
+// 参数：文件名，表名（可选，None表示导出所有表）
+let result = db.export_data_with_table("./exported_users.sql", Some("users"));
+if result.is_ok() {
+    println!("users表数据导出成功！");
 }
 ```
 
