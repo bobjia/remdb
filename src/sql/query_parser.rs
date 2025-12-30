@@ -916,12 +916,11 @@ impl SqlParser {
     
     /// 解析数据类型，支持复杂类型如 VARCHAR(255), INT UNSIGNED
     fn parse_data_type(&mut self) -> Result<String, QueryParseError> {
-        let start = self.position;
-        
         // 解析基本数据类型
         let base_type = self.parse_identifier()?;
         
-        let mut end = self.position;
+        // 保存基本类型，忽略参数和修饰符
+        let result = base_type.clone();
         
         // 检查是否有参数，如 VARCHAR(255)
         self.skip_whitespace();
@@ -935,14 +934,10 @@ impl SqlParser {
                 } else if c == ')' {
                     depth -= 1;
                 }
-                // 移动到下一个字符
-                self.position += 1;
             }
-            end = self.position;
         }
         
         // 检查是否有修饰符，如 UNSIGNED
-        let modifier_start = self.position;
         self.skip_whitespace();
         if self.peek_char().is_some() {
             // 检查是否是修饰符（字母或下划线开头）
@@ -950,21 +945,16 @@ impl SqlParser {
             if c.is_ascii_alphabetic() || c == '_' {
                 // 解析修饰符
                 let modifier = self.parse_identifier()?;
-                // 只接受 UNSIGNED 或 SIGNED 作为修饰符
-                if modifier.eq_ignore_ascii_case("UNSIGNED") || modifier.eq_ignore_ascii_case("SIGNED") {
-                    end = self.position;
-                } else {
+                // 只接受 UNSIGNED 或 SIGNED 作为修饰符，其他修饰符忽略
+                if !modifier.eq_ignore_ascii_case("UNSIGNED") && !modifier.eq_ignore_ascii_case("SIGNED") {
                     // 不是有效的修饰符，回滚
-                    self.position = modifier_start;
+                    self.position -= modifier.len();
                 }
             }
         }
         
-        // 回滚跳过的空格
-        self.position = modifier_start;
-        
-        // 返回解析的数据类型，不包含后面的空格
-        Ok(self.input[start..end].to_string())
+        // 返回基本数据类型，忽略参数和修饰符
+        Ok(result)
     }
     
     /// 期望匹配指定字符
