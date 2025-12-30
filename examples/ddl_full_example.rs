@@ -1,13 +1,12 @@
 extern crate alloc;
 
-use core::ptr::NonNull;
 use remdb::*;
 use remdb_macros::MemdbTable;
 
 // 使用DDL定义表结构和数据库
 #[derive(MemdbTable)]
 #[memdb_schema(ddl = "CREATE TABLE sensor_data (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTO_INCREMENT,
     timestamp BIGINT NOT NULL,
     sensor_id TEXT(32) NOT NULL,
     value_int64 BIGINT,
@@ -110,35 +109,21 @@ fn main() {
         
         // 2. 插入时序数据
         println!("\n2. Inserting time series data...");
-        let base_time = 1609459200000; // 2021-01-01 00:00:00 UTC
+        let base_time: i64 = 1609459200000; // 2021-01-01 00:00:00 UTC
         
         for i in 0..10 {
             let timestamp = base_time + i * 1000; // 每秒一条数据
             let sensor_id_str = format!("sensor_{}", i % 3);
             let sensor_id_copy = sensor_id_str.clone();
             
-            // 初始化自动生成的SensorData结构体
-            let record = SensorData {
-                id: i as i32,
-                timestamp: timestamp,
-                sensor_id: sensor_id_str,
-                value_int64: Some(i as i64 * 100),
-                value_uint64: Some(i as u64 * 200),
-                value_int32: Some(i as i32 * 30),
-                value_uint32: Some(i as u32 * 40),
-                value_int16: Some(i as i16 * 5),
-                value_uint16: Some(i as u16 * 10),
-                value_int8: Some(i as i8 * 2),
-                value_uint8: Some(i as u8 * 3),
-                value_real: Some(i as f64 * 1.5),
-                value_bool: Some(i % 2 == 0),
-                value_string: Some(format!("data_point_{}", i))
-            };
+            // 使用SQL INSERT语句插入数据，让数据库自动处理自增主键
+            let sql = format!("INSERT INTO sensor_data (timestamp, sensor_id, value_int64, value_uint64, value_int32, value_uint32, value_int16, value_uint16, value_int8, value_uint8, value_real, value_bool, value_string) VALUES ({}, '{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, '{}')",
+                              timestamp, sensor_id_str, i * 100, i * 200, i * 30, i * 40, i * 5, i * 10, i * 2, i * 3, (i as f64) * 1.5, i % 2 == 0, format!("data_point_{}", i));
             
-            // 使用API插入数据
-            let table_mut = db.get_table_mut(0).unwrap();
-            let record_id = table_mut.insert(&record as *const SensorData as *const u8).unwrap();
-            println!("   Inserted data point {} for sensor {}, record_id: {}", i, sensor_id_copy, record_id);
+            match db.sql_query(&sql) {
+                Ok(_) => println!("   Inserted data point {} for sensor {}", i, sensor_id_copy),
+                Err(e) => println!("   Failed to insert data point {} for sensor {}: {:?}", i, sensor_id_copy, e)
+            }
         }
         
         // 3. 使用API查询
@@ -207,28 +192,14 @@ fn main() {
             let sensor_id_str = format!("sensor_{}", i % 3);
             let sensor_id_copy = sensor_id_str.clone();
             
-            // 初始化自动生成的SensorData结构体
-            let record = SensorData {
-                id: i as i32,
-                timestamp: timestamp,
-                sensor_id: sensor_id_str,
-                value_int64: Some(i as i64 * 100),
-                value_uint64: Some(i as u64 * 200),
-                value_int32: Some(i as i32 * 30),
-                value_uint32: Some(i as u32 * 40),
-                value_int16: Some(i as i16 * 5),
-                value_uint16: Some(i as u16 * 10),
-                value_int8: Some(i as i8 * 2),
-                value_uint8: Some(i as u8 * 3),
-                value_real: Some(i as f64 * 1.5),
-                value_bool: Some(i % 2 == 0),
-                value_string: Some(format!("data_point_{}", i))
-            };
+            // 使用SQL INSERT语句插入数据，让数据库自动处理自增主键
+            let sql = format!("INSERT INTO sensor_data (timestamp, sensor_id, value_int64, value_uint64, value_int32, value_uint32, value_int16, value_uint16, value_int8, value_uint8, value_real, value_bool, value_string) VALUES ({}, '{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, '{}')",
+                              timestamp, sensor_id_str, i * 100, i * 200, i * 30, i * 40, i * 5, i * 10, i * 2, i * 3, (i as f64) * 1.5, i % 2 == 0, format!("data_point_{}", i));
             
-            // 插入数据
-            let table_mut = db.get_table_mut(0).unwrap();
-            let record_id = table_mut.insert(&record as *const SensorData as *const u8).unwrap();
-            println!("   Inserted data point {} for sensor {}, record_id: {}", i, sensor_id_copy, record_id);
+            match db.sql_query(&sql) {
+                Ok(_) => println!("   Inserted data point {} for sensor {}", i, sensor_id_copy),
+                Err(e) => println!("   Failed to insert data point {} for sensor {}: {:?}", i, sensor_id_copy, e)
+            }
         }
         
         // 7. 保持增量快照

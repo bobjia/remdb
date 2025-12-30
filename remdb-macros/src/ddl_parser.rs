@@ -4,6 +4,7 @@ pub struct ColumnDef {
     pub nullable: bool,
     pub primary_key: bool,
     pub unique: bool,
+    pub auto_increment: bool,
 }
 
 pub struct IndexDef {
@@ -132,6 +133,7 @@ fn parse_columns(columns_part: &str) -> Result<Vec<ColumnDef>, String> {
         let mut nullable = true;
         let mut primary_key = false;
         let mut unique = false;
+        let mut auto_increment = false;
         
         // 解析约束
         while let Some(part) = parts.next() {
@@ -151,6 +153,9 @@ fn parse_columns(columns_part: &str) -> Result<Vec<ColumnDef>, String> {
                 "unique" => {
                     unique = true;
                 }
+                "autoincrement" | "auto_increment" => {
+                    auto_increment = true;
+                }
                 _ => {}
             }
         }
@@ -161,6 +166,7 @@ fn parse_columns(columns_part: &str) -> Result<Vec<ColumnDef>, String> {
             nullable,
             primary_key,
             unique,
+            auto_increment,
         });
     }
     

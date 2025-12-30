@@ -30,6 +30,8 @@ pub struct MemoryTable {
     pub low_power_max_records: Option<usize>,
     /// 表快照版本号
     pub snapshot_version: u32,
+    /// 下一个自增ID值
+    pub next_auto_id: u64,
 }
 
 // 添加Drop trait实现，用于释放动态分配的内存
@@ -90,6 +92,7 @@ impl MemoryTable {
             low_power_mode: false, // 默认不启用低功耗模式
             low_power_max_records: None, // 默认使用表定义的最大记录数
             snapshot_version: 0, // 初始快照版本为0
+            next_auto_id: 1, // 自增ID从1开始
         })
     }
     
@@ -156,92 +159,89 @@ impl MemoryTable {
         // 验证主键唯一性约束
         let primary_key_index = self.def.primary_key;
         if primary_key_index < self.def.fields.len() {
-            // 只有当表中有记录时才需要检查唯一性
-            if self.record_count > 0 {
-                // 获取主键字段定义
-                let primary_key_field = &self.def.fields[primary_key_index];
-                let primary_key_offset = primary_key_field.offset;
-                let primary_key_data_type = primary_key_field.data_type;
-                
-                // 直接获取当前记录的主键指针
-                let primary_key_ptr = record_data.add(primary_key_offset);
-                
-                // 遍历记录，直接比较内存中的主键值
-                let mut has_duplicate = false;
-                
-                // 遍历所有记录槽，检查已使用的记录
-                // 优化：只遍历已使用的记录，通过status_array检查
-                // 但由于我们无法直接知道哪些槽被使用，只能遍历所有槽
-                // 不过我们可以在找到重复后立即中断
-                for i in 0..self.def.max_records {
-                    let status_ptr = self.status_array.as_ptr().add(i);
-                    if (*status_ptr).status == RecordStatus::Used {
-                        // 跳过当前记录（如果是更新操作）
-                        if Some(i) == exclude_slot {
-                            continue;
-                        }
-                        
-                        // 获取其他记录的主键指针
-                        let other_record_ptr = self.data_start.as_ptr().add(i * self.record_size);
-                        let other_pk_ptr = other_record_ptr.add(primary_key_offset);
-                        
-                        // 根据主键类型直接比较内存值
-                        let is_duplicate = match primary_key_data_type {
-                            DataType::UInt8 => {
-                                *primary_key_ptr as u8 == *other_pk_ptr as u8
-                            },
-                            DataType::UInt16 => {
-                                core::ptr::read_unaligned(primary_key_ptr as *const u16) == 
-                                core::ptr::read_unaligned(other_pk_ptr as *const u16)
-                            },
-                            DataType::UInt32 => {
-                                core::ptr::read_unaligned(primary_key_ptr as *const u32) == 
-                                core::ptr::read_unaligned(other_pk_ptr as *const u32)
-                            },
-                            DataType::UInt64 => {
-                                core::ptr::read_unaligned(primary_key_ptr as *const u64) == 
-                                core::ptr::read_unaligned(other_pk_ptr as *const u64)
-                            },
-                            DataType::Int8 => {
-                                core::ptr::read_unaligned(primary_key_ptr as *const i8) == 
-                                core::ptr::read_unaligned(other_pk_ptr as *const i8)
-                            },
-                            DataType::Int16 => {
-                                core::ptr::read_unaligned(primary_key_ptr as *const i16) == 
-                                core::ptr::read_unaligned(other_pk_ptr as *const i16)
-                            },
-                            DataType::Int32 => {
-                                core::ptr::read_unaligned(primary_key_ptr as *const i32) == 
-                                core::ptr::read_unaligned(other_pk_ptr as *const i32)
-                            },
-                            DataType::Int64 => {
-                                core::ptr::read_unaligned(primary_key_ptr as *const i64) == 
-                                core::ptr::read_unaligned(other_pk_ptr as *const i64)
-                            },
-                            DataType::Float32 => {
-                                core::ptr::read_unaligned(primary_key_ptr as *const f32) == 
-                                core::ptr::read_unaligned(other_pk_ptr as *const f32)
-                            },
-                            DataType::Float64 => {
-                                core::ptr::read_unaligned(primary_key_ptr as *const f64) == 
-                                core::ptr::read_unaligned(other_pk_ptr as *const f64)
-                            },
-                            _ => {
-                                // 其他类型暂时不支持主键
-                                false
-                            },
-                        };
-                        
-                        if is_duplicate {
-                            has_duplicate = true;
-                            break;
-                        }
+            // 获取主键字段定义
+            let primary_key_field = &self.def.fields[primary_key_index];
+            let primary_key_offset = primary_key_field.offset;
+            let primary_key_data_type = primary_key_field.data_type;
+            
+            // 直接获取当前记录的主键指针
+            let primary_key_ptr = record_data.add(primary_key_offset);
+            
+            // 遍历记录，直接比较内存中的主键值
+            let mut has_duplicate = false;
+            
+            // 遍历所有记录槽，检查已使用的记录
+            // 优化：只遍历已使用的记录，通过status_array检查
+            // 但由于我们无法直接知道哪些槽被使用，只能遍历所有槽
+            // 不过我们可以在找到重复后立即中断
+            for i in 0..self.def.max_records {
+                let status_ptr = self.status_array.as_ptr().add(i);
+                if (*status_ptr).status == RecordStatus::Used {
+                    // 跳过当前记录（如果是更新操作）
+                    if Some(i) == exclude_slot {
+                        continue;
+                    }
+                    
+                    // 获取其他记录的主键指针
+                    let other_record_ptr = self.data_start.as_ptr().add(i * self.record_size);
+                    let other_pk_ptr = other_record_ptr.add(primary_key_offset);
+                    
+                    // 根据主键类型直接比较内存值
+                    let is_duplicate = match primary_key_data_type {
+                        DataType::UInt8 => {
+                            *primary_key_ptr as u8 == *other_pk_ptr as u8
+                        },
+                        DataType::UInt16 => {
+                            core::ptr::read_unaligned(primary_key_ptr as *const u16) == 
+                            core::ptr::read_unaligned(other_pk_ptr as *const u16)
+                        },
+                        DataType::UInt32 => {
+                            core::ptr::read_unaligned(primary_key_ptr as *const u32) == 
+                            core::ptr::read_unaligned(other_pk_ptr as *const u32)
+                        },
+                        DataType::UInt64 => {
+                            core::ptr::read_unaligned(primary_key_ptr as *const u64) == 
+                            core::ptr::read_unaligned(other_pk_ptr as *const u64)
+                        },
+                        DataType::Int8 => {
+                            core::ptr::read_unaligned(primary_key_ptr as *const i8) == 
+                            core::ptr::read_unaligned(other_pk_ptr as *const i8)
+                        },
+                        DataType::Int16 => {
+                            core::ptr::read_unaligned(primary_key_ptr as *const i16) == 
+                            core::ptr::read_unaligned(other_pk_ptr as *const i16)
+                        },
+                        DataType::Int32 => {
+                            core::ptr::read_unaligned(primary_key_ptr as *const i32) == 
+                            core::ptr::read_unaligned(other_pk_ptr as *const i32)
+                        },
+                        DataType::Int64 => {
+                            core::ptr::read_unaligned(primary_key_ptr as *const i64) == 
+                            core::ptr::read_unaligned(other_pk_ptr as *const i64)
+                        },
+                        DataType::Float32 => {
+                            core::ptr::read_unaligned(primary_key_ptr as *const f32) == 
+                            core::ptr::read_unaligned(other_pk_ptr as *const f32)
+                        },
+                        DataType::Float64 => {
+                            core::ptr::read_unaligned(primary_key_ptr as *const f64) == 
+                            core::ptr::read_unaligned(other_pk_ptr as *const f64)
+                        },
+                        _ => {
+                            // 其他类型暂时不支持主键
+                            false
+                        },
+                    };
+                    
+                    if is_duplicate {
+                        has_duplicate = true;
+                        break;
                     }
                 }
-                
-                if has_duplicate {
-                    return Err(RemDbError::DuplicateKey);
-                }
+            }
+            
+            if has_duplicate {
+                return Err(RemDbError::DuplicateKey);
             }
         }
         
@@ -288,10 +288,92 @@ impl MemoryTable {
             self.def.max_records
         };
         
+        // 处理自增主键
+        let mut record_buffer = [0u8; 512];
+        let record_ptr: *const u8;
+        
+        // 检查是否需要生成自增ID
+        let primary_key_field = &self.def.fields[self.def.primary_key];
+        let mut needs_auto_increment = primary_key_field.auto_increment;
+        
+        // 如果显式指定了主键值，则不自动生成
+        if needs_auto_increment {
+            unsafe {
+                let pk_offset = primary_key_field.offset;
+                let is_zero = match primary_key_field.data_type {
+                    DataType::UInt8 => *record_data.add(pk_offset) == 0,
+                    DataType::UInt16 => core::ptr::read_unaligned(record_data.add(pk_offset) as *const u16) == 0,
+                    DataType::UInt32 => core::ptr::read_unaligned(record_data.add(pk_offset) as *const u32) == 0,
+                    DataType::UInt64 => core::ptr::read_unaligned(record_data.add(pk_offset) as *const u64) == 0,
+                    DataType::Int8 => core::ptr::read_unaligned(record_data.add(pk_offset) as *const i8) == 0,
+                    DataType::Int16 => core::ptr::read_unaligned(record_data.add(pk_offset) as *const i16) == 0,
+                    DataType::Int32 => core::ptr::read_unaligned(record_data.add(pk_offset) as *const i32) == 0,
+                    DataType::Int64 => core::ptr::read_unaligned(record_data.add(pk_offset) as *const i64) == 0,
+                    _ => true,
+                };
+                
+                // 如果主键值不为0，则认为是显式指定的，不需要自动生成
+                if !is_zero {
+                    needs_auto_increment = false;
+                }
+            }
+        }
+        
+        if needs_auto_increment {
+            // 自旋锁保护，生成自增ID
+            crate::platform::spin_lock(&mut self.lock);
+            let auto_id = self.next_auto_id;
+            self.next_auto_id += 1;
+            crate::platform::spin_unlock(&mut self.lock);
+            
+            // 复制原始记录数据到缓冲区
+            unsafe {
+                memcpy(record_buffer.as_mut_ptr(), record_data, self.record_size);
+            }
+            
+            // 设置自增ID
+            unsafe {
+                let pk_offset = primary_key_field.offset;
+                match primary_key_field.data_type {
+                    DataType::UInt8 => {
+                        *(record_buffer.as_mut_ptr().add(pk_offset) as *mut u8) = auto_id as u8;
+                    },
+                    DataType::UInt16 => {
+                        *(record_buffer.as_mut_ptr().add(pk_offset) as *mut u16) = auto_id as u16;
+                    },
+                    DataType::UInt32 => {
+                        *(record_buffer.as_mut_ptr().add(pk_offset) as *mut u32) = auto_id as u32;
+                    },
+                    DataType::UInt64 => {
+                        *(record_buffer.as_mut_ptr().add(pk_offset) as *mut u64) = auto_id;
+                    },
+                    DataType::Int8 => {
+                        *(record_buffer.as_mut_ptr().add(pk_offset) as *mut i8) = auto_id as i8;
+                    },
+                    DataType::Int16 => {
+                        *(record_buffer.as_mut_ptr().add(pk_offset) as *mut i16) = auto_id as i16;
+                    },
+                    DataType::Int32 => {
+                        *(record_buffer.as_mut_ptr().add(pk_offset) as *mut i32) = auto_id as i32;
+                    },
+                    DataType::Int64 => {
+                        *(record_buffer.as_mut_ptr().add(pk_offset) as *mut i64) = auto_id as i64;
+                    },
+                    _ => {
+                        return Err(RemDbError::TypeMismatch);
+                    }
+                }
+            }
+            
+            record_ptr = record_buffer.as_ptr();
+        } else {
+            record_ptr = record_data;
+        }
+        
         // 验证约束
         // 优化：将约束验证放在锁外，减少锁持有时间
         unsafe {
-            self.validate_constraints(record_data, None)?;
+            self.validate_constraints(record_ptr, None)?;
         }
         
         // 自旋锁保护
@@ -339,7 +421,7 @@ impl MemoryTable {
         }
         
         // 计算记录地址
-        let record_ptr = unsafe { self.data_start.as_ptr().add(slot_id * self.record_size) };
+        let dest_record_ptr = unsafe { self.data_start.as_ptr().add(slot_id * self.record_size) };
         
         // 记录日志（如果有活跃事务）
         if let Some(mut tx) = crate::transaction::get_current_tx() {
@@ -347,7 +429,7 @@ impl MemoryTable {
             if tx_mut.is_active() && !tx_mut.is_read_only() {
                 // 保存新数据
                 let mut new_data = [0u8; 512];
-                memcpy(new_data.as_mut_ptr(), record_data, self.record_size);
+                memcpy(new_data.as_mut_ptr(), record_ptr, self.record_size);
                 
                 // 添加日志项
                 unsafe {
@@ -364,7 +446,7 @@ impl MemoryTable {
         }
         
         // 拷贝记录数据
-        memcpy(record_ptr, record_data, self.record_size);
+        memcpy(dest_record_ptr, record_ptr, self.record_size);
         
         // 更新状态
         let status_ptr = unsafe { self.status_array.as_ptr().add(slot_id) };

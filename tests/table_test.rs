@@ -112,6 +112,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             primary_key: true,
             not_null: true,
             unique: true,
+            auto_increment: true,
         },
         FieldDef {
             name: "value",
@@ -121,6 +122,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             primary_key: false,
             not_null: false,
             unique: false,
+            auto_increment: false,
         },
     ],
     primary_key: 0,
@@ -383,6 +385,7 @@ static SMALL_TABLE_DEF: TableDef = TableDef {
             primary_key: true,
             not_null: true,
             unique: true,
+            auto_increment: true,
         },
     ],
     primary_key: 0,
@@ -511,6 +514,7 @@ fn test_not_null_constraint() {
                     primary_key: true,
                     not_null: true,
                     unique: true,
+                    auto_increment: true,
                 },
                 FieldDef {
                     name: "name",
@@ -520,6 +524,7 @@ fn test_not_null_constraint() {
                     primary_key: false,
                     not_null: true,
                     unique: false,
+                    auto_increment: false,
                 },
                 FieldDef {
                     name: "value_float",
@@ -529,6 +534,7 @@ fn test_not_null_constraint() {
                     primary_key: false,
                     not_null: true,
                     unique: false,
+                    auto_increment: false,
                 },
                 FieldDef {
                     name: "value_int",
@@ -538,6 +544,7 @@ fn test_not_null_constraint() {
                     primary_key: false,
                     not_null: true,
                     unique: false,
+                    auto_increment: false,
                 },
             ],
             primary_key: 0,

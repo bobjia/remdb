@@ -114,6 +114,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             not_null: true,
             primary_key: true,
             unique: true,
+            auto_increment: true,
         },
         FieldDef {
             name: "value",
@@ -123,6 +124,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             not_null: false,
             primary_key: false,
             unique: false,
+            auto_increment: false,
         },
     ],
     primary_key: 0,
@@ -145,6 +147,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             not_null: true,
             primary_key: true,
             unique: true,
+            auto_increment: true,
         },
         FieldDef {
             name: "metric_name",
@@ -154,6 +157,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             not_null: false,
             primary_key: false,
             unique: false,
+            auto_increment: false,
         },
         FieldDef {
             name: "value",
@@ -163,6 +167,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             not_null: false,
             primary_key: false,
             unique: false,
+            auto_increment: false,
         },
         FieldDef {
             name: "timestamp",
@@ -172,6 +177,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             not_null: false,
             primary_key: false,
             unique: false,
+            auto_increment: false,
         },
         FieldDef {
             name: "tags",
@@ -181,6 +187,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             not_null: false,
             primary_key: false,
             unique: false,
+            auto_increment: false,
         },
     ],
     primary_key: 0,
@@ -600,7 +607,7 @@ fn bench_time_series_insert(c: &mut Criterion) {
             unsafe {
                 for i in 0..10 {
                     let record_ptr = metrics_data.as_mut_ptr().add(i * 116);
-                    let id: i32 = i as i32;
+                    let id: i32 = (i + 1) as i32;
                     let metric_name = "cpu_usage";
                     let value: f64 = 45.5 + i as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -648,7 +655,7 @@ fn bench_time_series_query(c: &mut Criterion) {
             unsafe {
                 for i in 0..500 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = i as i32;
+                    let id: i32 = (i + 1) as i32;
                     let metric_name = "cpu_usage";
                     let value: f64 = 45.5 + i as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -684,7 +691,7 @@ fn bench_time_series_query(c: &mut Criterion) {
             unsafe {
                 for i in 0..500 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = i as i32;
+                    let id: i32 = (i + 1) as i32;
                     let metric_name = "cpu_usage";
                     let value: f64 = 45.5 + i as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -747,7 +754,7 @@ fn bench_time_series_aggregation(c: &mut Criterion) {
             unsafe {
                 for i in 0..1000 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = i as i32;
+                    let id: i32 = (i + 1) as i32;
                     let metric_name = "cpu_usage";
                     let value: f64 = 40.0 + (i % 20) as f64;
                     let timestamp: u64 = 1234567890 + i as u64;

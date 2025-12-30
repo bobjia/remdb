@@ -131,7 +131,7 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
     let mut fields = Vec::new();
     let mut field_constraints = Vec::new(); // 存储约束信息
     
-    for (field_name, data_type_str, is_primary_key, is_not_null, is_unique) in &query.table_def {
+    for (field_name, data_type_str, is_primary_key, is_not_null, is_unique, is_auto_increment) in &query.table_def {
         let data_type = match data_type_str.to_uppercase().as_str() {
             // 无符号整数类型
             "UINT8" | "TINYINT UNSIGNED" => DataType::UInt8,
@@ -163,12 +163,12 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
         
         // 保存字段和约束信息
         fields.push((field_name.as_str(), data_type));
-        field_constraints.push((is_primary_key, is_not_null, is_unique));
+        field_constraints.push((is_primary_key, is_not_null, is_unique, is_auto_increment));
     }
     
     // 查找主键字段索引
     let primary_key_index = query.primary_key.as_ref().and_then(|pk| {
-        query.table_def.iter().position(|(name, _, _, _, _)| name == pk)
+        query.table_def.iter().position(|(name, _, _, _, _, _)| name == pk)
     });
     
     // 调用DdlExecutor的create_table方法
@@ -394,11 +394,8 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     let mut affected_rows = 0;
     
     for values in &query.values {
-        // 5. 创建记录数据缓冲区
-        let mut record_data = Vec::with_capacity(table.record_size);
-        unsafe {
-            record_data.set_len(table.record_size);
-        }
+        // 5. 创建记录数据缓冲区并初始化为0
+        let mut record_data = vec![0; table.record_size];
         
         // 6. 将字段值写入缓冲区
         for (i, field) in table.def.fields.iter().enumerate() {

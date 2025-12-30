@@ -224,9 +224,7 @@ fn main() -> Result<()>
             // 获取表引用
             let table = db.get_table_mut(0)?;
             
-            // 设置字段值
-            let value = remdb::Value { u64: i as u64 };
-            table.set_field(record.0.as_mut_ptr(), 0, &value)?;
+            // 不设置id字段，让insert()方法自动生成自增ID
             
             let name = format!("item_{}", i);
             let name_value = remdb::Value { string: { 

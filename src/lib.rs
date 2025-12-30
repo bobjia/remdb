@@ -644,15 +644,22 @@ impl DdlExecutor for RemDb {
             // 将字段名转换为静态字符串
             let field_name_static = Box::leak(field_name.to_string().into_boxed_str());
             
+            // 检查是否为自增主键
+            let is_primary_key = primary_key == Some(i);
+            let is_auto_increment = is_primary_key && 
+                (data_type == &DataType::Int32 || data_type == &DataType::Int64 || 
+                 data_type == &DataType::UInt32 || data_type == &DataType::UInt64);
+            
             // 创建字段定义，设置默认约束
             let field_def = FieldDef {
                 name: field_name_static,
                 data_type: *data_type,
                 size: field_size,
                 offset,
-                primary_key: primary_key == Some(i), // 主键索引匹配当前字段
-                not_null: primary_key == Some(i), // 主键默认非空
-                unique: primary_key == Some(i), // 主键默认唯一
+                primary_key: is_primary_key, // 主键索引匹配当前字段
+                not_null: is_primary_key, // 主键默认非空
+                unique: is_primary_key, // 主键默认唯一
+                auto_increment: is_auto_increment, // 整数主键默认自增
             };
             
             field_defs.push(field_def);
@@ -749,6 +756,7 @@ impl DdlExecutor for RemDb {
                 primary_key: field.primary_key,
                 not_null: field.not_null,
                 unique: field.unique,
+                auto_increment: field.auto_increment,
             });
         }
         

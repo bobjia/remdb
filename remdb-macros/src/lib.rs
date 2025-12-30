@@ -342,6 +342,12 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let not_null_val = is_primary_key; // 主键字段默认为非空
         let unique_val = is_primary_key;
         
+        // 检查是否为自增主键：
+        // 1. 整数主键默认自增
+        // 2. 可以显式指定AUTOINCREMENT
+        let is_integer_type = type_name == "i32" || type_name == "i64" || type_name == "u32" || type_name == "u64";
+        let auto_increment_val = is_primary_key && is_integer_type;
+        
         // 生成字段定义
         let field_def = quote! {
             remdb::types::FieldDef {
@@ -352,6 +358,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 primary_key: #primary_key_val,
                 not_null: #not_null_val,
                 unique: #unique_val,
+                auto_increment: #auto_increment_val,
             }
         };
         

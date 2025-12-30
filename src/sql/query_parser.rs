@@ -26,8 +26,8 @@ pub struct SqlQuery {
     pub insert_columns: Vec<String>,
     /// 要插入的值列表
     pub values: Vec<Vec<Value>>,
-    /// 表字段定义（用于CREATE TABLE）：(字段名, 类型, 主键, 非空, 唯一)
-    pub table_def: Vec<(String, String, bool, bool, bool)>,
+    /// 表字段定义（用于CREATE TABLE）：(字段名, 类型, 主键, 非空, 唯一, 自增)
+    pub table_def: Vec<(String, String, bool, bool, bool, bool)>,
     /// 主键字段名（用于CREATE TABLE）
     pub primary_key: Option<String>,
     /// 索引字段名（用于CREATE INDEX）
@@ -411,6 +411,7 @@ impl SqlParser {
             let mut is_primary_key = false;
             let mut is_not_null = false;
             let mut is_unique = false;
+            let mut is_auto_increment = false;
             
             // 检查约束条件
             loop {
@@ -427,13 +428,20 @@ impl SqlParser {
                     is_not_null = true;
                 } else if self.match_keyword("UNIQUE") {
                     is_unique = true;
+                } else if self.match_keyword("AUTOINCREMENT") {
+                    is_auto_increment = true;
                 } else {
                     // 没有更多约束
                     break;
                 }
             }
             
-            table_def.push((field_name, data_type, is_primary_key, is_not_null, is_unique));
+            // SQLite兼容：INTEGER PRIMARY KEY自动设为自增
+            if data_type == "INTEGER" && is_primary_key {
+                is_auto_increment = true;
+            }
+            
+            table_def.push((field_name, data_type, is_primary_key, is_not_null, is_unique, is_auto_increment));
             
             self.skip_whitespace();
             if self.match_char(')') {

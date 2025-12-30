@@ -118,6 +118,12 @@ fn generate_field_defs(
         let not_null = !col.nullable; // nullable为false表示not null
         let unique = col.unique;
         
+        // 检查是否为自增主键：
+        // 1. 显式指定AUTOINCREMENT
+        // 2. INTEGER PRIMARY KEY（隐式自增）
+        let is_integer_primary_key = col.typ.to_lowercase() == "integer" && col.primary_key;
+        let auto_increment = col.auto_increment || is_integer_primary_key;
+        
         field_defs.push(quote! {
             remdb::types::FieldDef {
                 name: #name,
@@ -127,6 +133,7 @@ fn generate_field_defs(
                 primary_key: #primary_key,
                 not_null: #not_null,
                 unique: #unique,
+                auto_increment: #auto_increment,
             }
         });
         

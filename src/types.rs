@@ -181,6 +181,8 @@ pub struct FieldDef {
     pub not_null: bool,
     /// 是否唯一
     pub unique: bool,
+    /// 是否自增
+    pub auto_increment: bool,
 }
 
 /// 索引类型枚举

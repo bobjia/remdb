@@ -19,6 +19,7 @@ static LARGE_TABLE_DEF: TableDef = TableDef {
             primary_key: true,
             not_null: true,
             unique: true,
+            auto_increment: true,
         },
         FieldDef {
             name: "value",
@@ -28,6 +29,7 @@ static LARGE_TABLE_DEF: TableDef = TableDef {
             primary_key: false,
             not_null: false,
             unique: false,
+            auto_increment: false,
         },
         FieldDef {
             name: "name",
@@ -37,6 +39,7 @@ static LARGE_TABLE_DEF: TableDef = TableDef {
             primary_key: false,
             not_null: false,
             unique: false,
+            auto_increment: false,
         },
     ],
     primary_key: 0,
