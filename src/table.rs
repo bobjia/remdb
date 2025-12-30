@@ -109,8 +109,8 @@ impl MemoryTable {
     pub unsafe fn validate_constraints(&self, record_data: *const u8, exclude_slot: Option<usize>) -> Result<()>
     {
         // 验证非空约束
-        // 注意：对于数值类型，我们不再将0视为null，因为0是一个合法的值
-        // 对于字符串类型，我们仍然检查是否全0，因为这通常表示未初始化
+        // 注意：在当前实现中，RemDB没有真正的NULL支持机制
+        // not null constraint主要是防止用户插入未初始化的内存
         for field in self.def.fields {
             if field.not_null {
                 // 检查字段是否为空
@@ -127,10 +127,28 @@ impl MemoryTable {
                         }
                         all_zero
                     },
-                    _ => false, // 数值类型和布尔类型不检查null，因为0是合法值
+                    DataType::Bool => {
+                        // 布尔类型：0表示false，1表示true，两者都是有效值，所以永远不为null
+                        false
+                    },
+                    DataType::Float32 => {
+                        // 对于浮点数，检查是否是NaN（不是一个数），NaN表示无效值
+                        let float_value = core::ptr::read_unaligned(record_data.add(field.offset) as *const f32);
+                        float_value.is_nan()
+                    },
+                    DataType::Float64 => {
+                        // 对于浮点数，检查是否是NaN（不是一个数），NaN表示无效值
+                        let float_value = core::ptr::read_unaligned(record_data.add(field.offset) as *const f64);
+                        float_value.is_nan()
+                    },
+                    _ => {
+                        // 对于整数类型，0是一个合法的值，所以永远不为null
+                        // 这里不再检查全0，因为0是合法值
+                        false
+                    },
                 };
                 if is_null {
-                    return Err(RemDbError::InvalidRecordSize);
+                    return Err(RemDbError::TypeMismatch);
                 }
             }
         }

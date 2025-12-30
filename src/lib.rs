@@ -766,13 +766,14 @@ impl DdlExecutor for RemDb {
         // 5. 为索引分配内存
         let max_items = table.def.max_records;
         
-        // 对于BTree和TTree索引，减少max_items值，避免占用过多内存导致测试卡住
-        let index_max_items = match index_type {
-            IndexType::BTree | IndexType::TTree => 100, // 只使用100个item的容量
-            _ => max_items, // 其他索引类型使用原始值
+        // 对于BTree和TTree索引，减少节点数量，避免占用过多内存导致测试卡住
+        let index_max_nodes = match index_type {
+            IndexType::BTree | IndexType::TTree => 100, // 只使用100个节点的容量
+            IndexType::SortedArray => max_items, // 有序数组索引使用原始值
+            IndexType::Hash => max_items, // 哈希索引使用原始值
         };
         
-        let index_size = AnySecondaryIndex::calculate_memory_size(new_def.as_ref(), index_max_items);
+        let index_size = AnySecondaryIndex::calculate_memory_size(new_def.as_ref(), index_max_nodes);
         let index_memory = crate::memory::allocator::alloc(index_size)?;
         
         // 6. 创建索引
@@ -780,7 +781,7 @@ impl DdlExecutor for RemDb {
             let index = AnySecondaryIndex::new(
                 alloc::sync::Arc::from(new_def),
                 index_memory.as_ptr(),
-                index_max_items
+                index_max_nodes
             )?;
             
             // 7. 存储索引

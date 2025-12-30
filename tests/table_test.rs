@@ -456,3 +456,189 @@ fn test_table_full() {
         assert!(table.is_full());
     }
 }
+
+#[test]
+fn test_not_null_constraint() {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    unsafe {
+        // 预分配内存缓冲区并初始化全局分配器
+        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
+        memory_buffer.set_len(1000000);
+        remdb::memory::allocator::init_global_allocator(
+            memory_buffer.as_mut_ptr(), 
+            1000000
+        ).unwrap();
+        
+        // 重置全局数据库实例，确保测试之间的隔离
+        remdb::reset_global_db();
+        
+        // 创建表
+        let table_def = Arc::new(TEST_TABLE_DEF);
+        let mut table = MemoryTable::new(table_def).unwrap();
+        
+        // 测试1：插入id为0的记录，应该成功，因为0是合法的整数值
+        let mut zero_id_record = [0u8; 8]; // id为0，是合法值
+        let id: u32 = 0;
+        let value: f32 = 3.14;
+        
+        core::ptr::copy_nonoverlapping(
+                &id as *const u32 as *const u8,
+                zero_id_record.as_mut_ptr(),
+                4
+            );
+        core::ptr::copy_nonoverlapping(
+            &value as *const f32 as *const u8,
+            zero_id_record.as_mut_ptr().add(4),
+            4
+        );
+        
+        let record_id = table.insert(zero_id_record.as_ptr()).unwrap();
+        assert_eq!(record_id, 0);
+        assert_eq!(table.record_count(), 1);
+        
+        // 测试2：创建一个包含不同数据类型的表定义
+        static TABLE_WITH_NULLABLE: TableDef = TableDef {
+            id: 2,
+            name: "test_nullable_table",
+            fields: &[
+                FieldDef {
+                    name: "id",
+                    data_type: DataType::UInt32,
+                    size: 4,
+                    offset: 0,
+                    primary_key: true,
+                    not_null: true,
+                    unique: true,
+                },
+                FieldDef {
+                    name: "name",
+                    data_type: DataType::String,
+                    size: 16,
+                    offset: 4,
+                    primary_key: false,
+                    not_null: true,
+                    unique: false,
+                },
+                FieldDef {
+                    name: "value_float",
+                    data_type: DataType::Float32,
+                    size: 4,
+                    offset: 20,
+                    primary_key: false,
+                    not_null: true,
+                    unique: false,
+                },
+                FieldDef {
+                    name: "value_int",
+                    data_type: DataType::Int32,
+                    size: 4,
+                    offset: 24,
+                    primary_key: false,
+                    not_null: true,
+                    unique: false,
+                },
+            ],
+            primary_key: 0,
+            secondary_index: None,
+            secondary_index_type: IndexType::SortedArray,
+            record_size: 28,
+            max_records: 100,
+        };
+        
+        let table_def2 = Arc::new(TABLE_WITH_NULLABLE);
+        let mut table2 = MemoryTable::new(table_def2).unwrap();
+        
+        // 测试3：尝试插入null字符串字段，应该失败
+        let mut null_string_record = [0u8; 28];
+        let id2: u32 = 1;
+        let value_int: i32 = 42;
+        
+        core::ptr::copy_nonoverlapping(
+                &id2 as *const u32 as *const u8,
+                null_string_record.as_mut_ptr(),
+                4
+            );
+        // 字符串字段保持全0（null）
+        // value_float字段保持全0（合法的0.0值）
+        core::ptr::copy_nonoverlapping(
+                &value_int as *const i32 as *const u8,
+                null_string_record.as_mut_ptr().add(24),
+                4
+            );
+        
+        let result2 = table2.insert(null_string_record.as_ptr());
+        assert!(result2.is_err());
+        assert_eq!(result2.unwrap_err(), RemDbError::TypeMismatch);
+        
+        // 测试4：尝试插入NaN作为浮点数，应该失败
+        let mut nan_float_record = [0u8; 28];
+        let id3: u32 = 2;
+        let nan_value = f32::NAN; // 不是一个数
+        let value_int3: i32 = 42;
+        
+        core::ptr::copy_nonoverlapping(
+                &id3 as *const u32 as *const u8,
+                nan_float_record.as_mut_ptr(),
+                4
+            );
+        // 设置非空字符串
+        let name = "test_name";
+        core::ptr::copy_nonoverlapping(
+                name.as_ptr(),
+                nan_float_record.as_mut_ptr().add(4),
+                name.len()
+            );
+        // 设置NaN值
+        core::ptr::copy_nonoverlapping(
+                &nan_value as *const f32 as *const u8,
+                nan_float_record.as_mut_ptr().add(20),
+                4
+            );
+        core::ptr::copy_nonoverlapping(
+                &value_int3 as *const i32 as *const u8,
+                nan_float_record.as_mut_ptr().add(24),
+                4
+            );
+        
+        let result3 = table2.insert(nan_float_record.as_ptr());
+        assert!(result3.is_err());
+        assert_eq!(result3.unwrap_err(), RemDbError::TypeMismatch);
+        
+        // 测试5：插入有效记录，应该成功
+        let mut valid_record = [0u8; 28];
+        let id4: u32 = 3;
+        let value_float4: f32 = 3.14;
+        let value_int4: i32 = 0; // 0是合法的整数值
+        
+        core::ptr::copy_nonoverlapping(
+                &id4 as *const u32 as *const u8,
+                valid_record.as_mut_ptr(),
+                4
+            );
+        // 设置非空字符串
+        let name4 = "test_name_4";
+        core::ptr::copy_nonoverlapping(
+                name4.as_ptr(),
+                valid_record.as_mut_ptr().add(4),
+                name4.len()
+            );
+        // 设置有效浮点数
+        core::ptr::copy_nonoverlapping(
+                &value_float4 as *const f32 as *const u8,
+                valid_record.as_mut_ptr().add(20),
+                4
+            );
+        // 设置整数值0（合法值）
+        core::ptr::copy_nonoverlapping(
+                &value_int4 as *const i32 as *const u8,
+                valid_record.as_mut_ptr().add(24),
+                4
+            );
+        
+        let record_id4 = table2.insert(valid_record.as_ptr()).unwrap();
+        assert_eq!(record_id4, 0);
+        assert_eq!(table2.record_count(), 1);
+    }
+}

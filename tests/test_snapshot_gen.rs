@@ -270,7 +270,7 @@ fn test_snapshot_gen() -> Result<()> {
         // 插入测试数据
         for i in 0..5 {
             let mut record_data = [0u8; 8];
-            let id: i32 = i as i32;
+            let id: i32 = (i + 1) as i32; // id从1开始，避免全0被视为null
             let value: f32 = i as f32 * 10.0;
             
             core::ptr::copy_nonoverlapping(

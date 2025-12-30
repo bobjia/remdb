@@ -111,12 +111,18 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             data_type: DataType::Int32,
             size: 4,
             offset: 0,
+            not_null: true,
+            primary_key: true,
+            unique: true,
         },
         FieldDef {
             name: "value",
             data_type: DataType::Float32,
             size: 4,
             offset: 4,
+            not_null: false,
+            primary_key: false,
+            unique: false,
         },
     ],
     primary_key: 0,
@@ -136,30 +142,45 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             data_type: DataType::Int32,
             size: 4,
             offset: 0,
+            not_null: true,
+            primary_key: true,
+            unique: true,
         },
         FieldDef {
             name: "metric_name",
             data_type: DataType::String,
             size: 32,
             offset: 4,
+            not_null: false,
+            primary_key: false,
+            unique: false,
         },
         FieldDef {
             name: "value",
             data_type: DataType::Float64,
             size: 8,
             offset: 36,
+            not_null: false,
+            primary_key: false,
+            unique: false,
         },
         FieldDef {
             name: "timestamp",
             data_type: DataType::Timestamp,
             size: 8,
             offset: 44,
+            not_null: false,
+            primary_key: false,
+            unique: false,
         },
         FieldDef {
             name: "tags",
             data_type: DataType::String,
             size: 64,
             offset: 52,
+            not_null: false,
+            primary_key: false,
+            unique: false,
         },
     ],
     primary_key: 0,
@@ -226,7 +247,7 @@ fn bench_table_query(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = i as i32;
+                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
                 
                 // 指针操作需要unsafe块
@@ -266,7 +287,7 @@ fn bench_table_query(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = i as i32;
+                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
                 
                 // 指针操作需要unsafe块
@@ -332,7 +353,7 @@ fn bench_table_update_delete(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = i as i32;
+                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
                 
                 // 指针操作需要unsafe块
@@ -354,7 +375,7 @@ fn bench_table_update_delete(c: &mut Criterion) {
             
             // 创建更新用的记录数据
             let mut update_data = [0u8; 8];
-            let id: i32 = 1;
+            let id: i32 = 51; // 更新id为51的记录，对应原来的i=50
             let new_value: f32 = 6.28;
             
             // 指针操作需要unsafe块
@@ -387,7 +408,7 @@ fn bench_table_update_delete(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = i as i32;
+                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
                 
                 // 指针操作需要unsafe块
