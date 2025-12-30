@@ -156,87 +156,92 @@ impl MemoryTable {
         // 验证主键唯一性约束
         let primary_key_index = self.def.primary_key;
         if primary_key_index < self.def.fields.len() {
-            // 获取主键字段定义
-            let primary_key_field = &self.def.fields[primary_key_index];
-            let primary_key_offset = primary_key_field.offset;
-            let primary_key_data_type = primary_key_field.data_type;
-            
-            // 获取当前记录的主键值
-            let current_pk_value = self.get_field(record_data, primary_key_index)?;
-            
-            // 遍历所有记录，检查是否存在重复主键
-            let mut has_duplicate = false;
-            let iterate_result = self.iterate(|slot_id, other_record_ptr| {
-                // 跳过当前记录（如果是更新操作）
-                if Some(slot_id) == exclude_slot {
-                    return true;
-                }
+            // 只有当表中有记录时才需要检查唯一性
+            if self.record_count > 0 {
+                // 获取主键字段定义
+                let primary_key_field = &self.def.fields[primary_key_index];
+                let primary_key_offset = primary_key_field.offset;
+                let primary_key_data_type = primary_key_field.data_type;
                 
-                // 获取其他记录的主键值
-                if let Ok(other_pk_value) = self.get_field(other_record_ptr, primary_key_index) {
-                    // 比较主键值
-                    match primary_key_data_type {
-                        DataType::UInt8 => {
-                            if current_pk_value.u8 == other_pk_value.u8 {
-                                has_duplicate = true;
-                                return false;
-                            }
-                        },
-                        DataType::UInt16 => {
-                            if current_pk_value.u16 == other_pk_value.u16 {
-                                has_duplicate = true;
-                                return false;
-                            }
-                        },
-                        DataType::UInt32 => {
-                            if current_pk_value.u32 == other_pk_value.u32 {
-                                has_duplicate = true;
-                                return false;
-                            }
-                        },
-                        DataType::UInt64 => {
-                            if current_pk_value.u64 == other_pk_value.u64 {
-                                has_duplicate = true;
-                                return false;
-                            }
-                        },
-                        DataType::Int8 => {
-                            if current_pk_value.i8 == other_pk_value.i8 {
-                                has_duplicate = true;
-                                return false;
-                            }
-                        },
-                        DataType::Int16 => {
-                            if current_pk_value.i16 == other_pk_value.i16 {
-                                has_duplicate = true;
-                                return false;
-                            }
-                        },
-                        DataType::Int32 => {
-                            if current_pk_value.i32 == other_pk_value.i32 {
-                                has_duplicate = true;
-                                return false;
-                            }
-                        },
-                        DataType::Int64 => {
-                            if current_pk_value.i64 == other_pk_value.i64 {
-                                has_duplicate = true;
-                                return false;
-                            }
-                        },
-                        _ => {
-                            // 其他类型暂时不支持主键
-                        },
+                // 直接获取当前记录的主键指针
+                let primary_key_ptr = record_data.add(primary_key_offset);
+                
+                // 遍历记录，直接比较内存中的主键值
+                let mut has_duplicate = false;
+                
+                // 遍历所有记录槽，检查已使用的记录
+                // 优化：只遍历已使用的记录，通过status_array检查
+                // 但由于我们无法直接知道哪些槽被使用，只能遍历所有槽
+                // 不过我们可以在找到重复后立即中断
+                for i in 0..self.def.max_records {
+                    let status_ptr = self.status_array.as_ptr().add(i);
+                    if (*status_ptr).status == RecordStatus::Used {
+                        // 跳过当前记录（如果是更新操作）
+                        if Some(i) == exclude_slot {
+                            continue;
+                        }
+                        
+                        // 获取其他记录的主键指针
+                        let other_record_ptr = self.data_start.as_ptr().add(i * self.record_size);
+                        let other_pk_ptr = other_record_ptr.add(primary_key_offset);
+                        
+                        // 根据主键类型直接比较内存值
+                        let is_duplicate = match primary_key_data_type {
+                            DataType::UInt8 => {
+                                *primary_key_ptr as u8 == *other_pk_ptr as u8
+                            },
+                            DataType::UInt16 => {
+                                core::ptr::read_unaligned(primary_key_ptr as *const u16) == 
+                                core::ptr::read_unaligned(other_pk_ptr as *const u16)
+                            },
+                            DataType::UInt32 => {
+                                core::ptr::read_unaligned(primary_key_ptr as *const u32) == 
+                                core::ptr::read_unaligned(other_pk_ptr as *const u32)
+                            },
+                            DataType::UInt64 => {
+                                core::ptr::read_unaligned(primary_key_ptr as *const u64) == 
+                                core::ptr::read_unaligned(other_pk_ptr as *const u64)
+                            },
+                            DataType::Int8 => {
+                                core::ptr::read_unaligned(primary_key_ptr as *const i8) == 
+                                core::ptr::read_unaligned(other_pk_ptr as *const i8)
+                            },
+                            DataType::Int16 => {
+                                core::ptr::read_unaligned(primary_key_ptr as *const i16) == 
+                                core::ptr::read_unaligned(other_pk_ptr as *const i16)
+                            },
+                            DataType::Int32 => {
+                                core::ptr::read_unaligned(primary_key_ptr as *const i32) == 
+                                core::ptr::read_unaligned(other_pk_ptr as *const i32)
+                            },
+                            DataType::Int64 => {
+                                core::ptr::read_unaligned(primary_key_ptr as *const i64) == 
+                                core::ptr::read_unaligned(other_pk_ptr as *const i64)
+                            },
+                            DataType::Float32 => {
+                                core::ptr::read_unaligned(primary_key_ptr as *const f32) == 
+                                core::ptr::read_unaligned(other_pk_ptr as *const f32)
+                            },
+                            DataType::Float64 => {
+                                core::ptr::read_unaligned(primary_key_ptr as *const f64) == 
+                                core::ptr::read_unaligned(other_pk_ptr as *const f64)
+                            },
+                            _ => {
+                                // 其他类型暂时不支持主键
+                                false
+                            },
+                        };
+                        
+                        if is_duplicate {
+                            has_duplicate = true;
+                            break;
+                        }
                     }
                 }
                 
-                true
-            });
-            
-            iterate_result?;
-            
-            if has_duplicate {
-                return Err(RemDbError::DuplicateKey);
+                if has_duplicate {
+                    return Err(RemDbError::DuplicateKey);
+                }
             }
         }
         
@@ -276,7 +281,15 @@ impl MemoryTable {
         // 增加写入操作计数
         crate::get_global_db().map(|db| db.metrics.inc_write_ops());
         
+        // 检查是否已满
+        let max_records = if self.low_power_mode {
+            self.low_power_max_records.unwrap_or(self.def.max_records)
+        } else {
+            self.def.max_records
+        };
+        
         // 验证约束
+        // 优化：将约束验证放在锁外，减少锁持有时间
         unsafe {
             self.validate_constraints(record_data, None)?;
         }
@@ -284,13 +297,6 @@ impl MemoryTable {
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
-        
-        // 检查是否已满
-        let max_records = if self.low_power_mode {
-            self.low_power_max_records.unwrap_or(self.def.max_records)
-        } else {
-            self.def.max_records
-        };
         
         let mut slot_id = 0;
         let mut is_overwrite = false;
