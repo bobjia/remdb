@@ -24,6 +24,15 @@ pub trait MemoryAllocator: Sync {
     fn deallocate(&self, ptr: core::ptr::NonNull<u8>, size: usize);
 }
 
+/// 日志模式
+#[derive(Copy, Clone, PartialEq)]
+pub enum LogMode {
+    /// 同步模式：事务提交时立即写入日志
+    Sync,
+    /// 异步模式：日志先写入缓冲区，后台批量写入
+    Async,
+}
+
 /// 数据库全局配置
 pub struct DbConfig {
     /// 表定义列表
@@ -38,6 +47,18 @@ pub struct DbConfig {
     pub default_max_records: usize,
     /// 内存分配器
     pub memory_allocator: &'static dyn MemoryAllocator,
+    /// 日志模式（同步/异步）
+    pub log_mode: LogMode,
+    /// 检查点间隔（毫秒，默认60秒）
+    pub checkpoint_interval_ms: u64,
+    /// 日志文件大小限制（字节，默认16MB）
+    pub log_file_size_limit: usize,
+    /// 日志预分配大小（字节）
+    pub log_prealloc_size: usize,
+    /// 日志分段大小（字节，默认16MB）
+    pub log_segment_size: usize,
+    /// 保留的检查点数量
+    pub retained_checkpoints: usize,
 }
 
 
@@ -58,6 +79,27 @@ pub const fn validate_config(config: &DbConfig) -> bool {
     
     // 检查默认最大记录数
     if config.default_max_records > 500000 {
+        return false;
+    }
+    
+    // 检查WAL和检查点配置
+    if config.checkpoint_interval_ms > 3600000 { // 最大1小时
+        return false;
+    }
+    
+    if config.log_file_size_limit < 1024 * 1024 { // 最小1MB
+        return false;
+    }
+    
+    if config.log_prealloc_size > config.log_file_size_limit {
+        return false;
+    }
+    
+    if config.log_segment_size < 1024 * 1024 { // 最小1MB
+        return false;
+    }
+    
+    if config.retained_checkpoints > 10 {
         return false;
     }
     

@@ -129,6 +129,15 @@ pub struct Transaction {
     lock: u32,
 }
 
+/// 日志缓冲区配置
+#[repr(C)]
+pub struct LogBufferConfig {
+    /// 缓冲区大小（日志项数量）
+    pub size: usize,
+    /// 刷新阈值（当缓冲区使用率超过此阈值时自动刷新）
+    pub flush_threshold: usize,
+}
+
 /// 日志管理器
 pub struct LogManager {
     /// 日志文件路径
@@ -141,16 +150,36 @@ pub struct LogManager {
     checkpoint: LogCheckpoint,
     /// 自旋锁
     lock: u32,
+    /// 日志模式
+    log_mode: crate::config::LogMode,
+    /// 日志缓冲区
+    log_buffer: alloc::vec::Vec<LogItem>,
+    /// 缓冲区配置
+    buffer_config: LogBufferConfig,
+    /// 上次刷新时间
+    last_flush_time: u64,
+    /// 上次检查点时间
+    last_checkpoint_time: u64,
+    /// 检查点间隔
+    checkpoint_interval_ms: u64,
+    /// 日志文件大小限制
+    log_file_size_limit: usize,
+    /// 日志分段大小
+    log_segment_size: usize,
 }
 
 impl LogManager {
     /// 创建新的日志管理器
-    pub unsafe fn new(log_path: &'static str) -> Result<Self> {
+    pub unsafe fn new(log_path: &'static str, config: &crate::config::DbConfig) -> Result<Self> {
         // 尝试打开日志文件，如果不存在则创建
         let log_handle = crate::platform::file_open(
             log_path,
             crate::platform::FileMode::ReadWrite
         ).map_err(|_| RemDbError::FileIoError)?;
+        
+        // 获取当前时间
+        let now = crate::platform::get_timestamp_us();
+        let now_ms = now / 1000;
         
         let mut manager = LogManager {
             log_path,
@@ -158,7 +187,7 @@ impl LogManager {
             header: LogHeader {
                 magic: 0x4C4F474D, // 'LOGM'
                 version: 1,
-                created_at: crate::platform::get_timestamp_us(),
+                created_at: now,
                 record_count: 0,
                 checksum: 0,
             },
@@ -168,7 +197,21 @@ impl LogManager {
                 checksum: 0,
             },
             lock: 0,
+            log_mode: config.log_mode,
+            log_buffer: alloc::vec::Vec::new(), // 默认缓冲区大小1024
+            buffer_config: LogBufferConfig {
+                size: 1024,
+                flush_threshold: 800, // 80%使用率时刷新
+            },
+            last_flush_time: now,
+            last_checkpoint_time: now_ms,
+            checkpoint_interval_ms: config.checkpoint_interval_ms,
+            log_file_size_limit: config.log_file_size_limit,
+            log_segment_size: config.log_segment_size,
         };
+        
+        // 预分配缓冲区空间
+        manager.log_buffer.reserve(1024);
         
         // 读取日志头，如果文件为空则写入新的日志头
         let mut header_buffer = [0u8; core::mem::size_of::<LogHeader>()];
@@ -179,7 +222,33 @@ impl LogManager {
         ).map_err(|_| RemDbError::FileIoError)?;
         
         if read == 0 {
-            // 文件为空，写入新的日志头
+            // 文件为空
+            // 如果配置了预分配大小，则预分配文件空间
+            if config.log_prealloc_size > 0 {
+                // 定位到预分配大小位置
+                crate::platform::file_seek(
+                    log_handle,
+                    config.log_prealloc_size as i64 - 1,
+                    crate::platform::SeekWhence::SeekSet
+                ).map_err(|_| RemDbError::FileIoError)?;
+                
+                // 写入一个字节来扩展文件
+                let zero_byte = [0u8; 1];
+                crate::platform::file_write(
+                    log_handle,
+                    zero_byte.as_ptr(),
+                    1
+                ).map_err(|_| RemDbError::FileIoError)?;
+                
+                // 回到文件开头
+                crate::platform::file_seek(
+                    log_handle,
+                    0,
+                    crate::platform::SeekWhence::SeekSet
+                ).map_err(|_| RemDbError::FileIoError)?;
+            }
+            
+            // 写入新的日志头
             manager.write_header()?;
         } else {
             // 读取日志头
@@ -317,8 +386,12 @@ impl LogManager {
         Ok(())
     }
     
-    /// 写入日志项
-    pub unsafe fn write_log_item(&mut self, log_item: &LogItem) -> Result<()> {
+    /// 刷新日志缓冲区到磁盘
+    pub unsafe fn flush_buffer(&mut self) -> Result<()> {
+        if self.log_buffer.is_empty() {
+            return Ok(());
+        }
+        
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         
@@ -333,32 +406,126 @@ impl LogManager {
             crate::platform::SeekWhence::SeekSet
         ).map_err(|_| RemDbError::FileIoError)?;
 
-        // 写入日志项
-        let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
-        core::ptr::write_unaligned(
-            log_bytes.as_mut_ptr() as *mut LogItem,
-            *log_item
-        );
-        
-        let written = crate::platform::file_write(
-            self.log_handle,
-            log_bytes.as_ptr(),
-            log_bytes.len()
-        ).map_err(|_| RemDbError::FileIoError)?;
-        
-        if written != log_bytes.len() {
-            crate::platform::spin_unlock(&mut self.lock);
-            return Err(RemDbError::FileIoError);
+        // 批量写入日志项
+        let buffer_size = self.log_buffer.len();
+        for i in 0..buffer_size {
+            let log_item = &self.log_buffer[i];
+            let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
+            core::ptr::write_unaligned(
+                log_bytes.as_mut_ptr() as *mut LogItem,
+                *log_item
+            );
+            
+            let written = crate::platform::file_write(
+                self.log_handle,
+                log_bytes.as_ptr(),
+                log_bytes.len()
+            ).map_err(|_| RemDbError::FileIoError)?;
+            
+            if written != log_bytes.len() {
+                crate::platform::spin_unlock(&mut self.lock);
+                return Err(RemDbError::FileIoError);
+            }
+            
+            // 更新日志头记录计数
+            self.header.record_count += 1;
         }
         
-        // 更新日志头
-        self.header.record_count += 1;
+        // 清空缓冲区
+        self.log_buffer.clear();
+        
+        // 更新日志头校验和
         self.header.checksum = 0; // 会在write_header中重新计算
         
         // 释放锁，避免在write_header中再次借用冲突
         crate::platform::spin_unlock(&mut self.lock);
         
         self.write_header()?;
+        
+        // 更新上次刷新时间
+        self.last_flush_time = crate::platform::get_timestamp_us();
+        
+        Ok(())
+    }
+    
+    /// 写入日志项
+    pub unsafe fn write_log_item(&mut self, log_item: &LogItem) -> Result<()> {
+        // 检查是否需要刷新缓冲区或创建检查点
+        self.check_flush_and_checkpoint()?;
+        
+        match self.log_mode {
+            crate::config::LogMode::Sync => {
+                // 自旋锁保护
+                crate::platform::spin_lock(&mut self.lock);
+                
+                // 定位到日志记录区域的末尾
+                let log_offset = core::mem::size_of::<LogHeader>() + 
+                                core::mem::size_of::<LogCheckpoint>() + 
+                                (self.header.record_count as usize) * core::mem::size_of::<LogItem>();
+                
+                crate::platform::file_seek(
+                    self.log_handle,
+                    log_offset as i64,
+                    crate::platform::SeekWhence::SeekSet
+                ).map_err(|_| RemDbError::FileIoError)?;
+
+                // 写入日志项
+                let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
+                core::ptr::write_unaligned(
+                    log_bytes.as_mut_ptr() as *mut LogItem,
+                    *log_item
+                );
+                
+                let written = crate::platform::file_write(
+                    self.log_handle,
+                    log_bytes.as_ptr(),
+                    log_bytes.len()
+                ).map_err(|_| RemDbError::FileIoError)?;
+                
+                if written != log_bytes.len() {
+                    crate::platform::spin_unlock(&mut self.lock);
+                    return Err(RemDbError::FileIoError);
+                }
+                
+                // 更新日志头
+                self.header.record_count += 1;
+                self.header.checksum = 0; // 会在write_header中重新计算
+                
+                // 释放锁，避免在write_header中再次借用冲突
+                crate::platform::spin_unlock(&mut self.lock);
+                
+                self.write_header()?;
+                
+                Ok(())
+            },
+            crate::config::LogMode::Async => {
+                // 异步模式：先写入缓冲区
+                self.log_buffer.push(*log_item);
+                
+                // 检查是否需要立即刷新
+                if self.log_buffer.len() >= self.buffer_config.flush_threshold {
+                    self.flush_buffer()?;
+                }
+                
+                Ok(())
+            }
+        }
+    }
+    
+    /// 检查是否需要刷新缓冲区或创建检查点
+    pub unsafe fn check_flush_and_checkpoint(&mut self) -> Result<()> {
+        let now = crate::platform::get_timestamp_us();
+        let now_ms = now / 1000;
+        
+        // 检查是否需要刷新缓冲区（超过1秒未刷新）
+        if (now - self.last_flush_time) > 1_000_000 && !self.log_buffer.is_empty() {
+            self.flush_buffer()?;
+        }
+        
+        // 检查是否需要创建检查点
+        if (now_ms - self.last_checkpoint_time) >= self.checkpoint_interval_ms {
+            self.create_checkpoint()?;
+        }
         
         Ok(())
     }
@@ -423,8 +590,9 @@ impl LogManager {
         crate::platform::spin_lock(&mut self.lock);
         
         // 更新检查点
+        let now = crate::platform::get_timestamp_us();
         self.checkpoint = LogCheckpoint {
-            timestamp: crate::platform::get_timestamp_us(),
+            timestamp: now,
             processed_records: self.header.record_count,
             checksum: 0, // 会在write_checkpoint中重新计算
         };
@@ -435,11 +603,17 @@ impl LogManager {
         // 写入检查点
         self.write_checkpoint()?;
         
+        // 更新上次检查点时间
+        self.last_checkpoint_time = now / 1000;
+        
         Ok(())
     }
     
     /// 关闭日志管理器
     pub unsafe fn close(&mut self) -> Result<()> {
+        // 刷新所有缓冲的日志
+        self.flush_buffer()?;
+        
         // 写入最终的检查点
         self.create_checkpoint()?;
         
@@ -563,6 +737,15 @@ impl TransactionManager {
         self.log_manager = Some(log_manager);
     }
     
+    /// 刷新日志缓冲区
+    pub unsafe fn flush_logs(&mut self) -> Result<()> {
+        if let Some(log_manager) = &mut self.log_manager {
+            log_manager.flush_buffer()
+        } else {
+            Ok(())
+        }
+    }
+    
     /// 获取日志管理器
     pub fn get_log_manager(&self) -> Option<&LogManager> {
         self.log_manager.as_ref()
@@ -664,14 +847,10 @@ impl TransactionManager {
             return Ok(());
         }
         
-        // 对于读写事务，根据低功耗模式调整日志写入策略
+        // 对于读写事务，写入所有日志项
         if let Some(log_manager) = &mut self.log_manager {
             if self.low_power_mode {
                 // 低功耗模式：优化日志写入
-                // 1. 减少日志写入频率
-                // 2. 只写入关键操作日志
-                // 3. 合并多个日志项
-                
                 // 这里简单实现：每10个事务只写入一次日志
                 if self.tx_id_counter % 10 == 0 {
                     // 写入所有日志项
@@ -679,6 +858,8 @@ impl TransactionManager {
                         let log_item = &tx_mut.log_items.as_ptr().add(i).read();
                         log_manager.write_log_item(log_item)?;
                     }
+                    // 在低功耗模式下，每10个事务写入日志后，直接创建检查点
+                    log_manager.create_checkpoint()?;
                 } else {
                     // 跳过日志写入，减少磁盘I/O
                 }
@@ -687,6 +868,18 @@ impl TransactionManager {
                 for i in 0..tx_mut.log_item_count {
                     let log_item = &tx_mut.log_items.as_ptr().add(i).read();
                     log_manager.write_log_item(log_item)?;
+                }
+                
+                // 检查日志模式，如果是同步模式，不需要额外操作
+                // 如果是异步模式，根据需要刷新缓冲区
+                match log_manager.log_mode {
+                    crate::config::LogMode::Async => {
+                        // 检查是否需要立即刷新（如缓冲区接近满）
+                        if log_manager.log_buffer.len() >= log_manager.buffer_config.flush_threshold {
+                            log_manager.flush_buffer()?;
+                        }
+                    },
+                    _ => {}
                 }
             }
         }

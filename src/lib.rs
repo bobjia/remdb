@@ -289,6 +289,18 @@ impl RemDb {
         #[cfg(feature = "posix")]
         crate::platform::init_platform(crate::platform::posix::get_posix_platform());
         
+        // 初始化日志管理器（如果配置了日志）
+        // 这里使用默认的日志文件路径，实际应用中可以从配置中获取
+        #[cfg(feature = "std")]
+        {
+            use crate::transaction::LogManager;
+            unsafe {
+                let log_path = "remdb.log";
+                let log_manager = LogManager::new(log_path, self.config)?;
+                crate::transaction::TX_MANAGER.set_log_manager(log_manager);
+            }
+        }
+        
         Ok(())
     }
     

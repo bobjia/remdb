@@ -14,14 +14,20 @@ fn main() {
         ).expect("Failed to initialize allocator");
         
         // 创建数据库配置
-        let config = Config {
-            table_max_count: 10,
-            record_size: 128,
-            max_records: 1000,
-            page_size: 4096,
-            checksum_enabled: false,
-            cache_size: 0,
-            snapshot_enabled: false,
+        static ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
+        let config = config::DbConfig {
+            tables: &[],
+            total_memory: DB_MEMORY.len(),
+            low_power_mode_supported: false,
+            low_power_max_records: None,
+            default_max_records: 1000,
+            memory_allocator: &ALLOCATOR,
+            log_mode: config::LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
         };
         
         // 初始化数据库

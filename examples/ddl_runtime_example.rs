@@ -46,6 +46,12 @@ fn main() {
         low_power_max_records: None,
         default_max_records: 10, // 减少默认最大记录数，避免内存不足
         memory_allocator: &ALLOCATOR,
+        log_mode: LogMode::Sync,
+        checkpoint_interval_ms: 60000,
+        log_file_size_limit: 16 * 1024 * 1024,
+        log_prealloc_size: 1 * 1024 * 1024,
+        log_segment_size: 16 * 1024 * 1024,
+        retained_checkpoints: 3,
     };
     
     // 创建数据库实例

@@ -47,6 +47,12 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
         static mut DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
         &mut DEFAULT_ALLOCATOR
     },
+    log_mode: config::LogMode::Sync,
+    checkpoint_interval_ms: 60000,
+    log_file_size_limit: 16 * 1024 * 1024,
+    log_prealloc_size: 1 * 1024 * 1024,
+    log_segment_size: 16 * 1024 * 1024,
+    retained_checkpoints: 3,
 };
 
 // 静态缓冲区用于测试

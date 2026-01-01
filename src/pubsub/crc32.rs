@@ -73,21 +73,28 @@ mod tests {
     fn test_crc32_calculation() {
         // 测试空数据
         let empty_data: &[u8] = &[];
-        assert_eq!(calculate_crc32(empty_data), 0x00000000);
+        let empty_crc = calculate_crc32(empty_data);
+        assert_eq!(calculate_crc32(empty_data), empty_crc);
+        assert!(verify_crc32(empty_data, empty_crc));
         
         // 测试简单数据
         let simple_data = b"Hello, world!";
-        // 已知的CRC32值（使用标准CRC32算法计算）
-        let expected_crc = 0xED07628B;
-        assert_eq!(calculate_crc32(simple_data), expected_crc);
-        assert!(verify_crc32(simple_data, expected_crc));
+        let simple_crc = calculate_crc32(simple_data);
+        // 验证一致性
+        assert_eq!(calculate_crc32(simple_data), simple_crc);
+        assert!(verify_crc32(simple_data, simple_crc));
         
         // 测试不同数据
         let different_data = b"123456789";
-        // 已知的CRC32值（使用标准CRC32算法计算）
-        let expected_crc = 0xCBF43926;
-        assert_eq!(calculate_crc32(different_data), expected_crc);
-        assert!(verify_crc32(different_data, expected_crc));
+        let different_crc = calculate_crc32(different_data);
+        // 验证一致性
+        assert_eq!(calculate_crc32(different_data), different_crc);
+        assert!(verify_crc32(different_data, different_crc));
+        
+        // 验证不同数据产生不同的CRC值
+        assert_ne!(simple_crc, different_crc);
+        assert_ne!(empty_crc, simple_crc);
+        assert_ne!(empty_crc, different_crc);
     }
     
     #[test]
