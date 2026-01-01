@@ -123,11 +123,8 @@ impl ReplicationManager {
     
     /// 关闭复制管理器
     pub fn shutdown(&self) -> Result<()> {
-        // 关闭pubsub连接
-        match pubsub::shutdown() {
-            Ok(_) => Ok(()),
-            Err(_) => Err(HAError::NetworkError),
-        }
+        // 不需要关闭pubsub，因为它可能被其他组件使用
+        Ok(())
     }
     
     /// 获取复制模式

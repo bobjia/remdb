@@ -25,15 +25,21 @@ impl crate::platform::Platform for TestPlatform {
     }
     
     fn spin_unlock(&self, _lock: &mut u32) {
-        // 简单实现，不做实际解锁
+        // 简单实现，不做实际锁定
     }
     
-    fn memcpy(&self, _dst: *mut u8, _src: *const u8, _size: usize) {
-        // 简单实现，不做实际复制
+    fn memcpy(&self, dst: *mut u8, src: *const u8, size: usize) {
+        // 使用标准库的内存拷贝
+        unsafe {
+            std::ptr::copy(src, dst, size);
+        }
     }
     
-    fn memset(&self, _ptr: *mut u8, _value: u8, _size: usize) {
-        // 简单实现，不做实际填充
+    fn memset(&self, ptr: *mut u8, value: u8, size: usize) {
+        // 使用标准库的内存设置
+        unsafe {
+            std::ptr::write_bytes(ptr, value, size);
+        }
     }
     
     fn compiler_barrier(&self) {

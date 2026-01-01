@@ -317,6 +317,8 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
             crate::DataType::Int8 => "tinyint".to_string(),
             crate::DataType::Bool => "bool".to_string(),
             crate::DataType::Timestamp => "timestamp".to_string(),
+            crate::DataType::Float32 => "float".to_string(),
+            crate::DataType::Float64 => "double".to_string(),
             _ => "unknown".to_string(),
         };
         

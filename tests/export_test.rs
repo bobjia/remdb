@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use remdb::*;
 
 // 定义内存缓冲区
-static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
+static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存，用于所有测试用例
 
 // 定义表结构
 remdb::table!(
@@ -34,20 +34,18 @@ remdb::database!(
 
 #[test]
 fn test_export_ddl() {
-    // 初始化全局内存分配器
-    use std::alloc::Layout;
-    use std::ptr::NonNull;
-    
-    // 分配一个较大的内存缓冲区用于测试
-    let buffer_size = 1024 * 1024; // 1MB
-    let layout = Layout::array::<u8>(buffer_size).unwrap();
-    let buffer_ptr = unsafe { std::alloc::alloc(layout) };
-    let buffer_nonnull = NonNull::new(buffer_ptr).expect("Failed to allocate buffer");
-    
-    // 初始化全局内存分配器
+    // 重置事务管理器状态，避免测试之间的状态污染
     unsafe {
-        std::ptr::write_bytes(buffer_ptr, 0, buffer_size);
-        crate::memory::allocator::init_global_allocator(buffer_ptr, buffer_size).unwrap();
+        crate::transaction::TX_MANAGER.clear_log_manager();
+    }
+    
+    // 在测试开始前，删除可能存在的日志文件，避免影响后续测试
+    use std::fs::remove_file;
+    let _ = remove_file("remdb.log");
+    
+    // 初始化全局内存分配器，使用静态内存缓冲区
+    unsafe {
+        crate::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
     }
     
     // 使用init_global_db函数初始化数据库
@@ -82,26 +80,31 @@ fn test_export_ddl() {
     // 重置全局数据库
     reset_global_db();
     
-    // 释放内存缓冲区
+    // 重置全局分配器
     unsafe {
-        std::alloc::dealloc(buffer_ptr, layout);
+        crate::memory::allocator::reset_global_allocator().unwrap();
+    }
+    
+    // 重置全局分配器
+    unsafe {
+        crate::memory::allocator::reset_global_allocator().unwrap();
     }
 }
 
 #[test]
 fn test_export_data() {
-    // 初始化全局内存分配器
-    use std::alloc::Layout;
-    
-    // 分配一个较大的内存缓冲区用于测试
-    let buffer_size = 1024 * 1024; // 1MB
-    let layout = Layout::array::<u8>(buffer_size).unwrap();
-    let buffer_ptr = unsafe { std::alloc::alloc(layout) };
-    
-    // 初始化全局内存分配器
+    // 重置事务管理器状态，避免测试之间的状态污染
     unsafe {
-        std::ptr::write_bytes(buffer_ptr, 0, buffer_size);
-        crate::memory::allocator::init_global_allocator(buffer_ptr, buffer_size).unwrap();
+        crate::transaction::TX_MANAGER.clear_log_manager();
+    }
+    
+    // 在测试开始前，删除可能存在的日志文件，避免影响后续测试
+    use std::fs::remove_file;
+    let _ = remove_file("remdb.log");
+    
+    // 初始化全局内存分配器，使用静态内存缓冲区
+    unsafe {
+        crate::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
     }
     
     // 使用init_global_db函数初始化数据库
@@ -187,26 +190,26 @@ fn test_export_data() {
     // 重置全局数据库
     reset_global_db();
     
-    // 释放内存缓冲区
+    // 重置全局分配器
     unsafe {
-        std::alloc::dealloc(buffer_ptr, layout);
+        crate::memory::allocator::reset_global_allocator().unwrap();
     }
 }
 
 #[test]
 fn test_export_empty_table() {
-    // 初始化全局内存分配器
-    use std::alloc::Layout;
-    
-    // 分配一个较大的内存缓冲区用于测试
-    let buffer_size = 1024 * 1024; // 1MB
-    let layout = Layout::array::<u8>(buffer_size).unwrap();
-    let buffer_ptr = unsafe { std::alloc::alloc(layout) };
-    
-    // 初始化全局内存分配器
+    // 重置事务管理器状态，避免测试之间的状态污染
     unsafe {
-        std::ptr::write_bytes(buffer_ptr, 0, buffer_size);
-        crate::memory::allocator::init_global_allocator(buffer_ptr, buffer_size).unwrap();
+        crate::transaction::TX_MANAGER.clear_log_manager();
+    }
+    
+    // 在测试开始前，删除可能存在的日志文件，避免影响后续测试
+    use std::fs::remove_file;
+    let _ = remove_file("remdb.log");
+    
+    // 初始化全局内存分配器，使用静态内存缓冲区
+    unsafe {
+        crate::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
     }
     
     // 使用init_global_db函数初始化数据库
@@ -239,9 +242,4 @@ fn test_export_empty_table() {
     
     // 重置全局数据库
     reset_global_db();
-    
-    // 释放内存缓冲区
-    unsafe {
-        std::alloc::dealloc(buffer_ptr, layout);
-    }
 }

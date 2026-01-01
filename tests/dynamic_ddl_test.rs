@@ -307,50 +307,74 @@ fn test_describe_table() {
     assert_eq!(result_set.row_count(), 5, "Expected 5 fields in employees table, got {}", result_set.row_count());
     
     // 验证结果集中的字段信息
-    // 注意：由于describe查询返回的是表结构信息，使用索引映射来表示字符串值
-    // 根据execute_describe_query函数的实现，我们知道：
-    // - Field列使用字段名索引（0=id, 1=name, 2=age, 3=active, ...）
-    // - Type列使用类型索引（4=UInt32, 5=String, 6=UInt8, 7=Bool, ...）
-    // - Key列使用主键标志索引（8=PRI, 9=空）
-    // - Null列使用NULL约束索引（10=NO, 9=空）
-    // - Default列使用默认值索引（11=0, 9=空）
+    // execute_describe_query函数直接将字段信息作为字符串写入结果集
+    
+    // 辅助函数：将Value中的string转换为&str
+    unsafe fn value_to_str(value: &crate::Value) -> &str {
+        core::str::from_utf8(&value.string).unwrap().trim_end_matches(char::from(0))
+    }
+    
+    // 辅助函数：查找指定字段名的行
+    fn find_row_by_field_name<'a>(result_set: &'a crate::sql::ResultSet, field_name: &str) -> Option<&'a crate::sql::ResultRow> {
+        for i in 0..result_set.row_count() {
+            if let Some(row) = result_set.get_row(i) {
+                let current_field_name = unsafe { value_to_str(&row.values[0]) };
+                if current_field_name == field_name {
+                    return Some(row);
+                }
+            }
+        }
+        None
+    }
     
     // 验证id字段
-    if let Some(row) = result_set.get_row(0) {
-        assert_eq!(unsafe { row.values[0].u64 }, 0, "Expected id field index to be 0");
-        assert_eq!(unsafe { row.values[1].u64 }, 4, "Expected UInt32 type index to be 4");
-        assert_eq!(unsafe { row.values[2].u64 }, 8, "Expected PRI key index to be 8");
-        assert_eq!(unsafe { row.values[3].u64 }, 10, "Expected NO null index to be 10");
-        assert_eq!(unsafe { row.values[4].u64 }, 11, "Expected 0 default index to be 11");
+    if let Some(row) = find_row_by_field_name(&result_set, "id") {
+        assert_eq!(unsafe { value_to_str(&row.values[1]) }, "int", "Expected UInt32 type to be int");
+        assert_eq!(unsafe { value_to_str(&row.values[2]) }, "PRI", "Expected id to be primary key");
+        assert_eq!(unsafe { value_to_str(&row.values[3]) }, "NO", "Expected id to be NOT NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4]) }, "0", "Expected id default to be 0");
+    } else {
+        panic!("Could not find id field in describe result");
     }
     
     // 验证name字段
-    if let Some(row) = result_set.get_row(1) {
-        assert_eq!(unsafe { row.values[0].u64 }, 1, "Expected name field index to be 1");
-        assert_eq!(unsafe { row.values[1].u64 }, 5, "Expected String type index to be 5");
-        assert_eq!(unsafe { row.values[2].u64 }, 9, "Expected no key index to be 9");
-        assert_eq!(unsafe { row.values[3].u64 }, 10, "Expected NO null index to be 10");
-        assert_eq!(unsafe { row.values[4].u64 }, 11, "Expected 0 default index to be 11");
-    }
-    
-    // 验证department字段
-    if let Some(row) = result_set.get_row(2) {
-        assert_eq!(unsafe { row.values[1].u64 }, 5, "Expected String type index to be 5");
-        assert_eq!(unsafe { row.values[2].u64 }, 9, "Expected no key index to be 9");
+    if let Some(row) = find_row_by_field_name(&result_set, "name") {
+        assert_eq!(unsafe { value_to_str(&row.values[1]) }, "varchar(64)", "Expected name type to be varchar(64)");
+        assert_eq!(unsafe { value_to_str(&row.values[2]) }, "", "Expected name to not be primary key");
+        assert_eq!(unsafe { value_to_str(&row.values[3]) }, "NO", "Expected name to be NOT NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4]) }, "0", "Expected name default to be 0");
+    } else {
+        panic!("Could not find name field in describe result");
     }
     
     // 验证salary字段
-    if let Some(row) = result_set.get_row(3) {
-        // Float64类型在value_to_string_repr函数中没有特别处理，所以会返回空字符串
-        // 我们只验证其他字段
-        assert_eq!(unsafe { row.values[2].u64 }, 9, "Expected no key index to be 9");
-        assert_eq!(unsafe { row.values[3].u64 }, 10, "Expected NO null index to be 10");
+    if let Some(row) = find_row_by_field_name(&result_set, "salary") {
+        assert_eq!(unsafe { value_to_str(&row.values[1]) }, "double", "Expected salary type to be double");
+        assert_eq!(unsafe { value_to_str(&row.values[2]) }, "", "Expected salary to not be primary key");
+        assert_eq!(unsafe { value_to_str(&row.values[3]) }, "NO", "Expected salary to be NOT NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4]) }, "0", "Expected salary default to be 0");
+    } else {
+        panic!("Could not find salary field in describe result");
     }
     
     // 验证active字段
-    if let Some(row) = result_set.get_row(4) {
-        assert_eq!(unsafe { row.values[1].u64 }, 7, "Expected Bool type index to be 7");
-        assert_eq!(unsafe { row.values[2].u64 }, 9, "Expected no key index to be 9");
+    if let Some(row) = find_row_by_field_name(&result_set, "active") {
+        assert_eq!(unsafe { value_to_str(&row.values[1]) }, "bool", "Expected active type to be bool");
+        assert_eq!(unsafe { value_to_str(&row.values[2]) }, "", "Expected active to not be primary key");
+        assert_eq!(unsafe { value_to_str(&row.values[3]) }, "NO", "Expected active to be NOT NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4]) }, "0", "Expected active default to be 0");
+    } else {
+        panic!("Could not find active field in describe result");
+    }
+    
+    // 验证department字段
+    if let Some(row) = find_row_by_field_name(&result_set, "department") {
+        assert_eq!(unsafe { value_to_str(&row.values[1]) }, "varchar(64)", "Expected department type to be varchar(64)");
+        assert_eq!(unsafe { value_to_str(&row.values[2]) }, "", "Expected department to not be primary key");
+        assert_eq!(unsafe { value_to_str(&row.values[3]) }, "NO", "Expected department to be NOT NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4]) }, "0", "Expected department default to be 0");
+    } else {
+        panic!("Could not find department field in describe result");
     }
     
     // 测试简写形式DESCRIBE employees

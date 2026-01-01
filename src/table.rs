@@ -127,16 +127,135 @@ impl MemoryTable {
                         }
                         all_zero
                     },
-                    _ => false, // 数值类型和布尔类型不检查null，因为0是合法值
+                    DataType::Bool => {
+                        // 布尔类型检查是否为false（但0是合法值，所以我们不检查布尔类型的null约束）
+                        false
+                    },
+                    _ => false, // 数值类型不检查null，因为0是合法值
                 };
                 if is_null {
-                    return Err(RemDbError::InvalidRecordSize);
+                    return Err(RemDbError::TypeMismatch);
                 }
+            }
+            
+            // 验证数值类型的有效性
+            match field.data_type {
+                DataType::Float32 => {
+                    let value = core::ptr::read_unaligned(record_data.add(field.offset) as *const f32);
+                    if value.is_nan() || value.is_infinite() {
+                        return Err(RemDbError::TypeMismatch);
+                    }
+                },
+                DataType::Float64 => {
+                    let value = core::ptr::read_unaligned(record_data.add(field.offset) as *const f64);
+                    if value.is_nan() || value.is_infinite() {
+                        return Err(RemDbError::TypeMismatch);
+                    }
+                },
+                _ => {}
             }
         }
         
-        // 暂时禁用主键唯一性检查，解决插入第一条记录时的DuplicateKey错误
-        // TODO: 修复主键唯一性检查逻辑
+        // 验证主键唯一性约束
+        if let Some(primary_key_field) = self.def.fields.iter().find(|f| f.primary_key) {
+            // 遍历所有记录，检查是否存在重复主键
+            for slot_id in 0..self.def.max_records {
+                // 跳过要排除的槽位（用于更新操作）
+                if exclude_slot == Some(slot_id) {
+                    continue;
+                }
+                
+                let status_ptr = self.status_array.as_ptr().add(slot_id);
+                let status = &*status_ptr;
+                
+                // 只检查已使用的记录
+                if status.status == RecordStatus::Used {
+                    // 获取记录数据指针
+                    let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
+                    
+                    // 根据字段类型比较主键值
+                    let is_duplicate = match primary_key_field.data_type {
+                        DataType::UInt8 => {
+                            let current = *(record_data.add(primary_key_field.offset) as *const u8);
+                            let existing = *(record_ptr.add(primary_key_field.offset) as *const u8);
+                            current == existing
+                        },
+                        DataType::UInt16 => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const u16);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const u16);
+                            current == existing
+                        },
+                        DataType::UInt32 => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const u32);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const u32);
+                            current == existing
+                        },
+                        DataType::UInt64 => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const u64);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const u64);
+                            current == existing
+                        },
+                        DataType::Int8 => {
+                            let current = *(record_data.add(primary_key_field.offset) as *const i8);
+                            let existing = *(record_ptr.add(primary_key_field.offset) as *const i8);
+                            current == existing
+                        },
+                        DataType::Int16 => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const i16);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const i16);
+                            current == existing
+                        },
+                        DataType::Int32 => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const i32);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const i32);
+                            current == existing
+                        },
+                        DataType::Int64 => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const i64);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const i64);
+                            current == existing
+                        },
+                        DataType::Float32 => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const f32);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const f32);
+                            current == existing
+                        },
+                        DataType::Float64 => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const f64);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const f64);
+                            current == existing
+                        },
+                        DataType::Bool => {
+                            let current = *(record_data.add(primary_key_field.offset) as *const bool);
+                            let existing = *(record_ptr.add(primary_key_field.offset) as *const bool);
+                            current == existing
+                        },
+                        DataType::Timestamp => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const u64);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const u64);
+                            current == existing
+                        },
+                        DataType::String => {
+                            // 比较字符串内容
+                            let current_str = record_data.add(primary_key_field.offset) as *const u8;
+                            let existing_str = record_ptr.add(primary_key_field.offset) as *const u8;
+                            let mut is_equal = true;
+                            for i in 0..primary_key_field.size {
+                                if *current_str.add(i) != *existing_str.add(i) {
+                                    is_equal = false;
+                                    break;
+                                }
+                            }
+                            is_equal
+                        },
+                    };
+                    
+                    if is_duplicate {
+                        return Err(RemDbError::DuplicateKey);
+                    }
+                }
+            }
+        }
         
         Ok(())
     }
@@ -238,7 +357,8 @@ impl MemoryTable {
             let tx_mut = unsafe { tx.as_mut() };
             if tx_mut.is_active() && !tx_mut.is_read_only() {
                 // 保存新数据
-                let mut new_data = [0u8; 512];
+                let mut new_data = Vec::with_capacity(self.record_size);
+                new_data.resize(self.record_size, 0);
                 memcpy(new_data.as_mut_ptr(), record_data, self.record_size);
                 
                 // 添加日志项
@@ -306,11 +426,13 @@ impl MemoryTable {
             let tx_mut = tx.as_mut();
             if tx_mut.is_active() && !tx_mut.is_read_only() {
                 // 保存旧数据
-                let mut old_data = [0u8; 512];
+                let mut old_data = Vec::with_capacity(self.record_size);
+                old_data.resize(self.record_size, 0);
                 memcpy(old_data.as_mut_ptr(), record_ptr, self.record_size);
                 
                 // 保存新数据
-                let mut new_data = [0u8; 512];
+                let mut new_data = Vec::with_capacity(self.record_size);
+                new_data.resize(self.record_size, 0);
                 memcpy(new_data.as_mut_ptr(), record_data, self.record_size);
                 
                 // 添加日志项
@@ -358,7 +480,8 @@ impl MemoryTable {
             if tx_mut.is_active() && !tx_mut.is_read_only() {
                 // 保存旧数据
                 let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
-                let mut old_data = [0u8; 512];
+                let mut old_data = Vec::with_capacity(self.record_size);
+                old_data.resize(self.record_size, 0);
                 memcpy(old_data.as_mut_ptr(), record_ptr, self.record_size);
                 
                 // 添加日志项

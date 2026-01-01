@@ -213,7 +213,7 @@ impl LogManager {
         // 预分配缓冲区空间
         manager.log_buffer.reserve(1024);
         
-        // 读取日志头，如果文件为空则写入新的日志头
+        // 读取日志头，如果文件为空或格式不正确则写入新的日志头
         let mut header_buffer = [0u8; core::mem::size_of::<LogHeader>()];
         let read = crate::platform::file_read(
             log_handle,
@@ -221,8 +221,30 @@ impl LogManager {
             header_buffer.len()
         ).map_err(|_| RemDbError::FileIoError)?;
         
-        if read == 0 {
-            // 文件为空
+        let mut header_valid = false;
+        if read >= core::mem::size_of::<LogHeader>() {
+            // 尝试读取日志头
+            let header = core::ptr::read_unaligned(header_buffer.as_ptr() as *const LogHeader);
+            
+            // 验证魔数和版本号
+            if header.magic == 0x4C4F474D && header.version == 1 {
+                manager.header = header;
+                // 尝试读取检查点
+                if manager.read_checkpoint().is_ok() {
+                    header_valid = true;
+                }
+            }
+        }
+        
+        if !header_valid {
+            // 文件为空或格式不正确，写入新的日志头
+            // 直接回到文件开头，准备写入新的日志头
+            crate::platform::file_seek(
+                log_handle,
+                0,
+                crate::platform::SeekWhence::SeekSet
+            ).map_err(|_| RemDbError::FileIoError)?;
+            
             // 如果配置了预分配大小，则预分配文件空间
             if config.log_prealloc_size > 0 {
                 // 定位到预分配大小位置
@@ -250,17 +272,6 @@ impl LogManager {
             
             // 写入新的日志头
             manager.write_header()?;
-        } else {
-            // 读取日志头
-            manager.header = core::ptr::read_unaligned(header_buffer.as_ptr() as *const LogHeader);
-            
-            // 验证魔数和版本号
-            if manager.header.magic != 0x4C4F474D || manager.header.version != 1 {
-                return Err(RemDbError::LogFormatError);
-            }
-            
-            // 读取检查点
-            manager.read_checkpoint()?;
         }
         
         Ok(manager)
@@ -726,6 +737,16 @@ impl LogManager {
     }
 }
 
+/// 为 LogManager 添加 Drop 实现，确保在丢弃时关闭日志文件句柄
+impl Drop for LogManager {
+    fn drop(&mut self) {
+        // 关闭日志文件句柄
+        unsafe {
+            let _ = crate::platform::file_close(self.log_handle);
+        }
+    }
+}
+
 /// 事务管理器
 pub struct TransactionManager {
     /// 当前事务
@@ -769,6 +790,11 @@ impl TransactionManager {
     /// 获取日志管理器
     pub fn get_log_manager(&self) -> Option<&LogManager> {
         self.log_manager.as_ref()
+    }
+    
+    /// 清除日志管理器，释放资源
+    pub fn clear_log_manager(&mut self) {
+        self.log_manager = None;
     }
     
     /// 设置低功耗模式

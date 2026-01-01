@@ -117,8 +117,8 @@ impl Platform for TestPlatform {
         Ok(())
     }
     
-    fn file_write(&self, _handle: FileHandle, _buffer: *const u8, _size: usize) -> FileResult<usize> {
-        Ok(0)
+    fn file_write(&self, _handle: FileHandle, _buffer: *const u8, size: usize) -> FileResult<usize> {
+        Ok(size)
     }
     
     fn file_read(&self, _handle: FileHandle, _buffer: *mut u8, _size: usize) -> FileResult<usize> {

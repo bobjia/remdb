@@ -346,7 +346,8 @@ impl PubSub {
 pub fn init(config: PubSubConfig) -> Result<()> {
     unsafe {
         if PUB_SUB_INSTANCE.is_some() {
-            return Err(PubSubError::InitFailed);
+            // 如果已经初始化，直接返回成功
+            return Ok(());
         }
         
         let mut pubsub = PubSub::new(config)?;

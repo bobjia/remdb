@@ -334,10 +334,14 @@ static GLOBAL_ALLOCATOR: OnceLock<Mutex<StaticAllocator>> = OnceLock::new();
 
 /// 初始化全局内存分配器
 pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
-    // 清除内存缓冲区，防止残留数据破坏分配器状态
-    unsafe { core::ptr::write_bytes(start_ptr, 0, size); }
+    // 创建新的分配器实例
+    // 注意：每次调用都重新初始化内存缓冲区，确保每个测试用例都有干净的内存状态
+    // 这是安全的，因为测试用例是顺序执行的
+    unsafe {
+        // 清除内存缓冲区，确保每个测试都有干净的内存状态
+        core::ptr::write_bytes(start_ptr, 0, size);
+    }
     
-    // 强制重新初始化内存分配器，清空所有数据
     let new_allocator = StaticAllocator::new(start_ptr, size)
         .ok_or(crate::types::RemDbError::OutOfMemory)?;
     
@@ -349,8 +353,7 @@ pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
         // 完全替换分配器实例，确保所有状态被重置
         *allocator_guard = new_allocator;
     } else {
-        // 首次初始化
-        // 注意：如果set返回Err，说明已经被其他线程初始化，但由于我们是单线程测试，所以可以忽略
+        // 首次初始化：设置全局分配器
         let _ = GLOBAL_ALLOCATOR.set(Mutex::new(new_allocator));
     }
     
