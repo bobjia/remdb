@@ -308,52 +308,62 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
         // 确定默认值（目前所有字段默认值为0或空字符串）
         let default_str = "0";
         
-        // 将字段名称转换为索引
-        let field_index = match field.name {
-            "id" => 0,
-            "name" => 1,
-            "age" => 2,
-            "active" => 3,
-            _ => 0,
+        // 确定字段类型字符串表示
+        let type_str = match field.data_type {
+            crate::DataType::UInt32 => "int".to_string(),
+            crate::DataType::Int32 => "int".to_string(),
+            crate::DataType::String => format!("varchar({})", field.size),
+            crate::DataType::UInt8 => "tinyint".to_string(),
+            crate::DataType::Int8 => "tinyint".to_string(),
+            crate::DataType::Bool => "bool".to_string(),
+            crate::DataType::Timestamp => "timestamp".to_string(),
+            _ => "unknown".to_string(),
         };
         
-        // 将字段类型转换为索引
-        let type_index = match field.data_type {
-            crate::DataType::UInt32 => 4,
-            crate::DataType::String => 5,
-            crate::DataType::UInt8 => 6,
-            crate::DataType::Bool => 7,
-            _ => 0,
-        };
+        // 创建行数据
+        // 由于Value是union类型，我们需要确保每个值都被正确初始化
+        // 对于字符串值，我们使用string字段并确保它是一个有效的C风格字符串
+        let mut field_name_val = crate::Value { string: [0u8; 64] };
+        let field_name_bytes = field.name.as_bytes();
+        let field_name_len = core::cmp::min(field_name_bytes.len(), 63);
+        unsafe {
+            field_name_val.string[..field_name_len].copy_from_slice(&field_name_bytes[..field_name_len]);
+        }
         
-        // 将主键标志转换为索引
-        let key_index = if key_str == "PRI" {
-            8
-        } else {
-            9
-        };
+        let mut type_val = crate::Value { string: [0u8; 64] };
+        let type_bytes = type_str.as_bytes();
+        let type_len = core::cmp::min(type_bytes.len(), 63);
+        unsafe {
+            type_val.string[..type_len].copy_from_slice(&type_bytes[..type_len]);
+        }
         
-        // 将NULL约束转换为索引
-        let null_index = if null_str == "NO" {
-            10
-        } else {
-            9
-        };
+        let mut key_val = crate::Value { string: [0u8; 64] };
+        let key_bytes = key_str.as_bytes();
+        let key_len = core::cmp::min(key_bytes.len(), 63);
+        unsafe {
+            key_val.string[..key_len].copy_from_slice(&key_bytes[..key_len]);
+        }
         
-        // 将默认值转换为索引
-        let default_index = if default_str == "0" {
-            11
-        } else {
-            9
-        };
+        let mut null_val = crate::Value { string: [0u8; 64] };
+        let null_bytes = null_str.as_bytes();
+        let null_len = core::cmp::min(null_bytes.len(), 63);
+        unsafe {
+            null_val.string[..null_len].copy_from_slice(&null_bytes[..null_len]);
+        }
         
-        // 创建行数据 - 使用索引映射来表示字符串值
+        let mut default_val = crate::Value { string: [0u8; 64] };
+        let default_bytes = default_str.as_bytes();
+        let default_len = core::cmp::min(default_bytes.len(), 63);
+        unsafe {
+            default_val.string[..default_len].copy_from_slice(&default_bytes[..default_len]);
+        }
+        
         let row_data = vec![
-            crate::Value { u64: field_index as u64 }, // Field name
-            crate::Value { u64: type_index as u64 },  // Type
-            crate::Value { u64: key_index as u64 },   // Key
-            crate::Value { u64: null_index as u64 },  // Null
-            crate::Value { u64: default_index as u64 }, // Default
+            field_name_val, // Field name
+            type_val,       // Type
+            key_val,        // Key
+            null_val,       // Null
+            default_val,    // Default
         ];
         
         result_set.add_row(row_data);
