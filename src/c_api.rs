@@ -249,6 +249,7 @@ impl From<crate::HealthCheckResult> for RemDbHealthCheckResult {
 
 /// C API: UDP模式枚举
 #[repr(u8)]
+#[derive(Copy, Clone)]
 pub enum RemDbUdpMode {
     Unicast = 0,
     Broadcast = 1,
@@ -283,6 +284,9 @@ pub struct RemDbPubSubConfig {
 
 /// C API: 订阅回调函数类型
 type RemDbPubSubCallback = extern "C" fn(topic_id: u16, data: *const u8, data_len: usize) -> u8;
+
+/// 内部: 保存C回调的全局存储
+static mut C_CALLBACK_STORAGE: Option<RemDbPubSubCallback> = None;
 
 /// C API: 错误码
 #[repr(u32)]
@@ -409,6 +413,10 @@ pub unsafe extern "C" fn remdb_init_global(
                 data_type: c_field.data_type.into(),
                 size: c_field.size,
                 offset: c_field.offset,
+                primary_key: j == c_table.primary_key,
+                not_null: j == c_table.primary_key, // 主键默认非空
+                unique: j == c_table.primary_key, // 主键默认唯一
+                auto_increment: false, // 默认不自增
             });
         }
         
@@ -442,6 +450,12 @@ pub unsafe extern "C" fn remdb_init_global(
         },
         default_max_records: 1000, // 默认值
         memory_allocator: &crate::config::DefaultMemoryAllocator,
+        log_mode: crate::config::LogMode::Sync,
+        checkpoint_interval_ms: 60000, // 默认60秒
+        log_file_size_limit: 16 * 1024 * 1024, // 默认16MB
+        log_prealloc_size: 16 * 1024 * 1024, // 默认16MB
+        log_segment_size: 16 * 1024 * 1024, // 默认16MB
+        retained_checkpoints: 2, // 默认保留2个检查点
     };
     
     // 初始化全局数据库
@@ -954,6 +968,17 @@ pub unsafe extern "C" fn remdb_pubsub_init(
     }
 }
 
+/// 内部: 静态回调函数，调用保存的C回调
+fn static_pubsub_callback(topic_id: u16, data: &[u8]) -> bool {
+    unsafe {
+        if let Some(callback) = C_CALLBACK_STORAGE {
+            callback(topic_id, data.as_ptr(), data.len()) != 0
+        } else {
+            false
+        }
+    }
+}
+
 /// C API: 订阅主题
 #[no_mangle]
 pub unsafe extern "C" fn remdb_pubsub_subscribe(
@@ -965,15 +990,11 @@ pub unsafe extern "C" fn remdb_pubsub_subscribe(
         return RemDbError::ConfigError;
     }
     
-    // 包装C回调为Rust回调
-    let rust_callback = move |t_id: u16, data: &[u8]| -> bool {
-        let c_data = data.as_ptr();
-        let c_data_len = data.len();
-        (callback)(t_id, c_data, c_data_len) != 0
-    };
+    // 保存C回调到全局存储
+    C_CALLBACK_STORAGE = Some(callback);
     
-    // 订阅主题
-    match crate::pubsub::subscribe(topic_id, rust_callback) {
+    // 订阅主题使用静态回调
+    match crate::pubsub::subscribe(topic_id, static_pubsub_callback) {
         Ok(id) => {
             *subscription_id = id;
             RemDbError::Success

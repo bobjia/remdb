@@ -48,7 +48,7 @@ fn main() {
         );
         
         // 初始化平台抽象层
-        // 使用一个简单的平台实现
+        // 使用一个简单的平台实现，所有文件操作都返回成功
         struct DummyPlatform;
         impl platform::Platform for DummyPlatform {
             fn get_timestamp(&self) -> u64 {
@@ -80,25 +80,27 @@ fn main() {
             fn delay_us(&self, _us: u32) {
             }
             fn file_open(&self, _path: &str, _mode: platform::FileMode) -> platform::FileResult<platform::FileHandle> {
-                Err(())
+                // 返回一个非空指针作为有效的FileHandle
+                Ok(1 as *const u8)
             }
             fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
-                Err(())
+                Ok(())
             }
-            fn file_write(&self, _handle: platform::FileHandle, _buffer: *const u8, _size: usize) -> platform::FileResult<usize> {
-                Err(())
+            fn file_write(&self, _handle: platform::FileHandle, _buffer: *const u8, size: usize) -> platform::FileResult<usize> {
+                Ok(size)
             }
             fn file_read(&self, _handle: platform::FileHandle, _buffer: *mut u8, _size: usize) -> platform::FileResult<usize> {
-                Err(())
+                // 对于读取操作，返回0表示文件为空，这样会创建新的日志头
+                Ok(0)
             }
             fn file_seek(&self, _handle: platform::FileHandle, _offset: i64, _whence: platform::SeekWhence) -> platform::FileResult<u64> {
-                Err(())
+                Ok(0)
             }
             fn file_remove(&self, _path: &str) -> platform::FileResult<()> {
-                Err(())
+                Ok(())
             }
             fn file_size(&self, _path: &str) -> platform::FileResult<usize> {
-                Err(())
+                Ok(0)
             }
             fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
                 0

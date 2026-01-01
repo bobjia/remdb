@@ -69,25 +69,29 @@ fn main() {
             fn delay_us(&self, _us: u32) {
             }
             fn file_open(&self, _path: &str, _mode: platform::FileMode) -> platform::FileResult<platform::FileHandle> {
-                Err(())
+                // 返回一个非空指针作为有效的FileHandle
+                Ok(1 as *const u8)
             }
             fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
-                Err(())
+                Ok(())
             }
-            fn file_write(&self, _handle: platform::FileHandle, _buffer: *const u8, _size: usize) -> platform::FileResult<usize> {
-                Err(())
+            fn file_write(&self, _handle: platform::FileHandle, _buffer: *const u8, size: usize) -> platform::FileResult<usize> {
+                // 模拟写入成功，返回写入的字节数
+                Ok(size)
             }
             fn file_read(&self, _handle: platform::FileHandle, _buffer: *mut u8, _size: usize) -> platform::FileResult<usize> {
-                Err(())
+                // 模拟读取成功，返回0表示文件为空
+                Ok(0)
             }
             fn file_seek(&self, _handle: platform::FileHandle, _offset: i64, _whence: platform::SeekWhence) -> platform::FileResult<u64> {
-                Err(())
+                // 模拟seek成功，返回当前位置0
+                Ok(0)
             }
             fn file_remove(&self, _path: &str) -> platform::FileResult<()> {
-                Err(())
+                Ok(())
             }
             fn file_size(&self, _path: &str) -> platform::FileResult<usize> {
-                Err(())
+                Ok(0)
             }
             fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
                 0

@@ -15,9 +15,9 @@ fn main() {
         
         // 创建数据库配置
         static ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
-        let config = config::DbConfig {
+        static CONFIG: config::DbConfig = config::DbConfig {
             tables: &[],
-            total_memory: DB_MEMORY.len(),
+            total_memory: 1024 * 1024,
             low_power_mode_supported: false,
             low_power_max_records: None,
             default_max_records: 1000,
@@ -31,7 +31,7 @@ fn main() {
         };
         
         // 初始化数据库
-        let mut db = init_global_db(&config).expect("Failed to initialize database");
+        let mut db = init_global_db(&CONFIG).expect("Failed to initialize database");
         
         // 创建表，使用VARCHAR类型
         let create_table_sql = "CREATE TABLE users (
@@ -49,7 +49,7 @@ fn main() {
         // 执行SQL
         let result = sql::execute_query(&mut db, &query).expect("Failed to execute SQL");
         
-        println!("Table created successfully, status: {:?}", result);
+        println!("Table created successfully, status: {}", result.to_string());
         
         // 插入数据
         let insert_sql = "INSERT INTO users (name, email, age) VALUES ('Alice', 'alice@example.com', 30)";
@@ -62,7 +62,7 @@ fn main() {
         // 执行SQL
         let insert_result = sql::execute_query(&mut db, &insert_query).expect("Failed to execute INSERT SQL");
         
-        println!("Data inserted successfully, affected rows: {:?}", insert_result);
+        println!("Data inserted successfully, affected rows: {}", insert_result.to_string());
         
         // 查询数据
         let select_sql = "SELECT * FROM users";
@@ -76,10 +76,7 @@ fn main() {
         let select_result = sql::execute_query(&mut db, &select_query).expect("Failed to execute SELECT SQL");
         
         println!("Query results:");
-        println!("Columns: {:?}", select_result.columns);
-        for row in select_result.rows {
-            println!("Row: {:?}", row);
-        }
+        println!("{}", select_result.to_string());
         
         println!("\nVARCHAR type support verified successfully!");
     }

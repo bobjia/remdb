@@ -1,7 +1,7 @@
 // 运行时DDL配置示例
 
 use remdb::{RemDb, DdlExecutor, types::{DataType, IndexType}};
-use remdb::config::{DbConfig, MemoryAllocator};
+use remdb::config::{DbConfig, MemoryAllocator, LogMode};
 use remdb::memory::allocator::init_global_allocator;
 use core::ptr::NonNull;
 
