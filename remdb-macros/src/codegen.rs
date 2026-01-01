@@ -86,6 +86,14 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
+            // HA相关配置
+            ha_role: remdb::config::HARole::Auto,
+            replication_mode: remdb::config::ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
         };
     };
     

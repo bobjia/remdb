@@ -496,6 +496,9 @@ impl LogManager {
                 
                 self.write_header()?;
                 
+                // 触发WAL复制
+                self.replicate_wal(log_item)?;
+                
                 Ok(())
             },
             crate::config::LogMode::Async => {
@@ -507,8 +510,25 @@ impl LogManager {
                     self.flush_buffer()?;
                 }
                 
+                // 触发WAL复制
+                self.replicate_wal(log_item)?;
+                
                 Ok(())
             }
+        }
+    }
+    
+    /// 复制WAL日志到从节点
+    unsafe fn replicate_wal(&self, log_item: &LogItem) -> Result<()> {
+        // 尝试获取HA管理器
+        if let Some(ha_manager) = crate::ha::get_ha_manager() {
+            // 调用HA管理器复制WAL日志
+            match ha_manager.replicate_wal(log_item) {
+                Ok(_) => Ok(()),
+                Err(_) => Ok(()), // 复制失败不影响主节点操作
+            }
+        } else {
+            Ok(()) // HA管理器未初始化，跳过复制
         }
     }
     

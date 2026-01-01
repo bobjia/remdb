@@ -1,4 +1,4 @@
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, HARole, ReplicationMode};
 use remdb::transaction::{LogManager, LogItem, LogOperation};
 use remdb::platform::{Platform, FileMode, FileResult, FileHandle, SeekWhence, init_platform};
 
@@ -141,6 +141,13 @@ fn test_wal_log_manager_creation() {
         log_prealloc_size: 1 * 1024 * 1024,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
+        ha_role: HARole::Auto,
+        replication_mode: ReplicationMode::Async,
+        heartbeat_interval_ms: 1000,
+        failure_detection_ms: 3000,
+        sync_timeout_ms: 2000,
+        master_address: None,
+        master_port: None,
     };
     
     // 测试创建 LogManager
@@ -175,6 +182,13 @@ fn test_wal_log_write_sync_mode() {
         log_prealloc_size: 1 * 1024 * 1024,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
+        ha_role: HARole::Auto,
+        replication_mode: ReplicationMode::Async,
+        heartbeat_interval_ms: 1000,
+        failure_detection_ms: 3000,
+        sync_timeout_ms: 2000,
+        master_address: None,
+        master_port: None,
     };
     
     unsafe {
@@ -227,6 +241,13 @@ fn test_wal_log_write_async_mode() {
         log_prealloc_size: 1 * 1024 * 1024,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
+        ha_role: HARole::Auto,
+        replication_mode: ReplicationMode::Async,
+        heartbeat_interval_ms: 1000,
+        failure_detection_ms: 3000,
+        sync_timeout_ms: 2000,
+        master_address: None,
+        master_port: None,
     };
     
     unsafe {
@@ -286,6 +307,13 @@ fn test_wal_checkpoint_mechanism() {
         log_prealloc_size: 1 * 1024 * 1024,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
+        ha_role: HARole::Auto,
+        replication_mode: ReplicationMode::Async,
+        heartbeat_interval_ms: 1000,
+        failure_detection_ms: 3000,
+        sync_timeout_ms: 2000,
+        master_address: None,
+        master_port: None,
     };
     
     unsafe {
@@ -346,6 +374,13 @@ fn test_wal_log_preallocation() {
         log_prealloc_size: 512 * 1024, // 512KB 预分配
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
+        ha_role: HARole::Auto,
+        replication_mode: ReplicationMode::Async,
+        heartbeat_interval_ms: 1000,
+        failure_detection_ms: 3000,
+        sync_timeout_ms: 2000,
+        master_address: None,
+        master_port: None,
     };
     
     unsafe {
@@ -389,6 +424,13 @@ fn test_wal_different_log_modes() {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
         };
         
         unsafe {

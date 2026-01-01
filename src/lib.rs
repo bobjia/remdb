@@ -13,6 +13,7 @@ pub mod platform;
 pub mod monitor;
 pub mod sql;
 pub mod pubsub;
+pub mod ha;
 
 // 导出核心类型
 pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType, MAX_STRING_LEN};
@@ -72,6 +73,18 @@ pub struct RemDb {
 // 注意：这是安全的，因为RemDb的所有字段都是线程安全的
 unsafe impl Send for RemDb {}
 unsafe impl Sync for RemDb {}
+
+// 实现Drop trait，确保资源正确释放
+impl Drop for RemDb {
+    fn drop(&mut self) {
+        // 关闭HA管理器
+        unsafe {
+            if let Err(e) = crate::ha::shutdown() {
+                // 关闭失败，记录错误但不影响程序退出
+            }
+        }
+    }
+}
 
 impl RemDb {
     /// 快照魔数
@@ -298,6 +311,14 @@ impl RemDb {
                 let log_path = "remdb.log";
                 let log_manager = LogManager::new(log_path, self.config)?;
                 crate::transaction::TX_MANAGER.set_log_manager(log_manager);
+            }
+        }
+        
+        // 初始化HA管理器
+        unsafe {
+            if let Err(e) = crate::ha::init(self.config) {
+                // HA初始化失败，记录错误但不影响数据库主体功能
+                // 可以通过日志或监控系统报告
             }
         }
         

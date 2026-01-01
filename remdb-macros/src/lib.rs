@@ -456,6 +456,14 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             log_prealloc_size: 1 * 1024 * 1024, // 默认1MB预分配
             log_segment_size: 16 * 1024 * 1024, // 默认16MB分段
             retained_checkpoints: 3, // 保留3个检查点
+            // HA相关配置
+            ha_role: remdb::config::HARole::Auto,
+            replication_mode: remdb::config::ReplicationMode::Async,
+            heartbeat_interval_ms: 1000, // 默认1秒
+            failure_detection_ms: 3000, // 默认3秒
+            sync_timeout_ms: 2000, // 默认2秒
+            master_address: None,
+            master_port: None,
         };
     };
     

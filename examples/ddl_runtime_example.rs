@@ -1,7 +1,7 @@
 // 运行时DDL配置示例
 
 use remdb::{RemDb, DdlExecutor, types::{DataType, IndexType}};
-use remdb::config::{DbConfig, MemoryAllocator, LogMode};
+use remdb::config::{DbConfig, MemoryAllocator, LogMode, HARole, ReplicationMode};
 use remdb::memory::allocator::init_global_allocator;
 use core::ptr::NonNull;
 
@@ -52,6 +52,13 @@ fn main() {
         log_prealloc_size: 1 * 1024 * 1024,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
+        ha_role: HARole::Auto,
+        replication_mode: ReplicationMode::Async,
+        heartbeat_interval_ms: 1000,
+        failure_detection_ms: 3000,
+        sync_timeout_ms: 2000,
+        master_address: None,
+        master_port: None,
     };
     
     // 创建数据库实例

@@ -33,6 +33,26 @@ pub enum LogMode {
     Async,
 }
 
+/// HA角色
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum HARole {
+    /// 主节点
+    Master,
+    /// 从节点
+    Slave,
+    /// 自动模式（通过集群协商确定角色）
+    Auto,
+}
+
+/// 复制模式
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum ReplicationMode {
+    /// 同步模式：等待至少一个从节点确认后才返回
+    Sync,
+    /// 异步模式：立即返回，异步复制
+    Async,
+}
+
 /// 数据库全局配置
 pub struct DbConfig {
     /// 表定义列表
@@ -59,6 +79,21 @@ pub struct DbConfig {
     pub log_segment_size: usize,
     /// 保留的检查点数量
     pub retained_checkpoints: usize,
+    /// HA配置
+    /// HA角色
+    pub ha_role: HARole,
+    /// 复制模式
+    pub replication_mode: ReplicationMode,
+    /// 心跳间隔（毫秒）
+    pub heartbeat_interval_ms: u64,
+    /// 故障检测时间（毫秒）
+    pub failure_detection_ms: u64,
+    /// 同步超时时间（毫秒）
+    pub sync_timeout_ms: u64,
+    /// 主节点地址（从节点使用）
+    pub master_address: Option<&'static str>,
+    /// 主节点端口（从节点使用）
+    pub master_port: Option<u16>,
 }
 
 
@@ -100,6 +135,31 @@ pub const fn validate_config(config: &DbConfig) -> bool {
     }
     
     if config.retained_checkpoints > 10 {
+        return false;
+    }
+    
+    // 检查HA配置
+    if config.heartbeat_interval_ms < 100 { // 最小100ms
+        return false;
+    }
+    
+    if config.heartbeat_interval_ms > 60000 { // 最大60秒
+        return false;
+    }
+    
+    if config.failure_detection_ms < config.heartbeat_interval_ms { // 故障检测时间必须大于等于心跳间隔
+        return false;
+    }
+    
+    if config.failure_detection_ms > 300000 { // 最大5分钟
+        return false;
+    }
+    
+    if config.sync_timeout_ms < 100 { // 最小100ms
+        return false;
+    }
+    
+    if config.sync_timeout_ms > 10000 { // 最大10秒
         return false;
     }
     

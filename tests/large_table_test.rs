@@ -168,12 +168,19 @@ fn test_large_table_performance() {
             static mut DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
             &mut DEFAULT_ALLOCATOR
         },
-        log_mode: LogMode::Sync,
+        log_mode: remdb::config::LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
         log_prealloc_size: 1 * 1024 * 1024,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
+        ha_role: remdb::config::HARole::Auto,
+        replication_mode: remdb::config::ReplicationMode::Async,
+        heartbeat_interval_ms: 1000,
+        failure_detection_ms: 3000,
+        sync_timeout_ms: 2000,
+        master_address: None,
+        master_port: None,
     };
     
     unsafe {
