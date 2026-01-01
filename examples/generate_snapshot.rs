@@ -224,15 +224,17 @@ fn main() -> Result<()>
             // 获取表引用
             let table = db.get_table_mut(0)?;
             
-            // 不设置id字段，让insert()方法自动生成自增ID
+            // 设置id字段为唯一值
+            let id_value = remdb::Value { u64: i as u64 };
+            table.set_field(record.0.as_mut_ptr(), 0, &id_value)?;
             
             let name = format!("item_{}", i);
             let name_value = remdb::Value { string: { 
                 let mut s = [0u8; 64];
                 // 填充name，剩余空间用0填充
-                for (i, c) in name.as_bytes().iter().enumerate() {
-                    if i < s.len() {
-                        s[i] = *c;
+                for (j, c) in name.as_bytes().iter().enumerate() {
+                    if j < s.len() {
+                        s[j] = *c;
                     } else {
                         break;
                     }

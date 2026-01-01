@@ -220,15 +220,17 @@ fn main() -> Result<()>
             // 获取表引用
             let table = db.get_table_mut(0)?;
             
-            // 不设置id字段，让insert()方法自动生成自增ID
+            // 设置id字段为唯一值
+            let id_value = remdb::Value { u64: i as u64 };
+            table.set_field(record.0.as_mut_ptr(), 0, &id_value)?;
             
             let name = format!("item_{}", i);
             let name_value = remdb::Value { string: { 
                 let mut s = [0u8; 64];
                 // 填充name，剩余空间用0填充
-                for (i, c) in name.as_bytes().iter().enumerate() {
-                    if i < s.len() {
-                        s[i] = *c;
+                for (j, c) in name.as_bytes().iter().enumerate() {
+                    if j < s.len() {
+                        s[j] = *c;
                     } else {
                         break;
                     }
@@ -238,7 +240,7 @@ fn main() -> Result<()>
             table.set_field(record.0.as_mut_ptr(), 1, &name_value)?;
             
             let value_value = remdb::Value { u32: i * 100 };
-            table.set_field(record.0.as_mut_ptr(), 2, &value_value)?;
+            table.set_field(record.0.as_mut_ptr(), 2, &value_value);
             
             // 插入记录
             let record_id = table.insert(record.0.as_ptr())?;
@@ -270,12 +272,16 @@ fn main() -> Result<()>
             // 新增一条记录
             let mut new_record = AlignedRecord([0; 32]);
             
+            // 设置id字段为唯一值
+            let new_id_value = remdb::Value { u64: 10 };
+            table.set_field(new_record.0.as_mut_ptr(), 0, &new_id_value)?;
+            
             let name = "item_10";
             let name_value = remdb::Value { string: {
                 let mut s = [0u8; 64];
-                for (i, c) in name.as_bytes().iter().enumerate() {
-                    if i < s.len() {
-                        s[i] = *c;
+                for (j, c) in name.as_bytes().iter().enumerate() {
+                    if j < s.len() {
+                        s[j] = *c;
                     } else {
                         break;
                     }
