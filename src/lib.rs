@@ -12,6 +12,7 @@ pub mod memory;
 pub mod platform;
 pub mod monitor;
 pub mod sql;
+pub mod pubsub;
 
 // 导出核心类型
 pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType, MAX_STRING_LEN};

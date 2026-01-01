@@ -247,6 +247,43 @@ impl From<crate::HealthCheckResult> for RemDbHealthCheckResult {
     }
 }
 
+/// C API: UDP模式枚举
+#[repr(u8)]
+pub enum RemDbUdpMode {
+    Unicast = 0,
+    Broadcast = 1,
+    Multicast = 2,
+}
+
+impl From<RemDbUdpMode> for crate::pubsub::UdpMode {
+    fn from(c_mode: RemDbUdpMode) -> Self {
+        match c_mode {
+            RemDbUdpMode::Unicast => crate::pubsub::UdpMode::Unicast,
+            RemDbUdpMode::Broadcast => crate::pubsub::UdpMode::Broadcast,
+            RemDbUdpMode::Multicast => crate::pubsub::UdpMode::Multicast,
+        }
+    }
+}
+
+/// C API: 发布/订阅配置
+#[repr(C)]
+pub struct RemDbPubSubConfig {
+    pub udp_mode: RemDbUdpMode,
+    pub multicast_addr: *const u8, // 字符串形式的IP地址
+    pub port: u16,
+    pub max_topics: usize,
+    pub max_subscribers_per_topic: usize,
+    pub buffer_size: usize,
+    pub enable_nack: u8,
+    pub retransmit_timeout_ms: u32,
+    pub max_retransmits: usize,
+    pub heartbeat_interval_secs: u32,
+    pub frame_pool_size: usize,
+}
+
+/// C API: 订阅回调函数类型
+type RemDbPubSubCallback = extern "C" fn(topic_id: u16, data: *const u8, data_len: usize) -> u8;
+
 /// C API: 错误码
 #[repr(u32)]
 pub enum RemDbError {
@@ -269,6 +306,15 @@ pub enum RemDbError {
     LockTimeout = 16,
     TableNotFound = 17,
     InvalidRecordSize = 18,
+    // PubSub相关错误
+    PubSubInitFailed = 19,
+    PubSubNetworkError = 20,
+    PubSubInvalidParameter = 21,
+    PubSubResourceExhausted = 22,
+    PubSubInvalidFrameFormat = 23,
+    PubSubCrcCheckFailed = 24,
+    PubSubTopicNotFound = 25,
+    PubSubSubscriptionNotFound = 26,
 }
 
 impl From<crate::RemDbError> for RemDbError {
@@ -294,6 +340,22 @@ impl From<crate::RemDbError> for RemDbError {
             crate::RemDbError::InvalidRecordSize => RemDbError::InvalidRecordSize,
             crate::RemDbError::InvalidSqlQuery => RemDbError::UnsupportedOperation,
             crate::RemDbError::InternalError => RemDbError::UnsupportedOperation,
+        }
+    }
+}
+
+impl From<crate::pubsub::PubSubError> for RemDbError {
+    fn from(rust_error: crate::pubsub::PubSubError) -> Self {
+        match rust_error {
+            crate::pubsub::PubSubError::InitFailed => RemDbError::PubSubInitFailed,
+            crate::pubsub::PubSubError::NetworkError => RemDbError::PubSubNetworkError,
+            crate::pubsub::PubSubError::InvalidParameter => RemDbError::PubSubInvalidParameter,
+            crate::pubsub::PubSubError::ResourceExhausted => RemDbError::PubSubResourceExhausted,
+            crate::pubsub::PubSubError::InvalidFrameFormat => RemDbError::PubSubInvalidFrameFormat,
+            crate::pubsub::PubSubError::CrcCheckFailed => RemDbError::PubSubCrcCheckFailed,
+            crate::pubsub::PubSubError::TopicNotFound => RemDbError::PubSubTopicNotFound,
+            crate::pubsub::PubSubError::SubscriptionNotFound => RemDbError::PubSubSubscriptionNotFound,
+            crate::pubsub::PubSubError::UnsupportedOperation => RemDbError::UnsupportedOperation,
         }
     }
 }
@@ -846,4 +908,126 @@ pub unsafe extern "C" fn remdb_table_get_by_name(
     }
     
     RemDbError::TableNotFound
+}
+
+/// C API: 初始化发布/订阅系统
+#[no_mangle]
+pub unsafe extern "C" fn remdb_pubsub_init(
+    config: *const RemDbPubSubConfig,
+) -> RemDbError {
+    if config.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let c_config = &*config;
+    
+    // 解析组播地址
+    let multicast_addr = if !c_config.multicast_addr.is_null() {
+        let addr_str = c_str_to_rust(c_config.multicast_addr);
+        match addr_str.parse() {
+            Ok(addr) => Some(addr),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+    
+    // 创建Rust配置
+    let rust_config = crate::pubsub::PubSubConfig {
+        udp_mode: c_config.udp_mode.into(),
+        multicast_addr,
+        port: c_config.port,
+        max_topics: c_config.max_topics,
+        max_subscribers_per_topic: c_config.max_subscribers_per_topic,
+        buffer_size: c_config.buffer_size,
+        enable_nack: c_config.enable_nack != 0,
+        retransmit_timeout: core::time::Duration::from_millis(c_config.retransmit_timeout_ms as u64),
+        max_retransmits: c_config.max_retransmits,
+        heartbeat_interval: core::time::Duration::from_secs(c_config.heartbeat_interval_secs as u64),
+        frame_pool_size: c_config.frame_pool_size,
+    };
+    
+    // 初始化pubsub
+    match crate::pubsub::init(rust_config) {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 订阅主题
+#[no_mangle]
+pub unsafe extern "C" fn remdb_pubsub_subscribe(
+    topic_id: u16,
+    callback: RemDbPubSubCallback,
+    subscription_id: *mut usize,
+) -> RemDbError {
+    if subscription_id.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    // 包装C回调为Rust回调
+    let rust_callback = move |t_id: u16, data: &[u8]| -> bool {
+        let c_data = data.as_ptr();
+        let c_data_len = data.len();
+        (callback)(t_id, c_data, c_data_len) != 0
+    };
+    
+    // 订阅主题
+    match crate::pubsub::subscribe(topic_id, rust_callback) {
+        Ok(id) => {
+            *subscription_id = id;
+            RemDbError::Success
+        },
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 取消订阅
+#[no_mangle]
+pub unsafe extern "C" fn remdb_pubsub_unsubscribe(
+    subscription_id: usize,
+) -> RemDbError {
+    match crate::pubsub::unsubscribe(subscription_id) {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 发布数据
+#[no_mangle]
+pub unsafe extern "C" fn remdb_pubsub_publish(
+    topic_id: u16,
+    data: *const u8,
+    data_len: usize,
+) -> RemDbError {
+    if data.is_null() || data_len == 0 {
+        return RemDbError::ConfigError;
+    }
+    
+    let data_slice = core::slice::from_raw_parts(data, data_len);
+    
+    match crate::pubsub::publish(topic_id, data_slice) {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 启动接收线程
+#[no_mangle]
+pub unsafe extern "C" fn remdb_pubsub_start_receiver(
+) -> RemDbError {
+    match crate::pubsub::start_receiver() {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 停止发布/订阅系统
+#[no_mangle]
+pub unsafe extern "C" fn remdb_pubsub_shutdown(
+) -> RemDbError {
+    match crate::pubsub::shutdown() {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
 }

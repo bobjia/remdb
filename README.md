@@ -71,6 +71,17 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 支持导出表数据为SQL INSERT语句
   - 输出兼容SQLite3语法，同时保留项目特定关键字
   - 支持将导出结果写入文件或内存缓冲区
+- **基于UDP的高可靠数据订阅与发布**：
+  - 支持基于UDP协议的轻量级数据发布/订阅机制
+  - 对传输数据进行CRC校验，确保数据完整性
+  - 支持单播、广播和组播模式
+  - 提供subscribe(topic_id, callback)和publish(topic_id, data) API
+  - 支持基于NACK的重传机制，提高数据可靠性
+  - 支持心跳检测，自动清理不活跃的订阅者
+  - 每个主题支持不少于16个并发订阅者
+  - 支持不少于32个不同的数据主题
+  - 从调用publish API到数据进入网络栈的延迟小于100微秒
+  - 协议头开销小于载荷数据的10%
 
 ## 技术特点
 
@@ -426,6 +437,48 @@ if result.is_ok() {
 }
 ```
 
+### 发布/订阅功能示例
+
+```rust
+use std::time::Duration;
+use remdb::pubsub::{PubSub, PubSubConfig, UdpMode};
+
+// 创建发布/订阅配置
+let config = PubSubConfig {
+    udp_mode: UdpMode::Broadcast,
+    multicast_addr: None,
+    port: 5555,
+    max_topics: 32,
+    max_subscribers_per_topic: 16,
+    buffer_size: 4096,
+    enable_nack: true,
+    retransmit_timeout: Duration::from_millis(100),
+    max_retransmits: 3,
+    heartbeat_interval: Duration::from_secs(10),
+    frame_pool_size: 128,
+};
+
+// 创建发布/订阅实例
+let mut pubsub = PubSub::new(config).expect("Failed to create PubSub instance");
+pubsub.init().expect("Failed to initialize PubSub");
+
+// 定义订阅回调
+let callback = |topic_id: u16, data: &[u8]| -> bool {
+    println!("Received data on topic {}: {:?}", topic_id, String::from_utf8_lossy(data));
+    true
+};
+
+// 订阅主题
+let subscription_id = pubsub.subscribe(0, callback).expect("Failed to subscribe");
+
+// 发布数据
+let msg = "Hello, PubSub!";
+pubsub.publish(0, msg.as_bytes()).expect("Failed to publish");
+
+// 取消订阅
+pubsub.unsubscribe(subscription_id).expect("Failed to unsubscribe");
+```
+
 #### 文件模式使用示例
 
 ```rust
@@ -529,6 +582,7 @@ cargo check --no-default-features --features=baremetal
 - `ddl_example.rs`：DDL示例，展示如何使用DDL宏定义表和索引
 - `ddl_full_example.rs`：完整DDL示例，展示更复杂的DDL定义
 - `ddl_runtime_example.rs`：运行时DDL配置示例，展示如何使用运行时DDL API
+- `pubsub_example.rs`：发布/订阅示例，展示如何使用基于UDP的高可靠数据订阅与发布功能
 
 ## 项目结构
 
@@ -550,10 +604,17 @@ remdb/
 │   │   ├── allocator.rs    # 静态内存分配器
 │   │   ├── pool.rs         # 内存池
 │   │   └── mod.rs
-│   └── platform/
-│       ├── mod.rs          # 平台抽象层定义
-│       ├── posix.rs        # POSIX平台实现
-│       └── baremetal.rs    # 裸机平台实现
+│   ├── platform/
+│   │   ├── mod.rs          # 平台抽象层定义
+│   │   ├── posix.rs        # POSIX平台实现
+│   │   └── baremetal.rs    # 裸机平台实现
+│   └── pubsub/
+│       ├── mod.rs          # 发布/订阅模块入口
+│       ├── protocol.rs     # 协议帧定义与解析
+│       ├── udp.rs          # 跨平台UDP套接字封装
+│       ├── subscriber.rs   # 订阅者管理
+│       ├── publisher.rs    # 发布者管理
+│       └── crc32.rs       # CRC32校验实现
 ├── examples/
 │   ├── basic_usage.rs      # 基本使用示例
 │   ├── low_power_mode.rs   # 低功耗模式示例

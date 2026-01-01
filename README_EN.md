@@ -71,6 +71,17 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Supports exporting table data as SQL INSERT statements
   - Output is compatible with SQLite3 syntax while preserving project-specific keywords
   - Supports writing export results to files or memory buffers
+- **UDP-based Reliable Data Pub/Sub**:
+  - Supports lightweight UDP-based data publish/subscribe mechanism
+  - Performs CRC check on transmitted data to ensure data integrity
+  - Supports unicast, broadcast, and multicast modes
+  - Provides subscribe(topic_id, callback) and publish(topic_id, data) APIs
+  - Supports NACK-based retransmission mechanism to improve data reliability
+  - Supports heartbeat detection to automatically clean up inactive subscribers
+  - Supports at least 16 concurrent subscribers per topic
+  - Supports at least 32 different data topics
+  - Latency from calling publish API to data entering network stack is less than 100 microseconds
+  - Protocol header overhead is less than 10% of payload data
 
 ## Technical Characteristics
 
@@ -426,6 +437,48 @@ if result.is_ok() {
 }
 ```
 
+### Publish/Subscribe Functionality Example
+
+```rust
+use std::time::Duration;
+use remdb::pubsub::{PubSub, PubSubConfig, UdpMode};
+
+// Create publish/subscribe configuration
+let config = PubSubConfig {
+    udp_mode: UdpMode::Broadcast,
+    multicast_addr: None,
+    port: 5555,
+    max_topics: 32,
+    max_subscribers_per_topic: 16,
+    buffer_size: 4096,
+    enable_nack: true,
+    retransmit_timeout: Duration::from_millis(100),
+    max_retransmits: 3,
+    heartbeat_interval: Duration::from_secs(10),
+    frame_pool_size: 128,
+};
+
+// Create publish/subscribe instance
+let mut pubsub = PubSub::new(config).expect("Failed to create PubSub instance");
+pubsub.init().expect("Failed to initialize PubSub");
+
+// Define subscription callback
+let callback = |topic_id: u16, data: &[u8]| -> bool {
+    println!("Received data on topic {}: {:?}", topic_id, String::from_utf8_lossy(data));
+    true
+};
+
+// Subscribe to topic
+let subscription_id = pubsub.subscribe(0, callback).expect("Failed to subscribe");
+
+// Publish data
+let msg = "Hello, PubSub!";
+pubsub.publish(0, msg.as_bytes()).expect("Failed to publish");
+
+// Unsubscribe
+pubsub.unsubscribe(subscription_id).expect("Failed to unsubscribe");
+```
+
 #### File Mode Usage Example
 
 ```rust
@@ -529,6 +582,7 @@ Check the examples directory for sample code:
 - `ddl_example.rs`: DDL example demonstrating how to define tables and indexes using DDL macros
 - `ddl_full_example.rs`: Complete DDL example demonstrating more complex DDL definitions
 - `ddl_runtime_example.rs`: Runtime DDL configuration example demonstrating how to use the runtime DDL API
+- `pubsub_example.rs`: Pub/Sub example demonstrating how to use the UDP-based reliable data publish/subscribe functionality
 
 ## Project Structure
 
@@ -550,10 +604,17 @@ remdb/
 │   │   ├── allocator.rs    # Static memory allocator
 │   │   ├── pool.rs         # Memory pool
 │   │   └── mod.rs
-│   └── platform/
-│       ├── mod.rs          # Platform abstraction layer definition
-│       ├── posix.rs        # POSIX platform implementation
-│       └── baremetal.rs    # Baremetal platform implementation
+│   ├── platform/
+│   │   ├── mod.rs          # Platform abstraction layer definition
+│   │   ├── posix.rs        # POSIX platform implementation
+│   │   └── baremetal.rs    # Baremetal platform implementation
+│   └── pubsub/
+│       ├── mod.rs          # Pub/Sub module entry
+│       ├── protocol.rs     # Protocol frame definition and parsing
+│       ├── udp.rs          # Cross-platform UDP socket encapsulation
+│       ├── subscriber.rs   # Subscriber management
+│       ├── publisher.rs    # Publisher management
+│       └── crc32.rs       # CRC32 check implementation
 ├── examples/
 │   ├── basic_usage.rs      # Basic usage example
 │   ├── low_power_mode.rs   # Low power mode example
