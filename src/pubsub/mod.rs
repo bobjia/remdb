@@ -69,6 +69,9 @@ type PubSubCallback = fn(topic_id: u16, data: &[u8]) -> bool;
 // 订阅ID类型
 type SubscriptionId = usize;
 
+// 通配符主题ID常量（用于订阅所有主题）
+pub const WILDCARD_TOPIC_ID: u16 = 0xFFFF;
+
 // 发布/订阅配置
 #[derive(Debug)]
 pub struct PubSubConfig {
@@ -330,6 +333,21 @@ impl PubSub {
         Ok(())
     }
     
+    /// 注册主题名称到ID的映射
+    pub fn register_topic(&mut self, topic_name: &'static str, topic_id: u16) -> Result<()> {
+        self.subscribers.register_topic(topic_name, topic_id)
+    }
+    
+    /// 根据主题名称获取ID
+    pub fn get_topic_id(&self, topic_name: &str) -> Option<u16> {
+        self.subscribers.get_topic_id(topic_name)
+    }
+    
+    /// 根据ID获取主题名称
+    pub fn get_topic_name(&self, topic_id: u16) -> Option<&'static str> {
+        self.subscribers.get_topic_name(topic_id)
+    }
+    
     /// 停止发布/订阅系统
     pub fn shutdown(&mut self) -> Result<()> {
         // 关闭UDP套接字
@@ -399,6 +417,39 @@ pub fn start_receiver() -> Result<()> {
             pubsub.start_receiver()
         } else {
             Err(PubSubError::InitFailed)
+        }
+    }
+}
+
+/// 注册主题名称到ID的映射（全局实例）
+pub fn register_topic(topic_name: &'static str, topic_id: u16) -> Result<()> {
+    unsafe {
+        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
+            pubsub.register_topic(topic_name, topic_id)
+        } else {
+            Err(PubSubError::InitFailed)
+        }
+    }
+}
+
+/// 根据主题名称获取ID（全局实例）
+pub fn get_topic_id(topic_name: &str) -> Option<u16> {
+    unsafe {
+        if let Some(ref pubsub) = PUB_SUB_INSTANCE {
+            pubsub.get_topic_id(topic_name)
+        } else {
+            None
+        }
+    }
+}
+
+/// 根据ID获取主题名称（全局实例）
+pub fn get_topic_name(topic_id: u16) -> Option<&'static str> {
+    unsafe {
+        if let Some(ref pubsub) = PUB_SUB_INSTANCE {
+            pubsub.get_topic_name(topic_id)
+        } else {
+            None
         }
     }
 }

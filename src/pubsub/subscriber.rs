@@ -3,6 +3,9 @@
 use super::Result;
 use super::PubSubError;
 
+// 通配符主题ID常量（用于订阅所有主题）
+const WILDCARD_TOPIC_ID: u16 = 0xFFFF;
+
 // 订阅回调类型
 type PubSubCallback = fn(topic_id: u16, data: &[u8]) -> bool;
 
@@ -28,10 +31,16 @@ pub struct SubscriberManager {
     max_subscribers_per_topic: usize,
     // 订阅者列表（按主题ID分组）
     subscribers: alloc::vec::Vec<alloc::vec::Vec<Option<Subscriber>>>,
+    // 通配符订阅者列表
+    wildcard_subscribers: alloc::vec::Vec<Option<Subscriber>>,
     // 下一个订阅ID
     next_subscription_id: usize,
     // 全局订阅者列表（用于快速查找）
     global_subscribers: alloc::vec::Vec<usize>, // 存储主题ID和索引的组合
+    // 主题名称到ID的映射
+    topic_map: alloc::collections::BTreeMap<&'static str, u16>,
+    // ID到主题名称的映射
+    id_map: alloc::vec::Vec<Option<&'static str>>,
 }
 
 impl SubscriberManager {
@@ -52,39 +61,29 @@ impl SubscriberManager {
             subscribers.push(topic_subscribers);
         }
         
+        // 初始化通配符订阅者列表
+        let mut wildcard_subscribers = alloc::vec::Vec::with_capacity(max_subscribers_per_topic);
+        for _ in 0..max_subscribers_per_topic {
+            wildcard_subscribers.push(None);
+        }
+        
+        // 初始化ID映射
+        let id_map = alloc::vec::Vec::with_capacity(max_topics);
+        
         Ok(Self {
             max_topics,
             max_subscribers_per_topic,
             subscribers,
+            wildcard_subscribers,
             next_subscription_id: 1, // 订阅ID从1开始
             global_subscribers: alloc::vec::Vec::new(),
+            topic_map: alloc::collections::BTreeMap::new(),
+            id_map,
         })
     }
     
     /// 订阅主题
     pub fn subscribe(&mut self, topic_id: u16, callback: PubSubCallback) -> Result<usize> {
-        // 验证主题ID
-        if topic_id as usize >= self.max_topics {
-            return Err(PubSubError::InvalidParameter);
-        }
-        
-        // 获取主题订阅者列表
-        let topic_subscribers = &mut self.subscribers[topic_id as usize];
-        
-        // 查找空闲位置
-        let index = match topic_subscribers.iter().position(|s| s.is_none()) {
-            Some(idx) => idx,
-            None => {
-                // 检查是否达到每个主题的最大订阅者数
-                if topic_subscribers.len() >= self.max_subscribers_per_topic {
-                    return Err(PubSubError::ResourceExhausted);
-                }
-                // 扩展列表（虽然初始化时已预分配，但为了安全起见）
-                topic_subscribers.push(None);
-                topic_subscribers.len() - 1
-            },
-        };
-        
         // 生成订阅ID
         let subscription_id = self.next_subscription_id;
         self.next_subscription_id += 1;
@@ -98,18 +97,64 @@ impl SubscriberManager {
             last_active: Self::get_current_time(),
         };
         
-        // 存储订阅者
-        topic_subscribers[index] = Some(subscriber);
-        
-        // 更新全局订阅者列表
-        self.global_subscribers.push(topic_id as usize * 1000 + index); // 简单的组合方式
+        // 处理通配符订阅
+        const WILDCARD_TOPIC_ID: u16 = 0xFFFF;
+        if topic_id == WILDCARD_TOPIC_ID {
+            // 查找通配符订阅者列表中的空闲位置
+            let index = match self.wildcard_subscribers.iter().position(|s| s.is_none()) {
+                Some(idx) => idx,
+                None => {
+                    // 检查是否达到最大订阅者数
+                    if self.wildcard_subscribers.len() >= self.max_subscribers_per_topic {
+                        return Err(PubSubError::ResourceExhausted);
+                    }
+                    // 扩展列表
+                    self.wildcard_subscribers.push(None);
+                    self.wildcard_subscribers.len() - 1
+                },
+            };
+            
+            // 存储通配符订阅者
+            self.wildcard_subscribers[index] = Some(subscriber);
+            
+            // 更新全局订阅者列表（使用特殊标记）
+            self.global_subscribers.push(WILDCARD_TOPIC_ID as usize * 1000 + index);
+        } else {
+            // 验证普通主题ID
+            if topic_id as usize >= self.max_topics {
+                return Err(PubSubError::InvalidParameter);
+            }
+            
+            // 获取主题订阅者列表
+            let topic_subscribers = &mut self.subscribers[topic_id as usize];
+            
+            // 查找空闲位置
+            let index = match topic_subscribers.iter().position(|s| s.is_none()) {
+                Some(idx) => idx,
+                None => {
+                    // 检查是否达到每个主题的最大订阅者数
+                    if topic_subscribers.len() >= self.max_subscribers_per_topic {
+                        return Err(PubSubError::ResourceExhausted);
+                    }
+                    // 扩展列表（虽然初始化时已预分配，但为了安全起见）
+                    topic_subscribers.push(None);
+                    topic_subscribers.len() - 1
+                },
+            };
+            
+            // 存储订阅者
+            topic_subscribers[index] = Some(subscriber);
+            
+            // 更新全局订阅者列表
+            self.global_subscribers.push(topic_id as usize * 1000 + index); // 简单的组合方式
+        }
         
         Ok(subscription_id)
     }
     
     /// 取消订阅
     pub fn unsubscribe(&mut self, subscription_id: usize) -> Result<()> {
-        // 遍历所有主题的订阅者列表
+        // 1. 检查普通订阅者列表
         for topic_subscribers in &mut self.subscribers {
             for subscriber in topic_subscribers {
                 if let Some(ref mut s) = subscriber {
@@ -120,6 +165,19 @@ impl SubscriberManager {
                         *subscriber = None;
                         return Ok(());
                     }
+                }
+            }
+        }
+        
+        // 2. 检查通配符订阅者列表
+        for subscriber in &mut self.wildcard_subscribers {
+            if let Some(ref mut s) = subscriber {
+                if s.id == subscription_id {
+                    // 标记为非活跃
+                    s.active = false;
+                    // 从列表中移除
+                    *subscriber = None;
+                    return Ok(());
                 }
             }
         }
@@ -136,13 +194,11 @@ impl SubscriberManager {
             return Err(PubSubError::InvalidParameter);
         }
         
-        // 获取主题订阅者列表
-        let topic_subscribers = &mut self.subscribers[topic_id as usize];
-        
         // 更新当前时间
         let current_time = Self::get_current_time();
         
-        // 分发给所有活跃的订阅者
+        // 1. 分发给具体主题的订阅者
+        let topic_subscribers = &mut self.subscribers[topic_id as usize];
         for subscriber in topic_subscribers {
             if let Some(ref mut s) = subscriber {
                 if s.active {
@@ -150,6 +206,24 @@ impl SubscriberManager {
                     s.last_active = current_time;
                     
                     // 调用回调函数
+                    let continue_flag = (s.callback)(topic_id, data);
+                    if !continue_flag {
+                        // 回调函数返回false，取消订阅
+                        s.active = false;
+                        *subscriber = None;
+                    }
+                }
+            }
+        }
+        
+        // 2. 分发给通配符订阅者
+        for subscriber in &mut self.wildcard_subscribers {
+            if let Some(ref mut s) = subscriber {
+                if s.active {
+                    // 更新最后活跃时间
+                    s.last_active = current_time;
+                    
+                    // 调用回调函数，传入实际的topic_id
                     let continue_flag = (s.callback)(topic_id, data);
                     if !continue_flag {
                         // 回调函数返回false，取消订阅
@@ -168,7 +242,7 @@ impl SubscriberManager {
         // 更新当前时间
         let current_time = Self::get_current_time();
         
-        // 遍历所有主题的订阅者列表
+        // 1. 清理普通订阅者列表
         for topic_subscribers in &mut self.subscribers {
             for subscriber in topic_subscribers {
                 if let Some(ref mut s) = subscriber {
@@ -180,6 +254,21 @@ impl SubscriberManager {
                             // 从列表中移除
                             *subscriber = None;
                         }
+                    }
+                }
+            }
+        }
+        
+        // 2. 清理通配符订阅者列表
+        for subscriber in &mut self.wildcard_subscribers {
+            if let Some(ref mut s) = subscriber {
+                if s.active {
+                    // 检查是否超时
+                    if current_time - s.last_active > timeout {
+                        // 标记为非活跃
+                        s.active = false;
+                        // 从列表中移除
+                        *subscriber = None;
                     }
                 }
             }
@@ -208,7 +297,16 @@ impl SubscriberManager {
     
     /// 获取订阅者数量
     pub fn get_subscriber_count(&self, topic_id: u16) -> Result<usize> {
-        // 验证主题ID
+        if topic_id == WILDCARD_TOPIC_ID {
+            // 统计通配符订阅者数量
+            let count = self.wildcard_subscribers
+                .iter()
+                .filter(|s| s.is_some() && s.as_ref().unwrap().active)
+                .count();
+            return Ok(count);
+        }
+        
+        // 验证普通主题ID
         if topic_id as usize >= self.max_topics {
             return Err(PubSubError::InvalidParameter);
         }
@@ -222,6 +320,49 @@ impl SubscriberManager {
         Ok(count)
     }
     
+    /// 注册主题名称到ID的映射
+    pub fn register_topic(&mut self, topic_name: &'static str, topic_id: u16) -> Result<()> {
+        // 验证主题ID
+        if (topic_id as usize) >= self.max_topics {
+            return Err(PubSubError::InvalidParameter);
+        }
+        
+        // 检查主题名称是否已存在
+        if self.topic_map.contains_key(topic_name) {
+            return Err(PubSubError::InvalidParameter);
+        }
+        
+        // 检查主题ID是否已存在
+        if (topic_id as usize) < self.id_map.len() && self.id_map[topic_id as usize].is_some() {
+            return Err(PubSubError::InvalidParameter);
+        }
+        
+        // 更新映射
+        self.topic_map.insert(topic_name, topic_id);
+        
+        // 扩展ID映射列表（如果需要）
+        while (topic_id as usize) >= self.id_map.len() {
+            self.id_map.push(None);
+        }
+        self.id_map[topic_id as usize] = Some(topic_name);
+        
+        Ok(())
+    }
+    
+    /// 根据主题名称获取ID
+    pub fn get_topic_id(&self, topic_name: &str) -> Option<u16> {
+        self.topic_map.get(topic_name).copied()
+    }
+    
+    /// 根据ID获取主题名称
+    pub fn get_topic_name(&self, topic_id: u16) -> Option<&'static str> {
+        if (topic_id as usize) < self.id_map.len() {
+            self.id_map[topic_id as usize]
+        } else {
+            None
+        }
+    }
+    
     /// 获取所有主题的订阅者数量
     pub fn get_total_subscriber_count(&self) -> usize {
         let mut count = 0;
@@ -231,6 +372,11 @@ impl SubscriberManager {
                 .filter(|s| s.is_some() && s.as_ref().unwrap().active)
                 .count();
         }
+        // 加上通配符订阅者数量
+        count += self.wildcard_subscribers
+            .iter()
+            .filter(|s| s.is_some() && s.as_ref().unwrap().active)
+            .count();
         count
     }
 }

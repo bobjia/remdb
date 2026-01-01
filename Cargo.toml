@@ -6,7 +6,7 @@ members = [
 
 [package]
 name = "remdb"
-version = "0.1.17"
+version = "0.1.18"
 edition = "2021"
 authors = ["remdb contributors"]
 description = "嵌入式内存数据库"
@@ -24,7 +24,7 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 rand = { version = "0.8.5", optional = true }
-remdb-macros = { path = "./remdb-macros", version = "0.1.17" }
+remdb-macros = { path = "./remdb-macros", version = "0.1.18" }
 
 [dev-dependencies]
 criterion = "0.5"
