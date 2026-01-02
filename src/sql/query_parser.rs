@@ -428,7 +428,7 @@ impl SqlParser {
                     is_not_null = true;
                 } else if self.match_keyword("UNIQUE") {
                     is_unique = true;
-                } else if self.match_keyword("AUTOINCREMENT") {
+                } else if self.match_keyword("AUTOINCREMENT") || self.match_keyword("AUTO_INCREMENT") {
                     is_auto_increment = true;
                 } else {
                     // 没有更多约束

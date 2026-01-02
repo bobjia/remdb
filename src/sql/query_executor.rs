@@ -431,8 +431,110 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                 }
             };
             
-            // 转换并设置字段值
-            if let Some(sql_value) = field_value {
+            // 检查是否为主键且自动递增
+            let is_pk_auto_incr = field.primary_key && field.auto_increment;
+            
+            // 如果是自动递增主键且未提供值，则生成唯一值
+            if is_pk_auto_incr && field_value.is_none() {
+                // 生成自动递增主键值
+                // 查找当前表中最大的主键值
+                let mut max_pk = 0u64;
+                
+                unsafe {
+                    // 遍历表中的所有记录，找到最大主键值
+                    let iterate_result = table.iterate(|_id, record_ptr| {
+                        // 获取当前记录的主键值
+                        match field.data_type {
+                            DataType::UInt8 => {
+                                let val = *(record_ptr.add(field.offset) as *const u8);
+                                if val as u64 > max_pk {
+                                    max_pk = val as u64;
+                                }
+                            },
+                            DataType::UInt16 => {
+                                let val = core::ptr::read_unaligned(record_ptr.add(field.offset) as *const u16);
+                                if val as u64 > max_pk {
+                                    max_pk = val as u64;
+                                }
+                            },
+                            DataType::UInt32 => {
+                                let val = core::ptr::read_unaligned(record_ptr.add(field.offset) as *const u32);
+                                if val as u64 > max_pk {
+                                    max_pk = val as u64;
+                                }
+                            },
+                            DataType::UInt64 => {
+                                let val = core::ptr::read_unaligned(record_ptr.add(field.offset) as *const u64);
+                                if val > max_pk {
+                                    max_pk = val;
+                                }
+                            },
+                            DataType::Int8 => {
+                                let val = *(record_ptr.add(field.offset) as *const i8);
+                                if val as u64 > max_pk {
+                                    max_pk = val as u64;
+                                }
+                            },
+                            DataType::Int16 => {
+                                let val = core::ptr::read_unaligned(record_ptr.add(field.offset) as *const i16);
+                                if val as u64 > max_pk {
+                                    max_pk = val as u64;
+                                }
+                            },
+                            DataType::Int32 => {
+                                let val = core::ptr::read_unaligned(record_ptr.add(field.offset) as *const i32);
+                                if val as u64 > max_pk {
+                                    max_pk = val as u64;
+                                }
+                            },
+                            DataType::Int64 => {
+                                let val = core::ptr::read_unaligned(record_ptr.add(field.offset) as *const i64);
+                                if val as u64 > max_pk {
+                                    max_pk = val as u64;
+                                }
+                            },
+                            _ => {}
+                        }
+                        true
+                    });
+                    iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
+                }
+                
+                // 生成新的主键值
+                let new_pk = max_pk + 1;
+                
+                // 将新的主键值写入记录
+                unsafe {
+                    match field.data_type {
+                        DataType::UInt8 => {
+                            record_data[field.offset] = new_pk as u8;
+                        },
+                        DataType::UInt16 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u16, new_pk as u16);
+                        },
+                        DataType::UInt32 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u32, new_pk as u32);
+                        },
+                        DataType::UInt64 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u64, new_pk);
+                        },
+                        DataType::Int8 => {
+                            record_data[field.offset] = new_pk as i8 as u8;
+                        },
+                        DataType::Int16 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i16, new_pk as i16);
+                        },
+                        DataType::Int32 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i32, new_pk as i32);
+                        },
+                        DataType::Int64 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i64, new_pk as i64);
+                        },
+                        _ => {}
+                    }
+                }
+            } else if let Some(sql_value) = field_value {
+                // 转换并设置字段值
                 set_field_value(&mut record_data, field.offset, field.data_type, field.size, sql_value)?;
             }
         }
