@@ -30,6 +30,8 @@ pub struct MemoryTable {
     pub low_power_max_records: Option<usize>,
     /// 表快照版本号
     pub snapshot_version: u32,
+    /// 最大主键值（用于优化自增ID生成）
+    pub max_pk: u64,
 }
 
 // 添加Drop trait实现，用于释放动态分配的内存
@@ -90,6 +92,7 @@ impl MemoryTable {
             low_power_mode: false, // 默认不启用低功耗模式
             low_power_max_records: None, // 默认使用表定义的最大记录数
             snapshot_version: 0, // 初始快照版本为0
+            max_pk: 0, // 初始最大主键值为0
         })
     }
     
@@ -383,6 +386,27 @@ impl MemoryTable {
         unsafe {
             (*status_ptr).status = RecordStatus::Used;
             (*status_ptr).version += 1;
+        }
+        
+        // 更新最大主键值（如果是主键字段）
+        if let Some(pk_field) = self.def.fields.get(self.def.primary_key) {
+            let pk_value = unsafe {
+                match pk_field.data_type {
+                    DataType::UInt8 => *record_ptr.add(pk_field.offset) as u64,
+                    DataType::UInt16 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u16) as u64,
+                    DataType::UInt32 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u32) as u64,
+                    DataType::UInt64 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u64),
+                    DataType::Int8 => *record_ptr.add(pk_field.offset) as i8 as u64,
+                    DataType::Int16 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i16) as u64,
+                    DataType::Int32 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i32) as u64,
+                    DataType::Int64 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i64) as u64,
+                    _ => 0, // 非整数类型主键不更新max_pk
+                }
+            };
+            
+            if pk_value > self.max_pk {
+                self.max_pk = pk_value;
+            }
         }
         
         // 更新记录计数（如果是覆盖旧记录，不需要增加计数）
