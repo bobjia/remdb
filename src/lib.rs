@@ -863,13 +863,18 @@ impl RemDb {
         // 执行查询
         let result_set = crate::sql::execute_query(self, &query)
             .map_err(|err| {
-                match err {
-                    crate::sql::QueryExecutionError::TableNotFound => RemDbError::TableNotFound,
-                    crate::sql::QueryExecutionError::FieldNotFound => RemDbError::FieldNotFound,
-                    crate::sql::QueryExecutionError::TypeMismatch => RemDbError::TypeMismatch,
-                    crate::sql::QueryExecutionError::ConstraintsConflicts => RemDbError::DuplicateKey,
-                    _ => RemDbError::UnsupportedOperation,
-                }
+        match err {
+            crate::sql::QueryExecutionError::TableNotFound => RemDbError::TableNotFound,
+            crate::sql::QueryExecutionError::FieldNotFound => RemDbError::FieldNotFound,
+            crate::sql::QueryExecutionError::TypeMismatch => RemDbError::TypeMismatch,
+            crate::sql::QueryExecutionError::ConstraintsConflicts => RemDbError::DuplicateKey,
+            crate::sql::QueryExecutionError::OutOfMemory => RemDbError::OutOfMemory,
+            _ => {
+                // 保留原始错误信息，便于调试
+                eprintln!("SQL Execution Error: {:?}", err);
+                RemDbError::InternalError
+            }
+        }
             })?;
         
         Ok(result_set)

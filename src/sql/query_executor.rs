@@ -75,17 +75,13 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         query.columns.clone()
     };
     
-    // 3. 创建结果集，预分配足够的行空间
+    // 3. 创建结果集
     let mut result_set = ResultSet::new(columns.clone());
     
-    // 4. 直接在遍历记录时将结果添加到结果集，避免使用中间向量
-    let limit = query.limit.unwrap_or(table.def.max_records);
+    // 4. 遍历表中的所有记录，收集匹配的记录
+    let mut matched_rows = Vec::with_capacity(table.def.max_records);
     
-    // 直接遍历表中的所有记录
     unsafe {
-        // 预先创建一个足够大的向量来存储匹配的记录
-        let mut matched_rows = Vec::with_capacity(table.def.max_records);
-        
         // 遍历表中的所有记录，收集匹配的记录
         let iterate_result = table.iterate(|id, record_ptr| {
             // 检查记录是否符合WHERE条件
@@ -106,21 +102,25 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                 
                 // 将匹配的记录添加到向量中
                 matched_rows.push(row_data);
-                
-                // 检查是否达到LIMIT限制
-                if matched_rows.len() >= limit {
-                    return false; // 停止遍历
-                }
             }
             
             true // 继续遍历
         });
         iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
-        
-        // 将收集到的记录添加到结果集
-        for row_data in matched_rows {
-            result_set.add_row(row_data);
-        }
+    }
+    
+    // 5. 如果有ORDER BY子句，对记录进行排序
+    if let Some(order_by) = &query.order_by {
+        sort_rows(&mut matched_rows, table, order_by)?;
+    }
+    
+    // 6. 应用LIMIT限制
+    let limit = query.limit.unwrap_or(matched_rows.len());
+    let rows_to_add = &matched_rows[..core::cmp::min(matched_rows.len(), limit)];
+    
+    // 7. 将处理后的记录添加到结果集
+    for row_data in rows_to_add {
+        result_set.add_row(row_data.clone());
     }
     
     Ok(result_set)
@@ -1046,9 +1046,127 @@ fn compare_strings(f: &str, c: &str, operator: &ComparisonOperator) -> bool {
     }
 }
 
-/// 对行进行排序 - 简化实现
-fn sort_rows(_rows: &mut Vec<(usize, Vec<Value>)>, _table: &MemoryTable, _order_by: &OrderByClause) -> Result<(), QueryExecutionError> {
-    // 由于Value是union类型，排序实现较为复杂，暂时返回Ok
+/// 对行进行排序
+fn sort_rows(rows: &mut Vec<Vec<Value>>, table: &MemoryTable, order_by: &OrderByClause) -> Result<(), QueryExecutionError> {
+    // 查找排序字段在表中的索引
+    let field_index = table.def.fields
+        .iter()
+        .position(|field| field.name == order_by.field)
+        .ok_or(QueryExecutionError::FieldNotFound)?;
+    
+    let field_type = table.def.fields[field_index].data_type;
+    
+    // 对行进行排序
+    rows.sort_by(|a, b| {
+        // 查找排序字段在返回列中的索引
+        // 遍历表的所有字段，找到在返回列中对应的索引
+        let mut sort_col_index = 0;
+        for (i, field) in table.def.fields.iter().enumerate() {
+            if field.name == order_by.field {
+                sort_col_index = i;
+                break;
+            }
+        }
+        
+        // 确保索引不超出范围
+        if sort_col_index >= a.len() || sort_col_index >= b.len() {
+            return core::cmp::Ordering::Equal;
+        }
+        
+        let val_a = &a[sort_col_index];
+        let val_b = &b[sort_col_index];
+        
+        // 根据字段类型比较值
+        let comparison = match field_type {
+            // 无符号整数类型
+            DataType::UInt8 => {
+                let a_val = unsafe { val_a.u8 };
+                let b_val = unsafe { val_b.u8 };
+                a_val.cmp(&b_val)
+            },
+            DataType::UInt16 => {
+                let a_val = unsafe { val_a.u16 };
+                let b_val = unsafe { val_b.u16 };
+                a_val.cmp(&b_val)
+            },
+            DataType::UInt32 => {
+                let a_val = unsafe { val_a.u32 };
+                let b_val = unsafe { val_b.u32 };
+                a_val.cmp(&b_val)
+            },
+            DataType::UInt64 => {
+                let a_val = unsafe { val_a.u64 };
+                let b_val = unsafe { val_b.u64 };
+                a_val.cmp(&b_val)
+            },
+            
+            // 有符号整数类型
+            DataType::Int8 => {
+                let a_val = unsafe { val_a.i8 };
+                let b_val = unsafe { val_b.i8 };
+                a_val.cmp(&b_val)
+            },
+            DataType::Int16 => {
+                let a_val = unsafe { val_a.i16 };
+                let b_val = unsafe { val_b.i16 };
+                a_val.cmp(&b_val)
+            },
+            DataType::Int32 => {
+                let a_val = unsafe { val_a.i32 };
+                let b_val = unsafe { val_b.i32 };
+                a_val.cmp(&b_val)
+            },
+            DataType::Int64 => {
+                let a_val = unsafe { val_a.i64 };
+                let b_val = unsafe { val_b.i64 };
+                a_val.cmp(&b_val)
+            },
+            
+            // 浮点数类型
+            DataType::Float32 => {
+                let a_val = unsafe { val_a.float32 };
+                let b_val = unsafe { val_b.float32 };
+                a_val.partial_cmp(&b_val).unwrap_or(core::cmp::Ordering::Equal)
+            },
+            DataType::Float64 => {
+                let a_val = unsafe { val_a.float64 };
+                let b_val = unsafe { val_b.float64 };
+                a_val.partial_cmp(&b_val).unwrap_or(core::cmp::Ordering::Equal)
+            },
+            
+            // 布尔类型
+            DataType::Bool => {
+                let a_val = unsafe { val_a.bool };
+                let b_val = unsafe { val_b.bool };
+                a_val.cmp(&b_val)
+            },
+            
+            // 时间戳类型
+            DataType::Timestamp => {
+                let a_val = unsafe { val_a.timestamp };
+                let b_val = unsafe { val_b.timestamp };
+                a_val.cmp(&b_val)
+            },
+            
+            // 字符串类型
+            DataType::String => {
+                let a_str = unsafe { &val_a.string };
+                let b_str = unsafe { &val_b.string };
+                
+                let a_str = String::from_utf8_lossy(a_str).trim_end_matches(char::from(0)).to_string();
+                let b_str = String::from_utf8_lossy(b_str).trim_end_matches(char::from(0)).to_string();
+                
+                a_str.cmp(&b_str)
+            },
+        };
+        
+        // 根据排序方向调整结果
+        match order_by.direction {
+            crate::sql::OrderDirection::Ascending => comparison,
+            crate::sql::OrderDirection::Descending => comparison.reverse(),
+        }
+    });
+    
     Ok(())
 }
 
