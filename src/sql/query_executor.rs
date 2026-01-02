@@ -299,14 +299,16 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
                              table.def.fields[table.def.primary_key].name == field.name;
         let key_str = if is_primary_key {
             "PRI"
+        } else if field.unique {
+            "UNI"
         } else {
             ""
         };
         
-        // 确定是否允许NULL（目前所有字段都不允许NULL）
-        let null_str = "NO";
+        // 确定是否允许NULL
+        let null_str = "NO"; // 目前所有字段都不允许NULL
         
-        // 确定默认值（目前所有字段默认值为0或空字符串）
+        // 确定默认值
         let default_str = "0";
         
         // 确定字段类型字符串表示
@@ -485,7 +487,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
             Ok(_) => affected_rows += 1,
             Err(e) => {
                 match e {
-                    RemDbError::InvalidRecordSize | RemDbError::DuplicateKey => {
+                    RemDbError::InvalidRecordSize | RemDbError::DuplicateKey | RemDbError::TypeMismatch => {
                         return Err(QueryExecutionError::ConstraintsConflicts);
                     },
                     RemDbError::OutOfMemory => {
@@ -658,87 +660,60 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
 /// 设置字段值
 fn set_field_value(record_data: &mut Vec<u8>, offset: usize, data_type: DataType, field_size: usize, sql_value: &crate::sql::Value) -> Result<(), QueryExecutionError> {
     unsafe {
+        // 辅助函数：将SQL值转换为整数
+        let to_integer = |sql_val: &crate::sql::Value| -> Result<i64, QueryExecutionError> {
+            match sql_val {
+                crate::sql::Value::Integer(i) => Ok(*i),
+                crate::sql::Value::Float(f) => Ok(*f as i64),
+                crate::sql::Value::Boolean(b) => Ok(*b as i64),
+                crate::sql::Value::String(s) => {
+                    s.parse::<i64>().map_err(|_| QueryExecutionError::TypeMismatch)
+                },
+                _ => Err(QueryExecutionError::TypeMismatch),
+            }
+        };
+        
         match data_type {
             // 无符号整数类型
             DataType::UInt8 => {
-                let value = match sql_value {
-                    crate::sql::Value::Integer(i) => *i as u8,
-                    crate::sql::Value::Float(f) => *f as u8,
-                    crate::sql::Value::Boolean(b) => *b as u8,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+                let value = to_integer(sql_value)? as u8;
                 // u8不需要对齐，直接复制
                 record_data[offset] = value;
             },
             DataType::UInt16 => {
-                let value = match sql_value {
-                    crate::sql::Value::Integer(i) => *i as u16,
-                    crate::sql::Value::Float(f) => *f as u16,
-                    crate::sql::Value::Boolean(b) => *b as u16,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+                let value = to_integer(sql_value)? as u16;
                 // 使用core::ptr::write_unaligned来避免对齐问题
                 core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut u16, value);
             },
             DataType::UInt32 => {
-                let value = match sql_value {
-                    crate::sql::Value::Integer(i) => *i as u32,
-                    crate::sql::Value::Float(f) => *f as u32,
-                    crate::sql::Value::Boolean(b) => *b as u32,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+                let value = to_integer(sql_value)? as u32;
                 // 使用core::ptr::write_unaligned来避免对齐问题
                 core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut u32, value);
             },
             DataType::UInt64 => {
-                let value = match sql_value {
-                    crate::sql::Value::Integer(i) => *i as u64,
-                    crate::sql::Value::Float(f) => *f as u64,
-                    crate::sql::Value::Boolean(b) => *b as u64,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+                let value = to_integer(sql_value)? as u64;
                 // 使用core::ptr::write_unaligned来避免对齐问题
                 core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut u64, value);
             },
             
             // 有符号整数类型
             DataType::Int8 => {
-                let value = match sql_value {
-                    crate::sql::Value::Integer(i) => *i as i8,
-                    crate::sql::Value::Float(f) => *f as i8,
-                    crate::sql::Value::Boolean(b) => *b as i8,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+                let value = to_integer(sql_value)? as i8;
                 // i8不需要对齐，直接复制
                 record_data[offset] = value as u8;
             },
             DataType::Int16 => {
-                let value = match sql_value {
-                    crate::sql::Value::Integer(i) => *i as i16,
-                    crate::sql::Value::Float(f) => *f as i16,
-                    crate::sql::Value::Boolean(b) => *b as i16,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+                let value = to_integer(sql_value)? as i16;
                 // 使用core::ptr::write_unaligned来避免对齐问题
                 core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut i16, value);
             },
             DataType::Int32 => {
-                let value = match sql_value {
-                    crate::sql::Value::Integer(i) => *i as i32,
-                    crate::sql::Value::Float(f) => *f as i32,
-                    crate::sql::Value::Boolean(b) => *b as i32,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+                let value = to_integer(sql_value)? as i32;
                 // 使用core::ptr::write_unaligned来避免对齐问题
                 core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut i32, value);
             },
             DataType::Int64 => {
-                let value = match sql_value {
-                    crate::sql::Value::Integer(i) => *i,
-                    crate::sql::Value::Float(f) => *f as i64,
-                    crate::sql::Value::Boolean(b) => *b as i64,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+                let value = to_integer(sql_value)?;
                 // 使用core::ptr::write_unaligned来避免对齐问题
                 core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut i64, value);
             },
@@ -771,6 +746,9 @@ fn set_field_value(record_data: &mut Vec<u8>, offset: usize, data_type: DataType
                     crate::sql::Value::Boolean(b) => *b,
                     crate::sql::Value::Integer(i) => *i != 0,
                     crate::sql::Value::Float(f) => *f != 0.0,
+                    crate::sql::Value::String(s) => {
+                        s.parse::<bool>().map_err(|_| QueryExecutionError::TypeMismatch)?
+                    },
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // bool不需要对齐，直接复制
@@ -779,11 +757,7 @@ fn set_field_value(record_data: &mut Vec<u8>, offset: usize, data_type: DataType
             
             // 时间戳类型
             DataType::Timestamp => {
-                let value = match sql_value {
-                    crate::sql::Value::Integer(i) => *i as u64,
-                    crate::sql::Value::Float(f) => *f as u64,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+                let value = to_integer(sql_value)? as u64;
                 // 使用core::ptr::write_unaligned来避免对齐问题
                 core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut u64, value);
             },
