@@ -48,6 +48,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
     match query.query_type {
         crate::sql::QueryType::Select => execute_select_query(db, query),
         crate::sql::QueryType::Insert => execute_insert_query(db, query),
+        crate::sql::QueryType::Update => execute_update_query(db, query),
         crate::sql::QueryType::Delete => execute_delete_query(db, query),
         crate::sql::QueryType::Describe => execute_describe_query(db, query),
         crate::sql::QueryType::CreateTable => execute_create_table_query(db, query),
@@ -556,6 +557,92 @@ fn execute_delete_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
             Ok(_) => affected_rows += 1,
             Err(_) => continue, // 跳过删除失败的记录
         }
+    }
+    
+    // 6. 创建结果集，返回受影响的行数
+    let columns = vec!["affected_rows".to_string()];
+    let mut result_set = ResultSet::new(columns);
+    
+    let row_data = vec![crate::Value { u64: affected_rows as u64 }];
+    result_set.add_row(row_data);
+    
+    Ok(result_set)
+}
+
+/// 执行UPDATE查询
+fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 1. 查找要更新的表的ID
+    let table_id = db.tables
+        .iter()
+        .position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == query.table_name
+            } else {
+                false
+            }
+        })
+        .ok_or(QueryExecutionError::TableNotFound)?;
+    
+    // 2. 获取表引用（用于遍历）
+    let table_ref = db.tables[table_id].as_ref().ok_or(QueryExecutionError::TableNotFound)?;
+    let record_size = table_ref.record_size;
+    
+    // 3. 遍历表中的所有记录，收集要更新的记录ID和它们的当前数据
+    let mut to_update = Vec::new();
+    
+    unsafe {
+        // 遍历表中的所有记录
+        let iterate_result = table_ref.iterate(|id, record_ptr| {
+            // 检查记录是否符合WHERE条件
+            let mut matches = true;
+            if let Some(where_clause) = &query.where_clause {
+                matches = evaluate_condition(table_ref, record_ptr, &where_clause.condition);
+            }
+            
+            if matches {
+                // 复制记录数据到临时缓冲区
+                let mut record_data = vec![0; record_size];
+                core::ptr::copy_nonoverlapping(record_ptr, record_data.as_mut_ptr(), record_size);
+                to_update.push((id, record_data));
+            }
+            
+            true // 继续遍历
+        });
+        iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
+    }
+    
+    // 4. 获取可变表引用（用于更新）
+    let table_mut = db.get_table_mut(table_id).map_err(|_| QueryExecutionError::InternalError)?;
+    
+    // 5. 执行更新操作
+    let mut affected_rows = 0;
+    for (id, mut record_data) in to_update {
+        // 遍历所有要更新的字段值对
+        for (field_name, new_value) in &query.update_pairs {
+            // 查找字段索引
+            let field_index = table_mut.def.fields
+                .iter()
+                .position(|field| field.name == field_name)
+                .ok_or(QueryExecutionError::FieldNotFound)?;
+            
+            let field = &table_mut.def.fields[field_index];
+            
+            // 设置新的字段值
+            set_field_value(&mut record_data, field.offset, field.data_type, field.size, new_value)?;
+        }
+        
+        // 获取记录指针并写入更新后的数据
+        let record_ptr = unsafe { table_mut.get_record_ptr_mut(id) };
+        unsafe {
+            core::ptr::copy_nonoverlapping(record_data.as_ptr(), record_ptr, record_size);
+        }
+        
+        // 更新记录版本号
+        let status_ptr = unsafe { table_mut.get_status_ptr(id) };
+        let status = unsafe { &mut *status_ptr };
+        status.version += 1;
+        
+        affected_rows += 1;
     }
     
     // 6. 创建结果集，返回受影响的行数

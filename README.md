@@ -82,6 +82,15 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 支持不少于32个不同的数据主题
   - 从调用publish API到数据进入网络栈的延迟小于100微秒
   - 协议头开销小于载荷数据的10%
+  - 支持通配符订阅，允许使用主题模式匹配
+- **高可用支持**：
+  - 主从复制机制，确保数据一致性
+  - 自动故障检测和切换
+  - 心跳检测，监控节点状态
+  - 支持多种角色：主节点、从节点、自动模式
+  - 同步复制和异步复制两种模式
+  - 支持故障恢复和重新同步
+  - 提供高可用管理器，简化HA配置和管理
 
 ## 技术特点
 
@@ -582,7 +591,15 @@ cargo check --no-default-features --features=baremetal
 - `ddl_example.rs`：DDL示例，展示如何使用DDL宏定义表和索引
 - `ddl_full_example.rs`：完整DDL示例，展示更复杂的DDL定义
 - `ddl_runtime_example.rs`：运行时DDL配置示例，展示如何使用运行时DDL API
+- `describe_table.rs`：表结构描述示例，展示如何获取表的详细信息
+- `export_example.rs`：导出功能示例，展示如何使用SQL导出功能
+- `ha_example.rs`：高可用示例，展示如何使用高可用功能
+- `multiple_tables.rs`：多表示例，展示如何使用多个表
 - `pubsub_example.rs`：发布/订阅示例，展示如何使用基于UDP的高可靠数据订阅与发布功能
+- `pubsub_wildcard.rs`：通配符发布/订阅示例，展示如何使用通配符订阅主题
+- `test_auto_increment.rs`：自增字段示例，展示如何使用自增字段
+- `time_series.rs`：时间序列示例，展示如何处理时间序列数据
+- `varchar_example.rs`：VARCHAR类型示例，展示如何使用VARCHAR类型
 
 ## 项目结构
 
@@ -608,6 +625,12 @@ remdb/
 │   │   ├── mod.rs          # 平台抽象层定义
 │   │   ├── posix.rs        # POSIX平台实现
 │   │   └── baremetal.rs    # 裸机平台实现
+│   ├── ha/
+│   │   ├── mod.rs          # 高可用模块入口
+│   │   ├── manager.rs      # HA管理器实现
+│   │   ├── replication.rs  # 复制功能实现
+│   │   ├── heartbeat.rs    # 心跳检测实现
+│   │   └── role.rs         # 角色管理实现
 │   └── pubsub/
 │       ├── mod.rs          # 发布/订阅模块入口
 │       ├── protocol.rs     # 协议帧定义与解析

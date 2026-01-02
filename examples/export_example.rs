@@ -48,41 +48,12 @@ fn main() {
     
     // 3. 插入测试数据
     println!("3. 插入测试数据...");
-    let table_id = 0;
-    let mut table = db.get_table_mut(table_id).unwrap();
     
-    // 准备测试记录，确保所有字段都正确对齐
-    // u64需要8字节对齐，所以字段偏移必须是8的倍数
-    let mut record1 = [0u8; 4 + 32 + 4 + 8 + 8]; // id(4) + name(32) + 填充(4) + age(1) + active(1) + 填充(6) + created_at(8)
-    
-    unsafe {
-        // id: 1 (偏移0，i32不需要8字节对齐)
-        let id_ptr = record1.as_mut_ptr() as *mut i32;
-        *id_ptr = 1;
-        
-        // name: "Alice" (偏移4)
-        let name = "Alice";
-        let name_ptr = record1.as_mut_ptr().add(4) as *mut u8;
-        for (i, &c) in name.as_bytes().iter().enumerate() {
-            *name_ptr.add(i) = c;
-        }
-        
-        // age: 25 (偏移4+32=36，i8不需要8字节对齐)
-        let age_ptr = record1.as_mut_ptr().add(36) as *mut i8;
-        *age_ptr = 25;
-        
-        // active: true (偏移37，bool不需要8字节对齐)
-        let active_ptr = record1.as_mut_ptr().add(37) as *mut u8;
-        *active_ptr = 1;
-        
-        // created_at: 1234567890 (偏移48，确保是8的倍数)
-        let created_at_ptr = record1.as_mut_ptr().add(48) as *mut u64;
-        *created_at_ptr = 1234567890;
-    }
-    
-    // 插入记录
-    let _ = table.insert(record1.as_ptr());
-    println!("   插入记录成功: id=1, name=Alice");
+    // 使用insert_record插入记录
+    let columns = &["id", "name", "age", "active", "created_at"];
+    let values = &["1", "Alice", "25", "true", "1234567890"];
+    let affected_rows = db.insert_record("TEST_TABLE", columns, values).unwrap();
+    println!("   插入记录成功: id=1, name=Alice, 影响行数: {}", affected_rows);
     
     // 4. 导出DDL
     println!("4. 导出DDL到文件...");

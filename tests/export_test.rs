@@ -2,11 +2,13 @@
 // 使用标准库
 #![cfg(feature = "std")]
 
+// 确保测试顺序执行，避免全局状态冲突
 extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use remdb::*;
+use serial_test::serial;
 
 // 定义内存缓冲区
 static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存，用于所有测试用例
@@ -33,6 +35,7 @@ remdb::database!(
 );
 
 #[test]
+#[serial]
 fn test_export_ddl() {
     // 重置事务管理器状态，避免测试之间的状态污染
     unsafe {
@@ -77,21 +80,15 @@ fn test_export_ddl() {
     // 清理测试文件
     std::fs::remove_file(ddl_path).expect("Failed to remove DDL file");
     
-    // 重置全局数据库
+    // 重置全局数据库 - 这会释放所有表及其内存
     reset_global_db();
     
     // 重置全局分配器
-    unsafe {
-        crate::memory::allocator::reset_global_allocator().unwrap();
-    }
-    
-    // 重置全局分配器
-    unsafe {
-        crate::memory::allocator::reset_global_allocator().unwrap();
-    }
+    crate::memory::allocator::reset_global_allocator().unwrap();
 }
 
 #[test]
+#[serial]
 fn test_export_data() {
     // 重置事务管理器状态，避免测试之间的状态污染
     unsafe {
@@ -112,7 +109,7 @@ fn test_export_data() {
     
     // 获取表
     let table_id = 0;
-    let mut table = db.get_table_mut(table_id).unwrap();
+    let table = db.get_table_mut(table_id).unwrap();
     
     // 添加调试信息
     println!("DEBUG: TEST_TABLE.record_size = {}", TEST_TABLE.record_size);
@@ -187,16 +184,12 @@ fn test_export_data() {
     // 清理测试文件
     std::fs::remove_file(data_path).expect("Failed to remove data file");
     
-    // 重置全局数据库
+    // 重置全局数据库 - 这会自动触发Drop trait，释放所有表内存
     reset_global_db();
-    
-    // 重置全局分配器
-    unsafe {
-        crate::memory::allocator::reset_global_allocator().unwrap();
-    }
 }
 
 #[test]
+#[serial]
 fn test_export_empty_table() {
     // 重置事务管理器状态，避免测试之间的状态污染
     unsafe {
@@ -242,4 +235,9 @@ fn test_export_empty_table() {
     
     // 重置全局数据库
     reset_global_db();
+    
+    // 重置全局分配器
+    unsafe {
+        crate::memory::allocator::reset_global_allocator().unwrap();
+    }
 }

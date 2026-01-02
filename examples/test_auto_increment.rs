@@ -152,21 +152,13 @@ fn main() {
         println!("\n=== 测试7：查询test1表，验证插入结果===");
         let select_sql1 = "SELECT * FROM test1";
         
-        match sql::parse_sql_query(select_sql1) {
-            Ok(query) => {
-                println!("✅ SQL解析成功: test1查询");
-                match sql::execute_query(&mut db, &query) {
-                    Ok(result) => {
-                        println!("✅ 查询成功，test1结果如下：");
-                        println!("{}", result.to_string());
-                    },
-                    Err(e) => {
-                        println!("❌ 查询失败: {}", e);
-                    }
-                }
+        match db.sql_query(select_sql1) {
+            Ok(result) => {
+                println!("✅ 查询成功，test1结果如下：");
+                println!("{}", result.to_string());
             },
             Err(e) => {
-                println!("❌ 解析失败: {}", e);
+                println!("❌ 查询失败: {}", e);
             }
         }
         
@@ -174,21 +166,44 @@ fn main() {
         println!("\n=== 测试8：查询test2表，验证插入结果===");
         let select_sql2 = "SELECT * FROM test2";
         
-        match sql::parse_sql_query(select_sql2) {
-            Ok(query) => {
-                println!("✅ SQL解析成功: test2查询");
-                match sql::execute_query(&mut db, &query) {
-                    Ok(result) => {
-                        println!("✅ 查询成功，test2结果如下：");
-                        println!("{}", result.to_string());
-                    },
-                    Err(e) => {
-                        println!("❌ 查询失败: {}", e);
-                    }
+        match db.sql_query(select_sql2) {
+            Ok(result) => {
+                println!("✅ 查询成功，test2结果如下：");
+                println!("{}", result.to_string());
+            },
+            Err(e) => {
+                println!("❌ 查询失败: {}", e);
+            }
+        }
+        
+        // 测试9：使用新的专用方法查询数据
+        println!("\n=== 测试9：使用新的专用方法查询数据===");
+        match db.execute_query("test1", &["id", "name"], None, None) {
+            Ok(result) => {
+                println!("✅ 使用execute_query查询test1成功：");
+                println!("{}", result.to_string());
+            },
+            Err(e) => {
+                println!("❌ 使用execute_query查询失败: {}", e);
+            }
+        }
+        
+        // 测试10：使用新的专用方法插入数据
+        println!("\n=== 测试10：使用新的专用方法插入数据===");
+        let columns = &["name"];
+        let values = &["New User"];
+        match db.insert_record("test1", columns, values) {
+            Ok(affected_rows) => {
+                println!("✅ 使用insert_record插入成功，影响行数: {}", affected_rows);
+                
+                // 查询验证
+                if let Ok(result) = db.execute_query("test1", &["id", "name"], None, None) {
+                    println!("✅ 插入后查询结果：");
+                    println!("{}", result.to_string());
                 }
             },
             Err(e) => {
-                println!("❌ 解析失败: {}", e);
+                println!("❌ 使用insert_record插入失败: {}", e);
             }
         }
     }

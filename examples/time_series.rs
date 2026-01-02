@@ -266,6 +266,35 @@ fn main() {
                      i+1, window_start, count, avg, min, max);
         }
         
+        // 测试新的专用方法
+        println!("\n=== 测试新的专用方法 ===");
+        
+        // 使用insert_record插入单条记录
+        println!("\n1. 使用insert_record插入单条记录:");
+        let columns = &["id", "metric_name", "value", "timestamp", "tags"];
+        let values = &["101", "memory_usage", "75.5", "1609459200000", "host=server01,region=us-west"];
+        let affected_rows = db.insert_record("metrics", columns, values).unwrap();
+        println!("插入记录成功，影响行数: {}", affected_rows);
+        
+        // 使用execute_query查询记录
+        println!("\n2. 使用execute_query查询记录:");
+        let result = db.execute_query("metrics", &["id", "metric_name", "value", "timestamp"], Some("id = 101"), None).unwrap();
+        println!("查询结果: {}", result.to_string());
+        
+        // 使用update_record更新记录
+        println!("\n3. 使用update_record更新记录:");
+        let update_affected = db.update_record("metrics", "value = 80.0, tags = 'host=server01,region=us-west,updated=true'", Some("id = 101")).unwrap();
+        println!("更新记录成功，影响行数: {}", update_affected);
+        
+        // 查询验证更新
+        let updated_result = db.execute_query("metrics", &["id", "metric_name", "value", "tags"], Some("id = 101"), None).unwrap();
+        println!("更新后查询结果: {}", updated_result.to_string());
+        
+        // 使用execute_query进行更复杂的查询
+        println!("\n4. 使用execute_query进行更复杂的查询:");
+        let complex_result = db.execute_query("metrics", &["id", "metric_name", "value", "timestamp"], Some("value > 90.0 AND timestamp < 1609459200000 + 600000"), Some(5)).unwrap();
+        println!("查询结果: {}", complex_result.to_string());
+        
         println!("\n=== 时间序列功能测试完成 ===");
         println!("所有测试通过!");
     }

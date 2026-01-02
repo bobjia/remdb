@@ -71,7 +71,7 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Supports exporting table data as SQL INSERT statements
   - Output is compatible with SQLite3 syntax while preserving project-specific keywords
   - Supports writing export results to files or memory buffers
-- **UDP-based Reliable Data Pub/Sub**:
+- **UDP-based Reliable Data Pub/Sub**: 
   - Supports lightweight UDP-based data publish/subscribe mechanism
   - Performs CRC check on transmitted data to ensure data integrity
   - Supports unicast, broadcast, and multicast modes
@@ -82,6 +82,15 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Supports at least 32 different data topics
   - Latency from calling publish API to data entering network stack is less than 100 microseconds
   - Protocol header overhead is less than 10% of payload data
+  - Supports wildcard subscriptions, allowing topic pattern matching
+- **High Availability Support**: 
+  - Master-slave replication mechanism ensuring data consistency
+  - Automatic failure detection and failover
+  - Heartbeat monitoring for node status
+  - Support for multiple roles: Master, Slave, Auto mode
+  - Both synchronous and asynchronous replication modes
+  - Support for failure recovery and resynchronization
+  - High Availability Manager provided to simplify HA configuration and management
 
 ## Technical Characteristics
 
@@ -582,7 +591,15 @@ Check the examples directory for sample code:
 - `ddl_example.rs`: DDL example demonstrating how to define tables and indexes using DDL macros
 - `ddl_full_example.rs`: Complete DDL example demonstrating more complex DDL definitions
 - `ddl_runtime_example.rs`: Runtime DDL configuration example demonstrating how to use the runtime DDL API
+- `describe_table.rs`: Table description example demonstrating how to get detailed table information
+- `export_example.rs`: Export functionality example demonstrating how to use SQL export functionality
+- `ha_example.rs`: High availability example demonstrating how to use high availability features
+- `multiple_tables.rs`: Multiple tables example demonstrating how to use multiple tables
 - `pubsub_example.rs`: Pub/Sub example demonstrating how to use the UDP-based reliable data publish/subscribe functionality
+- `pubsub_wildcard.rs`: Wildcard Pub/Sub example demonstrating how to use wildcard subscriptions
+- `test_auto_increment.rs`: Auto-increment example demonstrating how to use auto-increment fields
+- `time_series.rs`: Time series example demonstrating how to handle time series data
+- `varchar_example.rs`: VARCHAR type example demonstrating how to use VARCHAR types
 
 ## Project Structure
 
@@ -608,6 +625,12 @@ remdb/
 │   │   ├── mod.rs          # Platform abstraction layer definition
 │   │   ├── posix.rs        # POSIX platform implementation
 │   │   └── baremetal.rs    # Baremetal platform implementation
+│   ├── ha/
+│   │   ├── mod.rs          # High Availability module entry
+│   │   ├── manager.rs      # HA Manager implementation
+│   │   ├── replication.rs  # Replication functionality implementation
+│   │   ├── heartbeat.rs    # Heartbeat monitoring implementation
+│   │   └── role.rs         # Role management implementation
 │   └── pubsub/
 │       ├── mod.rs          # Pub/Sub module entry
 │       ├── protocol.rs     # Protocol frame definition and parsing

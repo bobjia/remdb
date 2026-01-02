@@ -34,6 +34,8 @@ pub struct SqlQuery {
     pub index_column: Option<String>,
     /// 索引类型（用于CREATE INDEX）
     pub index_type: Option<String>,
+    /// 更新的字段值对（用于UPDATE）：(字段名, 新值)
+    pub update_pairs: Vec<(String, Value)>,
 }
 
 /// 查询类型
@@ -43,6 +45,8 @@ pub enum QueryType {
     Select,
     /// INSERT查询
     Insert,
+    /// UPDATE查询
+    Update,
     /// DELETE查询
     Delete,
     /// DESCRIBE TABLE查询
@@ -207,6 +211,7 @@ impl SqlParser {
         let query = match query_type {
             QueryType::Select => self.parse_select_query(),
             QueryType::Insert => self.parse_insert_query(),
+            QueryType::Update => self.parse_update_query(),
             QueryType::Delete => self.parse_delete_query(),
             QueryType::Describe => self.parse_describe_query(),
             QueryType::CreateTable => self.parse_create_table_query(),
@@ -219,6 +224,60 @@ impl SqlParser {
         self.match_char(';');
         
         Ok(query)
+    }
+    
+    /// 解析UPDATE查询
+    fn parse_update_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析表名
+        self.skip_whitespace();
+        let table_name = self.parse_identifier()?;
+        
+        // 解析SET关键字
+        self.skip_whitespace();
+        self.expect_keyword("SET")?;
+        
+        // 解析SET子句
+        let mut update_pairs = Vec::new();
+        
+        loop {
+            self.skip_whitespace();
+            let field_name = self.parse_identifier()?;
+            
+            self.skip_whitespace();
+            self.expect_char('=')?;
+            
+            self.skip_whitespace();
+            let value = self.parse_value()?;
+            
+            update_pairs.push((field_name, value));
+            
+            self.skip_whitespace();
+            if self.match_char(',') {
+                continue;
+            } else {
+                break;
+            }
+        }
+        
+        // 解析WHERE子句（可选）
+        let where_clause = self.parse_where_clause()?;
+        
+        Ok(SqlQuery {
+            query_type: QueryType::Update,
+            table_name,
+            columns: Vec::new(),
+            select_all: false,
+            where_clause,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            update_pairs,
+        })
     }
 
     /// 解析DESCRIBE TABLE查询
@@ -245,6 +304,7 @@ impl SqlParser {
             primary_key: None,
             index_column: None,
             index_type: None,
+            update_pairs: Vec::new(),
         })
     }
     
@@ -282,6 +342,7 @@ impl SqlParser {
             primary_key: None,
             index_column: None,
             index_type: None,
+            update_pairs: Vec::new(),
         })
     }
     
@@ -382,6 +443,7 @@ impl SqlParser {
             primary_key: None,
             index_column: None,
             index_type: None,
+            update_pairs: Vec::new(),
         })
     }
     
@@ -467,6 +529,7 @@ impl SqlParser {
             primary_key,
             index_column: None,
             index_type: None,
+            update_pairs: Vec::new(),
         })
     }
     
@@ -518,6 +581,7 @@ impl SqlParser {
             primary_key: None,
             index_column: Some(index_column),
             index_type,
+            update_pairs: Vec::new(),
         })
     }
 
@@ -527,6 +591,8 @@ impl SqlParser {
             Ok(QueryType::Select)
         } else if self.match_keyword("INSERT") {
             Ok(QueryType::Insert)
+        } else if self.match_keyword("UPDATE") {
+            Ok(QueryType::Update)
         } else if self.match_keyword("DELETE") {
             Ok(QueryType::Delete)
         } else if self.match_keyword("DESCRIBE") {
@@ -576,6 +642,7 @@ impl SqlParser {
             primary_key: None,
             index_column: None,
             index_type: None,
+            update_pairs: Vec::new(),
         })
     }
 

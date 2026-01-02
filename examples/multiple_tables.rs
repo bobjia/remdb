@@ -2,6 +2,7 @@ extern crate alloc;
 
 use core::ptr::NonNull;
 use remdb::*;
+use alloc::string::String;
 
 // 定义内存缓冲区
 static mut DB_MEMORY: [u8; 262144] = [0u8; 262144]; // 256KB内存，用于多表测试
@@ -324,142 +325,92 @@ fn main() {
         // ---------- 产品表操作 ----------
         println!("=== 产品表操作 ===");
         
-        // 准备产品数据
-        let mut product1_data = [0u8; 216]; // 计算记录大小：i32(4) + str(64) + str(128) + f64(8) + i32(4) + bool(1) = 209字节（对齐到8字节）
-        let product1_id: i32 = 1;
-        let product1_name = "Laptop Pro";
-        let product1_desc = "High performance laptop";
-        let product1_price: f64 = 999.99;
-        let product1_stock: i32 = 50;
-        let product1_active = true;
-        
-        // 设置产品1字段值
-        core::ptr::copy_nonoverlapping(&product1_id as *const i32 as *const u8, product1_data.as_mut_ptr(), 4);
-        core::ptr::copy_nonoverlapping(product1_name.as_ptr(), product1_data.as_mut_ptr().add(4), product1_name.len());
-        core::ptr::copy_nonoverlapping(product1_desc.as_ptr(), product1_data.as_mut_ptr().add(68), product1_desc.len());
-        core::ptr::copy_nonoverlapping(&product1_price as *const f64 as *const u8, product1_data.as_mut_ptr().add(196), 8);
-        core::ptr::copy_nonoverlapping(&product1_stock as *const i32 as *const u8, product1_data.as_mut_ptr().add(204), 4);
-        core::ptr::write(product1_data.as_mut_ptr().add(208) as *mut bool, product1_active);
-        
-        let mut product1_record_id = 0;
-        {
-            let products_table_mut = db.get_table_mut(2).unwrap();
-            product1_record_id = products_table_mut.insert(product1_data.as_ptr()).unwrap();
-            println!("Inserted product: ID={}, RecordID={}", product1_id, product1_record_id);
-        }
+        // 使用insert_record插入产品
+        let product_columns = &["id", "name", "description", "price", "stock", "active"];
+        let product_values = &["1", "Laptop Pro", "High performance laptop", "999.99", "50", "true"];
+        let product_affected_rows = db.insert_record("products", product_columns, product_values).unwrap();
+        println!("插入产品成功，影响行数: {}", product_affected_rows);
         
         // ---------- 用户表操作 ----------
         println!("\n=== 用户表操作 ===");
         
-        // 准备用户数据
-        let mut user_data = [0u8; 112]; // 计算记录大小：i32(4) + str(32) + str(64) + i8(1) + bool(1) + u64(8) = 110字节（对齐到8字节）
-        let user_id: i32 = 1;
-        let user_name = "test_user";
-        let user_email = "test@example.com";
-        let user_age: i8 = 30;
-        let user_active = true;
-        let user_created_at: u64 = 1234567890;
-        
-        // 设置用户字段值
-        core::ptr::copy_nonoverlapping(&user_id as *const i32 as *const u8, user_data.as_mut_ptr(), 4);
-        core::ptr::copy_nonoverlapping(user_name.as_ptr(), user_data.as_mut_ptr().add(4), user_name.len());
-        core::ptr::copy_nonoverlapping(user_email.as_ptr(), user_data.as_mut_ptr().add(36), user_email.len());
-        core::ptr::write(user_data.as_ptr().add(100) as *mut i8, user_age);
-        core::ptr::write(user_data.as_ptr().add(101) as *mut bool, user_active);
-        core::ptr::copy_nonoverlapping(&user_created_at as *const u64 as *const u8, user_data.as_mut_ptr().add(104), 8);
-        
-        let mut user_record_id = 0;
-        {
-            let users_table_mut = db.get_table_mut(0).unwrap();
-            user_record_id = users_table_mut.insert(user_data.as_ptr()).unwrap();
-            println!("Inserted user: ID={}, Name={}, RecordID={}", user_id, user_name, user_record_id);
-        }
+        // 使用insert_record插入用户
+        let user_columns = &["id", "name", "email", "age", "active", "created_at"];
+        let user_values = &["1", "test_user", "test@example.com", "30", "true", "1234567890"];
+        let user_affected_rows = db.insert_record("users", user_columns, user_values).unwrap();
+        println!("插入用户成功，影响行数: {}", user_affected_rows);
         
         // ---------- 订单表操作 ----------
         println!("\n=== 订单表操作 ===");
         
-        // 准备订单数据
-        let mut order_data = [0u8; 160]; // 计算记录大小：i64(8) + i32(4) + str(64) + i32(4) + f64(8) + str(16) + u64(8) = 112字节（对齐到8字节）
-        let order_id: i64 = 1001;
-        let order_user_id: i32 = 1; // 关联用户ID
-        let order_product = "Laptop Pro";
-        let order_quantity: i32 = 1;
-        let order_amount: f64 = 999.99;
-        let order_status = "pending";
-        let order_created_at: u64 = 1234567890;
-        
-        // 设置订单字段值
-        core::ptr::copy_nonoverlapping(&order_id as *const i64 as *const u8, order_data.as_mut_ptr(), 8);
-        core::ptr::copy_nonoverlapping(&order_user_id as *const i32 as *const u8, order_data.as_mut_ptr().add(8), 4);
-        core::ptr::copy_nonoverlapping(order_product.as_ptr(), order_data.as_mut_ptr().add(12), order_product.len());
-        core::ptr::copy_nonoverlapping(&order_quantity as *const i32 as *const u8, order_data.as_mut_ptr().add(76), 4);
-        core::ptr::copy_nonoverlapping(&order_amount as *const f64 as *const u8, order_data.as_mut_ptr().add(80), 8);
-        core::ptr::copy_nonoverlapping(order_status.as_ptr(), order_data.as_mut_ptr().add(88), order_status.len());
-        core::ptr::copy_nonoverlapping(&order_created_at as *const u64 as *const u8, order_data.as_mut_ptr().add(104), 8);
-        
-        let mut order_record_id = 0;
-        {
-            let orders_table_mut = db.get_table_mut(1).unwrap();
-            order_record_id = orders_table_mut.insert(order_data.as_ptr()).unwrap();
-            println!("Inserted order: ID={}, UserID={}, Product={}, RecordID={}", 
-                     order_id, order_user_id, order_product, order_record_id);
-        }
+        // 使用insert_record插入订单
+        let order_columns = &["id", "user_id", "product", "quantity", "amount", "status", "created_at"];
+        let order_values = &["1001", "1", "Laptop Pro", "1", "999.99", "pending", "1234567890"];
+        let order_affected_rows = db.insert_record("orders", order_columns, order_values).unwrap();
+        println!("插入订单成功，影响行数: {}", order_affected_rows);
         
         // ---------- 查询操作 ----------
         println!("\n=== 查询操作 ===");
         
         // 查询用户
-        let mut retrieved_user_id = 0;
-        let mut retrieved_user_name = String::new();
-        {
-            let mut retrieved_user = [0u8; 112];
-            let users_table_mut = db.get_table_mut(0).unwrap();
-            users_table_mut.get_by_id(user_record_id, retrieved_user.as_mut_ptr()).unwrap();
-            retrieved_user_id = core::ptr::read(retrieved_user.as_ptr() as *const i32);
-            retrieved_user_name = core::str::from_utf8(&retrieved_user[4..36]).unwrap().trim_end_matches(char::from(0)).to_string();
-            println!("Retrieved user: ID={}, Name={}", retrieved_user_id, retrieved_user_name);
-        }
+        println!("\n查询用户:");
+        let user_result = db.execute_query("users", &["id", "name"], None, None).unwrap();
+        println!("{}", user_result.to_string());
         
         // 查询订单
-        let mut retrieved_order_id = 0;
-        let mut retrieved_order_user_id = 0;
-        {
-            let mut retrieved_order = [0u8; 160];
-            let orders_table_mut = db.get_table_mut(1).unwrap();
-            orders_table_mut.get_by_id(order_record_id, retrieved_order.as_mut_ptr()).unwrap();
-            retrieved_order_id = core::ptr::read(retrieved_order.as_ptr() as *const i64);
-            retrieved_order_user_id = core::ptr::read(retrieved_order.as_ptr().add(8) as *const i32);
-            println!("Retrieved order: ID={}, UserID={}", retrieved_order_id, retrieved_order_user_id);
-        }
+        println!("\n查询订单:");
+        let order_result = db.execute_query("orders", &["id", "user_id", "product"], None, None).unwrap();
+        println!("{}", order_result.to_string());
+        
+        // 查询产品
+        println!("\n查询产品:");
+        let product_result = db.execute_query("products", &["id", "name", "price"], None, None).unwrap();
+        println!("{}", product_result.to_string());
         
         // ---------- 多表关联示例 ----------
         println!("\n=== 多表关联示例 ===");
-        println!("User {} (ID: {}) placed order {} for product {}", 
-                 retrieved_user_name, retrieved_user_id, retrieved_order_id, order_product);
+        
+        // 使用execute_query查询用户和订单关系
+        println!("\n用户订单关系:");
+        let user_orders = db.execute_query("orders", &["user_id", "product", "amount"], Some("user_id = 1"), None).unwrap();
+        println!("{}", user_orders.to_string());
+        
+        // ---------- 更新操作示例 ----------
+        println!("\n=== 更新操作示例 ===");
+        
+        // 使用update_record更新产品价格
+        let update_affected_rows = db.update_record("products", "price = 899.99", Some("id = 1")).unwrap();
+        println!("更新产品价格成功，影响行数: {}", update_affected_rows);
+        
+        // 查询更新后的产品
+        let updated_product = db.execute_query("products", &["id", "name", "price"], Some("id = 1"), None).unwrap();
+        println!("更新后的产品信息:");
+        println!("{}", updated_product.to_string());
         
         // ---------- 删除操作 ----------
         println!("\n=== 删除操作 ===");
         
         // 删除订单
-        {
-            let orders_table_mut = db.get_table_mut(1).unwrap();
-            orders_table_mut.delete(order_record_id).unwrap();
-            println!("Deleted order: RecordID={}", order_record_id);
-        }
+        let order_delete_rows = db.delete_record("orders", Some("id = 1001")).unwrap();
+        println!("删除订单成功，影响行数: {}", order_delete_rows);
         
         // 删除用户
-        {
-            let users_table_mut = db.get_table_mut(0).unwrap();
-            users_table_mut.delete(user_record_id).unwrap();
-            println!("Deleted user: RecordID={}", user_record_id);
-        }
+        let user_delete_rows = db.delete_record("users", Some("id = 1")).unwrap();
+        println!("删除用户成功，影响行数: {}", user_delete_rows);
         
         // 删除产品
-        {
-            let products_table_mut = db.get_table_mut(2).unwrap();
-            products_table_mut.delete(product1_record_id).unwrap();
-            println!("Deleted product: RecordID={}", product1_record_id);
-        }
+        let product_delete_rows = db.delete_record("products", Some("id = 1")).unwrap();
+        println!("删除产品成功，影响行数: {}", product_delete_rows);
+        
+        // 验证删除结果
+        println!("\n验证删除结果:");
+        let users_after_delete = db.execute_query("users", &["id"], None, None).unwrap();
+        let orders_after_delete = db.execute_query("orders", &["id"], None, None).unwrap();
+        let products_after_delete = db.execute_query("products", &["id"], None, None).unwrap();
+        
+        println!("用户表剩余记录数: {}", users_after_delete.rows.len());
+        println!("订单表剩余记录数: {}", orders_after_delete.rows.len());
+        println!("产品表剩余记录数: {}", products_after_delete.rows.len());
         
         println!("\nMultiple tables example completed successfully!");
     }

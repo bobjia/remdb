@@ -50,11 +50,8 @@ fn main() {
         
         println!("Executing: {}", create_table_sql);
         
-        // 解析SQL
-        let query = sql::parse_sql_query(create_table_sql).expect("Failed to parse SQL");
-        
-        // 执行SQL
-        let result = sql::execute_query(&mut db, &query).expect("Failed to execute SQL");
+        // 使用db.sql_query执行SQL
+        let result = db.sql_query(create_table_sql).expect("Failed to create table");
         
         println!("Table created successfully, status: {}", result.to_string());
         
@@ -63,11 +60,8 @@ fn main() {
         
         println!("\nExecuting: {}", insert_sql);
         
-        // 解析SQL
-        let insert_query = sql::parse_sql_query(insert_sql).expect("Failed to parse INSERT SQL");
-        
-        // 执行SQL
-        let insert_result = sql::execute_query(&mut db, &insert_query).expect("Failed to execute INSERT SQL");
+        // 使用db.sql_query执行SQL
+        let insert_result = db.sql_query(insert_sql).expect("Failed to insert data");
         
         println!("Data inserted successfully, affected rows: {}", insert_result.to_string());
         
@@ -76,14 +70,44 @@ fn main() {
         
         println!("\nExecuting: {}", select_sql);
         
-        // 解析SQL
-        let select_query = sql::parse_sql_query(select_sql).expect("Failed to parse SELECT SQL");
-        
-        // 执行SQL
-        let select_result = sql::execute_query(&mut db, &select_query).expect("Failed to execute SELECT SQL");
+        // 使用db.sql_query执行SQL
+        let select_result = db.sql_query(select_sql).expect("Failed to select data");
         
         println!("Query results:");
         println!("{}", select_result.to_string());
+        
+        // 测试新的专用方法
+        println!("\n=== 测试新的专用方法 ===");
+        
+        // 使用insert_record插入记录
+        println!("\n1. 使用insert_record插入记录:");
+        let columns = &["id", "name", "email", "age"];
+        let values = &["2", "Bob", "bob@example.com", "25"];
+        let affected_rows = db.insert_record("users", columns, values).unwrap();
+        println!("插入记录成功，影响行数: {}", affected_rows);
+        
+        // 使用execute_query查询记录
+        println!("\n2. 使用execute_query查询记录:");
+        let exec_result = db.execute_query("users", &["id", "name", "email", "age"], None, None).unwrap();
+        println!("查询结果: {}", exec_result.to_string());
+        
+        // 使用update_record更新记录
+        println!("\n3. 使用update_record更新记录:");
+        let update_affected = db.update_record("users", "age = 26, email = 'bob.updated@example.com'", Some("id = 2")).unwrap();
+        println!("更新记录成功，影响行数: {}", update_affected);
+        
+        // 查询验证更新
+        let updated_result = db.execute_query("users", &["id", "name", "email", "age"], Some("id = 2"), None).unwrap();
+        println!("更新后查询结果: {}", updated_result.to_string());
+        
+        // 使用delete_record删除记录
+        println!("\n4. 使用delete_record删除记录:");
+        let delete_affected = db.delete_record("users", Some("id = 1")).unwrap();
+        println!("删除记录成功，影响行数: {}", delete_affected);
+        
+        // 查询剩余记录
+        let remaining_result = db.execute_query("users", &["id", "name", "email", "age"], None, None).unwrap();
+        println!("删除后剩余记录: {}", remaining_result.to_string());
         
         println!("\nVARCHAR type support verified successfully!");
     }

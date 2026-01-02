@@ -183,6 +183,49 @@ fn main() {
         db.exit_low_power_mode().unwrap();
         println!("当前低功耗模式状态: {}", db.is_low_power_mode());
         
+        // 测试新的专用方法
+        println!("\n=== 测试新的专用方法 ===");
+        
+        // 1. 使用insert_record插入记录（正常模式）
+        println!("\n1. 在正常模式下使用insert_record插入记录:");
+        let columns = &["id", "name", "value", "timestamp"];
+        let values = &["51", "test_insert", "123.45", "1234567890"];
+        let affected_rows = db.insert_record("TEST_TABLE", columns, values).unwrap();
+        println!("插入记录成功，影响行数: {}", affected_rows);
+        
+        // 2. 使用execute_query查询记录
+        println!("\n2. 使用execute_query查询记录:");
+        let result = db.execute_query("TEST_TABLE", &["id", "name", "value", "timestamp"], Some("id = 51"), None).unwrap();
+        println!("查询结果: {}", result.to_string());
+        
+        // 3. 再次进入低功耗模式，测试新方法
+        println!("\n3. 再次进入低功耗模式，测试新方法:");
+        db.enter_low_power_mode().unwrap();
+        println!("当前低功耗模式状态: {}", db.is_low_power_mode());
+        
+        // 4. 在低功耗模式下使用update_record更新记录
+        println!("\n4. 在低功耗模式下使用update_record更新记录:");
+        let update_affected = db.update_record("TEST_TABLE", "value = 543.21, timestamp = 9876543210", Some("id = 51")).unwrap();
+        println!("更新记录成功，影响行数: {}", update_affected);
+        
+        // 查询验证更新
+        let updated_result = db.execute_query("TEST_TABLE", &["id", "name", "value", "timestamp"], Some("id = 51"), None).unwrap();
+        println!("更新后查询结果: {}", updated_result.to_string());
+        
+        // 5. 在低功耗模式下使用delete_record删除记录
+        println!("\n5. 在低功耗模式下使用delete_record删除记录:");
+        let delete_affected = db.delete_record("TEST_TABLE", Some("id = 51")).unwrap();
+        println!("删除记录成功，影响行数: {}", delete_affected);
+        
+        // 查询验证删除
+        let delete_result = db.execute_query("TEST_TABLE", &["id", "name", "value", "timestamp"], Some("id = 51"), None).unwrap();
+        println!("删除后查询结果: {}", delete_result.to_string());
+        
+        // 退出低功耗模式
+        db.exit_low_power_mode().unwrap();
+        println!("当前低功耗模式状态: {}", db.is_low_power_mode());
+        
         println!("示例程序执行完成");
+        println!("所有测试通过!");
     }
 }

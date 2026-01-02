@@ -195,9 +195,38 @@ fn main() {
         transaction::commit().unwrap();
         println!("Committed transaction");
         
-        // 清理
+        // 删除记录
         table_mut.delete(tx_record_id).unwrap();
         
-        println!("Basic usage example completed successfully!");
+        // 新专用方法示例
+        println!("\n=== 新专用方法示例 ===");
+        
+        // 使用insert_record插入记录
+        println!("\n使用insert_record插入记录:");
+        let columns = &["id", "name", "age", "active", "created_at"];
+        let values = &["2", "new_user", "25", "true", "1234567890"];
+        let affected_rows = db.insert_record("users", columns, values).unwrap();
+        println!("插入记录成功，影响行数: {}", affected_rows);
+        
+        // 使用execute_query查询记录
+        println!("\n使用execute_query查询记录:");
+        let result = db.execute_query("users", &["id", "name", "age"], None, None).unwrap();
+        println!("查询结果: {}", result.to_string());
+        
+        // 使用update_record更新记录
+        println!("\n使用update_record更新记录:");
+        let affected_rows = db.update_record("users", "age = 26", Some("name = 'new_user'")).unwrap();
+        println!("更新记录成功，影响行数: {}", affected_rows);
+        
+        // 使用execute_query查询更新后的记录
+        let result = db.execute_query("users", &["id", "name", "age"], None, None).unwrap();
+        println!("更新后查询结果: {}", result.to_string());
+        
+        // 使用delete_record删除记录
+        println!("\n使用delete_record删除记录:");
+        let affected_rows = db.delete_record("users", Some("id = 2")).unwrap();
+        println!("删除记录成功，影响行数: {}", affected_rows);
+        
+        println!("\nBasic usage example completed successfully!");
     }
 }

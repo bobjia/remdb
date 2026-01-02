@@ -130,5 +130,67 @@ fn main() {
                 println!("Error executing DESCRIBE TEST_TABLE: {:?}", e);
             }
         }
+        
+        // 测试新专用方法
+        println!("\n--- Testing New Dedicated Methods ---");
+        
+        // 使用insert_record插入记录
+        println!("\n1. 使用insert_record插入记录:");
+        let columns = &["id", "name", "age", "active"];
+        let values = &["1", "John Doe", "30", "true"];
+        match db.insert_record("TEST_TABLE", columns, values) {
+            Ok(affected_rows) => {
+                println!("✅ 插入记录成功，影响行数: {}", affected_rows);
+            },
+            Err(e) => {
+                println!("❌ 插入记录失败: {:?}", e);
+            }
+        }
+        
+        // 使用execute_query查询记录
+        println!("\n2. 使用execute_query查询记录:");
+        match db.execute_query("TEST_TABLE", &["id", "name", "age", "active"], None, None) {
+            Ok(result_set) => {
+                println!("✅ 查询记录成功:");
+                println!("{}", result_set.to_string());
+            },
+            Err(e) => {
+                println!("❌ 查询记录失败: {:?}", e);
+            }
+        }
+        
+        // 使用update_record更新记录
+        println!("\n3. 使用update_record更新记录:");
+        match db.update_record("TEST_TABLE", "age = 31, active = false", Some("id = 1")) {
+            Ok(affected_rows) => {
+                println!("✅ 更新记录成功，影响行数: {}", affected_rows);
+                
+                // 查询验证
+                if let Ok(result_set) = db.execute_query("TEST_TABLE", &["id", "name", "age", "active"], None, None) {
+                    println!("✅ 更新后查询结果:");
+                    println!("{}", result_set.to_string());
+                }
+            },
+            Err(e) => {
+                println!("❌ 更新记录失败: {:?}", e);
+            }
+        }
+        
+        // 使用delete_record删除记录
+        println!("\n4. 使用delete_record删除记录:");
+        match db.delete_record("TEST_TABLE", Some("id = 1")) {
+            Ok(affected_rows) => {
+                println!("✅ 删除记录成功，影响行数: {}", affected_rows);
+                
+                // 查询验证
+                if let Ok(result_set) = db.execute_query("TEST_TABLE", &["id", "name", "age", "active"], None, None) {
+                    println!("✅ 删除后查询结果:");
+                    println!("{}", result_set.to_string());
+                }
+            },
+            Err(e) => {
+                println!("❌ 删除记录失败: {:?}", e);
+            }
+        }
     }
 }

@@ -177,8 +177,60 @@ fn main() {
             }
         }
         
-        // 5. 保持全量快照
-        println!("\n5. Creating full snapshot...");
+        // 5. 使用新的专用方法查询
+        println!("\n5. Querying using new dedicated methods...");
+        
+        // 5.1 使用execute_query查询特定传感器数据
+        println!("   5.1 Using execute_query to get sensor_1 data:");
+        match db.execute_query("sensor_data", &["id", "timestamp", "sensor_id", "value_real", "value_bool"], Some("sensor_id = 'sensor_1'"), None) {
+            Ok(result_set) => {
+                println!("      execute_query executed successfully, result count: {}", result_set.row_count());
+                println!("      Result:");
+                println!("      {}", result_set.to_string());
+            },
+            Err(e) => {
+                println!("      execute_query error: {:?}", e);
+            }
+        }
+        
+        // 5.2 使用insert_record插入数据
+        println!("\n5.2 Using insert_record to add a new data point:");
+        let columns = &["timestamp", "sensor_id", "value_int32", "value_real", "value_bool", "value_string"];
+        let values = &["1609459211000", "sensor_manual", "12345", "99.99", "true", "manual_data_point"];
+        match db.insert_record("sensor_data", columns, values) {
+            Ok(affected_rows) => {
+                println!("      insert_record executed successfully, affected rows: {}", affected_rows);
+                
+                // 查询验证
+                if let Ok(result_set) = db.execute_query("sensor_data", &["id", "timestamp", "sensor_id", "value_int32", "value_real"], Some("sensor_id = 'sensor_manual'"), None) {
+                    println!("      Inserted data:");
+                    println!("      {}", result_set.to_string());
+                }
+            },
+            Err(e) => {
+                println!("      insert_record error: {:?}", e);
+            }
+        }
+        
+        // 5.3 使用update_record更新数据
+        println!("\n5.3 Using update_record to modify data:");
+        match db.update_record("sensor_data", "value_real = 149.99, value_bool = false", Some("sensor_id = 'sensor_manual'")) {
+            Ok(affected_rows) => {
+                println!("      update_record executed successfully, affected rows: {}", affected_rows);
+                
+                // 查询验证
+                if let Ok(result_set) = db.execute_query("sensor_data", &["id", "timestamp", "sensor_id", "value_real", "value_bool"], Some("sensor_id = 'sensor_manual'"), None) {
+                    println!("      Updated data:");
+                    println!("      {}", result_set.to_string());
+                }
+            },
+            Err(e) => {
+                println!("      update_record error: {:?}", e);
+            }
+        }
+        
+        // 6. 保持全量快照
+        println!("\n6. Creating full snapshot...");
         match db.save_snapshot("full_snapshot_1") {
             Ok(_) => {
                 println!("   Full snapshot created successfully");
@@ -189,8 +241,8 @@ fn main() {
             }
         }
         
-        // 6. 插入更多数据（用于增量快照）
-        println!("\n6. Inserting more data for incremental snapshot...");
+        // 7. 插入更多数据（用于增量快照）
+        println!("\n7. Inserting more data for incremental snapshot...");
         for i in 10..15 {
             let timestamp = base_time + i * 1000;
             let sensor_id_str = format!("sensor_{}", i % 3);
@@ -206,8 +258,8 @@ fn main() {
             }
         }
         
-        // 7. 保持增量快照
-        println!("\n7. Creating incremental snapshot...");
+        // 8. 保持增量快照
+        println!("\n8. Creating incremental snapshot...");
         // 示例：创建增量快照（实际API可能需要不同的参数）
         println!("   Incremental snapshot created (simulated)");
         

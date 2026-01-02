@@ -875,6 +875,136 @@ impl RemDb {
         Ok(result_set)
     }
     
+    /// 执行查询操作
+    pub fn execute_query(&mut self, table_name: &str, columns: &[&str], where_clause: Option<&str>, limit: Option<usize>) -> Result<sql::ResultSet> {
+        // 构建SELECT SQL语句
+        let select_columns = if columns.is_empty() {
+            "*".to_string() // 返回String类型
+        } else {
+            columns.join(", ") // 返回String类型
+        };
+        
+        let mut sql = format!("SELECT {} FROM {}", select_columns, table_name);
+        
+        if let Some(where_clause) = where_clause {
+            sql.push_str(&format!(" WHERE {}", where_clause));
+        }
+        
+        if let Some(limit) = limit {
+            sql.push_str(&format!(" LIMIT {}", limit));
+        }
+        
+        // 调用sql_query执行
+        self.sql_query(&sql)
+    }
+    
+    /// 创建表
+    pub fn create_table(&mut self, table_name: &str, fields: &[(&str, DataType)], primary_key: Option<usize>) -> Result<()> {
+        // 调用已有的DdlExecutor实现
+        DdlExecutor::create_table(self, table_name, fields, primary_key)
+    }
+    
+    /// 创建索引
+    pub fn create_index(&mut self, table_name: &str, field_name: &str, index_type: IndexType) -> Result<()> {
+        // 调用已有的DdlExecutor实现
+        DdlExecutor::create_index(self, table_name, field_name, index_type)
+    }
+    
+    /// 插入记录
+    pub fn insert_record(&mut self, table_name: &str, column_names: &[&str], values: &[&str]) -> Result<usize> {
+        // 构建INSERT SQL语句
+        let columns = if column_names.is_empty() {
+            "".to_string() // 返回String类型
+        } else {
+            format!("({})
+", column_names.join(", ")) // 返回String类型
+        };
+        
+        // 处理值，为字符串值添加引号
+        let quoted_values: Vec<String> = values.iter().map(|&value| {
+            // 检查是否是数值类型或布尔值
+            if value.chars().all(|c| c.is_digit(10) || c == '.' || c == '-') || value == "true" || value == "false" {
+                value.to_string()
+            } else {
+                // 字符串类型，添加引号
+                format!("'{}'", value)
+            }
+        }).collect();
+        
+        let values_str = format!("({})
+", quoted_values.join(", "));
+        
+        let sql = format!("INSERT INTO {}{} VALUES {}", table_name, columns, values_str);
+        
+        // 执行查询
+        let result_set = self.sql_query(&sql)?;
+        
+        // 从结果集中获取受影响的行数
+        if let Some(row) = result_set.rows.first() {
+            if let Some(value) = row.values.first() {
+                // 假设第一个值是受影响的行数（u64类型）
+                unsafe {
+                    let affected_rows = value.u64 as usize;
+                    return Ok(affected_rows);
+                }
+            }
+        }
+        
+        Ok(0)
+    }
+    
+    /// 更新记录
+    pub fn update_record(&mut self, table_name: &str, set_clause: &str, where_clause: Option<&str>) -> Result<usize> {
+        // 构建UPDATE SQL语句
+        let mut sql = format!("UPDATE {} SET {}", table_name, set_clause);
+        
+        if let Some(where_clause) = where_clause {
+            sql.push_str(&format!(" WHERE {}", where_clause));
+        }
+        
+        // 执行查询
+        let result_set = self.sql_query(&sql)?;
+        
+        // 从结果集中获取受影响的行数
+        if let Some(row) = result_set.rows.first() {
+            if let Some(value) = row.values.first() {
+                // 假设第一个值是受影响的行数（u64类型）
+                unsafe {
+                    let affected_rows = value.u64 as usize;
+                    return Ok(affected_rows);
+                }
+            }
+        }
+        
+        Ok(0)
+    }
+    
+    /// 删除记录
+    pub fn delete_record(&mut self, table_name: &str, where_clause: Option<&str>) -> Result<usize> {
+        // 构建DELETE SQL语句
+        let mut sql = format!("DELETE FROM {}", table_name);
+        
+        if let Some(where_clause) = where_clause {
+            sql.push_str(&format!(" WHERE {}", where_clause));
+        }
+        
+        // 执行查询
+        let result_set = self.sql_query(&sql)?;
+        
+        // 从结果集中获取受影响的行数
+        if let Some(row) = result_set.rows.first() {
+            if let Some(value) = row.values.first() {
+                // 假设第一个值是受影响的行数（u64类型）
+                unsafe {
+                    let affected_rows = value.u64 as usize;
+                    return Ok(affected_rows);
+                }
+            }
+        }
+        
+        Ok(0)
+    }
+    
     /// 导出完整的DDL文件
     pub fn export_ddl(&self, path: &str) -> Result<()> {
         // 使用标准库的文件操作
@@ -958,7 +1088,7 @@ impl RemDb {
                         let mut field_names = Vec::new();
                         let mut field_values = Vec::new();
                         
-                        for field in table_ref.fields {
+                        for field in table_ref.fields.iter() {
                             field_names.push(field.name);
                             
                             // 获取字段值
@@ -1004,7 +1134,7 @@ impl RemDb {
                         
                         // 继续遍历
                         true
-                    }).unwrap_or(());
+                    }).unwrap();
                 }
             }
         }

@@ -239,6 +239,44 @@ fn main() {
         let result = db.sql_query("SELECT * FROM users").unwrap();
         println!("{}", result.to_string());
         
+        // 9. 使用新的专用方法示例
+        println!("\n=== 新专用方法示例 ===");
+        
+        // 9.1 使用insert_record插入记录
+        println!("\n9.1 使用insert_record插入记录:");
+        let columns = &["id", "name", "age", "active", "created_at"];
+        let values = &["1", "Alice", "25", "true", "1620000000000"];
+        let affected_rows = db.insert_record("users", columns, values).unwrap();
+        println!("插入记录成功，影响行数: {}", affected_rows);
+        
+        // 9.2 使用insert_record插入多条记录
+        println!("\n9.2 使用insert_record插入多条记录:");
+        let values2 = &["2", "Bob", "30", "true", "1620000001000"];
+        let values3 = &["3", "Charlie", "35", "false", "1620000002000"];
+        let affected_rows2 = db.insert_record("users", columns, values2).unwrap();
+        let affected_rows3 = db.insert_record("users", columns, values3).unwrap();
+        println!("插入记录成功，影响行数: {} 和 {}", affected_rows2, affected_rows3);
+        
+        // 9.3 使用execute_query查询记录
+        println!("\n9.3 使用execute_query查询记录:");
+        let result = db.execute_query("users", &["name", "age"], Some("age > 25"), None).unwrap();
+        println!("{}", result.to_string());
+        
+        // 9.4 使用update_record更新记录
+        println!("\n9.4 使用update_record更新记录:");
+        let affected_rows = db.update_record("users", "age = 31", Some("name = 'Bob'")).unwrap();
+        println!("更新记录成功，影响行数: {}", affected_rows);
+        
+        // 9.5 使用delete_record删除记录
+        println!("\n9.5 使用delete_record删除记录:");
+        let affected_rows = db.delete_record("users", Some("id = 3")).unwrap();
+        println!("删除记录成功，影响行数: {}", affected_rows);
+        
+        // 9.6 使用execute_query查询剩余记录
+        println!("\n9.6 使用execute_query查询剩余记录:");
+        let result = db.execute_query("users", &["*"], None, None).unwrap();
+        println!("{}", result.to_string());
+        
         println!("\n=== SQL示例完成 ===");
     }
 }
