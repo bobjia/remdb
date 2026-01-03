@@ -231,6 +231,32 @@ impl PartialEq for TypedValue {
     }
 }
 
+/// 手动实现Debug trait，因为Rust不支持为union类型自动派生Debug
+impl fmt::Debug for TypedValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        unsafe {
+            match self.value_type {
+                DataType::UInt8 => write!(f, "TypedValue(UInt8, {})", self.value.u8),
+                DataType::UInt16 => write!(f, "TypedValue(UInt16, {})", self.value.u16),
+                DataType::UInt32 => write!(f, "TypedValue(UInt32, {})", self.value.u32),
+                DataType::UInt64 => write!(f, "TypedValue(UInt64, {})", self.value.u64),
+                DataType::Int8 => write!(f, "TypedValue(Int8, {})", self.value.i8),
+                DataType::Int16 => write!(f, "TypedValue(Int16, {})", self.value.i16),
+                DataType::Int32 => write!(f, "TypedValue(Int32, {})", self.value.i32),
+                DataType::Int64 => write!(f, "TypedValue(Int64, {})", self.value.i64),
+                DataType::Float32 => write!(f, "TypedValue(Float32, {})", self.value.float32),
+                DataType::Float64 => write!(f, "TypedValue(Float64, {})", self.value.float64),
+                DataType::Bool => write!(f, "TypedValue(Bool, {})", self.value.bool),
+                DataType::Timestamp => write!(f, "TypedValue(Timestamp, {})", self.value.timestamp),
+                DataType::String => {
+                    let s = core::str::from_utf8(&self.value.string).unwrap_or("").trim_end_matches(char::from(0));
+                    write!(f, "TypedValue(String, \"{}\")", s)
+                }
+            }
+        }
+    }
+}
+
 /// 定长字符串最大长度
 pub const MAX_STRING_LEN: usize = 64;
 
