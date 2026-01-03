@@ -282,49 +282,37 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
         };
         
         // 保存字段和约束信息
-        fields.push((field_name.as_str(), data_type, converted_default));
-        field_constraints.push((is_primary_key, is_not_null, is_unique, is_auto_increment));
+    fields.push((field_name.as_str(), data_type, converted_default));
+    
+    // 转换为FieldConstraint对象
+    let field_constraint = crate::FieldConstraint {
+        primary_key: *is_primary_key,
+        not_null: *is_not_null,
+        unique: *is_unique,
+        auto_increment: *is_auto_increment,
+    };
+    field_constraints.push(field_constraint);
+}
+
+// 查找主键字段索引
+let primary_key_index = query.primary_key.as_ref().and_then(|pk| {
+    query.table_def.iter().position(|(name, _, _, _, _, _, _)| name == pk)
+});
+
+// 调用RemDb的create_table方法（不支持约束）
+db.create_table(
+    &query.table_name,
+    &fields,
+    primary_key_index
+).map_err(|e| {
+    match e {
+        RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
+        RemDbError::FieldNotFound => QueryExecutionError::FieldNotFound,
+        RemDbError::TypeMismatch => QueryExecutionError::TypeMismatch,
+        RemDbError::OutOfMemory => QueryExecutionError::OutOfMemory,
+        _ => QueryExecutionError::InternalError,
     }
-    
-    // 查找主键字段索引
-    let primary_key_index = query.primary_key.as_ref().and_then(|pk| {
-        query.table_def.iter().position(|(name, _, _, _, _, _, _)| name == pk)
-    });
-    
-    // 调用DdlExecutor的create_table方法
-    // 注意：这里暂时只传递字段名和类型，约束信息将在表创建后更新
-    db.create_table(
-        &query.table_name,
-        &fields,
-        primary_key_index
-    ).map_err(|e| {
-        match e {
-            RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
-            RemDbError::FieldNotFound => QueryExecutionError::FieldNotFound,
-            RemDbError::TypeMismatch => QueryExecutionError::TypeMismatch,
-            RemDbError::OutOfMemory => QueryExecutionError::OutOfMemory,
-            _ => QueryExecutionError::InternalError,
-        }
-    })?;
-    
-    // 查找创建的表
-    let table_id = db.tables
-        .iter()
-        .position(|table_opt| {
-            if let Some(table) = table_opt {
-                table.def.name == query.table_name
-            } else {
-                false
-            }
-        })
-        .ok_or(QueryExecutionError::TableNotFound)?;
-    
-    // 更新字段约束信息
-    if let Some(table) = &mut db.tables[table_id] {
-        // 注意：这里我们无法直接修改field_defs，因为它们是静态的
-        // 所以我们需要修改RemDb的create_table实现，使其支持从SQL解析约束信息
-        // 目前暂时不支持直接从SQL更新约束，只支持通过DDL宏定义约束
-    }
+})?;
     
     // 创建结果集，返回成功消息
     let columns = vec!["status".to_string()];

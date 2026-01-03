@@ -433,6 +433,8 @@ pub enum RemDbError {
     FieldNotFound,
     /// 类型不匹配
     TypeMismatch,
+    /// NOT NULL约束违反
+    NotNullViolation,
     /// 事务错误
     TransactionError,
     /// 配置错误
@@ -473,6 +475,7 @@ impl fmt::Display for RemDbError {
             RemDbError::DuplicateKey => write!(f, "Duplicate key"),
             RemDbError::FieldNotFound => write!(f, "Field not found"),
             RemDbError::TypeMismatch => write!(f, "Type mismatch"),
+            RemDbError::NotNullViolation => write!(f, "NOT NULL constraint violation"),
             RemDbError::TransactionError => write!(f, "Transaction error"),
             RemDbError::ConfigError => write!(f, "Config error"),
             RemDbError::UnsupportedOperation => write!(f, "Unsupported operation"),

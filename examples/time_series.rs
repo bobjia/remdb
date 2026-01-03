@@ -110,7 +110,8 @@ fn main() {
         let table_mut = db.get_table_mut(0).unwrap();
         
         // 批量插入测试数据
-        let mut records_buffer = [0u8; 108 * 100]; // 100条记录
+        let record_size = table_mut.record_size;
+        let mut records_buffer = [0u8; 120 * 100]; // 100条记录，使用最大可能的记录大小
         let mut record_ids = [0usize; 100];
         
         println!("\n=== 批量插入测试数据 ===");
@@ -123,16 +124,16 @@ fn main() {
             let tags = "host=server01,region=us-west";
             
             // 手动填充记录数据
-            let record_ptr = records_buffer.as_mut_ptr().add(i * 108);
+            let record_ptr = records_buffer.as_mut_ptr().add(i * record_size);
             
-            // 填充id
+            // 填充id（偏移0）
             core::ptr::copy_nonoverlapping(
                 &id as *const i32 as *const u8,
                 record_ptr,
                 4
             );
             
-            // 填充metric_name
+            // 填充metric_name（偏移4）
             let name_bytes = metric_name.as_bytes();
             core::ptr::copy_nonoverlapping(
                 name_bytes.as_ptr(),
@@ -140,25 +141,25 @@ fn main() {
                 name_bytes.len()
             );
             
-            // 填充value
+            // 填充value（偏移40）
             core::ptr::copy_nonoverlapping(
                 &value as *const f64 as *const u8,
-                record_ptr.add(36),
+                record_ptr.add(40),
                 8
             );
             
-            // 填充timestamp
+            // 填充timestamp（偏移48）
             core::ptr::copy_nonoverlapping(
                 &timestamp as *const u64 as *const u8,
-                record_ptr.add(44),
+                record_ptr.add(48),
                 8
             );
             
-            // 填充tags
+            // 填充tags（偏移56）
             let tags_bytes = tags.as_bytes();
             core::ptr::copy_nonoverlapping(
                 tags_bytes.as_ptr(),
-                record_ptr.add(52),
+                record_ptr.add(56),
                 tags_bytes.len()
             );
         }
@@ -177,7 +178,7 @@ fn main() {
         let start_time = 1609459200000;
         let end_time = 1609459200000 + 30 * 60000; // 30分钟
         
-        let mut result_buffer = [0u8; 108 * 50];
+        let mut result_buffer = [0u8; 120 * 50]; // 使用最大可能的记录大小
         let found_count = table_mut.get_records_in_time_window(
             3, // timestamp字段索引
             start_time,
@@ -189,10 +190,10 @@ fn main() {
         println!("在时间范围内找到 {} 条记录", found_count);
         
         // 读取第一条记录验证
-        let first_record = &result_buffer[0..108];
+        let first_record = &result_buffer[0..record_size];
         let id = core::ptr::read(first_record.as_ptr() as *const i32);
-        let value = core::ptr::read(first_record.as_ptr().add(36) as *const f64);
-        let timestamp = core::ptr::read(first_record.as_ptr().add(44) as *const u64);
+        let value = core::ptr::read(first_record.as_ptr().add(40) as *const f64);
+        let timestamp = core::ptr::read(first_record.as_ptr().add(48) as *const u64);
         
         println!("第一条记录: ID={}, Value={:.1}, Timestamp={}", id, value, timestamp);
         
@@ -233,7 +234,7 @@ fn main() {
         
         // 测试获取最新记录
         println!("\n=== 获取最新记录测试 ===");
-        let mut latest_buffer = [0u8; 108 * 10];
+        let mut latest_buffer = [0u8; 120 * 10]; // 使用最大可能的记录大小
         let latest_count = table_mut.get_latest_records(
             3, // timestamp字段索引
             10,
@@ -243,10 +244,10 @@ fn main() {
         println!("获取到 {} 条最新记录", latest_count);
         
         // 读取第一条最新记录
-        let latest_record = &latest_buffer[0..108];
+        let latest_record = &latest_buffer[0..record_size];
         let latest_id = core::ptr::read(latest_record.as_ptr() as *const i32);
-        let latest_value = core::ptr::read(latest_record.as_ptr().add(36) as *const f64);
-        let latest_timestamp = core::ptr::read(latest_record.as_ptr().add(44) as *const u64);
+        let latest_value = core::ptr::read(latest_record.as_ptr().add(40) as *const f64);
+        let latest_timestamp = core::ptr::read(latest_record.as_ptr().add(48) as *const u64);
         
         println!("最新记录: ID={}, Value={:.1}, Timestamp={}", latest_id, latest_value, latest_timestamp);
         

@@ -584,7 +584,7 @@ fn test_not_null_constraint() {
         
         let result2 = table2.insert(null_string_record.as_ptr());
         assert!(result2.is_err());
-        assert_eq!(result2.unwrap_err(), RemDbError::TypeMismatch);
+        assert_eq!(result2.unwrap_err(), RemDbError::NotNullViolation);
         
         // 测试4：尝试插入NaN作为浮点数，应该失败
         let mut nan_float_record = [0u8; 28];

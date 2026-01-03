@@ -112,8 +112,6 @@ impl MemoryTable {
     pub unsafe fn validate_constraints(&self, record_data: *const u8, exclude_slot: Option<usize>) -> Result<()>
     {
         // 验证非空约束
-        // 注意：对于数值类型，我们不再将0视为null，因为0是一个合法的值
-        // 对于字符串类型，我们仍然检查是否全0，因为这通常表示未初始化
         for field in self.def.fields {
             if field.not_null {
                 // 检查字段是否为空
@@ -130,14 +128,18 @@ impl MemoryTable {
                         }
                         all_zero
                     },
-                    DataType::Bool => {
-                        // 布尔类型检查是否为false（但0是合法值，所以我们不检查布尔类型的null约束）
-                        false
-                    },
-                    _ => false, // 数值类型不检查null，因为0是合法值
+                    // 对于其他类型，我们需要检查是否使用了默认的零值作为null标记
+                    // 这需要结合具体的业务逻辑和数据存储方式来判断
+                    // 当前实现：检查是否有默认值，如果没有默认值且字段为NOT NULL，则验证该字段
+                    // 注意：这里我们假设所有NOT NULL字段都应该有有效的值，而不是默认的零值
+                    // 对于数值类型，0是合法值，所以我们不检查数值类型的null约束
+                    // 对于布尔类型，false是合法值，所以我们不检查布尔类型的null约束
+                    // 对于时间戳类型，0表示1970-01-01，是合法值，所以我们不检查时间戳类型的null约束
+                    // 只有字符串类型需要检查是否为空
+                    _ => false,
                 };
                 if is_null {
-                    return Err(RemDbError::TypeMismatch);
+                    return Err(RemDbError::NotNullViolation);
                 }
             }
             

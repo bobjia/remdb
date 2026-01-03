@@ -30,6 +30,18 @@ pub use remdb_macros::database;
 extern crate alloc;
 use alloc::vec::Vec;
 
+/// 字段约束信息
+pub struct FieldConstraint {
+    /// 是否为主键
+    pub primary_key: bool,
+    /// 是否非空
+    pub not_null: bool,
+    /// 是否唯一
+    pub unique: bool,
+    /// 是否自增
+    pub auto_increment: bool,
+}
+
 /// DDL执行器trait，定义创建表和索引的方法
 pub trait DdlExecutor {
     /// 创建表
@@ -37,6 +49,7 @@ pub trait DdlExecutor {
         &mut self,
         name: &str,
         fields: &[(&str, DataType, Option<Value>)],
+        constraints: Option<&[FieldConstraint]>,
         primary_key: Option<usize>
     ) -> Result<()>;
     
@@ -663,6 +676,7 @@ impl DdlExecutor for RemDb {
         &mut self,
         name: &str,
         fields: &[(&str, DataType, Option<Value>)],
+        constraints: Option<&[FieldConstraint]>,
         primary_key: Option<usize>
     ) -> Result<()> {
         // 1. 检查字段数量是否合法
@@ -694,9 +708,27 @@ impl DdlExecutor for RemDb {
             
             // 检查是否为自增主键
             let is_primary_key = primary_key == Some(i);
-            let is_auto_increment = is_primary_key && 
+            
+            // 获取字段约束信息
+            let default_constraint = FieldConstraint {
+                primary_key: is_primary_key,
+                not_null: is_primary_key,
+                unique: is_primary_key,
+                auto_increment: false,
+            };
+            let constraint = constraints
+                .and_then(|c| c.get(i))
+                .unwrap_or(&default_constraint);
+            
+            let is_auto_increment = constraint.auto_increment && 
                 (data_type == &DataType::Int32 || data_type == &DataType::Int64 || 
                  data_type == &DataType::UInt32 || data_type == &DataType::UInt64);
+            
+            // 主键必须是非空的，覆盖用户设置
+            let final_not_null = is_primary_key || constraint.not_null;
+            
+            // 主键必须是唯一的，覆盖用户设置
+            let final_unique = is_primary_key || constraint.unique;
             
             // 创建字段定义，设置默认约束
             let field_def = FieldDef {
@@ -705,9 +737,9 @@ impl DdlExecutor for RemDb {
                 size: field_size,
                 offset,
                 primary_key: is_primary_key, // 主键索引匹配当前字段
-                not_null: is_primary_key, // 主键默认非空
-                unique: is_primary_key, // 主键默认唯一
-                auto_increment: is_auto_increment, // 整数主键默认自增
+                not_null: final_not_null, // 应用非空约束
+                unique: final_unique, // 应用唯一约束
+                auto_increment: is_auto_increment, // 应用自增约束
                 default_value: *default_value, // 设置字段默认值
             };
             
@@ -907,8 +939,8 @@ impl RemDb {
     
     /// 创建表
     pub fn create_table(&mut self, table_name: &str, fields: &[(&str, DataType, Option<Value>)], primary_key: Option<usize>) -> Result<()> {
-        // 调用已有的DdlExecutor实现
-        DdlExecutor::create_table(self, table_name, fields, primary_key)
+        // 调用已有的DdlExecutor实现，不传递约束信息
+        DdlExecutor::create_table(self, table_name, fields, None, primary_key)
     }
     
     /// 创建索引
