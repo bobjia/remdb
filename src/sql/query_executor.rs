@@ -5,7 +5,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::{RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN, DdlExecutor};
+use crate::{TableDef,RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN, DdlExecutor};
 use crate::sql::{SqlQuery, ResultSet, Condition, ComparisonCondition, ComparisonOperator, OrderByClause};
 
 /// 查询执行错误
@@ -389,8 +389,33 @@ fn validate_columns(table: &MemoryTable, columns: &[String]) -> Result<(), Query
 
 /// 执行DESCRIBE TABLE查询
 fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
-    // 1. 查找要查询的表
-    let table = find_table_by_name(db, &query.table_name)?;
+    // 1. 查找要查询的表定义（同时检查普通表和时序表）
+    let mut table_def: Option<&TableDef> = None;
+    
+    // 查找普通表
+    for table_opt in db.tables.iter() {
+        if let Some(table) = table_opt {
+            if table.def.name == query.table_name {
+                table_def = Some(&table.def);
+                break;
+            }
+        }
+    }
+    
+    // 如果普通表未找到，查找时序表
+    if table_def.is_none() {
+        for ts_table_opt in db.time_series_tables.iter() {
+            if let Some(ts_table) = ts_table_opt {
+                if ts_table.def.base.name == query.table_name {
+                    table_def = Some(&ts_table.def.base);
+                    break;
+                }
+            }
+        }
+    }
+    
+    // 如果都未找到，返回错误
+    let table_def = table_def.ok_or(QueryExecutionError::TableNotFound)?;
     
     // 2. 定义结果集列名
     let columns = vec![
@@ -407,10 +432,10 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
     // 4. 添加字段信息到结果集
     // 注意：由于describe查询返回的是表结构信息，而不是实际数据，
     // 我们需要特殊处理，将描述信息转换为Value类型
-    for field in table.def.fields {
+    for field in table_def.fields {
         // 确定是否为主键
-        let is_primary_key = table.def.primary_key < table.def.fields.len() && 
-                             table.def.fields[table.def.primary_key].name == field.name;
+        let is_primary_key = table_def.primary_key < table_def.fields.len() && 
+                             table_def.fields[table_def.primary_key].name == field.name;
         let key_str = if is_primary_key {
             "PRI"
         } else if field.unique {

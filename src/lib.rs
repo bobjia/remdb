@@ -31,6 +31,7 @@ pub use remdb_macros::MemdbTable;
 
 // 引入alloc模块
 extern crate alloc;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 /// 字段约束信息
@@ -974,9 +975,122 @@ impl RemDb {
     
     /// 创建时序表
     pub fn create_time_series_table(&mut self, name: &str, time_field: &str, value_field: &str, tag_fields: &[&str], config: Option<TimeSeriesConfig>) -> Result<()> {
-        // 目前直接返回Ok，因为时序表的具体实现可能需要更复杂的逻辑
-        // 这里只是为了避免无限递归
+        // 1. 准备字段定义
+        // 时序表至少包含时间字段、值字段和标签字段
+        let mut field_defs = Vec::new();
+        let mut offset = 0;
+        let mut record_size = 0;
+        
+        // 添加时间字段（TIMESTAMP）
+        let time_field_static = Box::leak(time_field.to_string().into_boxed_str());
+        let time_field_size = DataType::Timestamp.size();
+        field_defs.push(FieldDef {
+            name: time_field_static,
+            data_type: DataType::Timestamp,
+            size: time_field_size,
+            offset,
+            primary_key: true,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: Some(Value { timestamp: 0 }),
+        });
+        offset += time_field_size;
+        record_size += time_field_size;
+        
+        // 添加值字段（FLOAT64）
+        let value_field_static = Box::leak(value_field.to_string().into_boxed_str());
+        let value_field_size = DataType::Float64.size();
+        field_defs.push(FieldDef {
+            name: value_field_static,
+            data_type: DataType::Float64,
+            size: value_field_size,
+            offset,
+            primary_key: false,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: Some(Value { float64: 0.0 }),
+        });
+        offset += value_field_size;
+        record_size += value_field_size;
+        
+        // 添加标签字段（VARCHAR）
+        let mut tag_field_indices = Vec::new();
+        for (i, tag_field) in tag_fields.iter().enumerate() {
+            let tag_field_static = Box::leak(tag_field.to_string().into_boxed_str());
+            let tag_field_size = MAX_STRING_LEN; // VARCHAR使用最大字符串长度
+            field_defs.push(FieldDef {
+                name: tag_field_static,
+                data_type: DataType::String,
+                size: tag_field_size,
+                offset,
+                primary_key: false,
+                not_null: false,
+                unique: false,
+                auto_increment: false,
+                default_value: None, // 标签字段默认值为None
+            });
+            tag_field_indices.push((i + 2) as usize); // 时间字段(0) + 值字段(1) + 标签字段(i)
+            offset += tag_field_size;
+            record_size += tag_field_size;
+        }
+        
+        // 2. 创建表定义，转换为静态引用
+        let table_name_static = Box::leak(name.to_string().into_boxed_str());
+        let field_defs_static = Box::leak(field_defs.into_boxed_slice());
+        let tag_field_indices_static = Box::leak(tag_field_indices.into_boxed_slice());
+        
+        let table_def = TableDef {
+            id: (self.tables.len() + self.time_series_tables.len()) as u8,
+            name: table_name_static,
+            fields: field_defs_static,
+            primary_key: 0, // 时间字段作为主键
+            secondary_index: None,
+            secondary_index_type: IndexType::SortedArray,
+            record_size,
+            max_records: self.config.default_max_records,
+        };
+        
+        // 3. 创建时序表定义
+        let time_series_table_def = time_series::TimeSeriesTableDef {
+            base: table_def,
+            time_field: 0, // 时间字段索引
+            value_field: 1, // 值字段索引
+            tag_fields: tag_field_indices_static, // 标签字段索引列表
+            config: config.unwrap_or(time_series::TimeSeriesConfig::DEFAULT), // 时序数据配置
+        };
+        
+        // 4. 创建时序索引
+        let index = time_series::TimeSeriesIndex::new();
+        
+        // 5. 创建时序表
+        let time_series_table = time_series::TimeSeriesTable::new(
+            Arc::new(time_series_table_def),
+            index
+        )?;
+        
+        // 6. 添加到时序表向量
+        self.time_series_tables.push(Some(time_series_table));
+        
         Ok(())
+    }
+    
+    /// 获取时序表
+    pub fn get_time_series_table(&self, table_id: usize) -> Result<&time_series::TimeSeriesTable> {
+        if table_id >= self.time_series_tables.len() {
+            return Err(RemDbError::RecordNotFound);
+        }
+        
+        match &self.time_series_tables[table_id] {
+            Some(table) => Ok(table),
+            None => Err(RemDbError::RecordNotFound),
+        }
+    }
+    
+    /// 获取时序表数量
+    pub fn time_series_table_count(&self) -> usize {
+        self.time_series_tables.len()
     }
     
     /// 创建索引
