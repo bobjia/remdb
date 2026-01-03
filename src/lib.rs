@@ -325,7 +325,7 @@ impl RemDb {
             // 测试平台的file_open返回null，会导致FileIoError
             use crate::transaction::LogManager;
             unsafe {
-                let log_path = "remdb.log";
+                let log_path = "remdb.wal";
                 // 先检查平台是否能正常打开文件且返回有效的句柄
                 match crate::platform::file_open(log_path, crate::platform::FileMode::ReadWrite) {
                     Ok(handle) if !handle.is_null() => {
