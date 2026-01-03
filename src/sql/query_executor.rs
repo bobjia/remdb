@@ -5,7 +5,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::{RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN};
+use crate::{RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN, DdlExecutor};
 use crate::sql::{SqlQuery, ResultSet, Condition, ComparisonCondition, ComparisonOperator, OrderByClause};
 
 /// 查询执行错误
@@ -52,6 +52,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         crate::sql::QueryType::Delete => execute_delete_query(db, query),
         crate::sql::QueryType::Describe => execute_describe_query(db, query),
         crate::sql::QueryType::CreateTable => execute_create_table_query(db, query),
+        crate::sql::QueryType::CreateTimeSeriesTable => execute_create_time_series_table_query(db, query),
         crate::sql::QueryType::CreateIndex => execute_create_index_query(db, query),
         _ => Err(QueryExecutionError::InternalError),
     }
@@ -979,6 +980,91 @@ fn set_field_value(record_data: &mut Vec<u8>, offset: usize, data_type: DataType
     }
     
     Ok(())
+}
+
+/// 执行CREATE TIMESERIES TABLE查询
+fn execute_create_time_series_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 时序表创建逻辑：
+    // 1. 必须包含一个TIMESTAMP类型的time_field
+    // 2. 必须包含一个数值类型的value_field
+    // 3. 可以包含多个标签字段
+    
+    // 解析字段定义，查找时间字段、值字段和标签字段
+    let mut time_field = None;
+    let mut value_field = None;
+    let mut tag_fields = Vec::new();
+    
+    for (field_name, data_type_str, _, _, _, _, _) in &query.table_def {
+        let data_type = match data_type_str.to_uppercase().as_str() {
+            "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => crate::DataType::Timestamp,
+            "UINT8" | "TINYINT UNSIGNED" => crate::DataType::UInt8,
+            "UINT16" | "SMALLINT UNSIGNED" => crate::DataType::UInt16,
+            "UINT32" | "MEDIUMINT UNSIGNED" | "INT UNSIGNED" | "INTEGER UNSIGNED" => crate::DataType::UInt32,
+            "UINT64" | "BIGINT UNSIGNED" => crate::DataType::UInt64,
+            "INT8" | "TINYINT" => crate::DataType::Int8,
+            "INT16" | "SMALLINT" => crate::DataType::Int16,
+            "INT32" | "MEDIUMINT" | "INT" | "INTEGER" => crate::DataType::Int32,
+            "INT64" | "BIGINT" => crate::DataType::Int64,
+            "FLOAT32" | "FLOAT" => crate::DataType::Float32,
+            "FLOAT64" | "DOUBLE" | "DOUBLE PRECISION" | "REAL" => crate::DataType::Float64,
+            "BOOL" | "BOOLEAN" => crate::DataType::Bool,
+            "STRING" | "TEXT" | "VARCHAR" | "NVARCHAR" | "CHAR" | "CLOB" => crate::DataType::String,
+            _ => return Err(QueryExecutionError::TypeMismatch),
+        };
+        
+        match data_type {
+            // 时间字段：TIMESTAMP类型
+            crate::DataType::Timestamp => {
+                if time_field.is_none() {
+                    time_field = Some(field_name.as_str());
+                } else {
+                    // 只能有一个时间字段
+                    return Err(QueryExecutionError::InternalError);
+                }
+            },
+            // 值字段：数值类型
+            crate::DataType::UInt8 | crate::DataType::UInt16 | crate::DataType::UInt32 | 
+            crate::DataType::UInt64 | crate::DataType::Int8 | crate::DataType::Int16 | 
+            crate::DataType::Int32 | crate::DataType::Int64 | crate::DataType::Float32 | 
+            crate::DataType::Float64 => {
+                if value_field.is_none() {
+                    value_field = Some(field_name.as_str());
+                }
+            },
+            // 标签字段：其他类型（通常是字符串或布尔值）
+            _ => {
+                tag_fields.push(field_name.as_str());
+            }
+        }
+    }
+    
+    // 验证必须的字段
+    let time_field = time_field.ok_or(QueryExecutionError::InternalError)?;
+    let value_field = value_field.ok_or(QueryExecutionError::InternalError)?;
+    
+    // 调用RemDb的create_time_series_table方法创建时序表
+    db.create_time_series_table(
+        &query.table_name,
+        time_field,
+        value_field,
+        &tag_fields,
+        None
+    ).map_err(|e| {
+        match e {
+            crate::RemDbError::OutOfMemory => QueryExecutionError::OutOfMemory,
+            _ => QueryExecutionError::InternalError,
+        }
+    })?;
+    
+    // 创建结果集，返回成功消息
+    let columns = vec!["status".to_string()];
+    let mut result_set = ResultSet::new(columns);
+    result_set.add_row(vec![TypedValue {
+        value_type: crate::DataType::String,
+        value: crate::Value { string: [b'0'; 64] },
+    }]);
+    
+    Ok(result_set)
 }
 
 /// 评估条件

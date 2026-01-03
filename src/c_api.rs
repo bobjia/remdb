@@ -464,6 +464,7 @@ pub unsafe extern "C" fn remdb_init_global(
         sync_timeout_ms: 1000, // 默认1秒
         master_address: None,
         master_port: None,
+        time_series_defaults: crate::time_series::TimeSeriesConfig::DEFAULT,
     };
     
     // 初始化全局数据库

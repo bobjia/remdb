@@ -18,6 +18,7 @@ pub struct TableDef {
     pub name: String,
     pub columns: Vec<ColumnDef>,
     pub indices: Vec<IndexDef>,
+    pub is_time_series: bool,
 }
 
 pub fn parse_ddl(ddl: &str) -> Result<Vec<TableDef>, String> {
@@ -33,8 +34,8 @@ pub fn parse_ddl(ddl: &str) -> Result<Vec<TableDef>, String> {
     for stmt in statements {
         let stmt_lower = stmt.to_lowercase();
         
-        if stmt_lower.starts_with("create table") {
-            // 解析CREATE TABLE语句
+        if stmt_lower.starts_with("create table") || stmt_lower.starts_with("create timeseries table") {
+            // 解析CREATE TABLE或CREATE TIMESERIES TABLE语句
             let table = parse_create_table(stmt)?;
             if let Some(existing_table) = current_table.take() {
                 // 保存之前的表
@@ -66,8 +67,21 @@ pub fn parse_ddl(ddl: &str) -> Result<Vec<TableDef>, String> {
 fn parse_create_table(stmt: &str) -> Result<TableDef, String> {
     // 简化的CREATE TABLE解析
     // 格式：CREATE TABLE table_name (column1 type constraints, column2 type constraints, ...)
+    // 或：CREATE TIMESERIES TABLE table_name (column1 type constraints, column2 type constraints, ...)
     let stmt = stmt.to_lowercase();
-    let table_name_start = stmt.find("table").ok_or("Invalid CREATE TABLE statement")? + 6;
+    
+    // 检查是否是时序表
+    let is_time_series = stmt.starts_with("create timeseries table");
+    
+    // 找到table关键字的位置，根据是否是时序表调整起始位置
+    let table_keyword_pos = stmt.find("table").ok_or("Invalid CREATE TABLE statement")?;
+    let table_name_start = if is_time_series {
+        // 时序表：CREATE TIMESERIES TABLE ... 所以跳过"timeseries "部分
+        table_keyword_pos + 6
+    } else {
+        // 普通表：CREATE TABLE ...
+        table_keyword_pos + 6
+    };
     
     // 找到左括号位置
     let left_paren = stmt.find('(').ok_or("Invalid CREATE TABLE statement")?;
@@ -83,6 +97,7 @@ fn parse_create_table(stmt: &str) -> Result<TableDef, String> {
         name: table_name,
         columns,
         indices: Vec::new(),
+        is_time_series,
     })
 }
 

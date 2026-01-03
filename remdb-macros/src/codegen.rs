@@ -5,7 +5,9 @@ use super::ddl_parser::{TableDef, ColumnDef};
 pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
     let mut struct_defs = vec![];
     let mut table_defs_code = vec![];
+    let mut time_series_table_defs_code = vec![];
     let mut table_names = vec![];
+    let mut time_series_table_names = vec![];
     
     for table in table_defs {
         let table_name = table.name;
@@ -42,27 +44,77 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
             }
         });
         
-        // 生成TableDef静态变量
-        let (field_defs, record_size, primary_key_index, secondary_index, secondary_index_type) = 
-            generate_field_defs(&table.columns, &table.indices);
-        
-        let max_records = 1000usize; // 默认值，可以通过DDL扩展支持
-        
-        table_defs_code.push(quote! {
-            #[allow(non_upper_case_globals)]
-            pub static #table_ident: remdb::types::TableDef = remdb::types::TableDef {
-                id: 0u8,
-                name: #table_name,
-                fields: &[#(#field_defs,)*],
-                primary_key: #primary_key_index,
-                secondary_index: #secondary_index,
-                secondary_index_type: #secondary_index_type,
-                record_size: #record_size,
-                max_records: #max_records,
-            };
-        });
-        
-        table_names.push(table_ident);
+        if table.is_time_series {
+            // 生成时序表的基础表定义
+            let (field_defs, record_size, primary_key_index, secondary_index, secondary_index_type) = 
+                generate_field_defs(&table.columns, &table.indices);
+            
+            let max_records = 1000usize; // 默认值，可以通过DDL扩展支持
+            
+            // 查找时间字段和值字段的索引
+            let time_field_index = table.columns.iter()
+                .position(|col| col.name == "time" || col.name == "timestamp")
+                .unwrap_or(0);
+            let value_field_index = table.columns.iter()
+                .position(|col| col.name == "value" || col.name == "val")
+                .unwrap_or(1);
+            
+            // 提取标签字段索引（所有非时间和非值字段）
+            let tag_field_indices: Vec<usize> = table.columns.iter()
+                .enumerate()
+                .filter(|(i, col)| *i != time_field_index && *i != value_field_index)
+                .map(|(i, _)| i)
+                .collect();
+            
+            // 转换标签字段索引为TokenStream
+            let tag_fields_code = tag_field_indices.iter().map(|index| {
+                quote! { #index }
+            });
+            
+            time_series_table_defs_code.push(quote! {
+                #[allow(non_upper_case_globals)]
+                pub static #table_ident: remdb::time_series::TimeSeriesTableDef = remdb::time_series::TimeSeriesTableDef {
+                    base: remdb::types::TableDef {
+                        id: 0u8,
+                        name: #table_name,
+                        fields: &[#(#field_defs,)*],
+                        primary_key: #primary_key_index,
+                        secondary_index: #secondary_index,
+                        secondary_index_type: #secondary_index_type,
+                        record_size: #record_size,
+                        max_records: #max_records,
+                    },
+                    time_field: #time_field_index,
+                    value_field: #value_field_index,
+                    tag_fields: &[#(#tag_fields_code,)*],
+                    config: remdb::time_series::TimeSeriesConfig::DEFAULT,
+                };
+            });
+            
+            time_series_table_names.push(table_ident);
+        } else {
+            // 生成普通表定义
+            let (field_defs, record_size, primary_key_index, secondary_index, secondary_index_type) = 
+                generate_field_defs(&table.columns, &table.indices);
+            
+            let max_records = 1000usize; // 默认值，可以通过DDL扩展支持
+            
+            table_defs_code.push(quote! {
+                #[allow(non_upper_case_globals)]
+                pub static #table_ident: remdb::types::TableDef = remdb::types::TableDef {
+                    id: 0u8,
+                    name: #table_name,
+                    fields: &[#(#field_defs,)*],
+                    primary_key: #primary_key_index,
+                    secondary_index: #secondary_index,
+                    secondary_index_type: #secondary_index_type,
+                    record_size: #record_size,
+                    max_records: #max_records,
+                };
+            });
+            
+            table_names.push(table_ident);
+        }
     }
     
     // 生成数据库配置
@@ -94,12 +146,14 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
             sync_timeout_ms: 2000,
             master_address: None,
             master_port: None,
+            time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
         };
     };
     
     let output = quote! {
         #(#struct_defs)*
         #(#table_defs_code)*
+        #(#time_series_table_defs_code)*
         #database_code
     };
     
