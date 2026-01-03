@@ -5,7 +5,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::{RemDb, MemoryTable, Value, RemDbError, types::DataType, IndexType, DdlExecutor};
+use crate::{RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN};
 use crate::sql::{SqlQuery, ResultSet, Condition, ComparisonCondition, ComparisonOperator, OrderByClause};
 
 /// 查询执行错误
@@ -95,7 +95,7 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                 let mut row_data = Vec::with_capacity(columns.len());
                 for column_name in &columns {
                     match get_field_value(table, record_ptr, column_name) {
-                        Ok(value) => row_data.push(value),
+                        Ok(typed_value) => row_data.push(typed_value),
                         Err(_) => return true, // 跳过错误记录，继续遍历
                     }
                 }
@@ -132,7 +132,7 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
     let mut fields = Vec::new();
     let mut field_constraints = Vec::new(); // 存储约束信息
     
-    for (field_name, data_type_str, is_primary_key, is_not_null, is_unique, is_auto_increment) in &query.table_def {
+    for (field_name, data_type_str, is_primary_key, is_not_null, is_unique, is_auto_increment, default_value) in &query.table_def {
         let data_type = match data_type_str.to_uppercase().as_str() {
             // 无符号整数类型
             "UINT8" | "TINYINT UNSIGNED" => DataType::UInt8,
@@ -162,14 +162,133 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
+        // 转换query_parser::Value为types::Value
+        let converted_default = match default_value {
+            Some(sql_val) => {
+                let types_val = match sql_val {
+                    crate::sql::Value::Integer(i) => {
+                        match data_type {
+                            DataType::UInt8 => Value { u8: *i as u8 },
+                            DataType::UInt16 => Value { u16: *i as u16 },
+                            DataType::UInt32 => Value { u32: *i as u32 },
+                            DataType::UInt64 => Value { u64: *i as u64 },
+                            DataType::Int8 => Value { i8: *i as i8 },
+                            DataType::Int16 => Value { i16: *i as i16 },
+                            DataType::Int32 => Value { i32: *i as i32 },
+                            DataType::Int64 => Value { i64: *i },
+                            DataType::Bool => Value { bool: *i != 0 },
+                            DataType::Float32 => Value { float32: *i as f32 },
+                            DataType::Float64 => Value { float64: *i as f64 },
+                            DataType::Timestamp => Value { timestamp: *i as u64 },
+                            DataType::String => {
+                                let mut s = [0; MAX_STRING_LEN];
+                                let str_val = i.to_string();
+                                let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
+                                s[..len].copy_from_slice(str_val.as_bytes());
+                                Value { string: s }
+                            },
+                        }
+                    },
+                    crate::sql::Value::Float(f) => {
+                        match data_type {
+                            DataType::UInt8 => Value { u8: *f as u8 },
+                            DataType::UInt16 => Value { u16: *f as u16 },
+                            DataType::UInt32 => Value { u32: *f as u32 },
+                            DataType::UInt64 => Value { u64: *f as u64 },
+                            DataType::Int8 => Value { i8: *f as i8 },
+                            DataType::Int16 => Value { i16: *f as i16 },
+                            DataType::Int32 => Value { i32: *f as i32 },
+                            DataType::Int64 => Value { i64: *f as i64 },
+                            DataType::Bool => Value { bool: *f != 0.0 },
+                            DataType::Float32 => Value { float32: *f as f32 },
+                            DataType::Float64 => Value { float64: *f },
+                            DataType::Timestamp => Value { timestamp: *f as u64 },
+                            DataType::String => {
+                                let mut s = [0; MAX_STRING_LEN];
+                                let str_val = f.to_string();
+                                let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
+                                s[..len].copy_from_slice(str_val.as_bytes());
+                                Value { string: s }
+                            },
+                        }
+                    },
+                    crate::sql::Value::Boolean(b) => {
+                        match data_type {
+                            DataType::UInt8 => Value { u8: *b as u8 },
+                            DataType::UInt16 => Value { u16: *b as u16 },
+                            DataType::UInt32 => Value { u32: *b as u32 },
+                            DataType::UInt64 => Value { u64: *b as u64 },
+                            DataType::Int8 => Value { i8: *b as i8 },
+                            DataType::Int16 => Value { i16: *b as i16 },
+                            DataType::Int32 => Value { i32: *b as i32 },
+                            DataType::Int64 => Value { i64: *b as i64 },
+                            DataType::Bool => Value { bool: *b },
+                            DataType::Float32 => Value { float32: (*b as i32) as f32 },
+                            DataType::Float64 => Value { float64: (*b as i32) as f64 },
+                            DataType::Timestamp => Value { timestamp: *b as u64 },
+                            DataType::String => {
+                                let mut s = [0; MAX_STRING_LEN];
+                                let str_val = b.to_string();
+                                let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
+                                s[..len].copy_from_slice(str_val.as_bytes());
+                                Value { string: s }
+                            },
+                        }
+                    },
+                    crate::sql::Value::String(s) => {
+                        match data_type {
+                            DataType::UInt8 => Value { u8: s.parse().unwrap_or(0) },
+                            DataType::UInt16 => Value { u16: s.parse().unwrap_or(0) },
+                            DataType::UInt32 => Value { u32: s.parse().unwrap_or(0) },
+                            DataType::UInt64 => Value { u64: s.parse().unwrap_or(0) },
+                            DataType::Int8 => Value { i8: s.parse().unwrap_or(0) },
+                            DataType::Int16 => Value { i16: s.parse().unwrap_or(0) },
+                            DataType::Int32 => Value { i32: s.parse().unwrap_or(0) },
+                            DataType::Int64 => Value { i64: s.parse().unwrap_or(0) },
+                            DataType::Bool => Value { bool: s.parse().unwrap_or(false) },
+                            DataType::Float32 => Value { float32: s.parse().unwrap_or(0.0) },
+                            DataType::Float64 => Value { float64: s.parse().unwrap_or(0.0) },
+                            DataType::Timestamp => Value { timestamp: s.parse().unwrap_or(0) },
+                            DataType::String => {
+                                let mut buf = [0; MAX_STRING_LEN];
+                                let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                                buf[..len].copy_from_slice(s.as_bytes());
+                                Value { string: buf }
+                            },
+                        }
+                    },
+                    crate::sql::Value::Null => {
+                        // 对于NULL默认值，根据数据类型生成适当的默认值
+                        match data_type {
+                            DataType::UInt8 => Value { u8: 0 },
+                            DataType::UInt16 => Value { u16: 0 },
+                            DataType::UInt32 => Value { u32: 0 },
+                            DataType::UInt64 => Value { u64: 0 },
+                            DataType::Int8 => Value { i8: 0 },
+                            DataType::Int16 => Value { i16: 0 },
+                            DataType::Int32 => Value { i32: 0 },
+                            DataType::Int64 => Value { i64: 0 },
+                            DataType::Bool => Value { bool: false },
+                            DataType::Float32 => Value { float32: 0.0 },
+                            DataType::Float64 => Value { float64: 0.0 },
+                            DataType::Timestamp => Value { timestamp: 0 },
+                            DataType::String => Value { string: [0; MAX_STRING_LEN] },
+                        }
+                    },
+                };
+                Some(types_val)
+            },
+            None => None,
+        };
+        
         // 保存字段和约束信息
-        fields.push((field_name.as_str(), data_type));
+        fields.push((field_name.as_str(), data_type, converted_default));
         field_constraints.push((is_primary_key, is_not_null, is_unique, is_auto_increment));
     }
     
     // 查找主键字段索引
     let primary_key_index = query.primary_key.as_ref().and_then(|pk| {
-        query.table_def.iter().position(|(name, _, _, _, _, _)| name == pk)
+        query.table_def.iter().position(|(name, _, _, _, _, _, _)| name == pk)
     });
     
     // 调用DdlExecutor的create_table方法
@@ -210,7 +329,10 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
     // 创建结果集，返回成功消息
     let columns = vec!["status".to_string()];
     let mut result_set = ResultSet::new(columns);
-    result_set.add_row(vec![Value { string: [b'0'; 64] }]);
+    result_set.add_row(vec![TypedValue {
+        value_type: DataType::String,
+        value: Value { string: [b'0'; 64] },
+    }]);
     
     Ok(result_set)
 }
@@ -242,7 +364,10 @@ fn execute_create_index_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
     // 创建结果集，返回成功消息
     let columns = vec!["status".to_string()];
     let mut result_set = ResultSet::new(columns);
-    result_set.add_row(vec![Value { string: [b'0'; 64] }]);
+    result_set.add_row(vec![TypedValue {
+        value_type: DataType::String,
+        value: Value { string: [b'0'; 64] },
+    }]);
     
     Ok(result_set)
 }
@@ -334,6 +459,10 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
         unsafe {
             field_name_val.string[..field_name_len].copy_from_slice(&field_name_bytes[..field_name_len]);
         }
+        let field_name_typed_val = TypedValue {
+            value_type: DataType::String,
+            value: field_name_val,
+        };
         
         let mut type_val = crate::Value { string: [0u8; 64] };
         let type_bytes = type_str.as_bytes();
@@ -341,6 +470,10 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
         unsafe {
             type_val.string[..type_len].copy_from_slice(&type_bytes[..type_len]);
         }
+        let type_typed_val = TypedValue {
+            value_type: DataType::String,
+            value: type_val,
+        };
         
         let mut key_val = crate::Value { string: [0u8; 64] };
         let key_bytes = key_str.as_bytes();
@@ -348,6 +481,10 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
         unsafe {
             key_val.string[..key_len].copy_from_slice(&key_bytes[..key_len]);
         }
+        let key_typed_val = TypedValue {
+            value_type: DataType::String,
+            value: key_val,
+        };
         
         let mut null_val = crate::Value { string: [0u8; 64] };
         let null_bytes = null_str.as_bytes();
@@ -355,6 +492,10 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
         unsafe {
             null_val.string[..null_len].copy_from_slice(&null_bytes[..null_len]);
         }
+        let null_typed_val = TypedValue {
+            value_type: DataType::String,
+            value: null_val,
+        };
         
         let mut default_val = crate::Value { string: [0u8; 64] };
         let default_bytes = default_str.as_bytes();
@@ -362,13 +503,17 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
         unsafe {
             default_val.string[..default_len].copy_from_slice(&default_bytes[..default_len]);
         }
+        let default_typed_val = TypedValue {
+            value_type: DataType::String,
+            value: default_val,
+        };
         
         let row_data = vec![
-            field_name_val, // Field name
-            type_val,       // Type
-            key_val,        // Key
-            null_val,       // Null
-            default_val,    // Default
+            field_name_typed_val, // Field name
+            type_typed_val,       // Type
+            key_typed_val,        // Key
+            null_typed_val,       // Null
+            default_typed_val,    // Default
         ];
         
         result_set.add_row(row_data);
@@ -479,6 +624,52 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
             } else if let Some(sql_value) = field_value {
                 // 转换并设置字段值
                 set_field_value(&mut record_data, field.offset, field.data_type, field.size, sql_value)?;
+            } else if let Some(default_value) = field.default_value {
+                // 使用字段默认值
+                // 直接写入默认值，因为default_value是types::Value类型
+                unsafe {
+                    match field.data_type {
+                        DataType::UInt8 => {
+                            record_data[field.offset] = default_value.u8;
+                        },
+                        DataType::UInt16 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u16, default_value.u16);
+                        },
+                        DataType::UInt32 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u32, default_value.u32);
+                        },
+                        DataType::UInt64 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u64, default_value.u64);
+                        },
+                        DataType::Int8 => {
+                            record_data[field.offset] = default_value.i8 as u8;
+                        },
+                        DataType::Int16 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i16, default_value.i16);
+                        },
+                        DataType::Int32 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i32, default_value.i32);
+                        },
+                        DataType::Int64 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i64, default_value.i64);
+                        },
+                        DataType::Float32 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut f32, default_value.float32);
+                        },
+                        DataType::Float64 => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut f64, default_value.float64);
+                        },
+                        DataType::Bool => {
+                            record_data[field.offset] = default_value.bool as u8;
+                        },
+                        DataType::Timestamp => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u64, default_value.timestamp);
+                        },
+                        DataType::String => {
+                            core::ptr::copy_nonoverlapping(default_value.string.as_ptr(), record_data.as_mut_ptr().add(field.offset), field.size);
+                        },
+                    }
+                }
             }
         }
         
@@ -505,7 +696,10 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     let columns = vec!["affected_rows".to_string()];
     let mut result_set = ResultSet::new(columns);
     
-    let row_data = vec![crate::Value { u64: affected_rows as u64 }];
+    let row_data = vec![TypedValue {
+        value_type: DataType::UInt64,
+        value: crate::Value { u64: affected_rows as u64 },
+    }];
     result_set.add_row(row_data);
     
     Ok(result_set)
@@ -565,7 +759,10 @@ fn execute_delete_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     let columns = vec!["affected_rows".to_string()];
     let mut result_set = ResultSet::new(columns);
     
-    let row_data = vec![crate::Value { u64: affected_rows as u64 }];
+    let row_data = vec![TypedValue {
+        value_type: DataType::UInt64,
+        value: crate::Value { u64: affected_rows as u64 },
+    }];
     result_set.add_row(row_data);
     
     Ok(result_set)
@@ -651,7 +848,10 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     let columns = vec!["affected_rows".to_string()];
     let mut result_set = ResultSet::new(columns);
     
-    let row_data = vec![crate::Value { u64: affected_rows as u64 }];
+    let row_data = vec![TypedValue {
+        value_type: DataType::UInt64,
+        value: crate::Value { u64: affected_rows as u64 },
+    }];
     result_set.add_row(row_data);
     
     Ok(result_set)
@@ -824,7 +1024,7 @@ unsafe fn evaluate_comparison(table: &MemoryTable, record_ptr: *const u8, comp: 
     match get_field_value(table, record_ptr, &comp.field) {
         Ok(field_value) => {
             // 比较字段值和条件值，传入字段类型
-            compare_values(&field_value, field_type, &comp.operator, &comp.value)
+            compare_values(&field_value.value, field_type, &comp.operator, &comp.value)
         },
         Err(_) => false,
     }
@@ -1021,7 +1221,7 @@ fn compare_strings(f: &str, c: &str, operator: &ComparisonOperator) -> bool {
 }
 
 /// 对行进行排序
-fn sort_rows(rows: &mut Vec<Vec<Value>>, table: &MemoryTable, order_by: &OrderByClause) -> Result<(), QueryExecutionError> {
+fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &OrderByClause) -> Result<(), QueryExecutionError> {
     // 查找排序字段在表中的索引
     let field_index = table.def.fields
         .iter()
@@ -1054,78 +1254,78 @@ fn sort_rows(rows: &mut Vec<Vec<Value>>, table: &MemoryTable, order_by: &OrderBy
         let comparison = match field_type {
             // 无符号整数类型
             DataType::UInt8 => {
-                let a_val = unsafe { val_a.u8 };
-                let b_val = unsafe { val_b.u8 };
+                let a_val = unsafe { val_a.value.u8 };
+                let b_val = unsafe { val_b.value.u8 };
                 a_val.cmp(&b_val)
             },
             DataType::UInt16 => {
-                let a_val = unsafe { val_a.u16 };
-                let b_val = unsafe { val_b.u16 };
+                let a_val = unsafe { val_a.value.u16 };
+                let b_val = unsafe { val_b.value.u16 };
                 a_val.cmp(&b_val)
             },
             DataType::UInt32 => {
-                let a_val = unsafe { val_a.u32 };
-                let b_val = unsafe { val_b.u32 };
+                let a_val = unsafe { val_a.value.u32 };
+                let b_val = unsafe { val_b.value.u32 };
                 a_val.cmp(&b_val)
             },
             DataType::UInt64 => {
-                let a_val = unsafe { val_a.u64 };
-                let b_val = unsafe { val_b.u64 };
+                let a_val = unsafe { val_a.value.u64 };
+                let b_val = unsafe { val_b.value.u64 };
                 a_val.cmp(&b_val)
             },
             
             // 有符号整数类型
             DataType::Int8 => {
-                let a_val = unsafe { val_a.i8 };
-                let b_val = unsafe { val_b.i8 };
+                let a_val = unsafe { val_a.value.i8 };
+                let b_val = unsafe { val_b.value.i8 };
                 a_val.cmp(&b_val)
             },
             DataType::Int16 => {
-                let a_val = unsafe { val_a.i16 };
-                let b_val = unsafe { val_b.i16 };
+                let a_val = unsafe { val_a.value.i16 };
+                let b_val = unsafe { val_b.value.i16 };
                 a_val.cmp(&b_val)
             },
             DataType::Int32 => {
-                let a_val = unsafe { val_a.i32 };
-                let b_val = unsafe { val_b.i32 };
+                let a_val = unsafe { val_a.value.i32 };
+                let b_val = unsafe { val_b.value.i32 };
                 a_val.cmp(&b_val)
             },
             DataType::Int64 => {
-                let a_val = unsafe { val_a.i64 };
-                let b_val = unsafe { val_b.i64 };
+                let a_val = unsafe { val_a.value.i64 };
+                let b_val = unsafe { val_b.value.i64 };
                 a_val.cmp(&b_val)
             },
             
             // 浮点数类型
             DataType::Float32 => {
-                let a_val = unsafe { val_a.float32 };
-                let b_val = unsafe { val_b.float32 };
+                let a_val = unsafe { val_a.value.float32 };
+                let b_val = unsafe { val_b.value.float32 };
                 a_val.partial_cmp(&b_val).unwrap_or(core::cmp::Ordering::Equal)
             },
             DataType::Float64 => {
-                let a_val = unsafe { val_a.float64 };
-                let b_val = unsafe { val_b.float64 };
+                let a_val = unsafe { val_a.value.float64 };
+                let b_val = unsafe { val_b.value.float64 };
                 a_val.partial_cmp(&b_val).unwrap_or(core::cmp::Ordering::Equal)
             },
             
             // 布尔类型
             DataType::Bool => {
-                let a_val = unsafe { val_a.bool };
-                let b_val = unsafe { val_b.bool };
+                let a_val = unsafe { val_a.value.bool };
+                let b_val = unsafe { val_b.value.bool };
                 a_val.cmp(&b_val)
             },
             
             // 时间戳类型
             DataType::Timestamp => {
-                let a_val = unsafe { val_a.timestamp };
-                let b_val = unsafe { val_b.timestamp };
+                let a_val = unsafe { val_a.value.timestamp };
+                let b_val = unsafe { val_b.value.timestamp };
                 a_val.cmp(&b_val)
             },
             
             // 字符串类型
             DataType::String => {
-                let a_str = unsafe { &val_a.string };
-                let b_str = unsafe { &val_b.string };
+                let a_str = unsafe { &val_a.value.string };
+                let b_str = unsafe { &val_b.value.string };
                 
                 let a_str = String::from_utf8_lossy(a_str).trim_end_matches(char::from(0)).to_string();
                 let b_str = String::from_utf8_lossy(b_str).trim_end_matches(char::from(0)).to_string();
@@ -1145,14 +1345,20 @@ fn sort_rows(rows: &mut Vec<Vec<Value>>, table: &MemoryTable, order_by: &OrderBy
 }
 
 /// 获取字段值
-unsafe fn get_field_value(table: &MemoryTable, record_ptr: *const u8, field_name: &str) -> Result<Value, QueryExecutionError> {
+unsafe fn get_field_value(table: &MemoryTable, record_ptr: *const u8, field_name: &str) -> Result<TypedValue, QueryExecutionError> {
     // 查找字段索引
     let field_index = table.def.fields
         .iter()
         .position(|field| field.name == field_name)
         .ok_or(QueryExecutionError::FieldNotFound)?;
     
+    let field = &table.def.fields[field_index];
     // 获取字段值
-    table.get_field(record_ptr, field_index)
-        .map_err(|_| QueryExecutionError::FieldNotFound)
+    let value = table.get_field(record_ptr, field_index)
+        .map_err(|_| QueryExecutionError::FieldNotFound)?;
+    
+    Ok(TypedValue {
+        value_type: field.data_type,
+        value,
+    })
 }

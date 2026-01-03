@@ -22,6 +22,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: true,
             auto_increment: true,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "name",
@@ -32,6 +33,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "email",
@@ -42,6 +44,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: true,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "age",
@@ -52,6 +55,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             not_null: false,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "active",
@@ -62,6 +66,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             not_null: false,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "created_at",
@@ -72,6 +77,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
     ],
     primary_key: 0,
@@ -95,6 +101,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: true,
             auto_increment: true,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "user_id",
@@ -105,6 +112,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "product",
@@ -115,6 +123,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "quantity",
@@ -125,6 +134,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "amount",
@@ -135,6 +145,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "status",
@@ -145,6 +156,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "created_at",
@@ -155,6 +167,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
     ],
     primary_key: 0,
@@ -178,6 +191,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: true,
             auto_increment: true,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "name",
@@ -188,6 +202,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: true,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "description",
@@ -198,6 +213,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             not_null: false,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "price",
@@ -208,6 +224,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "stock",
@@ -218,6 +235,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             not_null: true,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         remdb::types::FieldDef {
             name: "active",
@@ -228,6 +246,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             not_null: false,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
     ],
     primary_key: 0,

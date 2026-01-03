@@ -74,10 +74,10 @@ fn main() {
     let result = db.create_table(
         "users",
         &[
-            ("id", DataType::UInt32),
-            ("name", DataType::String),
-            ("age", DataType::UInt8),
-            ("active", DataType::Bool),
+            ("id", DataType::UInt32, None),
+            ("name", DataType::String, None),
+            ("age", DataType::UInt8, None),
+            ("active", DataType::Bool, None),
         ],
         Some(0) // 主键为id字段
     );

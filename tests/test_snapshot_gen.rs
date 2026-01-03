@@ -17,6 +17,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             not_null: true,
             unique: true,
             auto_increment: true,
+            default_value: None,
         },
         FieldDef {
             name: "value",
@@ -27,6 +28,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             not_null: false,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
     ],
     primary_key: 0,

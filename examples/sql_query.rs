@@ -187,8 +187,8 @@ fn main() {
             let active = row.get(1).unwrap();
             
             // 转换为合适的类型
-            let name_str = String::from_utf8_lossy(&name.string).trim_end_matches(char::from(0)).to_string();
-            let active_val = active.bool;
+            let name_str = String::from_utf8_lossy(&name.value.string).trim_end_matches(char::from(0)).to_string();
+            let active_val = active.value.bool;
             
             println!("用户名: {}, 活跃: {}", name_str, active_val);
         }

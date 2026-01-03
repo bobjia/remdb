@@ -172,15 +172,62 @@ pub union Value {
     pub string: [u8; MAX_STRING_LEN],
 }
 
+/// 带类型的值
+#[derive(Copy, Clone)]
+pub struct TypedValue {
+    /// 值的数据类型
+    pub value_type: DataType,
+    /// 实际值
+    pub value: Value,
+}
+
 /// 手动实现PartialEq trait，因为Rust不支持为union类型自动派生PartialEq
-impl PartialEq for Value {
+impl PartialEq for TypedValue {
     fn eq(&self, other: &Self) -> bool {
-        // 注意：这里的实现假设我们知道要比较的是哪种类型
-        // 但实际上在约束验证中，我们是比较相同字段的值，所以类型是相同的
-        // 因此我们需要根据字段类型来比较对应的union变体
-        // 由于我们无法在这里知道字段类型，所以这个实现是不完整的
-        // 我们需要修改约束验证逻辑，不直接比较Value，而是比较具体的字段值
-        false
+        // 首先比较类型
+        if self.value_type != other.value_type {
+            return false;
+        }
+        
+        unsafe {
+            match self.value_type {
+                DataType::UInt8 => self.value.u8 == other.value.u8,
+                DataType::UInt16 => self.value.u16 == other.value.u16,
+                DataType::UInt32 => self.value.u32 == other.value.u32,
+                DataType::UInt64 => self.value.u64 == other.value.u64,
+                DataType::Int8 => self.value.i8 == other.value.i8,
+                DataType::Int16 => self.value.i16 == other.value.i16,
+                DataType::Int32 => self.value.i32 == other.value.i32,
+                DataType::Int64 => self.value.i64 == other.value.i64,
+                DataType::Float32 => {
+                    // 处理浮点数的特殊比较：NaN 和无穷大
+                    let a = self.value.float32;
+                    let b = other.value.float32;
+                    if a.is_nan() && b.is_nan() {
+                        true // 两个都是 NaN 时认为相等
+                    } else {
+                        a == b
+                    }
+                }
+                DataType::Float64 => {
+                    let a = self.value.float64;
+                    let b = other.value.float64;
+                    if a.is_nan() && b.is_nan() {
+                        true
+                    } else {
+                        a == b
+                    }
+                }
+                DataType::Bool => self.value.bool == other.value.bool,
+                DataType::Timestamp => self.value.timestamp == other.value.timestamp,
+                DataType::String => {
+                    // 比较字符串数组
+                    let a_str = core::str::from_utf8(&self.value.string).unwrap_or("");
+                    let b_str = core::str::from_utf8(&other.value.string).unwrap_or("");
+                    a_str.trim_end_matches(char::from(0)) == b_str.trim_end_matches(char::from(0))
+                }
+            }
+        }
     }
 }
 
@@ -207,6 +254,8 @@ pub struct FieldDef {
     pub unique: bool,
     /// 是否自增
     pub auto_increment: bool,
+    /// 默认值
+    pub default_value: Option<Value>,
 }
 
 impl FieldDef {
@@ -228,6 +277,33 @@ impl FieldDef {
         
         if self.unique && !self.primary_key {
             constraints.push_str(" UNIQUE");
+        }
+        
+        if let Some(default) = self.default_value {
+            constraints.push_str(" DEFAULT ");
+            unsafe {
+                match self.data_type {
+                    DataType::String => {
+                        let s = core::str::from_utf8(&default.string).unwrap_or("").trim_end_matches(char::from(0));
+                        constraints.push_str(&format!("'{}'", s));
+                    },
+                    DataType::Bool => {
+                        let b = default.bool;
+                        constraints.push_str(if b { "TRUE" } else { "FALSE" });
+                    },
+                    DataType::UInt8 => constraints.push_str(&default.u8.to_string()),
+                    DataType::UInt16 => constraints.push_str(&default.u16.to_string()),
+                    DataType::UInt32 => constraints.push_str(&default.u32.to_string()),
+                    DataType::UInt64 => constraints.push_str(&default.u64.to_string()),
+                    DataType::Int8 => constraints.push_str(&default.i8.to_string()),
+                    DataType::Int16 => constraints.push_str(&default.i16.to_string()),
+                    DataType::Int32 => constraints.push_str(&default.i32.to_string()),
+                    DataType::Int64 => constraints.push_str(&default.i64.to_string()),
+                    DataType::Float32 => constraints.push_str(&default.float32.to_string()),
+                    DataType::Float64 => constraints.push_str(&default.float64.to_string()),
+                    DataType::Timestamp => constraints.push_str(&default.timestamp.to_string()),
+                }
+            }
         }
         
         constraints

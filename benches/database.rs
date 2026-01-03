@@ -115,6 +115,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             primary_key: true,
             unique: true,
             auto_increment: true,
+            default_value: None,
         },
         FieldDef {
             name: "value",
@@ -125,6 +126,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             primary_key: false,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
     ],
     primary_key: 0,
@@ -148,6 +150,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             primary_key: true,
             unique: true,
             auto_increment: true,
+            default_value: None,
         },
         FieldDef {
             name: "metric_name",
@@ -158,6 +161,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             primary_key: false,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         FieldDef {
             name: "value",
@@ -168,6 +172,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             primary_key: false,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         FieldDef {
             name: "timestamp",
@@ -178,6 +183,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             primary_key: false,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
         FieldDef {
             name: "tags",
@@ -188,6 +194,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             primary_key: false,
             unique: false,
             auto_increment: false,
+            default_value: None,
         },
     ],
     primary_key: 0,

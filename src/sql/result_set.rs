@@ -4,12 +4,11 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::boxed::Box;
 use core::iter::Iterator;
 use core::option::Option;
 use core::result::Result as CoreResult;
 
-use crate::{RemDbError, Value};
+use crate::{RemDbError, DataType, types::TypedValue};
 
 /// 查询结果集
 pub struct ResultSet {
@@ -32,7 +31,7 @@ impl ResultSet {
     }
 
     /// 添加一行数据
-    pub fn add_row(&mut self, values: Vec<Value>) {
+    pub fn add_row(&mut self, values: Vec<TypedValue>) {
         self.rows.push(ResultRow::new(values));
     }
 
@@ -129,22 +128,22 @@ impl ResultSet {
 /// 结果行
 pub struct ResultRow {
     /// 行中的值
-    pub values: Vec<Value>,
+    pub values: Vec<TypedValue>,
 }
 
 impl ResultRow {
     /// 创建新的结果行
-    pub fn new(values: Vec<Value>) -> Self {
+    pub fn new(values: Vec<TypedValue>) -> Self {
         ResultRow { values }
     }
 
     /// 获取字段值
-    pub fn get(&self, index: usize) -> CoreResult<&Value, RemDbError> {
+    pub fn get(&self, index: usize) -> CoreResult<&TypedValue, RemDbError> {
         self.values.get(index).ok_or(RemDbError::FieldNotFound)
     }
 
     /// 通过列名获取字段值
-    pub fn get_by_name(&self, columns: &[String], column_name: &str) -> CoreResult<&Value, RemDbError> {
+    pub fn get_by_name(&self, columns: &[String], column_name: &str) -> CoreResult<&TypedValue, RemDbError> {
         if let Some(index) = columns.iter().position(|col| col == column_name) {
             self.get(index)
         } else {
@@ -204,66 +203,32 @@ pub fn string_to_columns(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// 将Value转换为字符串表示
-fn value_to_string_repr(value: &Value) -> String {
+/// 将TypedValue转换为字符串表示
+fn value_to_string_repr(value: &TypedValue) -> String {
     unsafe {
-        // 由于Value是union类型，无法直接知道其实际类型
-        // 我们需要尝试不同的访问方式，并根据结果判断
-        
-        // 1. 首先检查是否是u64值（如affected_rows）
-        // 受影响的行数通常不会超过100万
-        let u64_val = value.u64;
-        if u64_val <= 1000000 {
-            return format!("{}", u64_val);
+        match value.value_type {
+            DataType::UInt8 => format!("{}", value.value.u8),
+            DataType::UInt16 => format!("{}", value.value.u16),
+            DataType::UInt32 => format!("{}", value.value.u32),
+            DataType::UInt64 => format!("{}", value.value.u64),
+            DataType::Int8 => format!("{}", value.value.i8),
+            DataType::Int16 => format!("{}", value.value.i16),
+            DataType::Int32 => format!("{}", value.value.i32),
+            DataType::Int64 => format!("{}", value.value.i64),
+            DataType::Float32 => format!("{}", value.value.float32),
+            DataType::Float64 => format!("{}", value.value.float64),
+            DataType::Bool => format!("{}", value.value.bool),
+            DataType::Timestamp => format!("{}", value.value.timestamp),
+            DataType::String => {
+                let string_slice = core::str::from_utf8(&value.value.string).unwrap_or("");
+                string_slice.trim_end_matches(char::from(0)).to_string()
+            },
         }
-        
-        // 2. 检查是否是i32值（ID字段等）
-        let i32_val = value.i32;
-        // 总是返回i32值，因为ID字段通常是i32类型
-        return format!("{}", i32_val);
-        
-        // 4. 检查是否是布尔值（active字段）
-        let bool_val = value.bool;
-        // 布尔值只有true和false两种可能
-        // 我们需要确保这不是其他类型的0或1值
-        let u8_val = value.u8;
-        
-        // 如果整个8字节都是0或1，那么它可能是一个布尔值
-        if (bool_val == false && u8_val == 0 && u64_val == 0) || 
-           (bool_val == true && u8_val == 1 && u64_val == 1) {
-            return format!("{}", bool_val);
-        }
-        
-        // 5. 检查是否是时间戳（13位数字）
-        let is_timestamp = |val| val >= 1000000000000 && val < 10000000000000;
-        let timestamp_val = value.timestamp;
-        if is_timestamp(timestamp_val) {
-            return format!("{}", timestamp_val);
-        }
-        
-        // 6. 最后检查是否是字符串类型
-        let string_val = value.string;
-        // 只检查前32字节，避免读取过多无效数据
-        let string_slice = core::str::from_utf8(&string_val[0..32]).unwrap_or("");
-        let trimmed = string_slice.trim_end_matches(char::from(0));
-        
-        // 检查是否是真正的字符串：
-        // - 长度大于1
-        // - 包含至少一个字母字符
-        // - 不是纯数字（避免将ID等数字字段误判为字符串）
-        if trimmed.len() > 1 && 
-           trimmed.chars().any(|c| c.is_ascii_alphabetic()) && 
-           !trimmed.chars().all(|c| c.is_ascii_digit()) {
-            return trimmed.to_string();
-        }
-        
-        // 默认情况下，返回空字符串
-        "".to_string()
     }
 }
 
 /// 将值列表转换为字符串
-pub fn values_to_string(values: &[Value]) -> String {
+pub fn values_to_string(values: &[TypedValue]) -> String {
     let mut result = String::new();
     for (i, value) in values.iter().enumerate() {
         if i > 0 {

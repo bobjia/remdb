@@ -147,10 +147,10 @@ fn test_create_table() {
     let result = db.create_table(
         "users",
         &[
-            ("id", DataType::UInt32),
-            ("name", DataType::String),
-            ("age", DataType::UInt8),
-            ("active", DataType::Bool),
+            ("id", DataType::UInt32, None),
+            ("name", DataType::String, None),
+            ("age", DataType::UInt8, None),
+            ("active", DataType::Bool, None),
         ],
         Some(0) // 主键为id字段
     );
@@ -170,7 +170,7 @@ fn test_create_table_invalid() {
     // 测试创建主键索引超出范围的表（应该失败）
     let result = db.create_table(
         "invalid_pk_table",
-        &[("id", DataType::UInt32)],
+        &[("id", DataType::UInt32, None)],
         Some(1) // 主键索引超出范围
     );
     assert!(result.is_err(), "Creating table with invalid primary key should fail");
@@ -199,10 +199,10 @@ fn test_create_index() {
     let result = db.create_table(
         "products",
         &[
-            ("id", DataType::UInt32),
-            ("name", DataType::String),
-            ("price", DataType::Float32),
-            ("category", DataType::String),
+            ("id", DataType::UInt32, None),
+            ("name", DataType::String, None),
+            ("price", DataType::Float32, None),
+            ("category", DataType::String, None),
         ],
         Some(0) // 主键为id字段
     );
@@ -221,10 +221,10 @@ fn test_create_index() {
     let result = db.create_table(
         "orders_ttree",
         &[
-            ("id", DataType::UInt32),
-            ("customer_id", DataType::UInt32),
-            ("amount", DataType::Float64),
-            ("created_at", DataType::Timestamp),
+            ("id", DataType::UInt32, None),
+            ("customer_id", DataType::UInt32, None),
+            ("amount", DataType::Float64, None),
+            ("created_at", DataType::Timestamp, None),
         ],
         Some(0) // 主键为id字段
     );
@@ -242,10 +242,10 @@ fn test_create_index() {
     let result = db.create_table(
         "orders_sorted",
         &[
-            ("id", DataType::UInt32),
-            ("customer_id", DataType::UInt32),
-            ("amount", DataType::Float64),
-            ("created_at", DataType::Timestamp),
+            ("id", DataType::UInt32, None),
+            ("customer_id", DataType::UInt32, None),
+            ("amount", DataType::Float64, None),
+            ("created_at", DataType::Timestamp, None),
         ],
         Some(0) // 主键为id字段
     );
@@ -283,11 +283,11 @@ fn test_describe_table() {
     let result = db.create_table(
         "employees",
         &[
-            ("id", DataType::UInt32),
-            ("name", DataType::String),
-            ("department", DataType::String),
-            ("salary", DataType::Float64),
-            ("active", DataType::Bool),
+            ("id", DataType::UInt32, None),
+            ("name", DataType::String, None),
+            ("department", DataType::String, None),
+            ("salary", DataType::Float64, None),
+            ("active", DataType::Bool, None),
         ],
         Some(0) // 主键为id字段
     );
@@ -318,7 +318,7 @@ fn test_describe_table() {
     fn find_row_by_field_name<'a>(result_set: &'a crate::sql::ResultSet, field_name: &str) -> Option<&'a crate::sql::ResultRow> {
         for i in 0..result_set.row_count() {
             if let Some(row) = result_set.get_row(i) {
-                let current_field_name = unsafe { value_to_str(&row.values[0]) };
+                let current_field_name = unsafe { value_to_str(&row.values[0].value) };
                 if current_field_name == field_name {
                     return Some(row);
                 }
@@ -329,50 +329,50 @@ fn test_describe_table() {
     
     // 验证id字段
     if let Some(row) = find_row_by_field_name(&result_set, "id") {
-        assert_eq!(unsafe { value_to_str(&row.values[1]) }, "int", "Expected UInt32 type to be int");
-        assert_eq!(unsafe { value_to_str(&row.values[2]) }, "PRI", "Expected id to be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3]) }, "NO", "Expected id to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4]) }, "0", "Expected id default to be 0");
+        assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "int", "Expected UInt32 type to be int");
+        assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "PRI", "Expected id to be primary key");
+        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected id to be NOT NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "0", "Expected id default to be 0");
     } else {
         panic!("Could not find id field in describe result");
     }
     
     // 验证name字段
     if let Some(row) = find_row_by_field_name(&result_set, "name") {
-        assert_eq!(unsafe { value_to_str(&row.values[1]) }, "varchar(64)", "Expected name type to be varchar(64)");
-        assert_eq!(unsafe { value_to_str(&row.values[2]) }, "", "Expected name to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3]) }, "NO", "Expected name to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4]) }, "0", "Expected name default to be 0");
+        assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "varchar(64)", "Expected name type to be varchar(64)");
+        assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected name to not be primary key");
+        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected name to be NOT NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "0", "Expected name default to be 0");
     } else {
         panic!("Could not find name field in describe result");
     }
     
     // 验证salary字段
     if let Some(row) = find_row_by_field_name(&result_set, "salary") {
-        assert_eq!(unsafe { value_to_str(&row.values[1]) }, "double", "Expected salary type to be double");
-        assert_eq!(unsafe { value_to_str(&row.values[2]) }, "", "Expected salary to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3]) }, "NO", "Expected salary to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4]) }, "0", "Expected salary default to be 0");
+        assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "double", "Expected salary type to be double");
+        assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected salary to not be primary key");
+        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected salary to be NOT NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "0", "Expected salary default to be 0");
     } else {
         panic!("Could not find salary field in describe result");
     }
     
     // 验证active字段
     if let Some(row) = find_row_by_field_name(&result_set, "active") {
-        assert_eq!(unsafe { value_to_str(&row.values[1]) }, "bool", "Expected active type to be bool");
-        assert_eq!(unsafe { value_to_str(&row.values[2]) }, "", "Expected active to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3]) }, "NO", "Expected active to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4]) }, "0", "Expected active default to be 0");
+        assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "bool", "Expected active type to be bool");
+        assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected active to not be primary key");
+        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected active to be NOT NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "0", "Expected active default to be 0");
     } else {
         panic!("Could not find active field in describe result");
     }
     
     // 验证department字段
     if let Some(row) = find_row_by_field_name(&result_set, "department") {
-        assert_eq!(unsafe { value_to_str(&row.values[1]) }, "varchar(64)", "Expected department type to be varchar(64)");
-        assert_eq!(unsafe { value_to_str(&row.values[2]) }, "", "Expected department to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3]) }, "NO", "Expected department to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4]) }, "0", "Expected department default to be 0");
+        assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "varchar(64)", "Expected department type to be varchar(64)");
+        assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected department to not be primary key");
+        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected department to be NOT NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "0", "Expected department default to be 0");
     } else {
         panic!("Could not find department field in describe result");
     }

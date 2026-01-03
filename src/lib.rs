@@ -36,7 +36,7 @@ pub trait DdlExecutor {
     fn create_table(
         &mut self,
         name: &str,
-        fields: &[(&str, DataType)],
+        fields: &[(&str, DataType, Option<Value>)],
         primary_key: Option<usize>
     ) -> Result<()>;
     
@@ -662,7 +662,7 @@ impl DdlExecutor for RemDb {
     fn create_table(
         &mut self,
         name: &str,
-        fields: &[(&str, DataType)],
+        fields: &[(&str, DataType, Option<Value>)],
         primary_key: Option<usize>
     ) -> Result<()> {
         // 1. 检查字段数量是否合法
@@ -682,7 +682,7 @@ impl DdlExecutor for RemDb {
         let mut offset = 0;
         let mut record_size = 0;
         
-        for (i, (field_name, data_type)) in fields.iter().enumerate() {
+        for (i, (field_name, data_type, default_value)) in fields.iter().enumerate() {
             // 计算字段大小
             let field_size = match data_type {
                 DataType::String => MAX_STRING_LEN,
@@ -708,6 +708,7 @@ impl DdlExecutor for RemDb {
                 not_null: is_primary_key, // 主键默认非空
                 unique: is_primary_key, // 主键默认唯一
                 auto_increment: is_auto_increment, // 整数主键默认自增
+                default_value: *default_value, // 设置字段默认值
             };
             
             field_defs.push(field_def);
@@ -805,6 +806,7 @@ impl DdlExecutor for RemDb {
                 not_null: field.not_null,
                 unique: field.unique,
                 auto_increment: field.auto_increment,
+                default_value: field.default_value,
             });
         }
         
@@ -904,7 +906,7 @@ impl RemDb {
     }
     
     /// 创建表
-    pub fn create_table(&mut self, table_name: &str, fields: &[(&str, DataType)], primary_key: Option<usize>) -> Result<()> {
+    pub fn create_table(&mut self, table_name: &str, fields: &[(&str, DataType, Option<Value>)], primary_key: Option<usize>) -> Result<()> {
         // 调用已有的DdlExecutor实现
         DdlExecutor::create_table(self, table_name, fields, primary_key)
     }
@@ -949,7 +951,7 @@ impl RemDb {
             if let Some(value) = row.values.first() {
                 // 假设第一个值是受影响的行数（u64类型）
                 unsafe {
-                    let affected_rows = value.u64 as usize;
+                    let affected_rows = value.value.u64 as usize;
                     return Ok(affected_rows);
                 }
             }
@@ -975,7 +977,7 @@ impl RemDb {
             if let Some(value) = row.values.first() {
                 // 假设第一个值是受影响的行数（u64类型）
                 unsafe {
-                    let affected_rows = value.u64 as usize;
+                    let affected_rows = value.value.u64 as usize;
                     return Ok(affected_rows);
                 }
             }
@@ -1001,7 +1003,7 @@ impl RemDb {
             if let Some(value) = row.values.first() {
                 // 假设第一个值是受影响的行数（u64类型）
                 unsafe {
-                    let affected_rows = value.u64 as usize;
+                    let affected_rows = value.value.u64 as usize;
                     return Ok(affected_rows);
                 }
             }

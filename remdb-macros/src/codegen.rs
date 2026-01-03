@@ -148,6 +148,7 @@ fn generate_field_defs(
                 not_null: #not_null,
                 unique: #unique,
                 auto_increment: #auto_increment,
+                default_value: None,
             }
         });
         

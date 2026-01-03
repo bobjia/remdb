@@ -359,6 +359,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 not_null: #not_null_val,
                 unique: #unique_val,
                 auto_increment: #auto_increment_val,
+                default_value: None,
             }
         };
         

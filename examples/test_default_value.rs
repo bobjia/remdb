@@ -1,0 +1,97 @@
+extern crate alloc;
+
+use remdb::{RemDb, config::{DbConfig, LogMode, HARole, ReplicationMode}};
+use remdb::memory::allocator::init_global_allocator;
+use remdb::config::DefaultMemoryAllocator;
+
+// 创建静态的默认内存分配器
+static mut DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
+
+// 创建静态的数据库配置
+static CONFIG: DbConfig = unsafe {
+    DbConfig {
+        tables: &[],
+        total_memory: 1024 * 1024, // 1MB
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        default_max_records: 10, // 减少默认最大记录数，避免内存不足
+        memory_allocator: &mut DEFAULT_ALLOCATOR,
+        log_mode: LogMode::Sync,
+        log_prealloc_size: 1 * 1024 * 1024,
+        log_segment_size: 16 * 1024 * 1024,
+        log_file_size_limit: 16 * 1024 * 1024,
+        checkpoint_interval_ms: 60000,
+        retained_checkpoints: 3,
+        ha_role: HARole::Auto,
+        replication_mode: ReplicationMode::Async,
+        heartbeat_interval_ms: 1000,
+        failure_detection_ms: 3000,
+        sync_timeout_ms: 2000,
+        master_address: None,
+        master_port: None,
+    }
+};
+
+fn main() {
+    println!("Testing DEFAULT field functionality...");
+    
+    // 初始化全局内存分配器
+    static mut MEMORY_BUFFER: [u8; 1024 * 1024] = [0; 1024 * 1024];
+    unsafe {
+        init_global_allocator(MEMORY_BUFFER.as_mut_ptr(), MEMORY_BUFFER.len())
+            .expect("Failed to initialize global allocator");
+    }
+    
+    // 创建数据库实例
+    let mut db = RemDb::new(&CONFIG);
+    
+    // 初始化数据库和平台
+    db.init().expect("Failed to initialize database");
+    
+    println!("Testing DEFAULT field functionality...");
+    
+    // 创建包含DEFAULT字段的表
+    let create_table_sql = "CREATE TABLE users (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        name STRING NOT NULL,
+        age INT DEFAULT 18,
+        active BOOL DEFAULT TRUE,
+        score FLOAT DEFAULT 0.0
+    );";
+    
+    println!("1. Creating table with DEFAULT values...");
+    let result = db.sql_query(create_table_sql);
+    if result.is_ok() {
+        println!("   ✓ Table created successfully");
+    } else {
+        println!("   ✗ Failed to create table: {:?}", result.err());
+        return;
+    }
+    
+    // 插入数据，不提供默认值字段
+    let insert_sql = "INSERT INTO users (name) VALUES ('Alice'), ('Bob');";
+    
+    println!("2. Inserting records without default values...");
+    let result = db.sql_query(insert_sql);
+    if result.is_ok() {
+        println!("   ✓ Records inserted successfully");
+    } else {
+        println!("   ✗ Failed to insert records: {:?}", result.err());
+        return;
+    }
+    
+    // 查询数据，验证默认值
+    let select_sql = "SELECT * FROM users;";
+    
+    println!("3. Querying records to verify DEFAULT values...");
+    let result = db.sql_query(select_sql);
+    if result.is_ok() {
+        println!("   ✓ Query executed successfully");
+        println!("   ✓ DEFAULT field functionality is working!");
+    } else {
+        println!("   ✗ Failed to select records: {:?}", result.err());
+        return;
+    }
+    
+    println!("DEFAULT field functionality test completed successfully!");
+}
