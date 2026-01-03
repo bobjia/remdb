@@ -465,6 +465,7 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             sync_timeout_ms: 2000, // 默认2秒
             master_address: None,
             master_port: None,
+            time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
         };
     };
     

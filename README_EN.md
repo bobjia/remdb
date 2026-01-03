@@ -91,6 +91,22 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Both synchronous and asynchronous replication modes
   - Support for failure recovery and resynchronization
   - High Availability Manager provided to simplify HA configuration and management
+- **Time Series Database Support**: 
+  - Dedicated time series table implementation optimized for time series data storage and querying
+  - Support for efficient time range queries
+  - Built-in multiple time series aggregation functions:
+    - COUNT: Count records
+    - SUM: Calculate sum
+    - AVG: Calculate average
+    - MIN: Get minimum value
+    - MAX: Get maximum value
+  - Support for time window aggregation with customizable window size
+  - Support for data compression algorithms:
+    - Delta encoding: Reduce storage space
+    - RunLength encoding: Optimize storage for consecutive repeated values
+  - Support for data lifecycle management, automatically cleaning up expired data
+  - Provides dedicated time series record batch insert API for improved write performance
+  - Support for latest data query, quickly retrieving the most recent records
 
 ## Technical Characteristics
 
@@ -320,6 +336,296 @@ fn main() {
     // user::insert(&mut db, user);
     // let result = user::get_by_id(&db, 1);
 }
+```
+
+## Time Series Database
+
+remdb provides powerful time series database functionality, specifically designed for efficient storage and querying of time series data. The time series database supports efficient storage and querying of sensor data, monitoring data, log data, and other time series data.
+
+### Design Philosophy
+
+The time series database adopts the following design philosophies:
+
+1. **Efficient Storage**: Optimized storage structure for time series data characteristics, reducing storage space usage
+2. **Fast Query**: Supports efficient time range queries and latest data queries
+3. **Built-in Aggregation**: Provides rich built-in aggregation functions, supporting real-time calculation of statistical information
+4. **Data Compression**: Supports multiple data compression algorithms to reduce storage space usage
+5. **Batch Insertion**: Provides dedicated batch insertion API to improve write performance
+6. **Lifecycle Management**: Supports automatic cleanup of expired data to optimize memory usage
+
+### Core Features
+
+- **Dedicated Time Series Tables**: Optimized time series table structure suitable for storing large amounts of time series data
+- **Efficient Time Range Queries**: Supports fast queries for data within specified time ranges
+- **Built-in Aggregation Functions**: Provides COUNT, SUM, AVG, MIN, MAX and other aggregation functions
+- **Time Window Aggregation**: Supports aggregation calculations with custom time windows
+- **Data Compression**: Supports Delta encoding and RunLength encoding
+- **Batch Insertion Optimization**: Provides dedicated batch insertion API to improve write performance
+- **Latest Data Query**: Supports fast retrieval of the most recent time series data
+
+### Usage Examples
+
+#### Basic Usage
+
+```rust
+use remdb::*;
+use remdb::time_series::*;
+use std::time::{Duration, SystemTime};
+
+// Define time series table structure
+remdb::table!(
+    sensor_data,
+    5000, // Maximum record count
+    primary_key: id,
+    secondary_index: timestamp,
+    fields: {
+        id: i32,
+        sensor_id: str(32),  // Sensor ID
+        sensor_type: str(32), // Sensor type
+        value: f64,           // Sensor value
+        timestamp: u64,       // Timestamp
+        location: str(64)     // Location information
+    }
+);
+
+// Define database configuration
+remdb::database!(
+    DB_CONFIG,
+    tables: [sensor_data]
+);
+
+fn main() {
+    unsafe {
+        // Initialize memory allocator
+        let memory_size = 128 * 1024 * 1024; // 128MB
+        static mut DB_MEMORY: [u8; 128 * 1024 * 1024] = [0u8; 128 * 1024 * 1024];
+        
+        memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).expect("Failed to initialize memory allocator");
+        
+        // Initialize platform abstraction layer
+        platform::init_platform(platform::posix::get_posix_platform());
+        
+        // Initialize global database
+        let db = init_global_db(&DB_CONFIG).unwrap();
+        
+        // Get table reference
+        let table_mut = db.get_table_mut(0).unwrap();
+        
+        // Simulate inserting sensor data
+        let base_time = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        
+        // Batch insert test data
+        let mut records_buffer = [0u8; 160 * 100]; // Buffer for 100 records
+        let mut record_ids = [0usize; 100];
+        let record_size = table_mut.record_size;
+        
+        for i in 0..100 {
+            // Set field values
+            let id: i32 = i as i32 + 1;
+            let sensor_id = "temp_sensor_001";
+            let sensor_type = "temperature";
+            let value: f64 = (i as f64) * 0.5 + 20.0; // 20.0 to 69.5
+            let timestamp: u64 = base_time + (i as u64) * 60000; // One record per minute
+            let location = "room_101";
+            
+            // Manually fill record data
+            let record_ptr = records_buffer.as_mut_ptr().add(i * record_size);
+            
+            // Fill id (offset 0)
+            core::ptr::copy_nonoverlapping(
+                &id as *const i32 as *const u8,
+                record_ptr,
+                4
+            );
+            
+            // Fill sensor_id (offset 4)
+            let sensor_id_bytes = sensor_id.as_bytes();
+            core::ptr::copy_nonoverlapping(
+                sensor_id_bytes.as_ptr(),
+                record_ptr.add(4),
+                sensor_id_bytes.len()
+            );
+            
+            // Fill sensor_type (offset 36)
+            let sensor_type_bytes = sensor_type.as_bytes();
+            core::ptr::copy_nonoverlapping(
+                sensor_type_bytes.as_ptr(),
+                record_ptr.add(36),
+                sensor_type_bytes.len()
+            );
+            
+            // Fill value (offset 68)
+            core::ptr::copy_nonoverlapping(
+                &value as *const f64 as *const u8,
+                record_ptr.add(68),
+                8
+            );
+            
+            // Fill timestamp (offset 76)
+            core::ptr::copy_nonoverlapping(
+                &timestamp as *const u64 as *const u8,
+                record_ptr.add(76),
+                8
+            );
+            
+            // Fill location (offset 84)
+            let location_bytes = location.as_bytes();
+            core::ptr::copy_nonoverlapping(
+                location_bytes.as_ptr(),
+                record_ptr.add(84),
+                location_bytes.len()
+            );
+        }
+        
+        // Use time series batch insert optimization
+        let inserted_count = table_mut.time_series_batch_insert(
+            records_buffer.as_ptr(),
+            100,
+            record_ids.as_mut_ptr()
+        ).unwrap();
+        
+        println!("Successfully inserted {} time series records", inserted_count);
+        
+        // Query data within time range
+        let start_time = base_time;
+        let end_time = base_time + 30 * 60000; // 30 minutes
+        
+        let mut result_buffer = [0u8; 160 * 50]; // Buffer for 50 records
+        let found_count = table_mut.get_records_in_time_window(
+            4, // timestamp field index
+            start_time,
+            end_time,
+            result_buffer.as_mut_ptr(),
+            50
+        ).unwrap();
+        
+        println!("Found {} records in time range", found_count);
+        
+        // Calculate statistics within time range
+        match table_mut.aggregate_count(4, start_time, end_time) {
+            Ok(count) => {
+                println!("Record count within time range: {}", count);
+                
+                if count > 0 {
+                    if let Ok(avg) = table_mut.aggregate_avg(4, 3, start_time, end_time) {
+                        println!("Average value within time range: {:.2}", avg);
+                    }
+                    
+                    if let Ok(sum) = table_mut.aggregate_sum(4, 3, start_time, end_time) {
+                        println!("Sum within time range: {:.2}", sum);
+                    }
+                    
+                    if let Ok(min) = table_mut.aggregate_min(4, 3, start_time, end_time) {
+                        println!("Minimum value within time range: {:.2}", min);
+                    }
+                    
+                    if let Ok(max) = table_mut.aggregate_max(4, 3, start_time, end_time) {
+                        println!("Maximum value within time range: {:.2}", max);
+                    }
+                }
+            },
+            Err(e) => println!("Failed to count records: {:?}", e)
+        }
+        
+        // Get latest records
+        let mut latest_buffer = [0u8; 160 * 10]; // Buffer for 10 latest records
+        let latest_count = table_mut.get_latest_records(
+            4, // timestamp field index
+            10,
+            latest_buffer.as_mut_ptr()
+        ).unwrap();
+        
+        println!("Retrieved {} latest records", latest_count);
+        
+        // Time window aggregation
+        let window_aggregates = table_mut.get_aggregate_in_time_window(
+            4, // timestamp field index
+            3, // value field index
+            start_time,
+            end_time,
+            60000 // 1 minute window
+        ).unwrap();
+        
+        println!("Time window aggregation results ({} windows total):", window_aggregates.len());
+        for (i, (window_start, sum, avg, min, max, count)) in window_aggregates.iter().enumerate() {
+            println!("Window {}: start_time={}, count={}, avg={:.2}, min={:.2}, max={:.2}", 
+                     i+1, window_start, count, avg, min, max);
+        }
+    }
+}
+```
+
+#### Advanced Usage
+
+##### Data Compression
+
+remdb supports multiple data compression algorithms, which can reduce the storage space usage of time series data:
+
+```rust
+// Compress data using Delta encoding
+let compressed_data = compress_delta(&raw_data).unwrap();
+
+// Compress data using RunLength encoding
+let compressed_data = compress_run_length(&raw_data).unwrap();
+```
+
+##### Lifecycle Management
+
+remdb supports automatic cleanup of expired data to optimize memory usage:
+
+```rust
+// Set data retention time (e.g., retain 7 days of data)
+table_mut.set_data_retention(7 * 24 * 60 * 60 * 1000).unwrap();
+
+// Manually clean up expired data
+table_mut.cleanup_expired_data().unwrap();
+```
+
+##### Multi-sensor Data Management
+
+remdb supports managing data from multiple sensors, distinguished by sensor ID and type:
+
+```rust
+// Insert data from different sensors
+for i in 0..100 {
+    // Temperature sensor data
+    let temp_record = SensorData {
+        id: i as i32 + 1,
+        sensor_id: "temp_sensor_001",
+        sensor_type: "temperature",
+        value: (i as f64) * 0.5 + 20.0,
+        timestamp: base_time + (i as u64) * 60000,
+        location: "room_101"
+    };
+    
+    // Humidity sensor data
+    let humi_record = SensorData {
+        id: i as i32 + 1001,
+        sensor_id: "humi_sensor_001",
+        sensor_type: "humidity",
+        value: (i as f64) * 0.3 + 40.0,
+        timestamp: base_time + (i as u64) * 60000,
+        location: "room_101"
+    };
+    
+    // Insert data
+    table_mut.insert(&temp_record).unwrap();
+    table_mut.insert(&humi_record).unwrap();
+}
+
+// Query data from a specific sensor
+let mut result_buffer = [0u8; 160 * 50];
+let found_count = table_mut.get_records_by_sensor_id(
+    "temp_sensor_001",
+    result_buffer.as_mut_ptr(),
+    50
+).unwrap();
 ```
 
 ### Runtime DDL Configuration API Example

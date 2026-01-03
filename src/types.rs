@@ -3,7 +3,7 @@ use core::mem::size_of;
 
 /// 基本数据类型枚举
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum DataType {
     /// 8位无符号整数
     UInt8 = 0,
@@ -172,6 +172,16 @@ pub union Value {
     pub string: [u8; MAX_STRING_LEN],
 }
 
+// 手动实现Debug trait，因为Rust不支持为union类型自动派生Debug
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // 默认打印为u64值，实际使用时需要根据数据类型进行转换
+        unsafe {
+            write!(f, "Value(0x{:x})", self.u64)
+        }
+    }
+}
+
 /// 带类型的值
 #[derive(Copy, Clone)]
 pub struct TypedValue {
@@ -262,7 +272,7 @@ pub const MAX_STRING_LEN: usize = 64;
 
 /// 字段定义
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct FieldDef {
     /// 字段名称（编译时固定）
     pub name: &'static str,
@@ -351,7 +361,7 @@ pub enum IndexType {
 }
 
 /// 表定义
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct TableDef {
     /// 表ID
     pub id: u8,

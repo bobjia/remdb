@@ -201,7 +201,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
     secondary_index: Some(3), // 时间戳作为辅助索引
     secondary_index_type: IndexType::SortedArray,
     record_size: 116, // 4 + 32 + 8 + 8 + 64 = 116字节
-    max_records: 1000, // 时间序列测试使用较大的记录数
+    max_records: 2000, // 时间序列测试使用较大的记录数，支持2000条记录
 };
 
 // 测试表的插入操作性能
@@ -741,7 +741,7 @@ fn bench_time_series_aggregation(c: &mut Criterion) {
     init_platform(&TEST_PLATFORM);
     
     // 初始化全局内存分配器一次，而不是每个迭代都初始化
-    const MEMORY_SIZE: usize = 16 * 1024 * 1024; // 16MB
+    const MEMORY_SIZE: usize = 32 * 1024 * 1024; // 32MB
     let mut memory = vec![0u8; MEMORY_SIZE];
     // init_global_allocator函数本身是安全的，不需要unsafe块
     allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
@@ -809,5 +809,387 @@ fn bench_time_series_aggregation(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_table_insert, bench_table_query, bench_table_update_delete, bench_table_field_operations, bench_time_series_insert, bench_time_series_query, bench_time_series_aggregation);
+// 测试时间序列的时间范围查询性能
+fn bench_time_series_time_range_query(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 8 * 1024 * 1024; // 8MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
+    let mut group = c.benchmark_group("time_series_time_range_query");
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
+    
+    group.bench_function("get_records_in_time_window", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+            
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据，指针操作需要unsafe块
+            unsafe {
+                for i in 0..1000 {
+                    let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
+                    let id: i32 = (i + 1) as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 40.0 + (i % 20) as f64;
+                    let timestamp: u64 = 1234567890 + i as u64;
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
+                    
+                    table.insert(metric_data.as_ptr()).unwrap();
+                }
+            }
+            
+            // 准备结果缓冲区
+            let mut result_buffer = vec![0u8; 116 * 100]; // 100条记录的缓冲区
+            
+            // 执行时间范围查询，get_records_in_time_window方法是unsafe的
+            let found_count = unsafe {
+                table.get_records_in_time_window(
+                    3, // timestamp字段索引
+                    1234568000, // 开始时间
+                    1234568500, // 结束时间
+                    result_buffer.as_mut_ptr(),
+                    100
+                ).unwrap()
+            };
+            
+            black_box(found_count);
+        })
+    });
+    
+    group.finish();
+}
+
+// 测试时间序列的最新数据查询性能
+fn bench_time_series_latest_query(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 4 * 1024 * 1024; // 4MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
+    let mut group = c.benchmark_group("time_series_latest_query");
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
+    
+    group.bench_function("get_latest_records", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+            
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据，指针操作需要unsafe块
+            unsafe {
+                for i in 0..500 {
+                    let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
+                    let id: i32 = (i + 1) as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 40.0 + (i % 20) as f64;
+                    let timestamp: u64 = 1234567890 + i as u64;
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
+                    
+                    table.insert(metric_data.as_ptr()).unwrap();
+                }
+            }
+            
+            // 准备结果缓冲区
+            let mut result_buffer = vec![0u8; 116 * 10]; // 10条记录的缓冲区
+            
+            // 执行最新数据查询，get_latest_records方法是unsafe的
+            let found_count = unsafe {
+                table.get_latest_records(
+                    3, // timestamp字段索引
+                    10, // 获取10条最新记录
+                    result_buffer.as_mut_ptr()
+                ).unwrap()
+            };
+            
+            black_box(found_count);
+        })
+    });
+    
+    group.finish();
+}
+
+// 测试时间序列的聚合函数性能
+fn bench_time_series_aggregate_functions(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 8 * 1024 * 1024; // 8MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
+    let mut group = c.benchmark_group("time_series_aggregate_functions");
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
+    
+    group.bench_function("aggregate_count", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+            
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据，指针操作需要unsafe块
+            unsafe {
+                for i in 0..1000 {
+                    let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
+                    let id: i32 = (i + 1) as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 40.0 + (i % 20) as f64;
+                    let timestamp: u64 = 1234567890 + i as u64;
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
+                    
+                    table.insert(metric_data.as_ptr()).unwrap();
+                }
+            }
+            
+            // 执行COUNT聚合，aggregate_count方法是unsafe的
+            let count = unsafe {
+                table.aggregate_count(
+                    3, // timestamp字段索引
+                    1234567890, // 开始时间
+                    1234568890 // 结束时间
+                ).unwrap()
+            };
+            
+            black_box(count);
+        })
+    });
+    
+    group.bench_function("aggregate_avg", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+            
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据，指针操作需要unsafe块
+            unsafe {
+                for i in 0..1000 {
+                    let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
+                    let id: i32 = (i + 1) as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 40.0 + (i % 20) as f64;
+                    let timestamp: u64 = 1234567890 + i as u64;
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
+                    
+                    table.insert(metric_data.as_ptr()).unwrap();
+                }
+            }
+            
+            // 执行AVG聚合，aggregate_avg方法是unsafe的
+            let avg = unsafe {
+                table.aggregate_avg(
+                    3, // timestamp字段索引
+                    2, // value字段索引
+                    1234567890, // 开始时间
+                    1234568890 // 结束时间
+                ).unwrap()
+            };
+            
+            black_box(avg);
+        })
+    });
+    
+    group.bench_function("aggregate_sum", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+            
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据，指针操作需要unsafe块
+            unsafe {
+                for i in 0..1000 {
+                    let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
+                    let id: i32 = (i + 1) as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 40.0 + (i % 20) as f64;
+                    let timestamp: u64 = 1234567890 + i as u64;
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
+                    
+                    table.insert(metric_data.as_ptr()).unwrap();
+                }
+            }
+            
+            // 执行SUM聚合，aggregate_sum方法是unsafe的
+            let sum = unsafe {
+                table.aggregate_sum(
+                    3, // timestamp字段索引
+                    2, // value字段索引
+                    1234567890, // 开始时间
+                    1234568890 // 结束时间
+                ).unwrap()
+            };
+            
+            black_box(sum);
+        })
+    });
+    
+    group.finish();
+}
+
+// 测试时间序列的时间窗口聚合性能
+fn bench_time_series_window_aggregation(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 32 * 1024 * 1024; // 32MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
+    let mut group = c.benchmark_group("time_series_window_aggregation");
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
+    
+    group.bench_function("get_aggregate_in_time_window", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+            
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 插入测试数据，指针操作需要unsafe块
+            unsafe {
+                for i in 0..1500 {
+                    let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
+                    let id: i32 = (i + 1) as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 40.0 + (i % 20) as f64;
+                    let timestamp: u64 = 1234567890 + i as u64 * 10; // 每10毫秒一条记录
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, metric_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), metric_data.as_mut_ptr().add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, metric_data.as_mut_ptr().add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, metric_data.as_mut_ptr().add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), metric_data.as_mut_ptr().add(52), tags.len());
+                    
+                    table.insert(metric_data.as_ptr()).unwrap();
+                }
+            }
+            
+            // 执行时间窗口聚合，get_aggregate_in_time_window方法是unsafe的
+            let window_aggregates = unsafe {
+                table.get_aggregate_in_time_window(
+                    3, // timestamp字段索引
+                    2, // value字段索引
+                    1234567890, // 开始时间
+                    1234569890, // 结束时间
+                    100 // 100毫秒窗口
+                ).unwrap()
+            };
+            
+            black_box(window_aggregates.len());
+        })
+    });
+    
+    group.finish();
+}
+
+// 测试时间序列的批量插入优化性能
+fn bench_time_series_batch_insert_optimized(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 8 * 1024 * 1024; // 8MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
+    let mut group = c.benchmark_group("time_series_batch_insert_optimized");
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
+    
+    group.bench_function("time_series_batch_insert", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+            
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            
+            // 准备批量时间序列数据
+            let mut metrics_data = vec![0u8; 116 * 50]; // 50条记录，使用vec!在堆上分配
+            let mut out_ids = [0usize; 50];
+            
+            // 初始化测试数据，指针操作需要unsafe块
+            unsafe {
+                for i in 0..50 {
+                    let record_ptr = metrics_data.as_mut_ptr().add(i * 116);
+                    let id: i32 = (i + 1) as i32;
+                    let metric_name = "cpu_usage";
+                    let value: f64 = 45.5 + i as f64;
+                    let timestamp: u64 = 1234567890 + i as u64;
+                    let tags = "host=server1,env=prod";
+                    
+                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, record_ptr, 4);
+                    core::ptr::copy_nonoverlapping(metric_name.as_ptr(), record_ptr.add(4), metric_name.len());
+                    core::ptr::copy_nonoverlapping(&value as *const f64 as *const u8, record_ptr.add(36), 8);
+                    core::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, record_ptr.add(44), 8);
+                    core::ptr::copy_nonoverlapping(tags.as_ptr(), record_ptr.add(52), tags.len());
+                }
+                
+                // 执行时间序列批量插入优化，time_series_batch_insert方法是unsafe的
+                black_box(table.time_series_batch_insert(
+                    metrics_data.as_ptr(),
+                    50,
+                    out_ids.as_mut_ptr()
+                ).unwrap());
+            }
+        })
+    });
+    
+    group.finish();
+}
+
+criterion_group!(benches, bench_table_insert, bench_table_query, bench_table_update_delete, bench_table_field_operations, bench_time_series_insert, bench_time_series_query, bench_time_series_aggregation, bench_time_series_time_range_query, bench_time_series_latest_query, bench_time_series_aggregate_functions, bench_time_series_window_aggregation, bench_time_series_batch_insert_optimized);
 criterion_main!(benches);

@@ -27,6 +27,7 @@ static TEST_CONFIG: config::DbConfig = unsafe {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     }
 };
 

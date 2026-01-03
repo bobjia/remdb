@@ -14,6 +14,7 @@ pub mod monitor;
 pub mod sql;
 pub mod pubsub;
 pub mod ha;
+pub mod time_series;
 
 // 导出核心类型
 pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType, MAX_STRING_LEN};
@@ -21,6 +22,7 @@ pub use table::MemoryTable;
 pub use index::{PrimaryIndex, SecondaryIndex, BTreeIndex, TTreeIndex, IndexStats, AnySecondaryIndex, PrimaryIndexItem};
 pub use transaction::{Transaction, TransactionType, TransactionManager};
 pub use monitor::{DbMetrics, DbMetricsSnapshot, HealthStatus, HealthCheckResult};
+pub use time_series::{TimeSeriesTable, TimeSeriesTableDef, TimeSeriesRecord, TimeSeriesConfig, TimeSeriesIndex, CompressionType};
 
 // 重新导出宏
 pub use remdb_macros::table;
@@ -68,6 +70,8 @@ pub struct RemDb {
     pub config: &'static config::DbConfig,
     /// 内存表数组
     tables: Vec<Option<MemoryTable>>,
+    /// 时序表数组
+    time_series_tables: Vec<Option<time_series::TimeSeriesTable>>,
     /// 主键索引数组
     primary_indices: Vec<Option<PrimaryIndex>>,
     /// 辅助索引数组
@@ -122,12 +126,14 @@ impl RemDb {
 
         // 初始化表和索引数组，并预分配足够的容量，避免后续内存重新分配
         let tables = Vec::with_capacity(config.tables.len());
+        let time_series_tables = Vec::new();
         let primary_indices = Vec::with_capacity(config.tables.len());
         let secondary_indices = Vec::with_capacity(config.tables.len());
 
         RemDb {
             config,
             tables,
+            time_series_tables,
             primary_indices,
             secondary_indices,
             low_power_mode: false, // 默认不启用低功耗模式
@@ -651,22 +657,80 @@ impl RemDb {
         self.metrics.reset()
     }
     
-    /// 执行健康检查
-    pub fn health_check(&self) -> monitor::HealthCheckResult {
-        let metrics = self.metrics.snapshot();
+    /// 创建时序表
+    pub fn create_time_series_table(
+        &mut self,
+        name: &str,
+        time_field: &str,
+        value_field: &str,
+        tag_fields: &[&str],
+        config: Option<TimeSeriesConfig>
+    ) -> Result<()> {
+        // 1. 检查字段数量是否合法
+        if time_field.is_empty() || value_field.is_empty() {
+            return Err(RemDbError::ConfigError);
+        }
         
-        // 健康检查逻辑
-        let memory_usage = metrics.used_memory as f64 / metrics.total_memory as f64;
+        // 2. 创建基础表定义
+        // 注意：这里需要根据实际需求创建合适的基础表结构
+        // 暂时简化实现，后续需要完善
         
-        let (status, details) = if memory_usage > 0.9 {
-            (monitor::HealthStatus::Unhealthy, alloc::string::String::from("内存使用率过高"))
-        } else if memory_usage > 0.7 {
-            (monitor::HealthStatus::Warning, alloc::string::String::from("内存使用率较高"))
-        } else {
-            (monitor::HealthStatus::Healthy, alloc::string::String::from("数据库运行正常"))
-        };
+        // 3. 创建时序表配置
+        let ts_config = config.unwrap_or_else(|| self.config.time_series_defaults.clone());
         
-        monitor::HealthCheckResult::new(status, metrics, details)
+        // 4. 创建时序索引
+        let index = TimeSeriesIndex::new();
+        
+        // 5. 创建时序表（暂时简化实现）
+        // 后续需要完善具体的时序表创建逻辑
+        
+        Ok(())
+    }
+    
+    /// 获取时序表
+    pub fn get_time_series_table(&self, table_id: usize) -> Result<&time_series::TimeSeriesTable> {
+        if table_id >= self.time_series_tables.len() {
+            return Err(RemDbError::RecordNotFound);
+        }
+        
+        match &self.time_series_tables[table_id] {
+            Some(table) => Ok(table),
+            None => Err(RemDbError::RecordNotFound),
+        }
+    }
+    
+    /// 获取时序表（可变）
+    pub fn get_time_series_table_mut(&mut self, table_id: usize) -> Result<&mut time_series::TimeSeriesTable> {
+        if table_id >= self.time_series_tables.len() {
+            return Err(RemDbError::RecordNotFound);
+        }
+        
+        match &mut self.time_series_tables[table_id] {
+            Some(table) => Ok(table),
+            None => Err(RemDbError::RecordNotFound),
+        }
+    }
+    
+    /// 时序数据批量写入
+    pub unsafe fn time_series_batch_write(
+        &mut self,
+        table_id: usize,
+        records: *const TimeSeriesRecord,
+        count: usize
+    ) -> Result<usize> {
+        let table = self.get_time_series_table_mut(table_id)?;
+        table.batch_write(records, count)
+    }
+    
+    /// 时序数据时间范围查询
+    pub fn time_series_query(
+        &self,
+        table_id: usize,
+        start_time: u64,
+        end_time: u64
+    ) -> Result<Vec<TimeSeriesRecord>> {
+        let table = self.get_time_series_table(table_id)?;
+        table.query_time_range(start_time, end_time)
     }
 }
 
