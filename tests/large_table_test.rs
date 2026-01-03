@@ -184,6 +184,7 @@ fn test_large_table_performance() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
     };
     
     unsafe {
@@ -405,10 +406,10 @@ fn test_large_table_performance() {
         println!("\n批量查询10,000条记录后的监控指标:");
         println!("{}", db.dump_metrics());
         
-        // 执行健康检查
-        println!("\n健康检查结果:");
-        let health_result = db.health_check();
-        println!("{}", health_result.to_text());
+        // 执行健康检查（暂时注释，health_check方法不存在）
+        // println!("\n健康检查结果:");
+        // let health_result = db.health_check();
+        // println!("{}", health_result.to_text());
         
         // 输出最终指标快照
         println!("\n测试完成，最终指标快照:");

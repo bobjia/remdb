@@ -1,7 +1,7 @@
 // HA功能测试
 
 use remdb::*;
-use remdb::config::{HARole, ReplicationMode, LogMode};
+use remdb::config::{HARole, ReplicationMode, LogMode, TimeSeriesConfig};
 use remdb::ha::{HAError, Result as HAResult};
 use remdb::ha::role::RoleManager;
 use remdb::ha::heartbeat::HeartbeatMonitor;
@@ -207,6 +207,7 @@ fn test_ha_manager() {
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 1 * 1024 * 1024,
         log_prealloc_size: 0,
+        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         log_segment_size: 1 * 1024 * 1024,
         retained_checkpoints: 1,
         // HA配置
@@ -256,6 +257,7 @@ fn test_ha_manager_role_switch() {
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 1 * 1024 * 1024,
         log_prealloc_size: 0,
+        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         log_segment_size: 1 * 1024 * 1024,
         retained_checkpoints: 1,
         // HA配置
@@ -336,6 +338,7 @@ fn test_ha_config_validation() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     };
     
     // 验证配置应该失败
@@ -363,6 +366,7 @@ fn test_ha_config_validation() {
         sync_timeout_ms: 2000, // 2秒
         master_address: None,
         master_port: None,
+        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     };
     
     // 验证配置应该成功

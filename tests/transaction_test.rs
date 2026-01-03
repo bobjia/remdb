@@ -159,6 +159,7 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     sync_timeout_ms: 2000,
     master_address: None,
     master_port: None,
+    time_series_defaults: config::TimeSeriesConfig::DEFAULT,
 };
 
 // 静态缓冲区用于测试

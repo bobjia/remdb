@@ -91,6 +91,22 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 同步复制和异步复制两种模式
   - 支持故障恢复和重新同步
   - 提供高可用管理器，简化HA配置和管理
+- **时序数据库支持**：
+  - 专用的时序表实现，优化时间序列数据存储和查询
+  - 支持高效的时间范围查询
+  - 内置多种时间序列聚合函数：
+    - COUNT：统计记录数
+    - SUM：计算总和
+    - AVG：计算平均值
+    - MIN：获取最小值
+    - MAX：获取最大值
+  - 支持时间窗口聚合，可自定义窗口大小
+  - 支持数据压缩算法：
+    - Delta编码：减少存储空间
+    - RunLength编码：优化连续重复值存储
+  - 支持数据生命周期管理，自动清理过期数据
+  - 提供专门的时序记录批量插入API，提高写入性能
+  - 支持最新数据查询，快速获取最新记录
 
 ## 技术特点
 
@@ -320,6 +336,296 @@ fn main() {
     // user::insert(&mut db, user);
     // let result = user::get_by_id(&db, 1);
 }
+```
+
+## 时序数据库
+
+remdb提供了强大的时序数据库功能，专为时间序列数据的高效存储和查询而设计。时序数据库支持传感器数据、监控数据、日志数据等时间序列数据的高效存储和查询。
+
+### 设计理念
+
+时序数据库采用了以下设计理念：
+
+1. **高效存储**：针对时间序列数据的特点，优化了存储结构，减少存储空间占用
+2. **快速查询**：支持高效的时间范围查询和最新数据查询
+3. **内置聚合**：提供丰富的内置聚合函数，支持实时计算统计信息
+4. **数据压缩**：支持多种数据压缩算法，减少存储空间占用
+5. **批量插入**：提供专门的批量插入API，提高写入性能
+6. **生命周期管理**：支持自动清理过期数据，优化内存使用
+
+### 核心特性
+
+- **专用时序表**：优化的时序表结构，适合存储大量时间序列数据
+- **高效时间范围查询**：支持快速查询指定时间范围内的数据
+- **内置聚合函数**：提供COUNT、SUM、AVG、MIN、MAX等聚合函数
+- **时间窗口聚合**：支持自定义时间窗口的聚合计算
+- **数据压缩**：支持Delta编码和RunLength编码
+- **批量插入优化**：提供专门的批量插入API，提高写入性能
+- **最新数据查询**：支持快速获取最新的时间序列数据
+
+### 使用示例
+
+#### 基本使用
+
+```rust
+use remdb::*;
+use remdb::time_series::*;
+use std::time::{Duration, SystemTime};
+
+// 定义时序表结构
+remdb::table!(
+    sensor_data,
+    5000, // 最大记录数
+    primary_key: id,
+    secondary_index: timestamp,
+    fields: {
+        id: i32,
+        sensor_id: str(32),  // 传感器ID
+        sensor_type: str(32), // 传感器类型
+        value: f64,           // 传感器数值
+        timestamp: u64,       // 时间戳
+        location: str(64)     // 位置信息
+    }
+);
+
+// 定义数据库配置
+remdb::database!(
+    DB_CONFIG,
+    tables: [sensor_data]
+);
+
+fn main() {
+    unsafe {
+        // 初始化内存分配器
+        let memory_size = 128 * 1024 * 1024; // 128MB
+        static mut DB_MEMORY: [u8; 128 * 1024 * 1024] = [0u8; 128 * 1024 * 1024];
+        
+        memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).expect("Failed to initialize memory allocator");
+        
+        // 初始化平台抽象层
+        platform::init_platform(platform::posix::get_posix_platform());
+        
+        // 初始化全局数据库
+        let db = init_global_db(&DB_CONFIG).unwrap();
+        
+        // 获取表引用
+        let table_mut = db.get_table_mut(0).unwrap();
+        
+        // 模拟插入传感器数据
+        let base_time = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        
+        // 批量插入测试数据
+        let mut records_buffer = [0u8; 160 * 100]; // 100条记录的缓冲区
+        let mut record_ids = [0usize; 100];
+        let record_size = table_mut.record_size;
+        
+        for i in 0..100 {
+            // 设置字段值
+            let id: i32 = i as i32 + 1;
+            let sensor_id = "temp_sensor_001";
+            let sensor_type = "temperature";
+            let value: f64 = (i as f64) * 0.5 + 20.0; // 20.0 to 69.5
+            let timestamp: u64 = base_time + (i as u64) * 60000; // 每分钟一条记录
+            let location = "room_101";
+            
+            // 手动填充记录数据
+            let record_ptr = records_buffer.as_mut_ptr().add(i * record_size);
+            
+            // 填充id（偏移0）
+            core::ptr::copy_nonoverlapping(
+                &id as *const i32 as *const u8,
+                record_ptr,
+                4
+            );
+            
+            // 填充sensor_id（偏移4）
+            let sensor_id_bytes = sensor_id.as_bytes();
+            core::ptr::copy_nonoverlapping(
+                sensor_id_bytes.as_ptr(),
+                record_ptr.add(4),
+                sensor_id_bytes.len()
+            );
+            
+            // 填充sensor_type（偏移36）
+            let sensor_type_bytes = sensor_type.as_bytes();
+            core::ptr::copy_nonoverlapping(
+                sensor_type_bytes.as_ptr(),
+                record_ptr.add(36),
+                sensor_type_bytes.len()
+            );
+            
+            // 填充value（偏移68）
+            core::ptr::copy_nonoverlapping(
+                &value as *const f64 as *const u8,
+                record_ptr.add(68),
+                8
+            );
+            
+            // 填充timestamp（偏移76）
+            core::ptr::copy_nonoverlapping(
+                &timestamp as *const u64 as *const u8,
+                record_ptr.add(76),
+                8
+            );
+            
+            // 填充location（偏移84）
+            let location_bytes = location.as_bytes();
+            core::ptr::copy_nonoverlapping(
+                location_bytes.as_ptr(),
+                record_ptr.add(84),
+                location_bytes.len()
+            );
+        }
+        
+        // 使用时间序列批量插入优化
+        let inserted_count = table_mut.time_series_batch_insert(
+            records_buffer.as_ptr(),
+            100,
+            record_ids.as_mut_ptr()
+        ).unwrap();
+        
+        println!("成功插入 {} 条时间序列记录", inserted_count);
+        
+        // 查询时间范围内的数据
+        let start_time = base_time;
+        let end_time = base_time + 30 * 60000; // 30分钟
+        
+        let mut result_buffer = [0u8; 160 * 50]; // 50条记录的缓冲区
+        let found_count = table_mut.get_records_in_time_window(
+            4, // timestamp字段索引
+            start_time,
+            end_time,
+            result_buffer.as_mut_ptr(),
+            50
+        ).unwrap();
+        
+        println!("在时间范围内找到 {} 条记录", found_count);
+        
+        // 计算时间范围内的统计信息
+        match table_mut.aggregate_count(4, start_time, end_time) {
+            Ok(count) => {
+                println!("时间范围内记录数: {}", count);
+                
+                if count > 0 {
+                    if let Ok(avg) = table_mut.aggregate_avg(4, 3, start_time, end_time) {
+                        println!("时间范围内平均值: {:.2}", avg);
+                    }
+                    
+                    if let Ok(sum) = table_mut.aggregate_sum(4, 3, start_time, end_time) {
+                        println!("时间范围内总和: {:.2}", sum);
+                    }
+                    
+                    if let Ok(min) = table_mut.aggregate_min(4, 3, start_time, end_time) {
+                        println!("时间范围内最小值: {:.2}", min);
+                    }
+                    
+                    if let Ok(max) = table_mut.aggregate_max(4, 3, start_time, end_time) {
+                        println!("时间范围内最大值: {:.2}", max);
+                    }
+                }
+            },
+            Err(e) => println!("统计记录数失败: {:?}", e)
+        }
+        
+        // 获取最新记录
+        let mut latest_buffer = [0u8; 160 * 10]; // 10条最新记录的缓冲区
+        let latest_count = table_mut.get_latest_records(
+            4, // timestamp字段索引
+            10,
+            latest_buffer.as_mut_ptr()
+        ).unwrap();
+        
+        println!("获取到 {} 条最新记录", latest_count);
+        
+        // 时间窗口聚合
+        let window_aggregates = table_mut.get_aggregate_in_time_window(
+            4, // timestamp字段索引
+            3, // value字段索引
+            start_time,
+            end_time,
+            60000 // 1分钟窗口
+        ).unwrap();
+        
+        println!("时间窗口聚合结果 (共 {} 个窗口):", window_aggregates.len());
+        for (i, (window_start, sum, avg, min, max, count)) in window_aggregates.iter().enumerate() {
+            println!("窗口 {}: 开始时间={}, 记录数={}, 平均值={:.2}, 最小值={:.2}, 最大值={:.2}", 
+                     i+1, window_start, count, avg, min, max);
+        }
+    }
+}
+```
+
+#### 高级使用
+
+##### 数据压缩
+
+remdb支持多种数据压缩算法，可以减少时间序列数据的存储空间占用：
+
+```rust
+// 使用Delta编码压缩数据
+let compressed_data = compress_delta(&raw_data).unwrap();
+
+// 使用RunLength编码压缩数据
+let compressed_data = compress_run_length(&raw_data).unwrap();
+```
+
+##### 生命周期管理
+
+remdb支持自动清理过期数据，优化内存使用：
+
+```rust
+// 设置数据保留时间（例如：保留7天的数据）
+table_mut.set_data_retention(7 * 24 * 60 * 60 * 1000).unwrap();
+
+// 手动清理过期数据
+table_mut.cleanup_expired_data().unwrap();
+```
+
+##### 多传感器数据管理
+
+remdb支持管理多个传感器的数据，通过传感器ID和类型进行区分：
+
+```rust
+// 插入不同传感器的数据
+for i in 0..100 {
+    // 温度传感器数据
+    let temp_record = SensorData {
+        id: i as i32 + 1,
+        sensor_id: "temp_sensor_001",
+        sensor_type: "temperature",
+        value: (i as f64) * 0.5 + 20.0,
+        timestamp: base_time + (i as u64) * 60000,
+        location: "room_101"
+    };
+    
+    // 湿度传感器数据
+    let humi_record = SensorData {
+        id: i as i32 + 1001,
+        sensor_id: "humi_sensor_001",
+        sensor_type: "humidity",
+        value: (i as f64) * 0.3 + 40.0,
+        timestamp: base_time + (i as u64) * 60000,
+        location: "room_101"
+    };
+    
+    // 插入数据
+    table_mut.insert(&temp_record).unwrap();
+    table_mut.insert(&humi_record).unwrap();
+}
+
+// 查询特定传感器的数据
+let mut result_buffer = [0u8; 160 * 50];
+let found_count = table_mut.get_records_by_sensor_id(
+    "temp_sensor_001",
+    result_buffer.as_mut_ptr(),
+    50
+).unwrap();
 ```
 
 ### 运行时DDL配置API示例

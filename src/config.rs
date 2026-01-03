@@ -1,5 +1,6 @@
 use core::mem::size_of;
 use crate::types::TableDef;
+pub use crate::time_series::TimeSeriesConfig;
 
 /// 默认内存分配器实现
 pub struct DefaultMemoryAllocator;
@@ -94,6 +95,8 @@ pub struct DbConfig {
     pub master_address: Option<&'static str>,
     /// 主节点端口（从节点使用）
     pub master_port: Option<u16>,
+    /// 时序数据默认配置
+    pub time_series_defaults: TimeSeriesConfig,
 }
 
 

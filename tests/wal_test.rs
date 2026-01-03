@@ -1,4 +1,4 @@
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, HARole, ReplicationMode};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, HARole, ReplicationMode, TimeSeriesConfig};
 use remdb::transaction::{LogManager, LogItem, LogOperation};
 use remdb::platform::{Platform, FileMode, FileResult, FileHandle, SeekWhence, init_platform};
 
@@ -15,7 +15,7 @@ impl Platform for TestPlatform {
     }
     
     fn spin_lock(&self, lock: &mut u32) {
-        // 简单的自旋锁实现
+        // Simple spin lock implementation
         unsafe {
             while core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
                 .compare_exchange(0, 1, 
@@ -82,7 +82,7 @@ impl Platform for TestPlatform {
     }
     
     fn file_seek(&self, _handle: FileHandle, _offset: i64, _whence: SeekWhence) -> FileResult<u64> {
-        // 模拟seek成功，返回当前位置0
+        // 模拟seek成功，返回当前位置
         Ok(0)
     }
     
@@ -139,6 +139,7 @@ fn test_wal_log_manager_creation() {
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
         log_prealloc_size: 1 * 1024 * 1024,
+        time_series_defaults: TimeSeriesConfig::DEFAULT,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
         ha_role: HARole::Auto,
@@ -180,6 +181,7 @@ fn test_wal_log_write_sync_mode() {
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
         log_prealloc_size: 1 * 1024 * 1024,
+        time_series_defaults: TimeSeriesConfig::DEFAULT,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
         ha_role: HARole::Auto,
@@ -239,6 +241,7 @@ fn test_wal_log_write_async_mode() {
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
         log_prealloc_size: 1 * 1024 * 1024,
+        time_series_defaults: TimeSeriesConfig::DEFAULT,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
         ha_role: HARole::Auto,
@@ -314,6 +317,7 @@ fn test_wal_checkpoint_mechanism() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        time_series_defaults: TimeSeriesConfig::DEFAULT,
     };
     
     unsafe {
@@ -371,7 +375,8 @@ fn test_wal_log_preallocation() {
         log_mode: LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 512 * 1024, // 512KB 预分配
+        log_prealloc_size: 32 * 1024 * 1024, // 32MB 预分配大小
+        time_series_defaults: TimeSeriesConfig::DEFAULT,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
         ha_role: HARole::Auto,
@@ -422,6 +427,7 @@ fn test_wal_different_log_modes() {
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
             log_prealloc_size: 1 * 1024 * 1024,
+            time_series_defaults: TimeSeriesConfig::DEFAULT,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
             ha_role: HARole::Auto,
