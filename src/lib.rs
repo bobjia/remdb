@@ -960,6 +960,58 @@ impl RemDb {
         Ok(0)
     }
     
+    /// 批量插入记录
+    pub fn batch_insert_record(&mut self, table_name: &str, column_names: &[&str], records: &[&[&str]]) -> Result<usize> {
+        if records.is_empty() {
+            return Ok(0);
+        }
+        
+        // 构建INSERT SQL语句
+        let columns = if column_names.is_empty() {
+            "".to_string()
+        } else {
+            format!("({})
+", column_names.join(", "))
+        };
+        
+        // 处理所有记录的值，为字符串值添加引号
+        let mut all_values: Vec<String> = Vec::with_capacity(records.len());
+        
+        for values in records {
+            let quoted_values: Vec<String> = values.iter().map(|&value| {
+                // 检查是否是数值类型或布尔值
+                if value.chars().all(|c| c.is_digit(10) || c == '.' || c == '-') || value == "true" || value == "false" {
+                    value.to_string()
+                } else {
+                    // 字符串类型，添加引号
+                    format!("'{}'", value)
+                }
+            }).collect();
+            
+            all_values.push(format!("({})
+", quoted_values.join(", ")));
+        }
+        
+        let values_str = all_values.join(", ");
+        let sql = format!("INSERT INTO {}{} VALUES {}", table_name, columns, values_str);
+        
+        // 执行查询
+        let result_set = self.sql_query(&sql)?;
+        
+        // 从结果集中获取受影响的行数
+        if let Some(row) = result_set.rows.first() {
+            if let Some(value) = row.values.first() {
+                // 假设第一个值是受影响的行数（u64类型）
+                unsafe {
+                    let affected_rows = value.value.u64 as usize;
+                    return Ok(affected_rows);
+                }
+            }
+        }
+        
+        Ok(0)
+    }
+    
     /// 更新记录
     pub fn update_record(&mut self, table_name: &str, set_clause: &str, where_clause: Option<&str>) -> Result<usize> {
         // 构建UPDATE SQL语句
