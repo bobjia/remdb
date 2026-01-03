@@ -53,6 +53,8 @@ pub enum QueryType {
     Describe,
     /// CREATE TABLE查询
     CreateTable,
+    /// CREATE TIMESERIES TABLE查询
+    CreateTimeSeriesTable,
     /// CREATE INDEX查询
     CreateIndex,
     /// 其他查询类型（暂不支持）
@@ -215,6 +217,7 @@ impl SqlParser {
             QueryType::Delete => self.parse_delete_query(),
             QueryType::Describe => self.parse_describe_query(),
             QueryType::CreateTable => self.parse_create_table_query(),
+            QueryType::CreateTimeSeriesTable => self.parse_create_table_query(),
             QueryType::CreateIndex => self.parse_create_index_query(),
             QueryType::Other => Err(QueryParseError::UnsupportedKeyword),
         }?;
@@ -604,7 +607,14 @@ impl SqlParser {
             Ok(QueryType::Describe)
         } else if self.match_keyword("CREATE") {
             self.skip_whitespace();
-            if self.match_keyword("TABLE") {
+            if self.match_keyword("TIMESERIES") {
+                self.skip_whitespace();
+                if self.match_keyword("TABLE") {
+                    Ok(QueryType::CreateTimeSeriesTable)
+                } else {
+                    Ok(QueryType::Other)
+                }
+            } else if self.match_keyword("TABLE") {
                 Ok(QueryType::CreateTable)
             } else if self.match_keyword("INDEX") {
                 Ok(QueryType::CreateIndex)

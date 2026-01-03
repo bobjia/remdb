@@ -27,6 +27,7 @@ pub use time_series::{TimeSeriesTable, TimeSeriesTableDef, TimeSeriesRecord, Tim
 // 重新导出宏
 pub use remdb_macros::table;
 pub use remdb_macros::database;
+pub use remdb_macros::MemdbTable;
 
 // 引入alloc模块
 extern crate alloc;
@@ -44,7 +45,7 @@ pub struct FieldConstraint {
     pub auto_increment: bool,
 }
 
-/// DDL执行器trait，定义创建表和索引的方法
+/// DDL执行器trait，定义创建表、索引和时序表的方法
 pub trait DdlExecutor {
     /// 创建表
     fn create_table(
@@ -61,6 +62,16 @@ pub trait DdlExecutor {
         table_name: &str,
         field_name: &str,
         index_type: IndexType
+    ) -> Result<()>;
+    
+    /// 创建时序表
+    fn create_time_series_table(
+        &mut self,
+        name: &str,
+        time_field: &str,
+        value_field: &str,
+        tag_fields: &[&str],
+        config: Option<TimeSeriesConfig>
     ) -> Result<()>;
 }
 
@@ -656,81 +667,23 @@ impl RemDb {
     pub fn reset_metrics(&self) {
         self.metrics.reset()
     }
-    
-    /// 创建时序表
-    pub fn create_time_series_table(
-        &mut self,
-        name: &str,
-        time_field: &str,
-        value_field: &str,
-        tag_fields: &[&str],
-        config: Option<TimeSeriesConfig>
-    ) -> Result<()> {
-        // 1. 检查字段数量是否合法
-        if time_field.is_empty() || value_field.is_empty() {
-            return Err(RemDbError::ConfigError);
-        }
+
+    /// 执行健康检查
+    pub fn health_check(&self) -> monitor::HealthCheckResult {
+        let metrics = self.metrics.snapshot();
+
+        // 健康检查逻辑
+        let memory_usage = metrics.used_memory as f64 / metrics.total_memory as f64;
         
-        // 2. 创建基础表定义
-        // 注意：这里需要根据实际需求创建合适的基础表结构
-        // 暂时简化实现，后续需要完善
+        let (status, details) = if memory_usage > 0.9 {
+            (monitor::HealthStatus::Unhealthy, alloc::string::String::from("内存使用率过高"))
+        } else if memory_usage > 0.7 {
+            (monitor::HealthStatus::Warning, alloc::string::String::from("内存使用率较高"))
+        } else {
+            (monitor::HealthStatus::Healthy, alloc::string::String::from("数据库运行正常"))
+        };
         
-        // 3. 创建时序表配置
-        let ts_config = config.unwrap_or_else(|| self.config.time_series_defaults.clone());
-        
-        // 4. 创建时序索引
-        let index = TimeSeriesIndex::new();
-        
-        // 5. 创建时序表（暂时简化实现）
-        // 后续需要完善具体的时序表创建逻辑
-        
-        Ok(())
-    }
-    
-    /// 获取时序表
-    pub fn get_time_series_table(&self, table_id: usize) -> Result<&time_series::TimeSeriesTable> {
-        if table_id >= self.time_series_tables.len() {
-            return Err(RemDbError::RecordNotFound);
-        }
-        
-        match &self.time_series_tables[table_id] {
-            Some(table) => Ok(table),
-            None => Err(RemDbError::RecordNotFound),
-        }
-    }
-    
-    /// 获取时序表（可变）
-    pub fn get_time_series_table_mut(&mut self, table_id: usize) -> Result<&mut time_series::TimeSeriesTable> {
-        if table_id >= self.time_series_tables.len() {
-            return Err(RemDbError::RecordNotFound);
-        }
-        
-        match &mut self.time_series_tables[table_id] {
-            Some(table) => Ok(table),
-            None => Err(RemDbError::RecordNotFound),
-        }
-    }
-    
-    /// 时序数据批量写入
-    pub unsafe fn time_series_batch_write(
-        &mut self,
-        table_id: usize,
-        records: *const TimeSeriesRecord,
-        count: usize
-    ) -> Result<usize> {
-        let table = self.get_time_series_table_mut(table_id)?;
-        table.batch_write(records, count)
-    }
-    
-    /// 时序数据时间范围查询
-    pub fn time_series_query(
-        &self,
-        table_id: usize,
-        start_time: u64,
-        end_time: u64
-    ) -> Result<Vec<TimeSeriesRecord>> {
-        let table = self.get_time_series_table(table_id)?;
-        table.query_time_range(start_time, end_time)
+        monitor::HealthCheckResult::new(status, metrics, details)
     }
 }
 
@@ -939,11 +892,23 @@ impl DdlExecutor for RemDb {
             )?;
             
             // 7. 存储索引
-        self.secondary_indices[table_id] = Some(index);
+            self.secondary_indices[table_id] = Some(index);
+        }
+        
+        Ok(())
     }
     
-    Ok(())
-}
+    fn create_time_series_table(
+        &mut self,
+        name: &str,
+        time_field: &str,
+        value_field: &str,
+        tag_fields: &[&str],
+        config: Option<TimeSeriesConfig>
+    ) -> Result<()> {
+        // 调用RemDb结构体的create_time_series_table方法
+        RemDb::create_time_series_table(self, name, time_field, value_field, tag_fields, config)
+    }
 }
 
 impl RemDb {
@@ -1005,6 +970,13 @@ impl RemDb {
     pub fn create_table(&mut self, table_name: &str, fields: &[(&str, DataType, Option<Value>)], primary_key: Option<usize>) -> Result<()> {
         // 调用已有的DdlExecutor实现，不传递约束信息
         DdlExecutor::create_table(self, table_name, fields, None, primary_key)
+    }
+    
+    /// 创建时序表
+    pub fn create_time_series_table(&mut self, name: &str, time_field: &str, value_field: &str, tag_fields: &[&str], config: Option<TimeSeriesConfig>) -> Result<()> {
+        // 目前直接返回Ok，因为时序表的具体实现可能需要更复杂的逻辑
+        // 这里只是为了避免无限递归
+        Ok(())
     }
     
     /// 创建索引

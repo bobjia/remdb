@@ -1,0 +1,108 @@
+#![cfg(feature = "std")]
+
+use remdb::{RemDb, DataType, config::{DbConfig, DefaultMemoryAllocator, LogMode, HARole, ReplicationMode, TimeSeriesConfig}};
+
+fn main() {
+    println!("Testing CREATE TIMESERIES TABLE syntax...");
+    println!("=========================================");
+    
+    // 1. 初始化内存分配器
+    println!("Initializing memory allocator...");
+    const MEMORY_SIZE: usize = 10 * 1024 * 1024; // 10MB
+    static mut MEMORY: [u8; MEMORY_SIZE] = [0; MEMORY_SIZE];
+    
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(MEMORY.as_mut_ptr(), MEMORY_SIZE)
+            .expect("Failed to initialize memory allocator");
+        println!("Memory allocator initialized with {} MB", MEMORY_SIZE / 1024 / 1024);
+    }
+    
+    // 2. 创建静态的数据库配置
+    static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
+    static CONFIG: DbConfig = DbConfig {
+        tables: &[],
+        total_memory: MEMORY_SIZE,
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        default_max_records: 1000,
+        memory_allocator: &ALLOCATOR,
+        log_mode: LogMode::Sync,
+        checkpoint_interval_ms: 60000,
+        log_file_size_limit: 16 * 1024 * 1024,
+        log_prealloc_size: 1 * 1024 * 1024,
+        log_segment_size: 16 * 1024 * 1024,
+        retained_checkpoints: 3,
+        ha_role: HARole::Auto,
+        replication_mode: ReplicationMode::Async,
+        heartbeat_interval_ms: 1000,
+        failure_detection_ms: 3000,
+        sync_timeout_ms: 2000,
+        master_address: None,
+        master_port: None,
+        time_series_defaults: TimeSeriesConfig::DEFAULT,
+    };
+    
+    // 3. 创建数据库实例
+    println!("Creating database instance...");
+    let mut db = RemDb::new(&CONFIG);
+    
+    // 4. 初始化数据库
+    println!("Initializing database...");
+    db.init().expect("Failed to initialize database");
+    
+    // 测试1：创建简单的时序表
+    println!("\n1. Testing: CREATE TIMESERIES TABLE with minimal schema");
+    let create_table_sql1 = "CREATE TIMESERIES TABLE sensor_data (
+        timestamp TIMESTAMP,
+        value FLOAT64,
+        sensor_id STRING
+    )";
+    
+    match db.sql_query(create_table_sql1) {
+        Ok(_result) => {
+            println!("   ✓ CREATE TIMESERIES TABLE executed successfully");
+            println!("   Result: Table created");
+        },
+        Err(e) => {
+            println!("   ✗ CREATE TIMESERIES TABLE failed: {:?}", e);
+        }
+    }
+    
+    // 测试2：创建包含多个标签的时序表
+    println!("\n2. Testing: CREATE TIMESERIES TABLE with multiple tags");
+    let create_table_sql2 = "CREATE TIMESERIES TABLE device_metrics (
+        ts TIMESTAMP,
+        cpu_usage FLOAT32,
+        memory_usage FLOAT32,
+        device_id STRING,
+        location STRING,
+        active BOOL
+    )";
+    
+    match db.sql_query(create_table_sql2) {
+        Ok(_result) => {
+            println!("   ✓ CREATE TIMESERIES TABLE with multiple tags executed successfully");
+            println!("   Result: Table created");
+        },
+        Err(e) => {
+            println!("   ✗ CREATE TIMESERIES TABLE with multiple tags failed: {:?}", e);
+        }
+    }
+    
+    // 测试3：插入数据到时序表
+    println!("\n3. Testing: INSERT INTO timeseries table");
+    let insert_sql = "INSERT INTO sensor_data (timestamp, value, sensor_id) VALUES (1609459200, 25.5, 'sensor_001')";
+    
+    match db.sql_query(insert_sql) {
+        Ok(_result) => {
+            println!("   ✓ INSERT INTO timeseries table executed successfully");
+            println!("   Result: Record inserted");
+        },
+        Err(e) => {
+            println!("   ✗ INSERT INTO timeseries table failed: {:?}", e);
+        }
+    }
+    
+    println!("\nAll tests completed!");
+}
