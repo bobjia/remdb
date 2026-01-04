@@ -147,6 +147,21 @@ impl PartitionManager {
         self.partitions.len()
     }
     
+    /// 获取指定时间戳所在的分区
+    pub fn get_partition(&self, timestamp: u64) -> Option<Arc<Mutex<TimeSeriesPartition>>> {
+        let partition_key = timestamp / self.partition_duration;
+        let start_time = partition_key * self.partition_duration;
+        
+        for partition in &self.partitions {
+            let p = partition.lock().unwrap();
+            if p.start_time == start_time {
+                return Some(partition.clone());
+            }
+        }
+        
+        None
+    }
+    
     /// 压缩所有可压缩的分区
     pub fn compress_all_partitions(&self) {
         for partition in &self.partitions {

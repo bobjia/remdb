@@ -51,6 +51,8 @@ pub enum LogOperation {
     Delete = 1,
     /// 更新记录
     Update = 2,
+    /// 时序数据插入
+    TimeSeriesInsert = 3,
 }
 
 /// 日志文件头
@@ -730,6 +732,37 @@ impl LogManager {
                         (*status_ptr).version += 1;
                     }
                 },
+                LogOperation::TimeSeriesInsert => {
+                    // 执行时间序列插入操作
+                    let ts_table = match &mut db.time_series_tables[log_item.table_id as usize] {
+                        Some(table) => table,
+                        None => return Err(RemDbError::TableNotFound),
+                    };
+                    
+                    // 从日志中解析出时间序列记录
+                    let mut record = crate::time_series::TimeSeriesRecord {
+                        timestamp: 0,
+                        value: 0.0,
+                        tag_count: 0,
+                        tags: [0; 8],
+                    };
+                    crate::platform::memcpy(
+                        &mut record as *mut _ as *mut u8,
+                        log_item.new_data.as_ptr(),
+                        core::mem::size_of::<crate::time_series::TimeSeriesRecord>()
+                    );
+                    
+                    // 获取或创建分区
+                    let partition = ts_table.partitions.get_or_create_partition(record.timestamp);
+                    
+                    // 写入记录到分区
+                    let mut partition_guard = partition.lock().unwrap();
+                    partition_guard.records.push(record);
+                    partition_guard.stats.record_count = partition_guard.records.len();
+                    
+                    // 更新索引
+                    ts_table.index.insert(record.timestamp, partition_guard.records.len() - 1);
+                },
         }
         }
         
@@ -972,24 +1005,23 @@ impl TransactionManager {
         for i in (0..tx_mut.log_item_count).rev() {
             let log_item = &tx_mut.log_items.as_ptr().add(i).read();
             
-            // 获取对应的表
-            let table_id = log_item.table_id as usize;
-            let table = match &mut db.tables[table_id] {
-                Some(table) => table,
-                None => return Err(RemDbError::TableNotFound),
-            };
-            
-            let record_id = log_item.record_id as usize;
-            
-            // 检查record_id是否有效
-            if record_id >= table.def.max_records {
-                continue;
-            }
-            
             // 根据日志类型执行相应的回滚操作
             match log_item.op_type {
                 LogOperation::Insert => {
                     // 回滚Insert操作：直接删除已插入的记录，不添加日志
+                    let table_id = log_item.table_id as usize;
+                    let table = match &mut db.tables[table_id] {
+                        Some(table) => table,
+                        None => return Err(RemDbError::TableNotFound),
+                    };
+                    
+                    let record_id = log_item.record_id as usize;
+                    
+                    // 检查record_id是否有效
+                    if record_id >= table.def.max_records {
+                        continue;
+                    }
+                    
                     let status_ptr = table.get_status_ptr(record_id);
                     if (*status_ptr).status == crate::types::RecordStatus::Used {
                         // 标记为空闲
@@ -1014,6 +1046,19 @@ impl TransactionManager {
                 },
                 LogOperation::Delete => {
                     // 回滚Delete操作：直接恢复被删除的记录，不添加日志
+                    let table_id = log_item.table_id as usize;
+                    let table = match &mut db.tables[table_id] {
+                        Some(table) => table,
+                        None => return Err(RemDbError::TableNotFound),
+                    };
+                    
+                    let record_id = log_item.record_id as usize;
+                    
+                    // 检查record_id是否有效
+                    if record_id >= table.def.max_records {
+                        continue;
+                    }
+                    
                     let status_ptr = table.get_status_ptr(record_id);
                     if (*status_ptr).status != crate::types::RecordStatus::Used {
                         // 记录已被释放，需要重新插入
@@ -1041,6 +1086,19 @@ impl TransactionManager {
                 },
                 LogOperation::Update => {
                     // 回滚Update操作：直接恢复旧数据，不添加日志
+                    let table_id = log_item.table_id as usize;
+                    let table = match &mut db.tables[table_id] {
+                        Some(table) => table,
+                        None => return Err(RemDbError::TableNotFound),
+                    };
+                    
+                    let record_id = log_item.record_id as usize;
+                    
+                    // 检查record_id是否有效
+                    if record_id >= table.def.max_records {
+                        continue;
+                    }
+                    
                     let record_ptr = table.get_record_ptr_mut(record_id);
                     let data_size = core::cmp::min(log_item.data_size as usize, table.record_size);
                     crate::platform::memcpy(
@@ -1052,6 +1110,41 @@ impl TransactionManager {
                     // 更新版本号
                     let status_ptr = table.get_status_ptr(record_id);
                     (*status_ptr).version += 1;
+                },
+                LogOperation::TimeSeriesInsert => {
+                    // 回滚时间序列插入操作：直接从对应分区中删除记录
+                    let table_id = log_item.table_id as usize;
+                    let ts_table = match &mut db.time_series_tables[table_id] {
+                        Some(table) => table,
+                        None => return Err(RemDbError::TableNotFound),
+                    };
+                    
+                    // 从日志中解析出时间序列记录
+                    let mut record = crate::time_series::TimeSeriesRecord {
+                        timestamp: 0,
+                        value: 0.0,
+                        tag_count: 0,
+                        tags: [0; 8],
+                    };
+                    crate::platform::memcpy(
+                        &mut record as *mut _ as *mut u8,
+                        log_item.new_data.as_ptr(),
+                        core::mem::size_of::<crate::time_series::TimeSeriesRecord>()
+                    );
+                    
+                    // 获取对应分区
+                    if let Some(partition) = ts_table.partitions.get_partition(record.timestamp) {
+                        let mut partition_guard = partition.lock().unwrap();
+                        
+                        // 查找并删除记录
+                        if let Some(pos) = partition_guard.records.iter().position(|r| r.timestamp == record.timestamp) {
+                            partition_guard.records.remove(pos);
+                            partition_guard.stats.record_count = partition_guard.records.len();
+                        }
+                    }
+                    
+                    // 更新索引
+                    ts_table.index.remove(record.timestamp);
                 },
             }
         }

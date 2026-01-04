@@ -178,6 +178,66 @@ impl TimeSeriesTable {
         Ok(inserted)
     }
     
+    /// 事务化批量写入时序数据
+    /// 确保一批数据要么全部成功插入并立即可见，要么全部回滚
+    pub fn write_timeseries_batch(
+        &mut self,
+        data_points: &[TimeSeriesRecord]
+    ) -> Result<usize> {
+        if data_points.is_empty() {
+            return Err(RemDbError::ConfigError);
+        }
+        
+        // 检查是否有活跃事务
+        let has_active_tx = unsafe { crate::transaction::has_active_tx() };
+        
+        // 如果没有活跃事务，返回错误，要求调用者显式开始事务
+        // 这是为了简化实现，避免直接访问Transaction结构体的私有字段
+        if !has_active_tx {
+            return Err(RemDbError::TransactionError);
+        }
+        
+        let mut inserted = 0;
+        let table_id = self.def.base.id;
+        
+        // 批量写入逻辑
+        for (i, record) in data_points.iter().enumerate() {
+            // 获取或创建分区
+            let partition = self.partitions.get_or_create_partition(record.timestamp);
+            
+            // 写入记录到分区
+            let mut partition_guard = partition.lock().unwrap();
+            partition_guard.records.push(*record);
+            partition_guard.stats.record_count = partition_guard.records.len();
+            
+            // 更新索引
+            self.index.insert(record.timestamp, inserted as usize);
+            
+            // 记录事务日志
+            unsafe {
+                // 获取当前事务
+                if let Some(mut tx_ptr) = crate::transaction::get_current_tx() {
+                    let tx_mut = tx_ptr.as_mut();
+                    
+                    // 添加日志项
+                    let data_size = core::mem::size_of::<TimeSeriesRecord>();
+                    tx_mut.add_log_item(
+                        crate::transaction::LogOperation::TimeSeriesInsert,
+                        table_id,
+                        i as u16, // 使用索引作为record_id
+                        core::ptr::null(), // 旧数据为null
+                        record as *const _ as *const u8, // 新数据指针
+                        data_size
+                    )?;
+                }
+            }
+            
+            inserted += 1;
+        }
+        
+        Ok(inserted)
+    }
+    
     /// 时间范围查询
     pub fn query_time_range(
         &self,

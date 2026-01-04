@@ -99,4 +99,10 @@ impl TimeSeriesIndex {
             time_index.remove(&key);
         }
     }
+    
+    /// 删除指定时间戳的索引项
+    pub fn remove(&self, timestamp: u64) {
+        let mut time_index = self.time_index.write().unwrap();
+        time_index.remove(&timestamp);
+    }
 }
