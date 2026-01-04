@@ -38,6 +38,54 @@ enum RemDbDataType {
 };
 
 /**
+ * @brief Compression types for time series data
+ */
+enum RemDbCompressionType {
+    REMDB_COMPRESSION_NONE = 0,
+    REMDB_COMPRESSION_DELTA_RUN_LENGTH = 1,
+    REMDB_COMPRESSION_SNAPPY = 2,
+};
+
+/**
+ * @brief Time series record
+ */
+typedef struct RemDbTimeSeriesRecord {
+    uint64_t timestamp;
+    double value;
+    uint8_t tag_count;
+    uint64_t tags[8];
+} RemDbTimeSeriesRecord;
+
+/**
+ * @brief Time series configuration
+ */
+typedef struct RemDbTimeSeriesConfig {
+    uint64_t partition_duration_secs;
+    uint64_t retention_period_secs;
+    enum RemDbCompressionType compression;
+    size_t max_partitions;
+} RemDbTimeSeriesConfig;
+
+/**
+ * @brief Time series table definition
+ */
+typedef struct RemDbTimeSeriesTableDef {
+    uint8_t id;
+    const char* name;
+    const RemDbFieldDef* fields;
+    size_t fields_count;
+    size_t primary_key;
+    int32_t secondary_index;
+    size_t record_size;
+    size_t max_records;
+    size_t time_field;
+    size_t value_field;
+    const size_t* tag_fields;
+    size_t tag_fields_count;
+    RemDbTimeSeriesConfig config;
+} RemDbTimeSeriesTableDef;
+
+/**
  * @brief Maximum string length supported by RemDB
  */
 #define REMDB_MAX_STRING_LEN 64
@@ -87,6 +135,8 @@ typedef struct RemDbTableDef {
 typedef struct RemDbConfig {
     const RemDbTableDef* tables;
     size_t tables_count;
+    const RemDbTimeSeriesTableDef* time_series_tables;
+    size_t time_series_tables_count;
     size_t total_memory;
     uint8_t low_power_mode_supported;
     int32_t low_power_max_records;
@@ -395,6 +445,46 @@ enum RemDbError remdb_table_get_record_count(RemDbHandle handle, size_t table_id
  * @return Error code
  */
 enum RemDbError remdb_table_get_by_name(RemDbHandle handle, const char* name, size_t* table_id);
+
+/* =========================================== */
+/*           Time Series Operations            */
+/* =========================================== */
+
+/**
+ * @brief Batch write time series records
+ *
+ * @param handle Database handle
+ * @param table_id Time series table ID
+ * @param records Array of time series records
+ * @param count Number of records to write
+ * @param written Output parameter for number of records written
+ * @return Error code
+ */
+enum RemDbError remdb_time_series_batch_write(RemDbHandle handle, size_t table_id, const RemDbTimeSeriesRecord* records, size_t count, size_t* written);
+
+/**
+ * @brief Query time series data by time range
+ *
+ * @param handle Database handle
+ * @param table_id Time series table ID
+ * @param start_time Start timestamp (in seconds)
+ * @param end_time End timestamp (in seconds)
+ * @param buffer Output buffer for results
+ * @param buffer_size Maximum number of records to return
+ * @param result_count Output parameter for number of records returned
+ * @return Error code
+ */
+enum RemDbError remdb_time_series_query(RemDbHandle handle, size_t table_id, uint64_t start_time, uint64_t end_time, RemDbTimeSeriesRecord* buffer, size_t buffer_size, size_t* result_count);
+
+/**
+ * @brief Get time series table by name
+ *
+ * @param handle Database handle
+ * @param name Time series table name
+ * @param table_id Output parameter for table ID
+ * @return Error code
+ */
+enum RemDbError remdb_time_series_table_get_by_name(RemDbHandle handle, const char* name, size_t* table_id);
 
 #ifdef __cplusplus
 }

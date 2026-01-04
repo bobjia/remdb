@@ -1088,6 +1088,18 @@ impl RemDb {
         }
     }
     
+    /// 获取时序表（可变）
+    pub fn get_time_series_table_mut(&mut self, table_id: usize) -> Result<&mut time_series::TimeSeriesTable> {
+        if table_id >= self.time_series_tables.len() {
+            return Err(RemDbError::RecordNotFound);
+        }
+        
+        match &mut self.time_series_tables[table_id] {
+            Some(table) => Ok(table),
+            None => Err(RemDbError::RecordNotFound),
+        }
+    }
+    
     /// 获取时序表数量
     pub fn time_series_table_count(&self) -> usize {
         self.time_series_tables.len()

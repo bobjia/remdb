@@ -125,6 +125,8 @@ pub struct RemDbTableDef {
 pub struct RemDbConfig {
     pub tables: *const RemDbTableDef,
     pub tables_count: usize,
+    pub time_series_tables: *const RemDbTimeSeriesTableDef,
+    pub time_series_tables_count: usize,
     pub total_memory: usize,
     pub low_power_mode_supported: u8,
     pub low_power_max_records: i32,
@@ -264,6 +266,94 @@ impl From<RemDbUdpMode> for crate::pubsub::UdpMode {
             RemDbUdpMode::Multicast => crate::pubsub::UdpMode::Multicast,
         }
     }
+}
+
+/// C API: 压缩类型枚举
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum RemDbCompressionType {
+    None = 0,
+    DeltaRunLength = 1,
+    Snappy = 2,
+}
+
+impl From<RemDbCompressionType> for crate::time_series::CompressionType {
+    fn from(c_type: RemDbCompressionType) -> Self {
+        match c_type {
+            RemDbCompressionType::None => crate::time_series::CompressionType::None,
+            RemDbCompressionType::DeltaRunLength => crate::time_series::CompressionType::DeltaRunLength,
+            RemDbCompressionType::Snappy => crate::time_series::CompressionType::Snappy,
+        }
+    }
+}
+
+/// C API: 时序数据记录
+#[repr(C)]
+pub struct RemDbTimeSeriesRecord {
+    pub timestamp: u64,
+    pub value: f64,
+    pub tag_count: u8,
+    pub tags: [u64; 8],
+}
+
+impl From<RemDbTimeSeriesRecord> for crate::time_series::TimeSeriesRecord {
+    fn from(c_record: RemDbTimeSeriesRecord) -> Self {
+        crate::time_series::TimeSeriesRecord {
+            timestamp: c_record.timestamp,
+            value: c_record.value,
+            tag_count: c_record.tag_count,
+            tags: c_record.tags,
+        }
+    }
+}
+
+impl From<crate::time_series::TimeSeriesRecord> for RemDbTimeSeriesRecord {
+    fn from(rust_record: crate::time_series::TimeSeriesRecord) -> Self {
+        RemDbTimeSeriesRecord {
+            timestamp: rust_record.timestamp,
+            value: rust_record.value,
+            tag_count: rust_record.tag_count,
+            tags: rust_record.tags,
+        }
+    }
+}
+
+/// C API: 时序数据配置
+#[repr(C)]
+pub struct RemDbTimeSeriesConfig {
+    pub partition_duration_secs: u64,
+    pub retention_period_secs: u64,
+    pub compression: RemDbCompressionType,
+    pub max_partitions: usize,
+}
+
+impl From<RemDbTimeSeriesConfig> for crate::time_series::TimeSeriesConfig {
+    fn from(c_config: RemDbTimeSeriesConfig) -> Self {
+        crate::time_series::TimeSeriesConfig {
+            partition_duration_secs: c_config.partition_duration_secs,
+            retention_period_secs: c_config.retention_period_secs,
+            compression: c_config.compression.into(),
+            max_partitions: c_config.max_partitions,
+        }
+    }
+}
+
+/// C API: 时序表定义
+#[repr(C)]
+pub struct RemDbTimeSeriesTableDef {
+    pub id: u8,
+    pub name: *const u8,
+    pub fields: *const RemDbFieldDef,
+    pub fields_count: usize,
+    pub primary_key: usize,
+    pub secondary_index: i32,
+    pub record_size: usize,
+    pub max_records: usize,
+    pub time_field: usize,
+    pub value_field: usize,
+    pub tag_fields: *const usize,
+    pub tag_fields_count: usize,
+    pub config: RemDbTimeSeriesConfig,
 }
 
 /// C API: 发布/订阅配置
@@ -439,6 +529,7 @@ pub unsafe extern "C" fn remdb_init_global(
         });
     }
     
+    // 创建Rust配置
     let rust_config = DbConfig {
         tables: rust_tables.leak(),
         total_memory: c_config.total_memory,
@@ -475,6 +566,88 @@ pub unsafe extern "C" fn remdb_init_global(
     ) {
         Ok(db) => {
             *handle = db as *mut _;
+            
+            // 如果有时序表定义，需要初始化时序表
+            let db_mut = &mut *(*handle);
+            
+            for i in 0..c_config.time_series_tables_count {
+                let c_time_series_table = &*c_config.time_series_tables.offset(i as isize);
+                
+                // 转换字段定义
+                let mut rust_fields = Vec::new();
+                for j in 0..c_time_series_table.fields_count {
+                    let c_field = &*c_time_series_table.fields.offset(j as isize);
+                    rust_fields.push(FieldDef {
+                        name: core::str::from_utf8_unchecked(core::slice::from_raw_parts(
+                            c_field.name,
+                            _c_strlen(c_field.name),
+                        )),
+                        data_type: c_field.data_type.into(),
+                        size: c_field.size,
+                        offset: c_field.offset,
+                        primary_key: j == c_time_series_table.primary_key,
+                        not_null: j == c_time_series_table.primary_key, // 主键默认非空
+                        unique: j == c_time_series_table.primary_key, // 主键默认唯一
+                        auto_increment: false, // 默认不自增
+                    });
+                }
+                
+                // 转换标签字段索引
+                let mut rust_tag_fields = Vec::new();
+                for j in 0..c_time_series_table.tag_fields_count {
+                    let tag_field = *c_time_series_table.tag_fields.offset(j as isize);
+                    rust_tag_fields.push(tag_field);
+                }
+                
+                // 创建基础表定义
+                let base_table_def = TableDef {
+                    id: c_time_series_table.id,
+                    name: core::str::from_utf8_unchecked(core::slice::from_raw_parts(
+                        c_time_series_table.name,
+                        _c_strlen(c_time_series_table.name),
+                    )),
+                    fields: rust_fields.leak(),
+                    primary_key: c_time_series_table.primary_key,
+                    secondary_index: if c_time_series_table.secondary_index == -1 {
+                        None
+                    } else {
+                        Some(c_time_series_table.secondary_index as usize)
+                    },
+                    secondary_index_type: crate::types::IndexType::Hash,
+                    record_size: c_time_series_table.record_size,
+                    max_records: c_time_series_table.max_records,
+                };
+                
+                // 创建时序表定义
+                let time_series_table_def = crate::time_series::TimeSeriesTableDef {
+                    base: base_table_def,
+                    time_field: c_time_series_table.time_field,
+                    value_field: c_time_series_table.value_field,
+                    tag_fields: rust_tag_fields.leak(),
+                    config: c_time_series_table.config.into(),
+                };
+                
+                // 创建时序索引
+                let time_series_index = crate::time_series::TimeSeriesIndex::new();
+                
+                // 创建时序表
+                match crate::time_series::TimeSeriesTable::new(
+                    alloc::sync::Arc::new(time_series_table_def),
+                    alloc::sync::Arc::new(time_series_index),
+                ) {
+                    Ok(time_series_table) => {
+                        // 将时序表添加到数据库
+                        if db_mut.time_series_tables.len() <= i {
+                            db_mut.time_series_tables.resize(i + 1, None);
+                        }
+                        db_mut.time_series_tables[i] = Some(time_series_table);
+                    },
+                    Err(e) => {
+                        return e.into();
+                    },
+                }
+            }
+            
             RemDbError::Success
         },
         Err(e) => e.into(),
@@ -1059,5 +1232,124 @@ pub unsafe extern "C" fn remdb_pubsub_shutdown(
     match crate::pubsub::shutdown() {
         Ok(_) => RemDbError::Success,
         Err(e) => e.into(),
+    }
+}
+
+/// C API: 批量写入时序数据
+#[no_mangle]
+pub unsafe extern "C" fn remdb_time_series_batch_write(
+    handle: RemDbHandle,
+    table_id: usize,
+    records: *const RemDbTimeSeriesRecord,
+    count: usize,
+    written: *mut usize,
+) -> RemDbError {
+    if handle.is_null() || records.is_null() || written.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &mut *handle;
+    
+    // 1. 获取时序表
+    match db.get_time_series_table_mut(table_id) {
+        Ok(time_series_table) => {
+            // 2. 将C记录转换为Rust记录
+            let mut rust_records = Vec::with_capacity(count);
+            for i in 0..count {
+                let c_record = *records.add(i);
+                rust_records.push(c_record.into());
+            }
+            
+            // 3. 执行批量写入
+            match time_series_table.write_timeseries_batch(&rust_records) {
+                Ok(inserted) => {
+                    *written = inserted;
+                    RemDbError::Success
+                },
+                Err(e) => e.into(),
+            }
+        },
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 根据时间范围查询时序数据
+#[no_mangle]
+pub unsafe extern "C" fn remdb_time_series_query(
+    handle: RemDbHandle,
+    table_id: usize,
+    start_time: u64,
+    end_time: u64,
+    buffer: *mut RemDbTimeSeriesRecord,
+    buffer_size: usize,
+    result_count: *mut usize,
+) -> RemDbError {
+    if handle.is_null() || buffer.is_null() || result_count.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &*handle;
+    
+    // 1. 获取时序表
+    match db.get_time_series_table(table_id) {
+        Ok(time_series_table) => {
+            // 2. 执行查询
+            match time_series_table.query_time_range(start_time, end_time) {
+                Ok(results) => {
+                    // 3. 将结果转换为C格式并复制到输出缓冲区
+                    let actual_count = core::cmp::min(results.len(), buffer_size);
+                    for i in 0..actual_count {
+                        *buffer.add(i) = results[i].into();
+                    }
+                    
+                    *result_count = actual_count;
+                    RemDbError::Success
+                },
+                Err(e) => e.into(),
+            }
+        },
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 根据名称获取时序表
+#[no_mangle]
+pub unsafe extern "C" fn remdb_time_series_table_get_by_name(
+    handle: RemDbHandle,
+    name: *const u8,
+    table_id: *mut usize,
+) -> RemDbError {
+    if handle.is_null() || name.is_null() || table_id.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &*handle;
+    let rust_name = c_str_to_rust(name);
+    
+    // 查找时序表
+    for (i, table_opt) in db.time_series_tables.iter().enumerate() {
+        if let Some(table) = table_opt {
+            if table.def.base.name == rust_name {
+                *table_id = i;
+                return RemDbError::Success;
+            }
+        }
+    }
+    
+    RemDbError::TableNotFound
+}
+
+/// C API: 获取可变时序表引用（内部使用）
+pub unsafe fn get_time_series_table_mut(
+    db: &mut crate::RemDb,
+    table_id: usize
+) -> Result<&mut crate::time_series::TimeSeriesTable, crate::RemDbError> {
+    if table_id >= db.time_series_tables.len() {
+        return Err(crate::RemDbError::TableNotFound);
+    }
+    
+    match &mut db.time_series_tables[table_id] {
+        Some(table) => Ok(table),
+        None => Err(crate::RemDbError::TableNotFound),
     }
 }
