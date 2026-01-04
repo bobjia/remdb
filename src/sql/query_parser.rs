@@ -73,10 +73,23 @@ pub struct WhereClause {
 pub enum Condition {
     /// 比较条件
     Comparison(ComparisonCondition),
+    /// BETWEEN条件
+    Between(BetweenCondition),
     /// AND条件组合
     And(Box<Condition>, Box<Condition>),
     /// OR条件组合
     Or(Box<Condition>, Box<Condition>),
+}
+
+/// BETWEEN条件
+#[derive(Debug, Clone, PartialEq)]
+pub struct BetweenCondition {
+    /// 字段名
+    pub field: String,
+    /// 最小值
+    pub min_value: Value,
+    /// 最大值
+    pub max_value: Value,
 }
 
 /// 比较条件
@@ -752,9 +765,39 @@ impl SqlParser {
 
     /// 解析条件表达式
     fn parse_condition(&mut self) -> Result<Condition, QueryParseError> {
-        // 简单实现：只支持比较条件
-        let comparison = self.parse_comparison()?;
-        Ok(Condition::Comparison(comparison))
+        // 保存当前位置，用于回溯
+        let saved_pos = self.position;
+        let saved_col = self.column;
+        
+        // 尝试解析字段名
+        let field = self.parse_identifier()?;
+        
+        self.skip_whitespace();
+        
+        // 检查是否是BETWEEN条件
+        if self.match_keyword("BETWEEN") {
+            self.skip_whitespace();
+            let min_value = self.parse_value()?;
+            
+            self.skip_whitespace();
+            self.expect_keyword("AND")?;
+            
+            self.skip_whitespace();
+            let max_value = self.parse_value()?;
+            
+            Ok(Condition::Between(BetweenCondition {
+                field,
+                min_value,
+                max_value,
+            }))
+        } else {
+            // 不是BETWEEN条件，回溯并解析为普通比较条件
+            self.position = saved_pos;
+            self.column = saved_col;
+            
+            let comparison = self.parse_comparison()?;
+            Ok(Condition::Comparison(comparison))
+        }
     }
 
     /// 解析比较条件

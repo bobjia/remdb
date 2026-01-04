@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 
 use crate::{TableDef,RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN, DdlExecutor};
 use crate::sql::{SqlQuery, ResultSet, Condition, ComparisonCondition, ComparisonOperator, OrderByClause};
+use crate::sql::query_parser::BetweenCondition;
 
 /// 查询执行错误
 #[derive(Debug, Clone, PartialEq)]
@@ -1096,6 +1097,7 @@ fn execute_create_time_series_table_query(db: &mut RemDb, query: &SqlQuery) -> R
 unsafe fn evaluate_condition(table: &MemoryTable, record_ptr: *const u8, condition: &Condition) -> bool {
     match condition {
         Condition::Comparison(comp) => evaluate_comparison(table, record_ptr, comp),
+        Condition::Between(between) => evaluate_between(table, record_ptr, between),
         Condition::And(left, right) => {
             evaluate_condition(table, record_ptr, left) && 
             evaluate_condition(table, record_ptr, right)
@@ -1104,6 +1106,30 @@ unsafe fn evaluate_condition(table: &MemoryTable, record_ptr: *const u8, conditi
             evaluate_condition(table, record_ptr, left) || 
             evaluate_condition(table, record_ptr, right)
         },
+    }
+}
+
+/// 评估BETWEEN条件
+unsafe fn evaluate_between(table: &MemoryTable, record_ptr: *const u8, between: &BetweenCondition) -> bool {
+    // 获取字段索引
+    let field_index = match table.def.fields
+        .iter()
+        .position(|field| field.name == &between.field) {
+        Some(index) => index,
+        None => return false, // 字段不存在，条件不成立
+    };
+    
+    let field_type = table.def.fields[field_index].data_type;
+    
+    // 获取字段值
+    match get_field_value(table, record_ptr, &between.field) {
+        Ok(field_value) => {
+            // BETWEEN条件：field_value >= min_value AND field_value <= max_value
+            let is_greater_or_equal = compare_values(&field_value.value, field_type, &ComparisonOperator::GreaterThanOrEqual, &between.min_value);
+            let is_less_or_equal = compare_values(&field_value.value, field_type, &ComparisonOperator::LessThanOrEqual, &between.max_value);
+            is_greater_or_equal && is_less_or_equal
+        },
+        Err(_) => false,
     }
 }
 
