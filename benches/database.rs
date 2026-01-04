@@ -1,6 +1,11 @@
 extern crate alloc;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use remdb::table::*;
+use remdb::TimeSeriesTableDef;
+use remdb::TimeSeriesConfig;
+use remdb::TimeSeriesIndex;
+use remdb::TimeSeriesTable;
+use remdb::TimeSeriesRecord;
 use remdb::types::*;
 use remdb::platform::*;
 use remdb::memory::allocator;
@@ -1191,5 +1196,133 @@ fn bench_time_series_batch_insert_optimized(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_table_insert, bench_table_query, bench_table_update_delete, bench_table_field_operations, bench_time_series_insert, bench_time_series_query, bench_time_series_aggregation, bench_time_series_time_range_query, bench_time_series_latest_query, bench_time_series_aggregate_functions, bench_time_series_window_aggregation, bench_time_series_batch_insert_optimized);
+// 测试TimeSeriesTable的批量写入性能
+fn bench_time_series_table_batch_write(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 16 * 1024 * 1024; // 16MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
+    let mut group = c.benchmark_group("timeseries_table_batch_write");
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
+    
+    group.bench_function("batch_write", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+            
+            // 创建TimeSeriesTableDef
+            let ts_table_def = TimeSeriesTableDef {
+                base: TEST_TABLE_DEF,
+                time_field: 0,
+                value_field: 1,
+                tag_fields: &[],
+                config: TimeSeriesConfig::DEFAULT,
+            };
+            
+            // 创建TimeSeriesIndex
+            let index = TimeSeriesIndex::new();
+            
+            // 创建TimeSeriesTable
+            let mut ts_table = TimeSeriesTable::new(Arc::new(ts_table_def), index).unwrap();
+            
+            // 准备批量时间序列数据
+            let mut records = vec![TimeSeriesRecord {
+                timestamp: 0,
+                value: 0.0,
+                tag_count: 0,
+                tags: [0; 8],
+            }; 100];
+            
+            // 初始化测试数据
+            for i in 0..100 {
+                records[i].timestamp = 1234567890 + i as u64;
+                records[i].value = 45.5 + i as f64;
+            }
+            
+            // 执行批量写入，batch_write方法是unsafe的
+            unsafe {
+                black_box(ts_table.batch_write(
+                    records.as_ptr(),
+                    100
+                ).unwrap());
+            }
+        })
+    });
+    
+    group.finish();
+}
+
+// 测试TimeSeriesTable的时间范围查询性能
+fn bench_time_series_table_time_range_query(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+    
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 16 * 1024 * 1024; // 16MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    // init_global_allocator函数本身是安全的，不需要unsafe块
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+    
+    let mut group = c.benchmark_group("timeseries_table_time_range_query");
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
+    
+    group.bench_function("query_time_range", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+            
+            // 创建TimeSeriesTableDef
+            let ts_table_def = TimeSeriesTableDef {
+                base: TEST_TABLE_DEF,
+                time_field: 0,
+                value_field: 1,
+                tag_fields: &[],
+                config: TimeSeriesConfig::DEFAULT,
+            };
+            
+            // 创建TimeSeriesIndex
+            let index = TimeSeriesIndex::new();
+            
+            // 创建TimeSeriesTable
+            let mut ts_table = TimeSeriesTable::new(Arc::new(ts_table_def), index).unwrap();
+            
+            // 准备批量时间序列数据
+            let mut records = vec![TimeSeriesRecord {
+                timestamp: 0,
+                value: 0.0,
+                tag_count: 0,
+                tags: [0; 8],
+            }; 1000];
+            
+            // 初始化测试数据
+            for i in 0..1000 {
+                records[i].timestamp = 1234567890 + i as u64;
+                records[i].value = 45.5 + i as f64;
+            }
+            
+            // 执行批量写入，batch_write方法是unsafe的
+            unsafe {
+                ts_table.batch_write(
+                    records.as_ptr(),
+                    1000
+                ).unwrap();
+            }
+            
+            // 执行时间范围查询
+            black_box(ts_table.query_time_range(
+                1234568000,
+                1234568500
+            ).unwrap());
+        })
+    });
+    
+    group.finish();
+}
+
+criterion_group!(benches, bench_table_insert, bench_table_query, bench_table_update_delete, bench_table_field_operations, bench_time_series_insert, bench_time_series_query, bench_time_series_aggregation, bench_time_series_time_range_query, bench_time_series_latest_query, bench_time_series_aggregate_functions, bench_time_series_window_aggregation, bench_time_series_batch_insert_optimized, bench_time_series_table_batch_write, bench_time_series_table_time_range_query);
 criterion_main!(benches);
