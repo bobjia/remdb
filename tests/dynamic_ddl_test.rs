@@ -391,3 +391,172 @@ fn test_describe_table() {
     let result = db.sql_query("DESCRIBE non_existent_table");
     assert!(result.is_err(), "DESCRIBE on non-existent table should fail");
 }
+
+#[test]
+fn test_create_time_series_table() {
+    // 初始化平台
+    unsafe {
+        platform::init_platform(&TEST_PLATFORM);
+    }
+    
+    // 初始化全局内存分配器
+    unsafe {
+        let result = memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        );
+        assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
+    }
+    
+    // 创建数据库实例
+    let mut db = RemDb::new(&TEST_CONFIG);
+    
+    // 测试创建默认配置的时序表
+    let result = db.create_time_series_table(
+        "sensor_data",
+        "timestamp",
+        "value",
+        &["sensor_id", "location"],
+        None // 使用默认配置
+    );
+    
+    assert!(result.is_ok(), "Failed to create timeseries table with default config: {:?}", result.err());
+    
+    // 测试创建带有自定义配置的时序表
+    let mut ts_config = time_series::TimeSeriesConfig::DEFAULT;
+    ts_config.compression = time_series::CompressionType::DeltaDelta;
+    ts_config.retention_period_secs = 30 * 24 * 3600; // 30天
+    
+    let result = db.create_time_series_table(
+        "metrics",
+        "time",
+        "value",
+        &["metric_name", "host"],
+        Some(ts_config)
+    );
+    
+    assert!(result.is_ok(), "Failed to create timeseries table with custom config: {:?}", result.err());
+    
+    // 测试创建不同压缩算法的时序表
+    let mut delta_config = time_series::TimeSeriesConfig::DEFAULT;
+    delta_config.compression = time_series::CompressionType::Delta;
+    
+    let result = db.create_time_series_table(
+        "delta_metrics",
+        "timestamp",
+        "value",
+        &["source"],
+        Some(delta_config)
+    );
+    
+    assert!(result.is_ok(), "Failed to create timeseries table with delta compression: {:?}", result.err());
+    
+    // 测试创建runlength压缩的时序表
+    let mut rl_config = time_series::TimeSeriesConfig::DEFAULT;
+    rl_config.compression = time_series::CompressionType::RunLength;
+    
+    let result = db.create_time_series_table(
+        "rl_metrics",
+        "timestamp",
+        "value",
+        &["device"],
+        Some(rl_config)
+    );
+    
+    assert!(result.is_ok(), "Failed to create timeseries table with runlength compression: {:?}", result.err());
+}
+
+#[test]
+fn test_ddl_export_with_time_series() {
+    // 初始化平台
+    unsafe {
+        platform::init_platform(&TEST_PLATFORM);
+    }
+    
+    // 初始化全局内存分配器
+    unsafe {
+        let result = memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        );
+        assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
+    }
+    
+    // 创建数据库实例
+    let mut db = RemDb::new(&TEST_CONFIG);
+    
+    // 创建普通表
+    let result = db.create_table(
+        "users",
+        &[
+            ("id", DataType::UInt32, None),
+            ("name", DataType::String, None),
+            ("age", DataType::UInt8, None),
+        ],
+        Some(0) // 主键为id字段
+    );
+    assert!(result.is_ok(), "Failed to create users table: {:?}", result.err());
+    
+    // 创建时序表
+    let mut ts_config = time_series::TimeSeriesConfig::DEFAULT;
+    ts_config.compression = time_series::CompressionType::DeltaDelta;
+    ts_config.retention_period_secs = 30 * 24 * 3600; // 30天
+    
+    let result = db.create_time_series_table(
+        "test_ts",
+        "ts",
+        "value",
+        &["tag1", "tag2"],
+        Some(ts_config)
+    );
+    assert!(result.is_ok(), "Failed to create test_ts table: {:?}", result.err());
+    
+    // 测试DDL导出
+    let result = db.export_ddl("test_ddl_export.sql");
+    assert!(result.is_ok(), "Failed to export DDL: {:?}", result.err());
+    
+    // 清理临时文件
+    std::fs::remove_file("test_ddl_export.sql").unwrap_or(());
+}
+
+#[test]
+fn test_describe_time_series_table() {
+    // 初始化平台
+    unsafe {
+        platform::init_platform(&TEST_PLATFORM);
+    }
+    
+    // 初始化全局内存分配器
+    unsafe {
+        let result = memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        );
+        assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
+    }
+    
+    // 创建数据库实例
+    let mut db = RemDb::new(&TEST_CONFIG);
+    
+    // 创建时序表
+    let result = db.create_time_series_table(
+        "sensor_data",
+        "timestamp",
+        "temperature",
+        &["location", "sensor_id"],
+        None
+    );
+    assert!(result.is_ok(), "Failed to create sensor_data table: {:?}", result.err());
+    
+    // 测试DESCRIBE时序表
+    let result = db.sql_query("DESCRIBE sensor_data");
+    assert!(result.is_ok(), "Failed to execute DESCRIBE on timeseries table: {:?}", result.err());
+    
+    let result_set = result.unwrap();
+    
+    // 验证结果集列名
+    assert_eq!(result_set.columns, ["Field", "Type", "Key", "Null", "Default"]);
+    
+    // 验证结果集行数（应该等于字段数）
+    assert_eq!(result_set.row_count(), 4, "Expected 4 fields in sensor_data table, got {}", result_set.row_count());
+}

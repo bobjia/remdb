@@ -1254,7 +1254,7 @@ impl RemDb {
         
         let mut file = File::create(path).map_err(|_| RemDbError::FileIoError)?;
         
-        // 遍历所有表
+        // 遍历所有普通表
         for table_id in 0..self.tables.len() {
             if let Some(table) = &self.tables[table_id] {
                 // 生成CREATE TABLE语句，表名转换为小写
@@ -1297,6 +1297,56 @@ impl RemDb {
                         file.write_all(create_index_sql.as_bytes()).map_err(|_| RemDbError::FileIoError)?;
                     }
                 }
+            }
+        }
+        
+        // 遍历所有时序表
+        for ts_table_id in 0..self.time_series_tables.len() {
+            if let Some(ts_table) = &self.time_series_tables[ts_table_id] {
+                let def = &ts_table.def;
+                let base_def = &def.base;
+                
+                // 生成CREATE TIMESERIES TABLE语句，表名转换为小写
+                let mut create_ts_table_sql = alloc::string::String::new();
+                create_ts_table_sql.push_str(&format!("CREATE TIMESERIES TABLE {} (\n", base_def.name.to_lowercase()));
+                
+                // 添加字段定义
+                let mut fields_sql = Vec::new();
+                for field in base_def.fields {
+                    let field_sql = format!("    {} {}", 
+                        field.name,
+                        field.data_type.to_sql_type(field.size));
+                    fields_sql.push(field_sql);
+                }
+                
+                // 连接字段定义
+                create_ts_table_sql.push_str(&fields_sql.join(",\n"));
+                
+                // 添加WITH子句
+                let mut with_clauses = Vec::new();
+                
+                // 添加压缩配置
+                let compression_alg = match def.config.compression {
+                    crate::time_series::CompressionType::None => "none",
+                    crate::time_series::CompressionType::Delta => "delta",
+                    crate::time_series::CompressionType::RunLength => "runlength",
+                    crate::time_series::CompressionType::DeltaRunLength => "delta-runlength",
+                    crate::time_series::CompressionType::DeltaDelta => "delta-delta",
+                };
+                with_clauses.push(format!("COMPRESSION = (algorithm='{}', enabled=true)", compression_alg));
+                
+                // 添加TTL配置
+                let ttl_days = def.config.retention_period_secs / (24 * 3600);
+                with_clauses.push(format!("TTL = '{} days'", ttl_days));
+                
+                if !with_clauses.is_empty() {
+                    create_ts_table_sql.push_str(&format!("\n) WITH {}\n\n", with_clauses.join(", ")));
+                } else {
+                    create_ts_table_sql.push_str("\n)\n\n");
+                }
+                
+                // 写入CREATE TIMESERIES TABLE语句
+                file.write_all(create_ts_table_sql.as_bytes()).map_err(|_| RemDbError::FileIoError)?;
             }
         }
         

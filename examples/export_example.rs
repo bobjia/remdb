@@ -55,8 +55,51 @@ fn main() {
     let affected_rows = db.insert_record("TEST_TABLE", columns, values).unwrap();
     println!("   插入记录成功: id=1, name=Alice, 影响行数: {}", affected_rows);
     
-    // 4. 导出DDL
-    println!("4. 导出DDL到文件...");
+    // 4. 创建时序表
+    println!("4. 创建时序表...");
+    
+    // 直接使用API创建时序表，绕过SQL解析器的限制
+    
+    // 创建第一个时序表：delta-delta压缩，30天TTL
+    let mut ts_config1 = crate::time_series::TimeSeriesConfig::DEFAULT;
+    ts_config1.compression = crate::time_series::CompressionType::DeltaDelta;
+    ts_config1.retention_period_secs = 30 * 24 * 3600; // 30天
+    
+    let result1 = db.create_time_series_table(
+        "test_ts1",
+        "ts",
+        "value",
+        &["tag1", "tag2"],
+        Some(ts_config1)
+    );
+    
+    if result1.is_ok() {
+        println!("   创建时序表成功: test_ts1");
+    } else {
+        println!("   创建时序表失败: test_ts1");
+    }
+    
+    // 创建第二个时序表：delta压缩，7天TTL
+    let mut ts_config2 = crate::time_series::TimeSeriesConfig::DEFAULT;
+    ts_config2.compression = crate::time_series::CompressionType::Delta;
+    ts_config2.retention_period_secs = 7 * 24 * 3600; // 7天
+    
+    let result2 = db.create_time_series_table(
+        "test_ts2",
+        "timestamp",
+        "temperature",
+        &["location"],
+        Some(ts_config2)
+    );
+    
+    if result2.is_ok() {
+        println!("   创建时序表成功: test_ts2");
+    } else {
+        println!("   创建时序表失败: test_ts2");
+    }
+    
+    // 5. 导出DDL
+    println!("5. 导出DDL到文件...");
     let ddl_path = "test_schema.ddl";
     let result = db.export_ddl(ddl_path);
     if result.is_ok() {
@@ -66,8 +109,8 @@ fn main() {
         return;
     }
     
-    // 5. 导出数据
-    println!("5. 导出数据到文件...");
+    // 6. 导出数据
+    println!("6. 导出数据到文件...");
     let data_path = "test_data.sql";
     let result = db.export_data(data_path);
     if result.is_ok() {
@@ -77,7 +120,7 @@ fn main() {
         return;
     }
     
-    // 6. 显示导出结果
+    // 7. 显示导出结果
     println!("\n=== 导出结果 ===");
     
     // 显示DDL文件内容
@@ -90,7 +133,7 @@ fn main() {
     let data_content = std::fs::read_to_string(data_path).unwrap();
     println!("{}", data_content);
     
-    // 7. 清理
+    // 8. 清理
     println!("\n=== 清理 ===");
     std::fs::remove_file(ddl_path).unwrap();
     std::fs::remove_file(data_path).unwrap();

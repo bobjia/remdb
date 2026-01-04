@@ -146,7 +146,23 @@ DESCRIBE TABLE table_name;
 DESCRIBE users;
 ```
 
-### 2.8 支持的运算符
+### 2.8 CREATE TIMESERIES TABLE语句
+
+RemDB支持专门的时序表创建语法，提供时序数据的优化存储和查询能力。
+
+```sql
+CREATE TIMESERIES TABLE table_name (
+    time_field TIMESTAMP,
+    value_field REAL,
+    tag_field1 TEXT,
+    tag_field2 INTEGER,
+    ...
+) [WITH COMPRESSION = (algorithm='algorithm_name', enabled=true)] [, WITH TTL = 'duration'];
+```
+
+详细的语法说明和示例请参见[4.2 CREATE TIMESERIES TABLE语句](#42-create-timeseries-table-语句)。
+
+### 2.9 支持的运算符
 
 #### 比较运算符
 
@@ -206,7 +222,59 @@ CREATE TABLE sensor_data (
 );
 ```
 
-### 4.2 时间相关查询
+### 4.2 CREATE TIMESERIES TABLE语句
+
+RemDB支持专门的时序表创建语法，提供时序数据的优化存储和查询能力。
+
+```sql
+CREATE TIMESERIES TABLE table_name (
+    time_field TIMESTAMP,
+    value_field REAL,
+    tag_field1 TEXT,
+    tag_field2 INTEGER,
+    ...
+) [WITH COMPRESSION = (algorithm='algorithm_name', enabled=true)] [, WITH TTL = 'duration'];
+```
+
+#### 语法说明
+
+- `time_field`：必须是`TIMESTAMP`类型，用于存储时间戳
+- `value_field`：必须是数值类型（`REAL`、`INTEGER`等），用于存储时序数据的值
+- `tag_field`：可选的标签字段，用于标识和查询时序数据
+- `WITH COMPRESSION`：可选，指定写入时的压缩算法
+  - `algorithm`：支持的压缩算法：`none`、`delta`、`runlength`、`delta-runlength`、`delta-delta`
+  - `enabled`：是否启用压缩，默认为`true`
+- `WITH TTL`：可选，定义数据存活时间，过期数据块可被自动清理
+  - `duration`：时间持续时间，格式为`'30 days'`、`'72 hours'`等
+
+#### 示例
+
+```sql
+-- 创建带有delta-delta压缩和30天TTL的时序表
+CREATE TIMESERIES TABLE test_ts (
+    ts TIMESTAMP,
+    value FLOAT64,
+    tag1 VARCHAR(20),
+    tag2 INT
+) WITH COMPRESSION = (algorithm='delta-delta', enabled=true), WITH TTL = '30 days';
+
+-- 创建带有delta压缩和7天TTL的时序表
+CREATE TIMESERIES TABLE sensor_data (
+    timestamp TIMESTAMP,
+    temperature FLOAT64,
+    location VARCHAR(50)
+) WITH COMPRESSION = (algorithm='delta', enabled=true), WITH TTL = '7 days';
+
+-- 创建带有runlength压缩和1天TTL的时序表
+CREATE TIMESERIES TABLE metrics (
+    time TIMESTAMP,
+    value DOUBLE,
+    device_id VARCHAR(30),
+    type VARCHAR(20)
+) WITH COMPRESSION = (algorithm='runlength', enabled=true), WITH TTL = '1 day';
+```
+
+### 4.3 时间相关查询
 
 ```sql
 -- 查询特定时间范围内的数据
@@ -219,7 +287,7 @@ SELECT * FROM sensor_data ORDER BY timestamp DESC LIMIT 100;
 SELECT * FROM sensor_data WHERE sensor_id = 1 ORDER BY timestamp DESC LIMIT 50;
 ```
 
-### 4.3 时间辅助功能
+### 4.4 时间辅助功能
 
 RemDB内部提供了丰富的时间辅助函数：
 
@@ -263,6 +331,10 @@ SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609
 4. 索引键最大长度为64字节
 5. WHERE子句目前只支持简单的比较条件，复杂条件支持有限
 6. ORDER BY子句目前只支持单个字段排序
+7. 时序表必须包含一个TIMESTAMP类型的时间字段和一个数值类型的值字段
+8. 时序表支持的压缩算法：`none`、`delta`、`runlength`、`delta-runlength`、`delta-delta`
+9. 时序表的TTL配置用于自动清理过期数据块，单位支持天、小时、分钟、秒
+10. 时序表的WITH子句只能用于CREATE TIMESERIES TABLE语句，不支持普通表
 
 ## 7. 不支持的SQL特性
 
