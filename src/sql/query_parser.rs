@@ -14,8 +14,14 @@ use alloc::vec::Vec;
 fn parse_time_string(time_str: &str) -> Result<i64, ()> {
     // 简单的实现，实际应该支持更多格式
     // 这里只做一个示例，解析ISO 8601格式
-    if time_str.contains('T') || time_str.contains(' ') {
-        // 尝试解析为ISO 8601格式
+    // 检查是否是实际的时间格式，而不是格式字符串
+    // 格式字符串通常包含Y, M, D, H, I, S等格式说明符
+    if time_str.contains(|c| c == 'Y' || c == 'M' || c == 'D' || c == 'H' || c == 'I' || c == 'S') {
+        // 这是一个格式字符串，不是时间值
+        Err(())
+    } else if (time_str.contains('T') || time_str.contains(' ')) && 
+              time_str.chars().any(|c| c.is_digit(10)) {
+        // 尝试解析为ISO 8601格式，必须包含数字
         // 这里使用简化的实现，实际应该使用更完整的解析
         Ok(0) // 占位符，实际实现需要完整的时间解析
     } else {

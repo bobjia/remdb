@@ -126,7 +126,7 @@ remdb::database!(
 #[cfg_attr(any(test, feature = "std"), test)]
 fn test_sql_query() {
     // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 131072] = [0u8; 131072];
+    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
     
     // 初始化内存分配器
     unsafe {
@@ -347,7 +347,7 @@ fn test_sql_query() {
 #[cfg_attr(any(test, feature = "std"), test)]
 fn test_sql_functions() {
     // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 131072] = [0u8; 131072];
+    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
     
     // 初始化内存分配器
     unsafe {

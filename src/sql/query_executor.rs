@@ -348,6 +348,10 @@ fn execute_function_call(
         "MIN" => execute_min(args),
         "MAX" => execute_max(args),
         "TIME_BUCKET" => execute_time_bucket(args),
+        // 时间格式化函数
+        "TO_ISO8601" => execute_to_iso8601(args),
+        "TO_CHAR" => execute_to_char(args),
+        "TO_EPOCH" => execute_to_epoch(args),
         _ => {
             // 不支持的函数
             Err(QueryExecutionError::UnsupportedFunction(name.to_string()))
@@ -521,6 +525,94 @@ fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecution
                     value: Value { 
                         time: crate::types::db_timestamp::new(bucketed_timestamp, tz_offset, 6, 0) 
                     },
+                })
+            },
+            _ => Err(QueryExecutionError::TypeMismatch),
+        }
+    }
+}
+
+/// 执行TO_ISO8601函数
+fn execute_to_iso8601(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    let timestamp_arg = &args[0];
+    
+    unsafe {
+        match timestamp_arg.value_type {
+            DataType::Timestamp | DataType::TimestampTZ => {
+                let timestamp = &timestamp_arg.value.time;
+                let result = process_to_iso8601(timestamp)?;
+                
+                // 将字符串转换为TypedValue
+                let mut string_value = [0; MAX_STRING_LEN];
+                let len = core::cmp::min(result.len(), MAX_STRING_LEN);
+                string_value[..len].copy_from_slice(result.as_bytes());
+                
+                Ok(TypedValue {
+                    value_type: DataType::String,
+                    value: Value { string: string_value },
+                })
+            },
+            _ => Err(QueryExecutionError::TypeMismatch),
+        }
+    }
+}
+
+/// 执行TO_CHAR函数
+fn execute_to_char(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    let timestamp_arg = &args[0];
+    let format_arg = &args[1];
+    
+    unsafe {
+        match (timestamp_arg.value_type, format_arg.value_type) {
+            (DataType::Timestamp | DataType::TimestampTZ, DataType::String) => {
+                let timestamp = &timestamp_arg.value.time;
+                // 提取字符串格式
+                let format_str = core::str::from_utf8(&format_arg.value.string)
+                    .map_err(|_| QueryExecutionError::TypeMismatch)?
+                    .trim_end_matches(char::from(0));
+                
+                let result = process_to_char(timestamp, format_str)?;
+                
+                // 将字符串转换为TypedValue
+                let mut string_value = [0; MAX_STRING_LEN];
+                let len = core::cmp::min(result.len(), MAX_STRING_LEN);
+                string_value[..len].copy_from_slice(result.as_bytes());
+                
+                Ok(TypedValue {
+                    value_type: DataType::String,
+                    value: Value { string: string_value },
+                })
+            },
+            _ => Err(QueryExecutionError::TypeMismatch),
+        }
+    }
+}
+
+/// 执行TO_EPOCH函数
+fn execute_to_epoch(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    let timestamp_arg = &args[0];
+    
+    unsafe {
+        match timestamp_arg.value_type {
+            DataType::Timestamp | DataType::TimestampTZ => {
+                let timestamp = &timestamp_arg.value.time;
+                let result = process_to_epoch(timestamp)?;
+                
+                Ok(TypedValue {
+                    value_type: DataType::Float64,
+                    value: Value { float64: result },
                 })
             },
             _ => Err(QueryExecutionError::TypeMismatch),
@@ -804,10 +896,12 @@ let primary_key_index = query.primary_key.as_ref().and_then(|pk| {
     query.table_def.iter().position(|(name, _, _, _, _, _, _)| name == pk)
 });
 
-// 调用RemDb的create_table方法（不支持约束）
-db.create_table(
+// 调用DdlExecutor::create_table方法，支持约束
+DdlExecutor::create_table(
+    db,
     &query.table_name,
     &fields,
+    Some(&field_constraints),
     primary_key_index
 ).map_err(|e| {
     match e {
@@ -956,7 +1050,9 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
     // 4. 添加字段信息到结果集
     // 注意：由于describe查询返回的是表结构信息，而不是实际数据，
     // 我们需要特殊处理，将描述信息转换为Value类型
-    for field in table_def.fields {
+    // 使用索引迭代而非直接迭代，避免可能的无限循环
+    for i in 0..table_def.fields.len() {
+        let field = &table_def.fields[i];
         // 确定是否为主键
         let is_primary_key = table_def.primary_key < table_def.fields.len() && 
                              table_def.fields[table_def.primary_key].name == field.name;
@@ -1128,6 +1224,9 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                 
                 // 生成新的主键值
                 let new_pk = max_pk + 1;
+                
+                // 更新表的最大主键值
+                table.max_pk = new_pk;
                 
                 // 将新的主键值写入记录
                 unsafe {

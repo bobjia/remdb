@@ -57,9 +57,9 @@ impl DataType {
             DataType::Float32 => 4,
             DataType::Float64 => 8,
             DataType::Bool => 1,
-            DataType::Timestamp => 8,  // 默认8字节（微秒级）
-            DataType::TimestampTZ => 10, // 默认10字节（微秒级+时区偏移）
-            DataType::Interval => 8,   // 默认8字节（微秒级）
+            DataType::Timestamp => core::mem::size_of::<db_timestamp>(),  // 实际大小，包括精度和标志
+            DataType::TimestampTZ => core::mem::size_of::<db_timestamp>(), // 实际大小，包括精度和时区偏移
+            DataType::Interval => core::mem::size_of::<db_interval>(),   // 实际大小，包括精度和标志
             DataType::String => panic!("String size is variable at compile time"),
         }
     }
