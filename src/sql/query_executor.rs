@@ -9,6 +9,31 @@ use crate::{TableDef,RemDb, MemoryTable, Value, RemDbError, types::{DataType, Ty
 use crate::sql::{SqlQuery, ResultSet, Condition, ComparisonCondition, ComparisonOperator, OrderByClause};
 use crate::sql::query_parser::BetweenCondition;
 
+/// 解析数据类型字符串，提取基本类型和精度
+/// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6)
+fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u8), QueryExecutionError> {
+    let type_str = type_str.to_uppercase();
+    
+    // 查找左括号位置
+    if let Some(open_paren) = type_str.find('(') {
+        // 查找对应的右括号
+        if let Some(close_paren) = type_str.find(')') {
+            // 提取基本类型
+            let base_type = type_str[..open_paren].trim();
+            // 提取精度值
+            let precision_str = type_str[open_paren + 1..close_paren].trim();
+            let precision = precision_str.parse::<u8>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+            
+            Ok((base_type.to_string(), precision))
+        } else {
+            Err(QueryExecutionError::TypeMismatch)
+        }
+    } else {
+        // 没有精度，使用默认值
+        Ok((type_str.trim().to_string(), 6)) // 默认精度6（微秒）
+    }
+}
+
 /// 查询执行错误
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueryExecutionError {
@@ -135,7 +160,10 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
     let mut field_constraints = Vec::new(); // 存储约束信息
     
     for (field_name, data_type_str, is_primary_key, is_not_null, is_unique, is_auto_increment, default_value) in &query.table_def {
-        let data_type = match data_type_str.to_uppercase().as_str() {
+        // 解析数据类型，支持带精度的时间类型如TIMESTAMP(6)
+        let (base_type, precision) = parse_data_type_with_precision(data_type_str)?;
+        
+        let data_type = match base_type.as_str() {
             // 无符号整数类型
             "UINT8" | "TINYINT UNSIGNED" => DataType::UInt8,
             "UINT16" | "SMALLINT UNSIGNED" => DataType::UInt16,
@@ -157,6 +185,7 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
             
             // 时间类型
             "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => DataType::Timestamp,
+            "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => DataType::TimestampTZ,
             
             // 字符串类型
             "STRING" | "TEXT" | "VARCHAR" | "NVARCHAR" | "CHAR" | "CLOB" => DataType::String,
@@ -167,28 +196,51 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
         // 转换query_parser::Value为types::Value
         let converted_default = match default_value {
             Some(sql_val) => {
+                // 检查是否是时间函数调用（用0作为占位符）
+                let is_time_function = match sql_val {
+                    crate::sql::Value::Integer(i) => *i == 0,
+                    _ => false,
+                };
+                
+                let current_time = if is_time_function {
+                    // 获取当前时间（微秒）
+                    let now = crate::types::time_utils::now_micros();
+                    now as i64
+                } else {
+                    0
+                };
+                
                 let types_val = match sql_val {
                     crate::sql::Value::Integer(i) => {
+                        // 如果是时间函数，使用当前时间替换占位符
+                        let actual_value = if is_time_function && (data_type == DataType::Timestamp || data_type == DataType::TimestampTZ) {
+                            current_time
+                        } else {
+                            *i as i64
+                        };
+                        
                         match data_type {
-                            DataType::UInt8 => Value { u8: *i as u8 },
-                            DataType::UInt16 => Value { u16: *i as u16 },
-                            DataType::UInt32 => Value { u32: *i as u32 },
-                            DataType::UInt64 => Value { u64: *i as u64 },
-                            DataType::Int8 => Value { i8: *i as i8 },
-                            DataType::Int16 => Value { i16: *i as i16 },
-                            DataType::Int32 => Value { i32: *i as i32 },
-                            DataType::Int64 => Value { i64: *i },
-                            DataType::Bool => Value { bool: *i != 0 },
-                            DataType::Float32 => Value { float32: *i as f32 },
-                            DataType::Float64 => Value { float64: *i as f64 },
-                            DataType::Timestamp => Value { timestamp: *i as u64 },
+                            DataType::UInt8 => Value { u8: actual_value as u8 },
+                            DataType::UInt16 => Value { u16: actual_value as u16 },
+                            DataType::UInt32 => Value { u32: actual_value as u32 },
+                            DataType::UInt64 => Value { u64: actual_value as u64 },
+                            DataType::Int8 => Value { i8: actual_value as i8 },
+                            DataType::Int16 => Value { i16: actual_value as i16 },
+                            DataType::Int32 => Value { i32: actual_value as i32 },
+                            DataType::Int64 => Value { i64: actual_value },
+                            DataType::Bool => Value { bool: actual_value != 0 },
+                            DataType::Float32 => Value { float32: actual_value as f32 },
+                            DataType::Float64 => Value { float64: actual_value as f64 },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(actual_value, 0, precision, 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(actual_value, 0, precision, 0) },
                             DataType::String => {
                                 let mut s = [0; MAX_STRING_LEN];
-                                let str_val = i.to_string();
+                                let str_val = actual_value.to_string();
                                 let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
                                 s[..len].copy_from_slice(str_val.as_bytes());
                                 Value { string: s }
                             },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(actual_value, precision, 0) },
                         }
                     },
                     crate::sql::Value::Float(f) => {
@@ -204,7 +256,8 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Bool => Value { bool: *f != 0.0 },
                             DataType::Float32 => Value { float32: *f as f32 },
                             DataType::Float64 => Value { float64: *f },
-                            DataType::Timestamp => Value { timestamp: *f as u64 },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(*f as i64, 0, precision, 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(*f as i64, 0, precision, 0) },
                             DataType::String => {
                                 let mut s = [0; MAX_STRING_LEN];
                                 let str_val = f.to_string();
@@ -212,6 +265,7 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                                 s[..len].copy_from_slice(str_val.as_bytes());
                                 Value { string: s }
                             },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(*f as i64, precision, 0) },
                         }
                     },
                     crate::sql::Value::Boolean(b) => {
@@ -227,7 +281,8 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Bool => Value { bool: *b },
                             DataType::Float32 => Value { float32: (*b as i32) as f32 },
                             DataType::Float64 => Value { float64: (*b as i32) as f64 },
-                            DataType::Timestamp => Value { timestamp: *b as u64 },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(*b as i64, 0, precision, 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(*b as i64, 0, precision, 0) },
                             DataType::String => {
                                 let mut s = [0; MAX_STRING_LEN];
                                 let str_val = b.to_string();
@@ -235,6 +290,7 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                                 s[..len].copy_from_slice(str_val.as_bytes());
                                 Value { string: s }
                             },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(*b as i64, precision, 0) },
                         }
                     },
                     crate::sql::Value::String(s) => {
@@ -250,13 +306,15 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Bool => Value { bool: s.parse().unwrap_or(false) },
                             DataType::Float32 => Value { float32: s.parse().unwrap_or(0.0) },
                             DataType::Float64 => Value { float64: s.parse().unwrap_or(0.0) },
-                            DataType::Timestamp => Value { timestamp: s.parse().unwrap_or(0) },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
                             DataType::String => {
                                 let mut buf = [0; MAX_STRING_LEN];
                                 let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                                 buf[..len].copy_from_slice(s.as_bytes());
                                 Value { string: buf }
                             },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision, 0) },
                         }
                     },
                     crate::sql::Value::Null => {
@@ -273,8 +331,10 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Bool => Value { bool: false },
                             DataType::Float32 => Value { float32: 0.0 },
                             DataType::Float64 => Value { float64: 0.0 },
-                            DataType::Timestamp => Value { timestamp: 0 },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(0, 0, precision, 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(0, 0, precision, 0) },
                             DataType::String => Value { string: [0; MAX_STRING_LEN] },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(0, precision, 0) },
                         }
                     },
                 };
@@ -678,10 +738,16 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                             record_data[field.offset] = default_value.bool as u8;
                         },
                         DataType::Timestamp => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u64, default_value.timestamp);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut crate::types::db_timestamp, default_value.time);
+                        },
+                        DataType::TimestampTZ => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut crate::types::db_timestamp, default_value.time);
                         },
                         DataType::String => {
                             core::ptr::copy_nonoverlapping(default_value.string.as_ptr(), record_data.as_mut_ptr().add(field.offset), field.size);
+                        },
+                        DataType::Interval => {
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut crate::types::db_interval, default_value.interval);
                         },
                     }
                 }
@@ -980,9 +1046,40 @@ fn set_field_value(record_data: &mut Vec<u8>, offset: usize, data_type: DataType
             
             // 时间戳类型
             DataType::Timestamp => {
-                let value = to_integer(sql_value)? as u64;
+                // 处理时间函数调用和普通时间值
+                let timestamp = match sql_value {
+                    // 处理时间函数调用（占位符值为0）
+                    crate::sql::Value::Integer(i) if *i == 0 => {
+                        // 获取当前时间（微秒）
+                        let now = crate::types::time_utils::now_micros() as i64;
+                        crate::types::db_timestamp::new(now, 0, 6, 0)
+                    },
+                    // 处理普通时间值
+                    _ => {
+                        let value = to_integer(sql_value)?;
+                        crate::types::db_timestamp::new(value, 0, 6, 0)
+                    },
+                };
                 // 使用core::ptr::write_unaligned来避免对齐问题
-                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut u64, value);
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut crate::types::db_timestamp, timestamp);
+            },
+            DataType::TimestampTZ => {
+                // 处理时间函数调用和普通时间值
+                let timestamp = match sql_value {
+                    // 处理时间函数调用（占位符值为0）
+                    crate::sql::Value::Integer(i) if *i == 0 => {
+                        // 获取当前时间（微秒）
+                        let now = crate::types::time_utils::now_micros() as i64;
+                        crate::types::db_timestamp::new(now, 0, 6, 0)
+                    },
+                    // 处理普通时间值
+                    _ => {
+                        let value = to_integer(sql_value)?;
+                        crate::types::db_timestamp::new(value, 0, 6, 0)
+                    },
+                };
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut crate::types::db_timestamp, timestamp);
             },
             
             // 字符串类型
@@ -1010,6 +1107,13 @@ fn set_field_value(record_data: &mut Vec<u8>, offset: usize, data_type: DataType
                     *ptr.add(i) = 0;
                 }
             },
+            // 时间间隔类型
+            DataType::Interval => {
+                let interval_value = to_integer(sql_value)?;
+                let interval = crate::types::db_interval::new(interval_value, 6, 0); // 默认精度6（微秒）
+                // 使用core::ptr::write_unaligned来避免对齐问题
+                core::ptr::write_unaligned(record_data.as_mut_ptr().add(offset) as *mut crate::types::db_interval, interval);
+            },
         }
     }
     
@@ -1031,6 +1135,7 @@ fn execute_create_time_series_table_query(db: &mut RemDb, query: &SqlQuery) -> R
     for (field_name, data_type_str, _, _, _, _, _) in &query.table_def {
         let data_type = match data_type_str.to_uppercase().as_str() {
             "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => crate::DataType::Timestamp,
+            "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => crate::DataType::TimestampTZ,
             "UINT8" | "TINYINT UNSIGNED" => crate::DataType::UInt8,
             "UINT16" | "SMALLINT UNSIGNED" => crate::DataType::UInt16,
             "UINT32" | "MEDIUMINT UNSIGNED" | "INT UNSIGNED" | "INTEGER UNSIGNED" => crate::DataType::UInt32,
@@ -1047,8 +1152,8 @@ fn execute_create_time_series_table_query(db: &mut RemDb, query: &SqlQuery) -> R
         };
         
         match data_type {
-            // 时间字段：TIMESTAMP类型
-            crate::DataType::Timestamp => {
+            // 时间字段：TIMESTAMP或TIMESTAMPTZ类型
+            crate::DataType::Timestamp | crate::DataType::TimestampTZ => {
                 if time_field.is_none() {
                     time_field = Some(field_name.as_str());
                 } else {
@@ -1294,7 +1399,17 @@ fn compare_values(field_value: &Value, field_type: DataType, operator: &Comparis
         
         // 时间戳类型
         DataType::Timestamp => {
-            let f_val = unsafe { field_value.timestamp }; // 读取timestamp字段
+            let f_val = unsafe { field_value.time.value } as u64; // 读取时间值
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int as u64;
+                    compare_numbers(f_val, c_val, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        DataType::TimestampTZ => {
+            let f_val = unsafe { field_value.time.value } as u64; // 读取时间值
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as u64;
@@ -1311,6 +1426,17 @@ fn compare_values(field_value: &Value, field_type: DataType, operator: &Comparis
             match condition_value {
                 crate::sql::Value::String(c_str) => {
                     compare_strings(&f_str, c_str, operator)
+                },
+                _ => false, // 类型不匹配
+            }
+        },
+        // 时间间隔类型
+        DataType::Interval => {
+            let f_val = unsafe { field_value.interval.value } as u64; // 读取时间间隔值
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => {
+                    let c_val = *c_int as u64;
+                    compare_numbers(f_val, c_val, operator)
                 },
                 _ => false, // 类型不匹配
             }
@@ -1351,6 +1477,69 @@ fn compare_strings(f: &str, c: &str, operator: &ComparisonOperator) -> bool {
         ComparisonOperator::LessThanOrEqual => f <= c,
         _ => false,
     }
+}
+
+/// 处理AT TIME ZONE操作符
+/// 将timestamp转换为指定时区的timestamp
+fn process_at_time_zone(timestamp: &crate::types::db_timestamp, timezone_spec: &str) -> Result<crate::types::db_timestamp, QueryExecutionError> {
+    // 解析时区规范
+    let tz_offset = if timezone_spec.starts_with('+') || timezone_spec.starts_with('-') {
+        // 处理时区偏移格式，如 '+08:00' 或 '-05:30'
+        let parts: Vec<&str> = timezone_spec.split(':').collect();
+        if parts.len() == 2 {
+            let hours = parts[0].parse::<i32>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+            let minutes = parts[1].parse::<i32>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+            ((hours * 3600) + (minutes * 60)) as i16
+        } else {
+            return Err(QueryExecutionError::TypeMismatch);
+        }
+    } else {
+        // 处理时区名称格式，如 'UTC', 'Asia/Shanghai'
+        crate::types::get_timezone_offset(timezone_spec)
+            .ok_or(QueryExecutionError::TypeMismatch)?
+    };
+    
+    // 转换时间戳到指定时区
+    Ok(crate::types::convert_timezone(timestamp, tz_offset))
+}
+
+/// 处理TIMEZONE()函数
+/// 获取指定时区的偏移量
+fn process_timezone_function(timezone_spec: &str) -> Result<i16, QueryExecutionError> {
+    // 解析时区规范
+    if timezone_spec.starts_with('+') || timezone_spec.starts_with('-') {
+        // 处理时区偏移格式，如 '+08:00' 或 '-05:30'
+        let parts: Vec<&str> = timezone_spec.split(':').collect();
+        if parts.len() == 2 {
+            let hours = parts[0].parse::<i32>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+            let minutes = parts[1].parse::<i32>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+            Ok(((hours * 3600) + (minutes * 60)) as i16)
+        } else {
+            Err(QueryExecutionError::TypeMismatch)
+        }
+    } else {
+        // 处理时区名称格式，如 'UTC', 'Asia/Shanghai'
+        crate::types::get_timezone_offset(timezone_spec)
+            .ok_or(QueryExecutionError::TypeMismatch)
+    }
+}
+
+/// 处理TO_CHAR()函数
+/// 将时间戳转换为指定格式的字符串
+fn process_to_char(timestamp: &crate::types::db_timestamp, format: &str) -> Result<String, QueryExecutionError> {
+    Ok(crate::types::time_format::to_char(timestamp, format))
+}
+
+/// 处理TO_ISO8601()函数
+/// 将时间戳转换为ISO 8601格式的字符串
+fn process_to_iso8601(timestamp: &crate::types::db_timestamp) -> Result<String, QueryExecutionError> {
+    Ok(crate::types::time_format::to_iso8601(timestamp))
+}
+
+/// 处理TO_EPOCH()函数
+/// 将时间戳转换为epoch秒数
+fn process_to_epoch(timestamp: &crate::types::db_timestamp) -> Result<f64, QueryExecutionError> {
+    Ok(crate::types::time_format::to_epoch(timestamp))
 }
 
 /// 对行进行排序
@@ -1450,8 +1639,13 @@ fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &Or
             
             // 时间戳类型
             DataType::Timestamp => {
-                let a_val = unsafe { val_a.value.timestamp };
-                let b_val = unsafe { val_b.value.timestamp };
+                let a_val = unsafe { val_a.value.time.value };
+                let b_val = unsafe { val_b.value.time.value };
+                a_val.cmp(&b_val)
+            },
+            DataType::TimestampTZ => {
+                let a_val = unsafe { val_a.value.time.value };
+                let b_val = unsafe { val_b.value.time.value };
                 a_val.cmp(&b_val)
             },
             
@@ -1464,6 +1658,12 @@ fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &Or
                 let b_str = String::from_utf8_lossy(b_str).trim_end_matches(char::from(0)).to_string();
                 
                 a_str.cmp(&b_str)
+            },
+            // 时间间隔类型
+            DataType::Interval => {
+                let a_val = unsafe { val_a.value.interval.value };
+                let b_val = unsafe { val_b.value.interval.value };
+                a_val.cmp(&b_val)
             },
         };
         

@@ -236,9 +236,14 @@ impl MemoryTable {
                             current == existing
                         },
                         DataType::Timestamp => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const u64);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const u64);
-                            current == existing
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const crate::types::db_timestamp);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const crate::types::db_timestamp);
+                            current.value == existing.value
+                        },
+                        DataType::TimestampTZ => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const crate::types::db_timestamp);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const crate::types::db_timestamp);
+                            current.value == existing.value && current.tz_offset == existing.tz_offset
                         },
                         DataType::String => {
                             // 比较字符串内容
@@ -252,6 +257,11 @@ impl MemoryTable {
                                 }
                             }
                             is_equal
+                        },
+                        DataType::Interval => {
+                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const crate::types::db_interval);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const crate::types::db_interval);
+                            current.value == existing.value
                         },
                     };
                     
@@ -282,7 +292,9 @@ impl MemoryTable {
             DataType::Float32 => Value { float32: core::ptr::read_unaligned(field_ptr as *const f32) },
             DataType::Float64 => Value { float64: core::ptr::read_unaligned(field_ptr as *const f64) },
             DataType::Bool => Value { bool: *field_ptr != 0 },
-            DataType::Timestamp => Value { timestamp: core::ptr::read_unaligned(field_ptr as *const u64) },
+            DataType::Timestamp => Value { time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp) },
+            DataType::TimestampTZ => Value { time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp) },
+            DataType::Interval => Value { interval: core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval) },
             DataType::String => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                 memcpy(str_value.as_mut_ptr(), field_ptr, size);
@@ -616,12 +628,18 @@ impl MemoryTable {
                 Value { bool: *field_ptr != 0 }
             }
             crate::types::DataType::Timestamp => {
-                Value { timestamp: core::ptr::read_unaligned(field_ptr as *const u64) }
+                Value { time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp) }
+            }
+            crate::types::DataType::TimestampTZ => {
+                Value { time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp) }
             }
             crate::types::DataType::String => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                 memcpy(str_value.as_mut_ptr(), field_ptr, field.size);
                 Value { string: str_value }
+            },
+            crate::types::DataType::Interval => {
+                Value { interval: core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval) }
             }
         };
         
@@ -679,10 +697,16 @@ impl MemoryTable {
                 *field_ptr = if value.bool { 1 } else { 0 };
             }
             crate::types::DataType::Timestamp => {
-                *(field_ptr as *mut u64) = value.timestamp;
+                *(field_ptr as *mut crate::types::db_timestamp) = value.time;
+            }
+            crate::types::DataType::TimestampTZ => {
+                *(field_ptr as *mut crate::types::db_timestamp) = value.time;
             }
             crate::types::DataType::String => {
                 memcpy(field_ptr, value.string.as_ptr(), field.size);
+            },
+            crate::types::DataType::Interval => {
+                *(field_ptr as *mut crate::types::db_interval) = value.interval;
             }
         }
         

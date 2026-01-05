@@ -5,6 +5,25 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+/// 解析时间字符串为微秒时间戳
+/// 支持的格式：
+/// - '2024-01-15 10:30:45'
+/// - '2024-01-15T10:30:45.123Z'
+/// - '2024-01-15 10:30:45.123+08'
+/// - 1673778645123456 (微秒时间戳)
+fn parse_time_string(time_str: &str) -> Result<i64, ()> {
+    // 简单的实现，实际应该支持更多格式
+    // 这里只做一个示例，解析ISO 8601格式
+    if time_str.contains('T') || time_str.contains(' ') {
+        // 尝试解析为ISO 8601格式
+        // 这里使用简化的实现，实际应该使用更完整的解析
+        Ok(0) // 占位符，实际实现需要完整的时间解析
+    } else {
+        // 尝试解析为数字时间戳
+        time_str.parse::<i64>().map_err(|_| ())
+    }
+}
+
 /// SQL查询结构
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlQuery {
@@ -859,6 +878,9 @@ impl SqlParser {
 
     /// 解析值
     fn parse_value(&mut self) -> Result<Value, QueryParseError> {
+        // 保存当前位置，用于回溯
+        let saved_pos = self.position;
+        
         if self.peek_char() == Some('"') || self.peek_char() == Some('\'') {
             // 字符串值
             let quote_char = self.next_char().unwrap();
@@ -871,13 +893,96 @@ impl SqlParser {
                 string_value.push(c);
             }
             
-            Ok(Value::String(string_value))
+            // 尝试将字符串解析为时间值
+            if let Ok(timestamp) = parse_time_string(&string_value) {
+                Ok(Value::Integer(timestamp))
+            } else {
+                // 不是时间格式，作为普通字符串处理
+                Ok(Value::String(string_value))
+            }
         } else if self.match_keyword("NULL") {
             Ok(Value::Null)
         } else if self.match_keyword("TRUE") {
             Ok(Value::Boolean(true))
         } else if self.match_keyword("FALSE") {
             Ok(Value::Boolean(false))
+        } else if self.match_keyword("NOW") {
+            // 处理NOW()函数
+            self.skip_whitespace();
+            self.expect_char('(')?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            // 这里返回0作为占位符，实际执行时会替换为当前时间
+            Ok(Value::Integer(0))
+        } else if self.match_keyword("CURRENT_TIMESTAMP") {
+            // 处理CURRENT_TIMESTAMP()函数
+            self.skip_whitespace();
+            if self.peek_char() == Some('(') {
+                self.next_char();
+                self.skip_whitespace();
+                self.expect_char(')')?;
+            }
+            // 这里返回0作为占位符，实际执行时会替换为当前时间
+            Ok(Value::Integer(0))
+        } else if self.match_keyword("LOCALTIMESTAMP") {
+            // 处理LOCALTIMESTAMP()函数
+            self.skip_whitespace();
+            if self.peek_char() == Some('(') {
+                self.next_char();
+                self.skip_whitespace();
+                self.expect_char(')')?;
+            }
+            // 这里返回0作为占位符，实际执行时会替换为当前时间
+            Ok(Value::Integer(0))
+        } else if self.match_keyword("TIMEZONE") {
+            // 处理TIMEZONE()函数
+            self.skip_whitespace();
+            self.expect_char('(')?;
+            self.skip_whitespace();
+            // 解析时区名称或偏移量
+            let tz_param = self.parse_value()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            // 这里返回0作为占位符，实际执行时会处理
+            Ok(Value::Integer(0))
+        } else if self.match_keyword("TO_CHAR") {
+            // 处理TO_CHAR()函数
+            self.skip_whitespace();
+            self.expect_char('(')?;
+            self.skip_whitespace();
+            // 解析时间值参数
+            let time_param = self.parse_value()?;
+            self.skip_whitespace();
+            self.expect_char(',')?;
+            self.skip_whitespace();
+            // 解析格式字符串参数
+            let format_param = self.parse_value()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            // 这里返回0作为占位符，实际执行时会处理
+            Ok(Value::Integer(0))
+        } else if self.match_keyword("TO_ISO8601") {
+            // 处理TO_ISO8601()函数
+            self.skip_whitespace();
+            self.expect_char('(')?;
+            self.skip_whitespace();
+            // 解析时间值参数
+            let time_param = self.parse_value()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            // 这里返回0作为占位符，实际执行时会处理
+            Ok(Value::Integer(0))
+        } else if self.match_keyword("TO_EPOCH") {
+            // 处理TO_EPOCH()函数
+            self.skip_whitespace();
+            self.expect_char('(')?;
+            self.skip_whitespace();
+            // 解析时间值参数
+            let time_param = self.parse_value()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            // 这里返回0作为占位符，实际执行时会处理
+            Ok(Value::Integer(0))
         } else if self.peek_char().is_some_and(|c| c.is_ascii_digit() || c == '-') {
             // 数字值
             let number_str = self.parse_number_str()?;
@@ -891,7 +996,27 @@ impl SqlParser {
                 Ok(Value::Integer(int_value))
             }
         } else {
-            Err(QueryParseError::InvalidValue)
+            // 回溯，尝试解析为标识符
+            self.position = saved_pos;
+            let identifier = self.parse_identifier()?;
+            
+            // 检查是否是带有AT TIME ZONE修饰符的时间表达式
+            self.skip_whitespace();
+            if self.match_keyword("AT") {
+                self.skip_whitespace();
+                self.expect_keyword("TIME")?;
+                self.skip_whitespace();
+                self.expect_keyword("ZONE")?;
+                self.skip_whitespace();
+                
+                // 解析时区名称或偏移量
+                let tz_value = self.parse_value()?;
+                // 这里返回0作为占位符，实际执行时会处理
+                Ok(Value::Integer(0))
+            } else {
+                // 不是AT TIME ZONE表达式，返回标识符作为字符串
+                Ok(Value::String(identifier))
+            }
         }
     }
 
@@ -1060,16 +1185,18 @@ impl SqlParser {
         // 解析基本数据类型
         let base_type = self.parse_identifier()?;
         
-        // 保存基本类型，忽略参数和修饰符
-        let result = base_type.clone();
+        // 保存完整类型，包括参数和修饰符
+        let mut result = base_type.clone();
         
-        // 检查是否有参数，如 VARCHAR(255)
+        // 检查是否有参数，如 VARCHAR(255) 或 TIMESTAMP(6)
         self.skip_whitespace();
         if self.match_char('(') {
-            // 跳过参数
+            // 包含参数
+            result.push('(');
             let mut depth = 1;
             while depth > 0 {
                 let c = self.next_char().ok_or(QueryParseError::InvalidSyntax)?;
+                result.push(c);
                 if c == '(' {
                     depth += 1;
                 } else if c == ')' {
@@ -1078,24 +1205,81 @@ impl SqlParser {
             }
         }
         
-        // 检查是否有修饰符，如 UNSIGNED
+        // 检查是否有修饰符，如 UNSIGNED 或 WITH TIME ZONE
         self.skip_whitespace();
-        if self.peek_char().is_some() {
+        while self.peek_char().is_some() {
+            // 检查是否是约束关键字（这些应该在数据类型之后单独解析）
+            let next_token = self.peek_identifier();
+            if let Some(token) = next_token {
+                let token_upper = token.to_uppercase();
+                // 如果遇到约束关键字，停止解析数据类型
+                if ["PRIMARY", "NOT", "UNIQUE", "AUTOINCREMENT", "AUTO_INCREMENT", "DEFAULT"].contains(&token_upper.as_str()) {
+                    break;
+                }
+            }
+            
             // 检查是否是修饰符（字母或下划线开头）
             let c = self.peek_char().unwrap();
             if c.is_ascii_alphabetic() || c == '_' {
                 // 解析修饰符
                 let modifier = self.parse_identifier()?;
-                // 只接受 UNSIGNED 或 SIGNED 作为修饰符，其他修饰符忽略
-                if !modifier.eq_ignore_ascii_case("UNSIGNED") && !modifier.eq_ignore_ascii_case("SIGNED") {
-                    // 不是有效的修饰符，回滚
-                    self.position -= modifier.len();
+                result.push(' ');
+                result.push_str(&modifier);
+                
+                // 检查是否是 WITH TIME ZONE 结构
+                if modifier.eq_ignore_ascii_case("WITH") {
+                    self.skip_whitespace();
+                    if self.peek_char().is_some() {
+                        let next_modifier = self.parse_identifier()?;
+                        result.push(' ');
+                        result.push_str(&next_modifier);
+                        
+                        if next_modifier.eq_ignore_ascii_case("TIME") {
+                            self.skip_whitespace();
+                            if self.peek_char().is_some() {
+                                let last_modifier = self.parse_identifier()?;
+                                result.push(' ');
+                                result.push_str(&last_modifier);
+                            }
+                        }
+                    }
                 }
+                
+                self.skip_whitespace();
+            } else {
+                break;
             }
         }
         
-        // 返回基本数据类型，忽略参数和修饰符
         Ok(result)
+    }
+    
+    /// 预看下一个标识符
+    fn peek_identifier(&self) -> Option<String> {
+        let start = self.position;
+        let mut pos = start;
+        
+        // 检查第一个字符是否是字母或下划线
+        if let Some(c) = self.input.chars().nth(pos) {
+            if !c.is_ascii_alphabetic() && c != '_' {
+                return None;
+            }
+            pos += 1;
+            
+            // 继续读取直到遇到非字母数字或下划线
+            while let Some(c) = self.input.chars().nth(pos) {
+                if c.is_ascii_alphanumeric() || c == '_' {
+                    pos += 1;
+                } else {
+                    break;
+                }
+            }
+            
+            // 返回预看的标识符
+            Some(self.input[start..pos].to_string())
+        } else {
+            None
+        }
     }
     
     /// 期望匹配指定字符

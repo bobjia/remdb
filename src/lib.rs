@@ -1469,7 +1469,8 @@ impl RemDb {
                                 DataType::Float32 => format!("{}", core::ptr::read_unaligned(field_ptr as *const f32)),
                                 DataType::Float64 => format!("{}", core::ptr::read_unaligned(field_ptr as *const f64)),
                                 DataType::Bool => format!("{}", *field_ptr != 0),
-                                DataType::Timestamp => format!("{}", core::ptr::read_unaligned(field_ptr as *const u64)),
+                                DataType::Timestamp => format!("{}", core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp).value),
+                                DataType::TimestampTZ => format!("{}", core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp).value),
                                 DataType::String => {
                                     // 读取字符串并去除尾部的0字节
                                     let mut str_value = alloc::string::String::new();
@@ -1481,6 +1482,9 @@ impl RemDb {
                                         str_value.push(c as char);
                                     }
                                     format!("'{}'", str_value)
+                                },
+                                DataType::Interval => {
+                                    format!("{}", core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval).value)
                                 },
                             };
                             

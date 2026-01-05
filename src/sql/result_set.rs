@@ -218,10 +218,14 @@ fn value_to_string_repr(value: &TypedValue) -> String {
             DataType::Float32 => format!("{}", value.value.float32),
             DataType::Float64 => format!("{}", value.value.float64),
             DataType::Bool => format!("{}", value.value.bool),
-            DataType::Timestamp => format!("{}", value.value.timestamp),
+            DataType::Timestamp => format!("{}", value.value.time.value),
+            DataType::TimestampTZ => format!("{}", value.value.time.value),
             DataType::String => {
                 let string_slice = core::str::from_utf8(&value.value.string).unwrap_or("");
                 string_slice.trim_end_matches(char::from(0)).to_string()
+            },
+            DataType::Interval => {
+                format!("{}", value.value.interval.value)
             },
         }
     }

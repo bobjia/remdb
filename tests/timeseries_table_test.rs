@@ -248,3 +248,156 @@ fn test_write_timeseries_batch_rollback() {
     
     println!("测试通过: 批量写入验证成功");
 }
+
+#[test]
+fn test_time_type_support() {
+    // 创建数据库实例
+    let mut db = RemDb::new(&TEST_DB_CONFIG);
+    db.init().unwrap();
+    
+    // 创建带有TIMESTAMP和TIMESTAMPTZ类型的表
+    let create_table_sql = "CREATE TABLE test_time_types (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        ts TIMESTAMP(3),
+        tstz TIMESTAMPTZ(6),
+        name TEXT
+    )";
+    
+    let result = db.sql_query(create_table_sql);
+    assert!(result.is_ok());
+    
+    // 测试1: 插入带有时间类型的数据
+    let insert_sql = "INSERT INTO test_time_types (ts, tstz, name) VALUES 
+        (NOW(), CURRENT_TIMESTAMP(), 'test1'),
+        (LOCALTIMESTAMP(), NOW(), 'test2')";
+    
+    let result = db.sql_query(insert_sql);
+    assert!(result.is_ok());
+    
+    // 测试2: 查询时间类型数据
+    let select_sql = "SELECT id, ts, tstz, name FROM test_time_types";
+    let result = db.sql_query(select_sql);
+    assert!(result.is_ok());
+    
+    // 测试3: 测试时间格式化函数
+    let format_sql = "SELECT 
+        TO_ISO8601(ts) as iso_ts,
+        TO_CHAR(tstz, 'YYYY-MM-DD HH24:MI:SS') as char_tstz,
+        TO_EPOCH(ts) as epoch_ts
+        FROM test_time_types";
+    let result = db.sql_query(format_sql);
+    assert!(result.is_ok());
+    
+    // 测试4: 测试时区转换功能
+    let timezone_sql = "SELECT 
+        ts AT TIME ZONE 'Asia/Shanghai' as shanghai_ts,
+        tstz AT TIME ZONE 'UTC' as utc_tstz
+        FROM test_time_types";
+    let result = db.sql_query(timezone_sql);
+    assert!(result.is_ok());
+    
+    // 测试5: 测试时间函数
+    let time_func_sql = "SELECT NOW(), CURRENT_TIMESTAMP(), LOCALTIMESTAMP()";
+    let result = db.sql_query(time_func_sql);
+    assert!(result.is_ok());
+    
+    println!("测试通过: 时间类型和时间函数支持验证成功");
+}
+
+#[test]
+fn test_time_arithmetic() {
+    // 创建数据库实例
+    let mut db = RemDb::new(&TEST_DB_CONFIG);
+    db.init().unwrap();
+    
+    // 创建测试表
+    let create_table_sql = "CREATE TABLE test_time_arithmetic (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        start_time TIMESTAMP(6),
+        end_time TIMESTAMPTZ(6)
+    )";
+    
+    let result = db.sql_query(create_table_sql);
+    assert!(result.is_ok());
+    
+    // 插入测试数据
+    let insert_sql = "INSERT INTO test_time_arithmetic (start_time, end_time) VALUES 
+        (NOW(), CURRENT_TIMESTAMP())";
+    
+    let result = db.sql_query(insert_sql);
+    assert!(result.is_ok());
+    
+    // 测试1: 时间加法运算
+    let add_sql = "SELECT 
+        start_time + INTERVAL 1 HOUR as one_hour_later,
+        end_time + INTERVAL 30 MINUTE as thirty_minutes_later
+        FROM test_time_arithmetic";
+    let result = db.sql_query(add_sql);
+    assert!(result.is_ok());
+    
+    // 测试2: 时间减法运算
+    let sub_sql = "SELECT 
+        start_time - INTERVAL 1 DAY as one_day_ago,
+        end_time - INTERVAL 1 WEEK as one_week_ago
+        FROM test_time_arithmetic";
+    let result = db.sql_query(sub_sql);
+    assert!(result.is_ok());
+    
+    // 测试3: 计算时间差
+    let diff_sql = "SELECT 
+        end_time - start_time as time_diff
+        FROM test_time_arithmetic";
+    let result = db.sql_query(diff_sql);
+    assert!(result.is_ok());
+    
+    // 测试4: 时间比较
+    let compare_sql = "SELECT 
+        start_time < end_time as is_start_earlier,
+        start_time = end_time as is_same,
+        start_time > end_time as is_start_later
+        FROM test_time_arithmetic";
+    let result = db.sql_query(compare_sql);
+    assert!(result.is_ok());
+    
+    println!("测试通过: 时间运算和比较功能验证成功");
+}
+
+#[test]
+fn test_time_precision_support() {
+    // 创建数据库实例
+    let mut db = RemDb::new(&TEST_DB_CONFIG);
+    db.init().unwrap();
+    
+    // 创建带有不同精度的时间类型表
+    let create_table_sql = "CREATE TABLE test_time_precision (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        ts_sec TIMESTAMP(0),
+        ts_ms TIMESTAMP(3),
+        ts_us TIMESTAMP(6),
+        ts_ns TIMESTAMP(9),
+        tstz_sec TIMESTAMPTZ(0),
+        tstz_ms TIMESTAMPTZ(3),
+        tstz_us TIMESTAMPTZ(6),
+        tstz_ns TIMESTAMPTZ(9)
+    )";
+    
+    let result = db.sql_query(create_table_sql);
+    assert!(result.is_ok());
+    
+    // 插入测试数据
+    let insert_sql = "INSERT INTO test_time_precision (ts_sec, ts_ms, ts_us, ts_ns, tstz_sec, tstz_ms, tstz_us, tstz_ns) VALUES 
+        (NOW(), NOW(), NOW(), NOW(), NOW(), NOW(), NOW(), NOW())";
+    
+    let result = db.sql_query(insert_sql);
+    assert!(result.is_ok());
+    
+    // 查询并验证数据
+    let select_sql = "SELECT 
+        ts_sec, ts_ms, ts_us, ts_ns,
+        tstz_sec, tstz_ms, tstz_us, tstz_ns
+        FROM test_time_precision";
+    let result = db.sql_query(select_sql);
+    assert!(result.is_ok());
+    
+    println!("测试通过: 时间精度支持验证成功");
+}

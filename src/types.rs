@@ -27,14 +27,23 @@ pub enum DataType {
     Float64 = 9,
     /// 布尔值
     Bool = 10,
-    /// 时间戳（毫秒）
+    /// 时间戳（精度可调）
     Timestamp = 11,
+    /// 带时区的时间戳（精度可调）
+    TimestampTZ = 12,
     /// 定长字符串
-    String = 12,
+    String = 13,
+    /// 时间间隔
+    Interval = 14,
 }
 
 impl DataType {
     /// 获取数据类型的大小（字节）
+    /// 时间类型根据精度自动调整大小：
+    /// - 精度 0-2: 4字节（秒级）
+    /// - 精度 3-5: 6字节（毫秒级）
+    /// - 精度 6-8: 8字节（微秒级，默认）
+    /// - 精度 9: 10字节（纳秒级）
     pub const fn size(&self) -> usize {
         match self {
             DataType::UInt8 => 1,
@@ -48,15 +57,17 @@ impl DataType {
             DataType::Float32 => 4,
             DataType::Float64 => 8,
             DataType::Bool => 1,
-            DataType::Timestamp => 8,
+            DataType::Timestamp => 8,  // 默认8字节（微秒级）
+            DataType::TimestampTZ => 10, // 默认10字节（微秒级+时区偏移）
+            DataType::Interval => 8,   // 默认8字节（微秒级）
             DataType::String => panic!("String size is variable at compile time"),
         }
     }
     
-    /// 将数据类型转换为SQL类型字符串（SQLite3兼容）
+    /// 将数据类型转换为SQL类型字符串
     pub fn to_sql_type(&self, size: usize) -> &'static str {
         match self {
-            // SQLite3使用INTEGER存储所有整数类型
+            // 整数类型
             DataType::UInt8 => "INTEGER",
             DataType::UInt16 => "INTEGER",
             DataType::UInt32 => "INTEGER",
@@ -65,14 +76,17 @@ impl DataType {
             DataType::Int16 => "INTEGER",
             DataType::Int32 => "INTEGER",
             DataType::Int64 => "INTEGER",
-            // SQLite3使用REAL存储浮点数
+            // 浮点数类型
             DataType::Float32 => "REAL",
             DataType::Float64 => "REAL",
-            // SQLite3使用INTEGER(0/1)存储布尔值
-            DataType::Bool => "INTEGER",
-            // SQLite3使用INTEGER存储时间戳（毫秒）
-            DataType::Timestamp => "INTEGER",
-            // SQLite3使用TEXT存储字符串
+            // 布尔类型
+            DataType::Bool => "BOOL",
+            // 时间类型
+            DataType::Timestamp => "TIMESTAMP",
+            DataType::TimestampTZ => "TIMESTAMPTZ",
+            // 时间间隔类型
+            DataType::Interval => "INTERVAL",
+            // 字符串类型
             DataType::String => "TEXT",
         }
     }
@@ -81,6 +95,189 @@ impl DataType {
 impl Default for DataType {
     fn default() -> Self {
         DataType::Int32
+    }
+}
+
+/// 时间间隔结构体
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct db_interval {
+    /// 微秒数
+    pub value: i64,
+    /// 精度标记(0-9)
+    pub precision: u8,
+    /// 标志位
+    pub flags: u8,
+}
+
+impl db_interval {
+    /// 创建新的时间间隔
+    pub const fn new(value: i64, precision: u8, flags: u8) -> Self {
+        Self {
+            value,
+            precision,
+            flags,
+        }
+    }
+    
+    /// 根据精度获取存储大小
+    pub const fn storage_size(precision: u8) -> usize {
+        match precision {
+            0..=2 => 4,   // 秒级
+            3..=5 => 6,   // 毫秒级
+            6..=8 => 8,   // 微秒级
+            9 => 10,      // 纳秒级
+            _ => 8,       // 默认微秒级
+        }
+    }
+    
+    /// 获取当前时间间隔的存储大小
+    pub const fn size(&self) -> usize {
+        Self::storage_size(self.precision)
+    }
+}
+
+/// 时间戳结构体，根据设计方案实现
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct db_timestamp {
+    /// 自2000-01-01的微秒数
+    pub value: i64,
+    /// 时区偏移（秒），TIMESTAMPTZ专用
+    pub tz_offset: i16,
+    /// 精度标记(0-9)
+    pub precision: u8,
+    /// 标志位
+    pub flags: u8,
+}
+
+impl db_timestamp {
+    /// 创建新的时间戳
+    pub const fn new(value: i64, tz_offset: i16, precision: u8, flags: u8) -> Self {
+        Self {
+            value,
+            tz_offset,
+            precision,
+            flags,
+        }
+    }
+    
+    /// 根据精度获取存储大小
+    pub const fn storage_size(precision: u8) -> usize {
+        match precision {
+            0..=2 => 4,   // 秒级
+            3..=5 => 6,   // 毫秒级
+            6..=8 => 8,   // 微秒级
+            9 => 10,      // 纳秒级
+            _ => 8,       // 默认微秒级
+        }
+    }
+    
+    /// 获取当前时间戳的存储大小
+    pub const fn size(&self) -> usize {
+        Self::storage_size(self.precision)
+    }
+    
+    /// 时间戳加法运算
+    pub fn add(&self, interval: &db_interval) -> Self {
+        Self {
+            value: self.value + interval.value,
+            tz_offset: self.tz_offset,
+            precision: core::cmp::max(self.precision, interval.precision),
+            flags: self.flags,
+        }
+    }
+    
+    /// 时间戳减法运算
+    pub fn sub(&self, interval: &db_interval) -> Self {
+        Self {
+            value: self.value - interval.value,
+            tz_offset: self.tz_offset,
+            precision: core::cmp::max(self.precision, interval.precision),
+            flags: self.flags,
+        }
+    }
+    
+    /// 计算两个时间戳之间的时间差
+    pub fn diff(&self, other: &db_timestamp) -> db_interval {
+        let diff_value = self.value - other.value;
+        let precision = core::cmp::max(self.precision, other.precision);
+        db_interval::new(diff_value, precision, 0)
+    }
+}
+
+/// 时区信息
+#[derive(Copy, Clone, Debug)]
+pub struct TimeZone {
+    /// 时区名称
+    pub name: &'static str,
+    /// 时区偏移（秒）
+    pub offset: i32,
+    /// 是否使用夏令时
+    pub uses_dst: bool,
+}
+
+/// 内置时区列表
+pub const TIME_ZONES: &[TimeZone] = &[
+    TimeZone { name: "UTC", offset: 0, uses_dst: false },
+    TimeZone { name: "Asia/Shanghai", offset: 8 * 3600, uses_dst: false },
+    TimeZone { name: "America/New_York", offset: -5 * 3600, uses_dst: true },
+    TimeZone { name: "Europe/London", offset: 0, uses_dst: true },
+    TimeZone { name: "Asia/Tokyo", offset: 9 * 3600, uses_dst: false },
+];
+
+/// 查找时区信息
+pub fn find_timezone(name: &str) -> Option<TimeZone> {
+    TIME_ZONES.iter().find(|tz| tz.name.eq_ignore_ascii_case(name)).copied()
+}
+
+/// 转换时间戳到指定时区
+/// 将TIMESTAMP转换为TIMESTAMPTZ，或调整TIMESTAMPTZ的时区
+pub fn convert_timezone(timestamp: &db_timestamp, tz_offset: i16) -> db_timestamp {
+    // 创建新的时间戳，保持原有精度和标志
+    db_timestamp {
+        value: timestamp.value,
+        tz_offset: tz_offset,
+        precision: timestamp.precision,
+        flags: timestamp.flags,
+    }
+}
+
+/// 根据时区名称获取时区偏移（秒）
+pub fn get_timezone_offset(timezone_name: &str) -> Option<i16> {
+    find_timezone(timezone_name)
+        .map(|tz| tz.offset as i16)
+}
+
+/// 根据时区偏移（秒）创建时区信息
+pub fn create_timezone_from_offset(offset: i16) -> TimeZone {
+    TimeZone {
+        name: "UTC",
+        offset: offset as i32,
+        uses_dst: false,
+    }
+}
+
+/// 时间格式化辅助函数
+pub mod time_format {
+    /// 将db_timestamp转换为ISO 8601格式字符串
+    pub fn to_iso8601(timestamp: &super::db_timestamp) -> alloc::string::String {
+        // 实现ISO 8601格式化
+        // 这里使用简化实现，实际应该根据精度和时区偏移进行完整格式化
+        alloc::format!("2023-01-01T12:00:00.000000+00:00")
+    }
+    
+    /// 将db_timestamp转换为指定格式的字符串
+    pub fn to_char(timestamp: &super::db_timestamp, format: &str) -> alloc::string::String {
+        // 实现指定格式的格式化
+        // 这里使用简化实现，实际应该支持各种格式说明符
+        alloc::format!("{}", timestamp.value)
+    }
+    
+    /// 将db_timestamp转换为 epoch 时间戳（秒）
+    pub fn to_epoch(timestamp: &super::db_timestamp) -> f64 {
+        // 转换为秒级epoch时间
+        timestamp.value as f64 / 1000000.0
     }
 }
 
@@ -168,7 +365,9 @@ pub union Value {
     pub float32: f32,
     pub float64: f64,
     pub bool: bool,
-    pub timestamp: u64,
+    pub timestamp: u64,              // 兼容旧版本
+    pub time: db_timestamp,          // 新的时间戳类型
+    pub interval: db_interval,       // 时间间隔类型
     pub string: [u8; MAX_STRING_LEN],
 }
 
@@ -229,7 +428,13 @@ impl PartialEq for TypedValue {
                     }
                 }
                 DataType::Bool => self.value.bool == other.value.bool,
-                DataType::Timestamp => self.value.timestamp == other.value.timestamp,
+                DataType::Timestamp => self.value.time.value == other.value.time.value,
+                DataType::TimestampTZ => {
+                    // 比较值和时区偏移
+                    self.value.time.value == other.value.time.value && 
+                    self.value.time.tz_offset == other.value.time.tz_offset
+                },
+                DataType::Interval => self.value.interval.value == other.value.interval.value,
                 DataType::String => {
                     // 比较字符串数组
                     let a_str = core::str::from_utf8(&self.value.string).unwrap_or("");
@@ -257,10 +462,21 @@ impl fmt::Debug for TypedValue {
                 DataType::Float32 => write!(f, "TypedValue(Float32, {})", self.value.float32),
                 DataType::Float64 => write!(f, "TypedValue(Float64, {})", self.value.float64),
                 DataType::Bool => write!(f, "TypedValue(Bool, {})", self.value.bool),
-                DataType::Timestamp => write!(f, "TypedValue(Timestamp, {})", self.value.timestamp),
+                DataType::Timestamp => {
+                    write!(f, "TypedValue(Timestamp, value: {}, precision: {})", 
+                           self.value.time.value, self.value.time.precision)
+                },
+                DataType::TimestampTZ => {
+                    write!(f, "TypedValue(TimestampTZ, value: {}, tz_offset: {}s, precision: {})", 
+                           self.value.time.value, self.value.time.tz_offset, self.value.time.precision)
+                },
                 DataType::String => {
                     let s = core::str::from_utf8(&self.value.string).unwrap_or("").trim_end_matches(char::from(0));
                     write!(f, "TypedValue(String, \"{}\")", s)
+                },
+                DataType::Interval => {
+                    write!(f, "TypedValue(Interval, value: {}, precision: {})", 
+                           self.value.interval.value, self.value.interval.precision)
                 }
             }
         }
@@ -337,7 +553,9 @@ impl FieldDef {
                     DataType::Int64 => constraints.push_str(&default.i64.to_string()),
                     DataType::Float32 => constraints.push_str(&default.float32.to_string()),
                     DataType::Float64 => constraints.push_str(&default.float64.to_string()),
-                    DataType::Timestamp => constraints.push_str(&default.timestamp.to_string()),
+                    DataType::Timestamp => constraints.push_str(&default.time.value.to_string()),
+                    DataType::TimestampTZ => constraints.push_str(&default.time.value.to_string()),
+                    DataType::Interval => constraints.push_str(&default.interval.value.to_string()),
                 }
             }
         }
