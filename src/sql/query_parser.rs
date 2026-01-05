@@ -31,8 +31,8 @@ pub struct SqlQuery {
     pub query_type: QueryType,
     /// 要查询的表名
     pub table_name: String,
-    /// 要选择的字段列表
-    pub columns: Vec<String>,
+    /// 要选择的字段列表（支持表达式）
+    pub columns: Vec<Expression>,
     /// 是否选择所有字段（*）
     pub select_all: bool,
     /// 查询条件
@@ -159,6 +159,34 @@ pub enum OrderDirection {
     Ascending,
     /// 降序
     Descending,
+}
+
+/// SQL表达式
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expression {
+    /// 字段引用
+    Field {
+        /// 字段名
+        name: String,
+        /// 别名
+        alias: Option<String>,
+    },
+    /// 函数调用
+    FunctionCall {
+        /// 函数名
+        name: String,
+        /// 函数参数
+        args: Vec<Expression>,
+        /// 别名
+        alias: Option<String>,
+    },
+    /// 常量值
+    Constant {
+        /// 常量值
+        value: Value,
+        /// 别名
+        alias: Option<String>,
+    },
 }
 
 /// 值类型
@@ -710,20 +738,20 @@ impl SqlParser {
     }
 
     /// 解析SELECT子句
-    fn parse_select_clause(&mut self) -> Result<(Vec<String>, bool), QueryParseError> {
+    fn parse_select_clause(&mut self) -> Result<(Vec<Expression>, bool), QueryParseError> {
         self.skip_whitespace();
         
         // 检查是否选择所有字段（*）
         if self.match_char('*') {
             Ok((Vec::new(), true))
         } else {
-            // 解析字段列表
-            let mut columns = Vec::new();
+            // 解析表达式列表
+            let mut expressions = Vec::new();
             
             loop {
                 self.skip_whitespace();
-                let column = self.parse_identifier()?;
-                columns.push(column);
+                let expr = self.parse_expression()?;
+                expressions.push(expr);
                 
                 self.skip_whitespace();
                 if !self.match_char(',') {
@@ -731,7 +759,147 @@ impl SqlParser {
                 }
             }
             
-            Ok((columns, false))
+            Ok((expressions, false))
+        }
+    }
+    
+    /// 解析表达式
+    fn parse_expression(&mut self) -> Result<Expression, QueryParseError> {
+        self.skip_whitespace();
+        
+        // 保存当前位置，用于回溯
+        let saved_pos = self.position;
+        let saved_col = self.column;
+        
+        // 尝试解析标识符
+        if let Ok(identifier) = self.parse_identifier() {
+            // 检查下一个字符是否是左括号
+            self.skip_whitespace();
+            if self.peek_char() == Some('(') {
+                // 回退到标识符开始位置
+                self.position = saved_pos;
+                self.column = saved_col;
+                
+                // 解析函数调用
+                return self.parse_function_call();
+            } else {
+                // 不是函数调用，返回字段表达式
+                self.skip_whitespace();
+                let alias = self.parse_alias()?;
+                
+                return Ok(Expression::Field {
+                    name: identifier,
+                    alias,
+                });
+            }
+        }
+        
+        // 回溯，尝试解析常量值
+        self.position = saved_pos;
+        self.column = saved_col;
+        
+        // 尝试解析常量值
+        let value = self.parse_value()?;
+        self.skip_whitespace();
+        let alias = self.parse_alias()?;
+        
+        Ok(Expression::Constant {
+            value,
+            alias,
+        })
+    }
+    
+    /// 解析函数调用
+    fn parse_function_call(&mut self) -> Result<Expression, QueryParseError> {
+        // 解析函数名
+        let function_name = self.parse_identifier()?;
+        
+        self.skip_whitespace();
+        
+        // 检查是否有左括号
+        if !self.match_char('(') {
+            return Err(QueryParseError::InvalidSyntax);
+        }
+        
+        // 解析参数列表
+        let args = self.parse_function_args()?;
+        
+        // 解析右括号
+        self.skip_whitespace();
+        if !self.match_char(')') {
+            return Err(QueryParseError::InvalidSyntax);
+        }
+        
+        // 解析别名
+        let alias = self.parse_alias()?;
+        
+        Ok(Expression::FunctionCall {
+            name: function_name,
+            args,
+            alias,
+        })
+    }
+    
+    /// 解析函数参数列表
+    fn parse_function_args(&mut self) -> Result<Vec<Expression>, QueryParseError> {
+        let mut args = Vec::new();
+        
+        self.skip_whitespace();
+        
+        // 检查是否是空参数列表
+        if self.peek_char() == Some(')') {
+            return Ok(args);
+        }
+        
+        loop {
+            // 解析单个参数
+            let arg = self.parse_expression()?;
+            args.push(arg);
+            
+            self.skip_whitespace();
+            
+            // 检查是否还有更多参数
+            if self.match_char(',') {
+                continue;
+            } else {
+                break;
+            }
+        }
+        
+        Ok(args)
+    }
+    
+    /// 解析别名
+    fn parse_alias(&mut self) -> Result<Option<String>, QueryParseError> {
+        self.skip_whitespace();
+        
+        // 保存当前位置，用于回溯
+        let saved_pos = self.position;
+        let saved_col = self.column;
+        
+        // 检查是否有AS关键字
+        if self.match_keyword("AS") {
+            self.skip_whitespace();
+        }
+        
+        // 检查下一个字符是否是关键字
+        let next_token = self.peek_identifier();
+        if let Some(token) = next_token {
+            // 检查是否是关键字
+            let token_upper = token.to_uppercase();
+            let keywords = ["FROM", "WHERE", "ORDER", "LIMIT", "GROUP", "HAVING", "JOIN", "ON", "IN", "AND", "OR", "NOT"];
+            if keywords.contains(&token_upper.as_str()) {
+                // 是关键字，不是别名
+                return Ok(None);
+            }
+        }
+        
+        // 检查是否有别名
+        if self.peek_char().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
+            let alias = self.parse_identifier()?;
+            Ok(Some(alias))
+        } else {
+            Ok(None)
         }
     }
 

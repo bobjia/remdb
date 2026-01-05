@@ -88,7 +88,7 @@ impl ReplicationManager {
     }
     
     /// 处理接收到的WAL日志
-    fn handle_wal_log(&self, data: &[u8]) {
+    fn handle_wal_log(&self, _data: &[u8]) {
         // TODO: 实现WAL日志处理逻辑
         // 1. 解析WAL日志
         // 2. 应用WAL日志到本地数据库

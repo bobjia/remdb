@@ -178,6 +178,68 @@ CREATE TIMESERIES TABLE table_name (
 - `AND`：逻辑与
 - `OR`：逻辑或
 
+### 2.10 函数支持
+
+RemDB支持在SELECT语句中使用内嵌函数，包括聚合函数和窗口函数。
+
+```sql
+SELECT function_name(arg1, arg2, ...) [AS alias] FROM table_name;
+```
+
+#### 函数调用语法
+
+- `function_name`：函数名称
+- `arg1, arg2, ...`：函数参数，可以是字段名、常量或其他函数调用
+- `alias`：可选的列别名
+
+#### 示例
+
+```sql
+-- 使用聚合函数
+SELECT COUNT(*) FROM sensor_data;
+SELECT AVG(temperature) AS avg_temp FROM sensor_data;
+
+-- 使用时间窗口函数
+SELECT TIME_BUCKET('5m', timestamp), SUM(value) FROM sensor_data GROUP BY 1;
+
+-- 带条件的函数调用
+SELECT COUNT(*) FROM sensor_data WHERE temperature > 25;
+```
+
+#### 支持的函数列表
+
+##### 基础统计聚合函数
+
+| 函数名 | 描述 | 参数 | 返回类型 | 示例 |
+|--------|------|------|----------|------|
+| `COUNT` | 统计记录数量 | `*` 或字段名 | `INTEGER` | `COUNT(*)` |
+| `SUM` | 计算数值总和 | 数值字段 | 数值类型 | `SUM(value)` |
+| `AVG` | 计算平均值 | 数值字段 | `REAL` | `AVG(temperature)` |
+| `MIN` | 计算最小值 | 数值字段 | 数值类型 | `MIN(value)` |
+| `MAX` | 计算最大值 | 数值字段 | 数值类型 | `MAX(value)` |
+
+##### 时间窗口函数
+
+| 函数名 | 描述 | 参数 | 返回类型 | 示例 |
+|--------|------|------|----------|------|
+| `TIME_BUCKET` | 将时间戳分组到指定的时间窗口 | `interval` (字符串或数值), `time_field` (TIMESTAMP) | `TIMESTAMP` | `TIME_BUCKET('5m', timestamp)` |
+
+##### 时间间隔格式
+
+`TIME_BUCKET` 函数支持多种时间间隔格式：
+
+| 格式 | 描述 | 示例 |
+|------|------|------|
+| 数值 | 微秒数 | `TIME_BUCKET(300000000, timestamp)` (5分钟) |
+| `ns` | 纳秒 | `TIME_BUCKET('1000ns', timestamp)` |
+| `us` | 微秒 | `TIME_BUCKET('1000us', timestamp)` |
+| `ms` | 毫秒 | `TIME_BUCKET('500ms', timestamp)` |
+| `s`/`sec`/`second` | 秒 | `TIME_BUCKET('10s', timestamp)` |
+| `m`/`min`/`minute` | 分钟 | `TIME_BUCKET('5min', timestamp)` |
+| `h`/`hr`/`hour` | 小时 | `TIME_BUCKET('1h', timestamp)` |
+| `d`/`day` | 天 | `TIME_BUCKET('7d', timestamp)` |
+| `w`/`week` | 周 | `TIME_BUCKET('2w', timestamp)` |
+
 ## 3. 支持的索引
 
 ### 3.1 索引类型
@@ -340,7 +402,7 @@ SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609
 
 - JOIN操作
 - 子查询
-- GROUP BY和聚合函数
+- GROUP BY（部分支持，与聚合函数结合使用）
 - DROP TABLE和ALTER TABLE
 - 事务（部分支持）
 - 视图和存储过程
@@ -387,6 +449,114 @@ SELECT * FROM sensor_readings WHERE temperature > 23.5;
 SELECT timestamp, temperature FROM sensor_readings WHERE sensor_id = 1 AND timestamp BETWEEN 1609459200000 AND 1609459320000 ORDER BY timestamp DESC;
 ```
 
+## 9. 函数使用示例
+
+### 9.1 基础聚合函数示例
+
+```sql
+-- 统计传感器数据总数
+SELECT COUNT(*) AS total_readings FROM sensor_readings;
+
+-- 统计每个传感器的记录数
+SELECT sensor_id, COUNT(*) AS reading_count FROM sensor_readings GROUP BY sensor_id;
+
+-- 计算所有传感器的平均温度
+SELECT AVG(temperature) AS avg_temp FROM sensor_readings;
+
+-- 计算每个传感器的平均温度
+SELECT sensor_id, AVG(temperature) AS avg_temp FROM sensor_readings GROUP BY sensor_id;
+
+-- 计算温度的总和、平均值、最小值和最大值
+SELECT 
+    SUM(temperature) AS total_temp,
+    AVG(temperature) AS avg_temp,
+    MIN(temperature) AS min_temp,
+    MAX(temperature) AS max_temp
+FROM sensor_readings WHERE sensor_id = 1;
+```
+
+### 9.2 时间窗口函数示例
+
+```sql
+-- 使用TIME_BUCKET函数按5分钟窗口分组数据
+SELECT 
+    TIME_BUCKET('5m', timestamp) AS time_window,
+    AVG(temperature) AS avg_temp,
+    COUNT(*) AS reading_count
+FROM sensor_readings 
+GROUP BY time_window;
+
+-- 使用TIME_BUCKET函数按1小时窗口分组数据
+SELECT 
+    TIME_BUCKET('1h', timestamp) AS time_window,
+    AVG(temperature) AS avg_temp,
+    AVG(humidity) AS avg_humidity,
+    AVG(pressure) AS avg_pressure
+FROM sensor_readings 
+WHERE sensor_id = 1
+GROUP BY time_window
+ORDER BY time_window;
+
+-- 使用数值形式的时间间隔（5分钟 = 300000000微秒）
+SELECT 
+    TIME_BUCKET(300000000, timestamp) AS time_window,
+    SUM(temperature) AS sum_temp
+FROM sensor_readings 
+GROUP BY time_window;
+
+-- 使用不同的时间间隔单位
+SELECT 
+    TIME_BUCKET('1h', timestamp) AS hour_window,
+    TIME_BUCKET('1d', timestamp) AS day_window,
+    COUNT(*) AS reading_count
+FROM sensor_readings 
+GROUP BY hour_window, day_window;
+```
+
+### 9.3 复合函数示例
+
+```sql
+-- 结合WHERE条件和聚合函数
+SELECT 
+    sensor_id,
+    COUNT(*) AS high_temp_count
+FROM sensor_readings 
+WHERE temperature > 23.0
+GROUP BY sensor_id;
+
+-- 结合时间窗口和聚合函数
+SELECT 
+    sensor_id,
+    TIME_BUCKET('15m', timestamp) AS time_window,
+    AVG(temperature) AS avg_temp,
+    MIN(temperature) AS min_temp,
+    MAX(temperature) AS max_temp
+FROM sensor_readings 
+WHERE sensor_id IN (1, 2)
+GROUP BY sensor_id, time_window
+ORDER BY sensor_id, time_window;
+```
+
 # 总结
 
-RemDB提供了轻量级的SQL支持，适合嵌入式系统和边缘计算场景。它支持基本的SQL操作，包括SELECT、INSERT、UPDATE、DELETE、CREATE TABLE和CREATE INDEX，以及时序数据相关功能。虽然不支持复杂的SQL特性如JOIN和子查询，但它提供了高效的索引机制和时序数据处理能力，适合对性能要求较高的嵌入式应用。
+RemDB提供了轻量级的SQL支持，适合嵌入式系统和边缘计算场景。它支持基本的SQL操作，包括SELECT、INSERT、UPDATE、DELETE、CREATE TABLE和CREATE INDEX，以及丰富的时序数据相关功能。
+
+## 核心功能
+
+1. **基本SQL操作**：完整支持SELECT、INSERT、UPDATE、DELETE等核心SQL语句
+2. **索引机制**：支持多种索引类型，包括哈希索引、有序数组索引、B-Tree索引和T-Tree索引
+3. **时序数据支持**：专门的时序表创建语法，支持数据压缩和TTL自动清理
+4. **内嵌函数支持**：
+   - 基础统计聚合函数：COUNT、SUM、AVG、MIN、MAX
+   - 时间窗口函数：TIME_BUCKET，支持多种时间间隔格式
+5. **高效的查询执行**：优化的查询执行器，支持表达式求值和函数调用
+
+## 适用场景
+
+- 嵌入式系统和边缘计算
+- IoT设备数据存储和分析
+- 实时监控和告警系统
+- 传感器数据处理
+- 资源受限环境下的数据管理
+
+虽然RemDB不支持复杂的SQL特性如JOIN和子查询，但它提供了高效的索引机制、时序数据处理能力和函数支持，适合对性能要求较高的嵌入式应用场景。

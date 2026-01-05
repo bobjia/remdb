@@ -304,7 +304,7 @@ impl PubSub {
         // 心跳帧处理：更新订阅者活跃状态
         // 这里简化处理，直接调用清理方法
         let heartbeat_timeout = self.config.heartbeat_interval.as_millis() as u64 * 3;
-        if let Err(e) = self.subscribers.cleanup_inactive(heartbeat_timeout) {
+        if let Err(_e) = self.subscribers.cleanup_inactive(heartbeat_timeout) {
             // 处理清理错误
         }
     }

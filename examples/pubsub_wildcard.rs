@@ -5,16 +5,17 @@ use std::thread::sleep;
 use std::time::Duration;
 
 // 回调函数：打印收到的消息
+// 注意：避免在回调中调用pubsub::get_topic_name，因为会导致可变引用冲突
 fn print_callback(topic_id: u16, data: &[u8]) -> bool {
-    let topic_name = pubsub::get_topic_name(topic_id).unwrap_or("unknown");
-    println!("Callback received: topic_id={}, topic_name={}, data={:?}", topic_id, topic_name, data);
+    // 直接使用topic_id，避免调用pubsub API导致可变引用冲突
+    println!("Callback received: topic_id={}, data={:?}", topic_id, data);
     true // 继续订阅
 }
 
 fn main() {
-    // 1. 初始化pubsub系统
+    // 1. 初始化pubsub系统 - 使用广播模式避免单播目标地址问题
     let config = PubSubConfig {
-        udp_mode: UdpMode::Unicast,
+        udp_mode: UdpMode::Broadcast,
         port: 5555,
         max_topics: 32,
         max_subscribers_per_topic: 16,

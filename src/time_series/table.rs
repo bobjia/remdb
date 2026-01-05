@@ -189,7 +189,7 @@ impl TimeSeriesTable {
         }
         
         // 检查是否有活跃事务
-        let has_active_tx = unsafe { crate::transaction::has_active_tx() };
+        let has_active_tx = crate::transaction::has_active_tx();
         
         // 如果没有活跃事务，返回错误，要求调用者显式开始事务
         // 这是为了简化实现，避免直接访问Transaction结构体的私有字段

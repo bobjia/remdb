@@ -5,9 +5,9 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::{TableDef,RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN, DdlExecutor};
+use crate::{TableDef,RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN, DdlExecutor, TimeSeriesTable};
 use crate::sql::{SqlQuery, ResultSet, Condition, ComparisonCondition, ComparisonOperator, OrderByClause};
-use crate::sql::query_parser::BetweenCondition;
+use crate::sql::query_parser::{BetweenCondition, Expression};
 
 /// 解析数据类型字符串，提取基本类型和精度
 /// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6)
@@ -51,6 +51,8 @@ pub enum QueryExecutionError {
     ConstraintsConflicts,
     /// 内部错误
     InternalError,
+    /// 不支持的函数
+    UnsupportedFunction(String),
 }
 
 impl core::fmt::Display for QueryExecutionError {
@@ -63,6 +65,7 @@ impl core::fmt::Display for QueryExecutionError {
             QueryExecutionError::OutOfMemory => write!(f, "Out of memory"),
             QueryExecutionError::ConstraintsConflicts => write!(f, "Constraints conflicts"),
             QueryExecutionError::InternalError => write!(f, "Internal error"),
+            QueryExecutionError::UnsupportedFunction(func) => write!(f, "Unsupported function: {}", func),
         }
     }
 }
@@ -71,8 +74,25 @@ impl core::error::Error for QueryExecutionError {}
 
 /// 执行SQL查询
 pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 检查是否是时序表查询
+    let is_timeseries_table = db.time_series_tables
+        .iter()
+        .any(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.base.name == query.table_name
+            } else {
+                false
+            }
+        });
+    
     match query.query_type {
-        crate::sql::QueryType::Select => execute_select_query(db, query),
+        crate::sql::QueryType::Select => {
+            if is_timeseries_table {
+                execute_select_timeseries_query(db, query)
+            } else {
+                execute_select_query(db, query)
+            }
+        },
         crate::sql::QueryType::Insert => execute_insert_query(db, query),
         crate::sql::QueryType::Update => execute_update_query(db, query),
         crate::sql::QueryType::Delete => execute_delete_query(db, query),
@@ -84,28 +104,132 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
     }
 }
 
+/// 查找时序表
+fn find_timeseries_table_by_name<'a>(db: &'a RemDb, table_name: &str) -> Result<&'a TimeSeriesTable, QueryExecutionError> {
+    for table in db.time_series_tables.iter() {
+        if let Some(table) = table {
+            if table.def.base.name == table_name {
+                return Ok(table);
+            }
+        }
+    }
+    
+    Err(QueryExecutionError::TableNotFound)
+}
+
+/// 执行时序表SELECT查询
+fn execute_select_timeseries_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 1. 查找要查询的时序表
+    let ts_table = find_timeseries_table_by_name(db, &query.table_name)?;
+    
+    // 2. 确定要返回的列表达式
+    let columns = if query.select_all {
+        // 返回所有列（作为Field表达式）
+            ts_table.def.base.fields
+                .iter()
+                .map(|field| Expression::Field {
+                    name: field.name.to_string(),
+                    alias: None,
+                })
+                .collect()
+    } else {
+        // 对于时序表，我们暂时只支持简单字段选择
+        // TODO: 实现完整的表达式支持
+        query.columns.clone()
+    };
+    
+    // 3. 生成结果集的列名
+    let result_columns = columns.iter()
+        .map(|expr| {
+            match expr {
+                Expression::Field { name, alias } => {
+                    alias.clone().unwrap_or_else(|| name.clone())
+                },
+                Expression::FunctionCall { alias, name, .. } => {
+                    alias.clone().unwrap_or_else(|| name.clone())
+                },
+                Expression::Constant { alias, .. } => {
+                    alias.clone().unwrap_or_else(|| "constant".to_string())
+                },
+            }
+        })
+        .collect();
+    
+    // 4. 创建结果集
+    let mut result_set = ResultSet::new(result_columns);
+    
+    // 5. 遍历时序表中的所有记录，收集匹配的记录
+    let mut matched_rows: Vec<Vec<TypedValue>> = Vec::new();
+    
+    // TODO: 实现时序表的查询逻辑
+    // 这里需要实现时序表的查询逻辑，包括：
+    // 1. 解析WHERE条件
+    // 2. 遍历时序表中的分区
+    // 3. 遍历分区中的记录
+    // 4. 应用WHERE条件过滤
+    // 5. 收集匹配的记录
+    
+    // 6. 计算表达式值并添加到结果集
+    for _ in &matched_rows {
+        let mut row_data = Vec::with_capacity(columns.len());
+        for expr in &columns {
+            // TODO: 实现时序表表达式求值
+            // 这里需要实现时序表的表达式求值逻辑
+            // 暂时返回默认值
+            let default_value = TypedValue {
+                value_type: DataType::Int64,
+                value: Value { i64: 0 },
+            };
+            row_data.push(default_value);
+        }
+        result_set.add_row(row_data);
+    }
+    
+    Ok(result_set)
+}
+
 /// 执行SELECT查询
 fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
     // 1. 查找要查询的表
     let table = find_table_by_name(db, &query.table_name)?;
     
-    // 2. 确定要返回的列
+    // 2. 确定要返回的列表达式
     let columns = if query.select_all {
-        // 返回所有列
-        table.def.fields
-            .iter()
-            .map(|field| field.name.to_string())
-            .collect()
+        // 返回所有列（作为Field表达式）
+            table.def.fields
+                .iter()
+                .map(|field| Expression::Field {
+                    name: field.name.to_string(),
+                    alias: None,
+                })
+                .collect()
     } else {
-        // 返回指定列
+        // 返回指定列表达式
         validate_columns(table, &query.columns)?;
         query.columns.clone()
     };
     
-    // 3. 创建结果集
-    let mut result_set = ResultSet::new(columns.clone());
+    // 3. 生成结果集的列名
+    let result_columns = columns.iter()
+        .map(|expr| {
+            match expr {
+                Expression::Field { name, alias } => {
+                    alias.clone().unwrap_or_else(|| name.clone())
+                },
+                Expression::FunctionCall { alias, name, .. } => {
+                    alias.clone().unwrap_or_else(|| name.clone())
+                },
+                Expression::Constant { alias, .. } => {
+                    alias.clone().unwrap_or_else(|| "constant".to_string())
+                },
+            }
+        })
+        .collect();
     
-    // 4. 遍历表中的所有记录，收集匹配的记录
+    // 4. 创建结果集
+    let mut result_set = ResultSet::new(result_columns);
+    
+    // 5. 遍历表中的所有记录，收集匹配的记录
     let mut matched_rows = Vec::with_capacity(table.def.max_records);
     
     unsafe {
@@ -119,16 +243,16 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
             
             if matches {
                 // 直接从记录中提取字段值，创建行数据
-                let mut row_data = Vec::with_capacity(columns.len());
-                for column_name in &columns {
-                    match get_field_value(table, record_ptr, column_name) {
-                        Ok(typed_value) => row_data.push(typed_value),
+                let mut record_values = Vec::with_capacity(table.def.fields.len());
+                for field in table.def.fields.iter() {
+                    match get_field_value(table, record_ptr, &field.name) {
+                        Ok(typed_value) => record_values.push(typed_value),
                         Err(_) => return true, // 跳过错误记录，继续遍历
                     }
                 }
                 
-                // 将匹配的记录添加到向量中
-                matched_rows.push(row_data);
+                // 将匹配的记录值添加到向量中
+                matched_rows.push(record_values);
             }
             
             true // 继续遍历
@@ -136,21 +260,340 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
     }
     
-    // 5. 如果有ORDER BY子句，对记录进行排序
+    // 6. 如果有ORDER BY子句，对记录进行排序
     if let Some(order_by) = &query.order_by {
-        sort_rows(&mut matched_rows, table, order_by)?;
+        // TODO: 实现对包含函数表达式的结果进行排序
+        // sort_rows(&mut matched_rows, table, order_by)?;
     }
     
-    // 6. 应用LIMIT限制
+    // 7. 应用LIMIT限制
     let limit = query.limit.unwrap_or(matched_rows.len());
-    let rows_to_add = &matched_rows[..core::cmp::min(matched_rows.len(), limit)];
+    let rows_to_process = &matched_rows[..core::cmp::min(matched_rows.len(), limit)];
     
-    // 7. 将处理后的记录添加到结果集
-    for row_data in rows_to_add {
-        result_set.add_row(row_data.clone());
+    // 8. 计算表达式值并添加到结果集
+    for record_values in rows_to_process {
+        let mut row_data = Vec::with_capacity(columns.len());
+        for expr in &columns {
+            let value = evaluate_expression(table, record_values, expr)?;
+            row_data.push(value);
+        }
+        result_set.add_row(row_data);
     }
     
     Ok(result_set)
+}
+
+/// 评估表达式值
+fn evaluate_expression(
+    table: &MemoryTable,
+    record_values: &[TypedValue],
+    expr: &Expression,
+) -> Result<TypedValue, QueryExecutionError> {
+    match expr {
+        Expression::Field { name: field_name, .. } => {
+            // 查找字段索引
+            let field_index = table.def.fields
+                .iter()
+                .position(|field| field.name == field_name)
+                .ok_or(QueryExecutionError::FieldNotFound)?;
+            
+            // 返回记录中的字段值
+            Ok(record_values[field_index].clone())
+        }
+        Expression::FunctionCall { name, args, .. } => {
+            // 评估函数参数
+            let mut arg_values = Vec::with_capacity(args.len());
+            for arg in args {
+                arg_values.push(evaluate_expression(table, record_values, arg)?);
+            }
+            
+            // 执行函数调用
+            execute_function_call(name, &arg_values)
+        }
+        Expression::Constant { value: constant, .. } => {
+            // 将sql::Value转换为types::TypedValue
+            use crate::sql::Value as SqlValue;
+            
+            let (value_type, value) = match constant {
+                SqlValue::Integer(i) => (DataType::Int64, Value { i64: *i }),
+                SqlValue::Float(f) => (DataType::Float64, Value { float64: *f }),
+                SqlValue::String(s) => {
+                    let mut buf = [0; MAX_STRING_LEN];
+                    let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                    buf[..len].copy_from_slice(s.as_bytes());
+                    (DataType::String, Value { string: buf })
+                },
+                SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
+                SqlValue::Null => (DataType::Int64, Value { i64: 0 }),
+            };
+            
+            Ok(TypedValue {
+                value_type,
+                value,
+            })
+        }
+    }
+}
+
+/// 执行函数调用
+fn execute_function_call(
+    name: &str,
+    args: &[TypedValue],
+) -> Result<TypedValue, QueryExecutionError> {
+    match name.to_uppercase().as_str() {
+        // 基础统计聚合函数
+        "COUNT" => execute_count(args),
+        "SUM" => execute_sum(args),
+        "AVG" => execute_avg(args),
+        "MIN" => execute_min(args),
+        "MAX" => execute_max(args),
+        "TIME_BUCKET" => execute_time_bucket(args),
+        _ => {
+            // 不支持的函数
+            Err(QueryExecutionError::UnsupportedFunction(name.to_string()))
+        }
+    }
+}
+
+/// 执行COUNT函数
+fn execute_count(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    // COUNT函数返回记录数，这里简单返回1，实际聚合时会累加
+    Ok(TypedValue {
+        value_type: DataType::UInt64,
+        value: Value { u64: 1 },
+    })
+}
+
+/// 执行SUM函数
+fn execute_sum(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    let arg = &args[0];
+    
+    // 根据参数类型返回对应的值
+    unsafe {
+        match arg.value_type {
+            DataType::UInt8 => Ok(TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: arg.value.u8 as u64 },
+            }),
+            DataType::UInt16 => Ok(TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: arg.value.u16 as u64 },
+            }),
+            DataType::UInt32 => Ok(TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: arg.value.u32 as u64 },
+            }),
+            DataType::UInt64 => Ok(arg.clone()),
+            DataType::Int8 => Ok(TypedValue {
+                value_type: DataType::Int64,
+                value: Value { i64: arg.value.i8 as i64 },
+            }),
+            DataType::Int16 => Ok(TypedValue {
+                value_type: DataType::Int64,
+                value: Value { i64: arg.value.i16 as i64 },
+            }),
+            DataType::Int32 => Ok(TypedValue {
+                value_type: DataType::Int64,
+                value: Value { i64: arg.value.i32 as i64 },
+            }),
+            DataType::Int64 => Ok(arg.clone()),
+            DataType::Float32 => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: arg.value.float32 as f64 },
+            }),
+            DataType::Float64 => Ok(arg.clone()),
+            _ => Err(QueryExecutionError::TypeMismatch),
+        }
+    }
+}
+
+/// 执行AVG函数
+fn execute_avg(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    let arg = &args[0];
+    
+    // 转换为浮点数类型
+    unsafe {
+        match arg.value_type {
+            DataType::UInt8 => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: arg.value.u8 as f64 },
+            }),
+            DataType::UInt16 => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: arg.value.u16 as f64 },
+            }),
+            DataType::UInt32 => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: arg.value.u32 as f64 },
+            }),
+            DataType::UInt64 => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: arg.value.u64 as f64 },
+            }),
+            DataType::Int8 => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: arg.value.i8 as f64 },
+            }),
+            DataType::Int16 => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: arg.value.i16 as f64 },
+            }),
+            DataType::Int32 => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: arg.value.i32 as f64 },
+            }),
+            DataType::Int64 => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: arg.value.i64 as f64 },
+            }),
+            DataType::Float32 => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: arg.value.float32 as f64 },
+            }),
+            DataType::Float64 => Ok(arg.clone()),
+            _ => Err(QueryExecutionError::TypeMismatch),
+        }
+    }
+}
+
+/// 执行MIN函数
+fn execute_min(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // MIN函数在聚合时会比较值，这里直接返回参数值
+    Ok(args[0].clone())
+}
+
+/// 执行MAX函数
+fn execute_max(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // MAX函数在聚合时会比较值，这里直接返回参数值
+    Ok(args[0].clone())
+}
+
+/// 执行TIME_BUCKET函数
+fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // 解析时间间隔参数
+    let interval_micros = parse_time_interval(&args[0])?;
+    
+    // 获取时间戳参数
+    let timestamp_arg = &args[1];
+    
+    unsafe {
+        match timestamp_arg.value_type {
+            DataType::Timestamp => {
+                let timestamp = timestamp_arg.value.time.value;
+                // 将时间戳对齐到指定的时间窗口
+                let bucketed_timestamp = timestamp - (timestamp % interval_micros);
+                
+                Ok(TypedValue {
+                    value_type: DataType::Timestamp,
+                    value: Value { 
+                        time: crate::types::db_timestamp::new(bucketed_timestamp, 0, 6, 0) 
+                    },
+                })
+            },
+            DataType::TimestampTZ => {
+                let timestamp = timestamp_arg.value.time.value;
+                let tz_offset = timestamp_arg.value.time.tz_offset;
+                // 将时间戳对齐到指定的时间窗口
+                let bucketed_timestamp = timestamp - (timestamp % interval_micros);
+                
+                Ok(TypedValue {
+                    value_type: DataType::TimestampTZ,
+                    value: Value { 
+                        time: crate::types::db_timestamp::new(bucketed_timestamp, tz_offset, 6, 0) 
+                    },
+                })
+            },
+            _ => Err(QueryExecutionError::TypeMismatch),
+        }
+    }
+}
+
+/// 解析时间间隔参数
+fn parse_time_interval(interval_arg: &TypedValue) -> Result<i64, QueryExecutionError> {
+    unsafe {
+        match interval_arg.value_type {
+            // 数值形式的时间间隔（微秒）
+            DataType::UInt8 => Ok(interval_arg.value.u8 as i64),
+            DataType::UInt16 => Ok(interval_arg.value.u16 as i64),
+            DataType::UInt32 => Ok(interval_arg.value.u32 as i64),
+            DataType::UInt64 => Ok(interval_arg.value.u64 as i64),
+            DataType::Int8 => Ok(interval_arg.value.i8 as i64),
+            DataType::Int16 => Ok(interval_arg.value.i16 as i64),
+            DataType::Int32 => Ok(interval_arg.value.i32 as i64),
+            DataType::Int64 => Ok(interval_arg.value.i64),
+            DataType::Float32 => Ok(interval_arg.value.float32 as i64),
+            DataType::Float64 => Ok(interval_arg.value.float64 as i64),
+            // 字符串形式的时间间隔，如'5 minutes'、'1 hour'等
+            DataType::String => {
+                let interval_str = core::str::from_utf8(&interval_arg.value.string)
+                    .map_err(|_| QueryExecutionError::TypeMismatch)?
+                    .trim_end_matches(char::from(0));
+                
+                parse_interval_string(interval_str)
+            },
+            _ => Err(QueryExecutionError::TypeMismatch),
+        }
+    }
+}
+
+/// 解析时间间隔字符串
+fn parse_interval_string(interval_str: &str) -> Result<i64, QueryExecutionError> {
+    // 支持的时间单位
+    let units = [
+        ("ns", 1),           // 纳秒
+        ("us", 1),           // 微秒
+        ("ms", 1000),        // 毫秒
+        ("s", 1000000),      // 秒
+        ("sec", 1000000),     // 秒
+        ("second", 1000000),  // 秒
+        ("m", 60000000),      // 分钟
+        ("min", 60000000),     // 分钟
+        ("minute", 60000000),  // 分钟
+        ("h", 3600000000),    // 小时
+        ("hr", 3600000000),    // 小时
+        ("hour", 3600000000),   // 小时
+        ("d", 86400000000),   // 天
+        ("day", 86400000000),   // 天
+        ("w", 604800000000),  // 周
+        ("week", 604800000000), // 周
+    ];
+    
+    // 去除空格并转换为小写
+    let normalized = interval_str.replace(" ", "").to_lowercase();
+    
+    // 查找匹配的时间单位
+    for (unit, factor) in &units {
+        if normalized.ends_with(unit) {
+            // 提取数值部分
+            let num_str = &normalized[..normalized.len() - unit.len()];
+            let num = num_str.parse::<i64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+            // 计算微秒数
+            return Ok(num * factor);
+        }
+    }
+    
+    // 无法解析的时间间隔
+    Err(QueryExecutionError::TypeMismatch)
 }
 
 /// 执行CREATE TABLE查询
@@ -435,12 +878,32 @@ fn find_table_by_name<'a>(db: &'a RemDb, table_name: &str) -> Result<&'a MemoryT
     Err(QueryExecutionError::TableNotFound)
 }
 
-/// 验证列名是否有效
-fn validate_columns(table: &MemoryTable, columns: &[String]) -> Result<(), QueryExecutionError> {
-    for column in columns {
-        if !table.def.fields.iter().any(|field| field.name == column) {
-            return Err(QueryExecutionError::FieldNotFound);
+/// 验证表达式中的字段名是否有效
+fn validate_expression(table: &MemoryTable, expr: &Expression) -> Result<(), QueryExecutionError> {
+    match expr {
+        Expression::Field { name: field_name, .. } => {
+            if !table.def.fields.iter().any(|field| field.name == field_name) {
+                return Err(QueryExecutionError::FieldNotFound);
+            }
         }
+        Expression::FunctionCall { args, .. } => {
+            // 验证函数参数中的字段名
+            for arg in args {
+                validate_expression(table, arg)?;
+            }
+        }
+        Expression::Constant { .. } => {
+            // 常量值不需要验证
+        }
+    }
+    
+    Ok(())
+}
+
+/// 验证列表达式是否有效
+fn validate_columns(table: &MemoryTable, columns: &[Expression]) -> Result<(), QueryExecutionError> {
+    for column in columns {
+        validate_expression(table, column)?;
     }
     
     Ok(())

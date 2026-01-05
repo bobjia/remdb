@@ -1324,3 +1324,13 @@ pub fn get_current_tx() -> Option<NonNull<Transaction>> {
 pub fn has_active_tx() -> bool {
     unsafe { TX_MANAGER.has_active_tx() }
 }
+
+/// 设置事务管理器低功耗模式
+pub unsafe fn set_low_power_mode(enabled: bool) {
+    TX_MANAGER.set_low_power_mode(enabled);
+}
+
+/// 设置日志管理器
+pub unsafe fn set_log_manager(log_manager: LogManager) {
+    TX_MANAGER.set_log_manager(log_manager);
+}

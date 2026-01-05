@@ -26,8 +26,8 @@ static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::con
 static mut DB_CONFIG: Option<DbConfig> = None;
 
 fn main() {
-    // 初始化内存分配器
-    let mut memory = [0u8; 1024 * 1024 * 32];
+    // 初始化内存分配器 - 使用堆分配避免栈溢出
+    let mut memory = vec![0u8; 1024 * 1024 * 32];
     init_global_allocator(memory.as_mut_ptr(), memory.len()).unwrap();
     
     // 创建并存储数据库配置

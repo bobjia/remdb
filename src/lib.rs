@@ -107,10 +107,8 @@ unsafe impl Sync for RemDb {}
 impl Drop for RemDb {
     fn drop(&mut self) {
         // 关闭HA管理器
-        unsafe {
-            if let Err(e) = crate::ha::shutdown() {
-                // 关闭失败，记录错误但不影响程序退出
-            }
+        if let Err(_e) = crate::ha::shutdown() {
+            // 关闭失败，记录错误但不影响程序退出
         }
     }
 }
@@ -258,7 +256,7 @@ impl RemDb {
             }
             
             // 设置事务管理器为低功耗模式
-            crate::transaction::TX_MANAGER.set_low_power_mode(true);
+            crate::transaction::set_low_power_mode(true);
         }
         
         // 遍历所有表，设置低功耗模式
@@ -288,7 +286,7 @@ impl RemDb {
             // 3. 检查并扩展内存使用（如果需要）
             
             // 设置事务管理器为正常模式
-            crate::transaction::TX_MANAGER.set_low_power_mode(false);
+            crate::transaction::set_low_power_mode(false);
         }
         
         // 遍历所有表，退出低功耗模式
@@ -350,7 +348,7 @@ impl RemDb {
                         // 文件打开成功且句柄有效，关闭并继续初始化日志管理器
                         let _ = crate::platform::file_close(handle);
                         let log_manager = LogManager::new(log_path, self.config)?;
-                        crate::transaction::TX_MANAGER.set_log_manager(log_manager);
+                        crate::transaction::set_log_manager(log_manager);
                     },
                     _ => {
                         // 文件打开失败或句柄无效，跳过日志管理器初始化（适用于测试场景）
@@ -360,11 +358,9 @@ impl RemDb {
         }
         
         // 初始化HA管理器
-        unsafe {
-            if let Err(e) = crate::ha::init(self.config) {
-                // HA初始化失败，记录错误但不影响数据库主体功能
-                // 可以通过日志或监控系统报告
-            }
+        if let Err(_e) = crate::ha::init(self.config) {
+            // HA初始化失败，记录错误但不影响数据库主体功能
+            // 可以通过日志或监控系统报告
         }
         
         Ok(())

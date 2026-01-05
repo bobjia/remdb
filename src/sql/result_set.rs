@@ -77,7 +77,7 @@ impl ResultSet {
     }
 
     /// 获取结果集迭代器
-    pub fn iter(&self) -> ResultRowIter {
+    pub fn iter(&self) -> ResultRowIter<'_> {
         ResultRowIter {
             result_set: self,
             current: 0,

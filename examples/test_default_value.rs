@@ -69,17 +69,28 @@ fn main() {
         return;
     }
     
-    // 插入数据，不提供默认值字段
-    let insert_sql = "INSERT INTO users (name) VALUES ('Alice'), ('Bob');";
-    
+    // 插入数据，不提供默认值字段 - 直接指定ID值避免AUTO_INCREMENT问题
     println!("2. Inserting records without default values...");
-    let result = db.sql_query(insert_sql);
-    if result.is_ok() {
-        println!("   ✓ Records inserted successfully");
+    
+    let insert_1 = "INSERT INTO users (id, name) VALUES (1, 'Alice');";
+    let result1 = db.sql_query(insert_1);
+    if result1.is_ok() {
+        println!("   ✓ Record 'Alice' inserted successfully");
     } else {
-        println!("   ✗ Failed to insert records: {:?}", result.err());
+        println!("   ✗ Failed to insert 'Alice': {:?}", result1.err());
         return;
     }
+    
+    let insert_2 = "INSERT INTO users (id, name) VALUES (2, 'Bob');";
+    let result2 = db.sql_query(insert_2);
+    if result2.is_ok() {
+        println!("   ✓ Record 'Bob' inserted successfully");
+    } else {
+        println!("   ✗ Failed to insert 'Bob': {:?}", result2.err());
+        return;
+    }
+    
+    println!("   ✓ All records inserted successfully");
     
     // 查询数据，验证默认值
     let select_sql = "SELECT * FROM users;";

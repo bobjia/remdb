@@ -101,7 +101,7 @@ impl HeartbeatMonitor {
     }
     
     /// 处理接收到的心跳
-    fn handle_heartbeat(&self, data: &[u8]) {
+    fn handle_heartbeat(&self, _data: &[u8]) {
         // 更新最后心跳时间
         let now = crate::platform::get_timestamp_us() / 1000; // 转换为毫秒
         self.last_heartbeat_time.store(now, Ordering::Relaxed);
