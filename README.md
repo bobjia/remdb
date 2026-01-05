@@ -9,104 +9,18 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
 - **内存表存储**：高效的内存表实现，支持插入、删除、查询和遍历操作
 - **索引机制**：
   - 基于哈希的主键索引，提供O(1)的查询性能
-  - 多种辅助索引类型：
-    - Hash
-    - SortedArray
-    - BTree（默认）
-    - TTree
+  - 多种辅助索引类型：Hash、SortedArray、BTree（默认）、TTree
   - SortedArray、BTree和TTree索引支持范围查询
-- **事务支持**：完整的ACID事务支持，包括：
-  - 原子性：事务要么全部提交，要么全部回滚
-  - 一致性：确保数据的完整性和正确性
-  - 隔离性：支持多种隔离级别（未提交读、提交读、可重复读、串行化）
-  - 持久性：通过预写日志（WAL）确保数据持久化
-  - 支持记录级锁（共享锁和排他锁）
-  - 支持事务日志和崩溃恢复
-- **内存管理**：
-  - 支持静态内存分配和动态内存分配
-  - 固定大小块内存池，支持高效的内存管理
-  - 动态内存分配器，支持运行时DDL操作
+- **事务支持**：完整的ACID事务支持，包括原子性、一致性、隔离性和持久性
+- **内存管理**：支持静态内存分配和动态内存分配，固定大小块内存池
 - **平台抽象层**：支持POSIX和裸机环境
 - **编译时配置**：使用宏实现表和数据库的编译时配置，优化性能
-- **低功耗模式**：
-  - 支持进入和退出低功耗模式
-  - 低功耗模式下优化内存使用
-  - 减少事务日志写入频率，降低磁盘I/O
-  - 当记录数超过限制时，自动覆盖最旧的记录
-- **增量快照**：
-  - 同时支持完整快照和增量快照
-  - 增量快照只保存版本号变化的记录
-  - 通过仅存储变化数据，减少快照大小和保存时间
-  - 支持从增量快照恢复数据
-  - 版本管理机制，跟踪数据变化
-  - 兼容现有快照格式
-- **基于Rust的编译期DDL解析与类型安全代码生成**：
-  - 解析SQLite3语法兼容的DDL文件，生成类型安全的Rust代码
-  - 支持核心SQLite3 DDL语法：`CREATE TABLE`、`CREATE INDEX`、列定义、`PRIMARY KEY`、`NOT NULL`、`UNIQUE`约束
-  - 支持在`CREATE INDEX`语句中指定多种索引类型：`HASH`、`SORTEDARRAY`、`BTREE`（默认）、`TTREE`
-  - 编译期执行语法和语义检查，提供清晰错误信息
-  - 生成强类型Rust结构体，字段名称、类型与DDL定义严格对应
-  - 生成静态表元数据，供数据库运行时使用
-  - 生成类型安全的API原型：`insert`、`get_by_id`、`update`、`delete`函数
-  - 零运行时开销，使用过程宏实现
-- **基于Rust过程宏的零成本DDL集成**：
-  - 提供`MemdbTable`过程宏，支持`#[derive(MemdbTable)]`语法
-  - 支持内联模式：直接在属性中编写DDL
-  - 支持文件模式：关联外部DDL文件
-  - 将SQL约束映射为Rust类型系统约束，编译期捕获错误
-  - 生成的代码`#[repr(C)]`，内存布局与手写代码完全一致
-- **SQL查询支持**：
-  - 支持标准SQL SELECT语句查询内存数据库的数据
-  - 支持基本查询、条件查询、排序和LIMIT限制
-  - 支持比较运算符：`=`、`!=`、`<`、`<=`、`>`、`>=`
-  - 提供友好的结果集接口，支持迭代访问和字段获取
-- **运行时DDL配置API**：
-  - 基于trait的DDL执行器设计，提供`DdlExecutor` trait
-  - 支持运行时创建表和索引
-  - 支持通过SQL语句执行DDL操作：`CREATE TABLE`、`CREATE INDEX`
-  - 支持多种索引类型配置
-  - 内存分配器抽象，支持自定义内存分配策略
-- **SQL导出功能**：
-  - 支持导出完整的DDL文件（表结构和索引定义）
-  - 支持导出表数据为SQL INSERT语句
-  - 输出兼容SQLite3语法，同时保留项目特定关键字
-  - 支持将导出结果写入文件或内存缓冲区
-- **基于UDP的高可靠数据订阅与发布**：
-  - 支持基于UDP协议的轻量级数据发布/订阅机制
-  - 对传输数据进行CRC校验，确保数据完整性
-  - 支持单播、广播和组播模式
-  - 提供subscribe(topic_id, callback)和publish(topic_id, data) API
-  - 支持基于NACK的重传机制，提高数据可靠性
-  - 支持心跳检测，自动清理不活跃的订阅者
-  - 每个主题支持不少于16个并发订阅者
-  - 支持不少于32个不同的数据主题
-  - 从调用publish API到数据进入网络栈的延迟小于100微秒
-  - 协议头开销小于载荷数据的10%
-  - 支持通配符订阅，允许使用主题模式匹配
-- **高可用支持**：
-  - 主从复制机制，确保数据一致性
-  - 自动故障检测和切换
-  - 心跳检测，监控节点状态
-  - 支持多种角色：主节点、从节点、自动模式
-  - 同步复制和异步复制两种模式
-  - 支持故障恢复和重新同步
-  - 提供高可用管理器，简化HA配置和管理
-- **时序数据库支持**：
-  - 专用的时序表实现，优化时间序列数据存储和查询
-  - 支持高效的时间范围查询
-  - 内置多种时间序列聚合函数：
-    - COUNT：统计记录数
-    - SUM：计算总和
-    - AVG：计算平均值
-    - MIN：获取最小值
-    - MAX：获取最大值
-  - 支持时间窗口聚合，可自定义窗口大小
-  - 支持数据压缩算法：
-    - Delta编码：减少存储空间
-    - RunLength编码：优化连续重复值存储
-  - 支持数据生命周期管理，自动清理过期数据
-  - 提供专门的时序记录批量插入API，提高写入性能
-  - 支持最新数据查询，快速获取最新记录
+- **低功耗模式**：优化内存使用，减少事务日志写入频率
+- **增量快照**：只保存版本号变化的记录，减少快照大小和保存时间
+- **SQL查询支持**：支持标准SQL SELECT语句查询内存数据库的数据
+- **基于UDP的高可靠数据订阅与发布**：支持单播、广播和组播模式，提供基于NACK的重传机制
+- **高可用支持**：主从复制机制，自动故障检测和切换
+- **时序数据库支持**：专用的时序表实现，优化时间序列数据存储和查询
 
 ## 技术特点
 
@@ -131,7 +45,13 @@ remdb = { path = "./remdb", default-features = false }
 # features = ["std", "posix"]
 ```
 
-### 基本使用示例
+## Rust语言的三种使用方式
+
+remdb提供了三种主要的Rust语言使用方式，以满足不同场景的需求：
+
+### 1. 直接定义表数据结构
+
+使用`remdb::table!`宏直接定义表结构，这是最基础的使用方式，适合简单场景：
 
 ```rust
 #![no_std]
@@ -145,7 +65,7 @@ use remdb::*;
 // 定义内存缓冲区
 static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
 
-// 定义表结构
+// 直接定义表结构
 remdb::table!(
     users,
     100, // 最大记录数
@@ -173,9 +93,6 @@ fn alloc_error_handler(layout: Layout) -> ! {
 
 fn main() {
     unsafe {
-        // 获取数据库配置
-        let config = database!(tables: [users]);
-        
         // 初始化内存分配器
         memory::allocator::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
@@ -185,126 +102,24 @@ fn main() {
         // 初始化平台抽象层
         platform::init_platform(platform::posix::get_posix_platform());
         
-        // 计算所需内存大小
-        let table_size = MemoryTable::calculate_memory_size(config.tables[0]);
-        let primary_index_size = PrimaryIndex::calculate_memory_size(
-            config.tables[0],
-            128, // 哈希表大小
-            100  // 最大索引项数量
-        );
-        let secondary_index_size = SecondaryIndex::calculate_memory_size(100);
-        
-        // 分配内存
-        let table_ptr = memory::allocator::alloc(table_size).unwrap().as_ptr() as *mut u8;
-        let status_ptr = memory::allocator::alloc(
-            core::mem::size_of::<types::RecordHeader>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut types::RecordHeader;
-        
-        let hash_table_ptr = memory::allocator::alloc(
-            128 * core::mem::size_of::<Option<NonNull<index::PrimaryIndexItem>>>()
-        ).unwrap().as_ptr() as *mut Option<NonNull<index::PrimaryIndexItem>>;
-        
-        let primary_index_items_ptr = memory::allocator::alloc(
-            100 * core::mem::size_of::<index::PrimaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::PrimaryIndexItem;
-        
-        let secondary_index_items_ptr = memory::allocator::alloc(
-            100 * core::mem::size_of::<index::SecondaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::SecondaryIndexItem;
-        
-        // 创建表和索引
-        let mut table = MemoryTable::new(config.tables[0], table_ptr, status_ptr);
-        let mut primary_index = PrimaryIndex::new(
-            config.tables[0],
-            hash_table_ptr,
-            primary_index_items_ptr,
-            128,
-            100
-        );
-        let mut secondary_index = SecondaryIndex::new(config.tables[0], secondary_index_items_ptr, 100);
-        
-        // 初始化表和索引数组
-        static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
-        static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-        static mut SECONDARY_INDICES: [Option<SecondaryIndex>; 1] = [None; 1];
-        
-        TABLES[0] = Some(table);
-        PRIMARY_INDICES[0] = Some(primary_index);
-        SECONDARY_INDICES[0] = Some(secondary_index);
-        
         // 初始化全局数据库
         let db = init_global_db(
-            config,
-            &mut TABLES,
-            &mut PRIMARY_INDICES,
-            &mut SECONDARY_INDICES
+            database!(tables: [users]),
+            &mut [None; 1],
+            &mut [None; 1],
+            &mut [None; 1]
         ).unwrap();
         
         // 使用数据库...
     }
 }
-
-### SQL查询示例
-
-```rust
-// 执行SQL查询获取所有用户
-let result = db.sql_query("SELECT * FROM users").unwrap();
-println!("{}", result.to_string());
-
-// 执行带条件的SQL查询
-let result = db.sql_query("SELECT name, age FROM users WHERE age > 25 ORDER BY name ASC LIMIT 10").unwrap();
-for row in result {
-    println!("{}: {}", row.get(0), row.get(1));
-}
-
-// 执行带条件和排序的SQL查询
-let result = db.sql_query("SELECT * FROM users WHERE active = true ORDER BY created_at DESC").unwrap();
-for row in result {
-    println!("ID: {}, Name: {}, Age: {}, Active: {}", 
-             row.get(0), row.get(1), row.get(2), row.get(3));
-}
 ```
 
-### 低功耗模式使用示例
+### 2. 宏定义MemTable
 
-```rust
-// 定义支持低功耗模式的数据库
-remdb::database!(
-    TEST_DB,
-    tables: [
-        TEST_TABLE
-    ],
-    low_power: true,
-    low_power_max_records: 100
-);
+使用`#[derive(MemdbTable)]`宏定义表，支持内联DDL和外部DDL文件，提供更灵活的表定义方式：
 
-// 初始化数据库
-let db = remdb::init_global_db(
-    &TEST_DB,
-    &mut tables,
-    &mut primary_indices,
-    &mut secondary_indices
-).unwrap();
-
-// 进入低功耗模式
-db.enter_low_power_mode().unwrap();
-
-// 检查当前低功耗模式状态
-let is_low_power = db.is_low_power_mode();
-
-// 在低功耗模式下插入记录
-for i in 0..150 {
-    match db.get_table_mut(0).unwrap().insert(record_data) {
-        Ok(id) => println!("插入成功，记录ID: {}", id),
-        Err(e) => println!("插入失败，错误: {:?}", e),
-    }
-}
-
-// 退出低功耗模式
-db.exit_low_power_mode().unwrap();
-```
-
-### DDL宏使用示例
+#### 内联DDL模式
 
 ```rust
 use remdb_macros::MemdbTable;
@@ -328,307 +143,33 @@ fn main() {
     println!("生成的User结构体: {:?}", user);
     println!("用户名: {}", user.name);
     println!("年龄: {:?}", user.age);
-    
-    // 测试数据库配置
-    println!("数据库表数量: {}", DATABASE.tables.len());
-    
-    // 测试API函数（占位符实现）
-    // user::insert(&mut db, user);
-    // let result = user::get_by_id(&db, 1);
 }
 ```
 
-## 时序数据库
-
-remdb提供了强大的时序数据库功能，专为时间序列数据的高效存储和查询而设计。时序数据库支持传感器数据、监控数据、日志数据等时间序列数据的高效存储和查询。
-
-### 设计理念
-
-时序数据库采用了以下设计理念：
-
-1. **高效存储**：针对时间序列数据的特点，优化了存储结构，减少存储空间占用
-2. **快速查询**：支持高效的时间范围查询和最新数据查询
-3. **内置聚合**：提供丰富的内置聚合函数，支持实时计算统计信息
-4. **数据压缩**：支持多种数据压缩算法，减少存储空间占用
-5. **批量插入**：提供专门的批量插入API，提高写入性能
-6. **生命周期管理**：支持自动清理过期数据，优化内存使用
-
-### 核心特性
-
-- **专用时序表**：优化的时序表结构，适合存储大量时间序列数据
-- **高效时间范围查询**：支持快速查询指定时间范围内的数据
-- **内置聚合函数**：提供COUNT、SUM、AVG、MIN、MAX等聚合函数
-- **时间窗口聚合**：支持自定义时间窗口的聚合计算
-- **数据压缩**：支持Delta编码和RunLength编码
-- **批量插入优化**：提供专门的批量插入API，提高写入性能
-- **最新数据查询**：支持快速获取最新的时间序列数据
-
-### 使用示例
-
-#### 基本使用
+#### 文件模式
 
 ```rust
-use remdb::*;
-use remdb::time_series::*;
-use std::time::{Duration, SystemTime};
+use remdb_macros::MemdbTable;
 
-// 定义时序表结构
-remdb::table!(
-    sensor_data,
-    5000, // 最大记录数
-    primary_key: id,
-    secondary_index: timestamp,
-    fields: {
-        id: i32,
-        sensor_id: str(32),  // 传感器ID
-        sensor_type: str(32), // 传感器类型
-        value: f64,           // 传感器数值
-        timestamp: u64,       // 时间戳
-        location: str(64)     // 位置信息
-    }
-);
+// 使用外部DDL文件定义带索引的表
+#[derive(MemdbTable)]
+#[memdb_schema(file = "./schema.ddl")]
+struct MyDatabase;
 
-// 定义数据库配置
-remdb::database!(
-    DB_CONFIG,
-    tables: [sensor_data]
-);
-
-fn main() {
-    unsafe {
-        // 初始化内存分配器
-        let memory_size = 128 * 1024 * 1024; // 128MB
-        static mut DB_MEMORY: [u8; 128 * 1024 * 1024] = [0u8; 128 * 1024 * 1024];
-        
-        memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        ).expect("Failed to initialize memory allocator");
-        
-        // 初始化平台抽象层
-        platform::init_platform(platform::posix::get_posix_platform());
-        
-        // 初始化全局数据库
-        let db = init_global_db(&DB_CONFIG).unwrap();
-        
-        // 获取表引用
-        let table_mut = db.get_table_mut(0).unwrap();
-        
-        // 模拟插入传感器数据
-        let base_time = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        
-        // 批量插入测试数据
-        let mut records_buffer = [0u8; 160 * 100]; // 100条记录的缓冲区
-        let mut record_ids = [0usize; 100];
-        let record_size = table_mut.record_size;
-        
-        for i in 0..100 {
-            // 设置字段值
-            let id: i32 = i as i32 + 1;
-            let sensor_id = "temp_sensor_001";
-            let sensor_type = "temperature";
-            let value: f64 = (i as f64) * 0.5 + 20.0; // 20.0 to 69.5
-            let timestamp: u64 = base_time + (i as u64) * 60000; // 每分钟一条记录
-            let location = "room_101";
-            
-            // 手动填充记录数据
-            let record_ptr = records_buffer.as_mut_ptr().add(i * record_size);
-            
-            // 填充id（偏移0）
-            core::ptr::copy_nonoverlapping(
-                &id as *const i32 as *const u8,
-                record_ptr,
-                4
-            );
-            
-            // 填充sensor_id（偏移4）
-            let sensor_id_bytes = sensor_id.as_bytes();
-            core::ptr::copy_nonoverlapping(
-                sensor_id_bytes.as_ptr(),
-                record_ptr.add(4),
-                sensor_id_bytes.len()
-            );
-            
-            // 填充sensor_type（偏移36）
-            let sensor_type_bytes = sensor_type.as_bytes();
-            core::ptr::copy_nonoverlapping(
-                sensor_type_bytes.as_ptr(),
-                record_ptr.add(36),
-                sensor_type_bytes.len()
-            );
-            
-            // 填充value（偏移68）
-            core::ptr::copy_nonoverlapping(
-                &value as *const f64 as *const u8,
-                record_ptr.add(68),
-                8
-            );
-            
-            // 填充timestamp（偏移76）
-            core::ptr::copy_nonoverlapping(
-                &timestamp as *const u64 as *const u8,
-                record_ptr.add(76),
-                8
-            );
-            
-            // 填充location（偏移84）
-            let location_bytes = location.as_bytes();
-            core::ptr::copy_nonoverlapping(
-                location_bytes.as_ptr(),
-                record_ptr.add(84),
-                location_bytes.len()
-            );
-        }
-        
-        // 使用时间序列批量插入优化
-        let inserted_count = table_mut.time_series_batch_insert(
-            records_buffer.as_ptr(),
-            100,
-            record_ids.as_mut_ptr()
-        ).unwrap();
-        
-        println!("成功插入 {} 条时间序列记录", inserted_count);
-        
-        // 查询时间范围内的数据
-        let start_time = base_time;
-        let end_time = base_time + 30 * 60000; // 30分钟
-        
-        let mut result_buffer = [0u8; 160 * 50]; // 50条记录的缓冲区
-        let found_count = table_mut.get_records_in_time_window(
-            4, // timestamp字段索引
-            start_time,
-            end_time,
-            result_buffer.as_mut_ptr(),
-            50
-        ).unwrap();
-        
-        println!("在时间范围内找到 {} 条记录", found_count);
-        
-        // 计算时间范围内的统计信息
-        match table_mut.aggregate_count(4, start_time, end_time) {
-            Ok(count) => {
-                println!("时间范围内记录数: {}", count);
-                
-                if count > 0 {
-                    if let Ok(avg) = table_mut.aggregate_avg(4, 3, start_time, end_time) {
-                        println!("时间范围内平均值: {:.2}", avg);
-                    }
-                    
-                    if let Ok(sum) = table_mut.aggregate_sum(4, 3, start_time, end_time) {
-                        println!("时间范围内总和: {:.2}", sum);
-                    }
-                    
-                    if let Ok(min) = table_mut.aggregate_min(4, 3, start_time, end_time) {
-                        println!("时间范围内最小值: {:.2}", min);
-                    }
-                    
-                    if let Ok(max) = table_mut.aggregate_max(4, 3, start_time, end_time) {
-                        println!("时间范围内最大值: {:.2}", max);
-                    }
-                }
-            },
-            Err(e) => println!("统计记录数失败: {:?}", e)
-        }
-        
-        // 获取最新记录
-        let mut latest_buffer = [0u8; 160 * 10]; // 10条最新记录的缓冲区
-        let latest_count = table_mut.get_latest_records(
-            4, // timestamp字段索引
-            10,
-            latest_buffer.as_mut_ptr()
-        ).unwrap();
-        
-        println!("获取到 {} 条最新记录", latest_count);
-        
-        // 时间窗口聚合
-        let window_aggregates = table_mut.get_aggregate_in_time_window(
-            4, // timestamp字段索引
-            3, // value字段索引
-            start_time,
-            end_time,
-            60000 // 1分钟窗口
-        ).unwrap();
-        
-        println!("时间窗口聚合结果 (共 {} 个窗口):", window_aggregates.len());
-        for (i, (window_start, sum, avg, min, max, count)) in window_aggregates.iter().enumerate() {
-            println!("窗口 {}: 开始时间={}, 记录数={}, 平均值={:.2}, 最小值={:.2}, 最大值={:.2}", 
-                     i+1, window_start, count, avg, min, max);
-        }
-    }
-}
+// schema.ddl内容:
+// CREATE TABLE user (
+//     id INTEGER PRIMARY KEY,
+//     name TEXT NOT NULL,
+//     email TEXT UNIQUE NOT NULL
+// );
+//
+// CREATE INDEX idx_user_name ON user USING btree (name);
+// CREATE INDEX idx_user_email ON user (email); -- 默认使用BTree
 ```
 
-#### 高级使用
+### 3. 使用DdlExecutor通过动态DDL创建
 
-##### 数据压缩
-
-remdb支持多种数据压缩算法，可以减少时间序列数据的存储空间占用：
-
-```rust
-// 使用Delta编码压缩数据
-let compressed_data = compress_delta(&raw_data).unwrap();
-
-// 使用RunLength编码压缩数据
-let compressed_data = compress_run_length(&raw_data).unwrap();
-```
-
-##### 生命周期管理
-
-remdb支持自动清理过期数据，优化内存使用：
-
-```rust
-// 设置数据保留时间（例如：保留7天的数据）
-table_mut.set_data_retention(7 * 24 * 60 * 60 * 1000).unwrap();
-
-// 手动清理过期数据
-table_mut.cleanup_expired_data().unwrap();
-```
-
-##### 多传感器数据管理
-
-remdb支持管理多个传感器的数据，通过传感器ID和类型进行区分：
-
-```rust
-// 插入不同传感器的数据
-for i in 0..100 {
-    // 温度传感器数据
-    let temp_record = SensorData {
-        id: i as i32 + 1,
-        sensor_id: "temp_sensor_001",
-        sensor_type: "temperature",
-        value: (i as f64) * 0.5 + 20.0,
-        timestamp: base_time + (i as u64) * 60000,
-        location: "room_101"
-    };
-    
-    // 湿度传感器数据
-    let humi_record = SensorData {
-        id: i as i32 + 1001,
-        sensor_id: "humi_sensor_001",
-        sensor_type: "humidity",
-        value: (i as f64) * 0.3 + 40.0,
-        timestamp: base_time + (i as u64) * 60000,
-        location: "room_101"
-    };
-    
-    // 插入数据
-    table_mut.insert(&temp_record).unwrap();
-    table_mut.insert(&humi_record).unwrap();
-}
-
-// 查询特定传感器的数据
-let mut result_buffer = [0u8; 160 * 50];
-let found_count = table_mut.get_records_by_sensor_id(
-    "temp_sensor_001",
-    result_buffer.as_mut_ptr(),
-    50
-).unwrap();
-```
-
-### 运行时DDL配置API示例
+使用`DdlExecutor` trait在运行时动态创建表和索引，适合需要在运行时灵活配置表结构的场景：
 
 ```rust
 use remdb::{RemDb, DdlExecutor, types::{DataType, IndexType}};
@@ -721,38 +262,84 @@ fn main() {
         "name",
         IndexType::BTree
     );
+}
+```
+
+## 其他访问方式
+
+### C语言接口访问
+
+remdb提供了C语言接口，方便C/C++应用程序使用：
+
+```c
+#include "remdb_c.h"
+
+int main() {
+    // 初始化数据库
+    remdb_t *db = remdb_init();
     
-    // 使用SQL语句创建索引
-    let result = db.sql_query(
-        "CREATE INDEX idx_product_name ON products (name) USING BTree;"
-    );
+    // 创建表
+    remdb_create_table(db, "users", ...);
+    
+    // 插入数据
+    remdb_insert(db, "users", ...);
+    
+    // 查询数据
+    remdb_result_t *result = remdb_query(db, "SELECT * FROM users");
+    
+    // 处理结果...
+    
+    // 释放资源
+    remdb_free_result(result);
+    remdb_close(db);
+    
+    return 0;
 }
 ```
 
-### SQL导出功能示例
+### JDBC访问
 
-```rust
-// 导出DDL（表结构和索引）到文件
-let result = db.export_ddl("./exported_ddl.sql");
-if result.is_ok() {
-    println!("DDL导出成功！");
-}
+remdb提供了JDBC驱动，允许Java应用程序通过JDBC API访问remdb数据库：
 
-// 导出表数据到文件
-let result = db.export_data("./exported_data.sql");
-if result.is_ok() {
-    println!("数据导出成功！");
-}
+```java
+import java.sql.*;
 
-// 导出特定表的数据
-// 参数：文件名，表名（可选，None表示导出所有表）
-let result = db.export_data_with_table("./exported_users.sql", Some("users"));
-if result.is_ok() {
-    println!("users表数据导出成功！");
+public class RemdbExample {
+    public static void main(String[] args) {
+        try {
+            // 加载驱动
+            Class.forName("com.remdb.jdbc.Driver");
+            
+            // 建立连接
+            String url = "jdbc:remdb://localhost:8080/dbname";
+            Connection conn = DriverManager.getConnection(url);
+            
+            // 创建Statement
+            Statement stmt = conn.createStatement();
+            
+            // 执行查询
+            ResultSet rs = stmt.executeQuery("SELECT * FROM users");
+            
+            // 处理结果集
+            while (rs.next()) {
+                System.out.println(rs.getInt("id") + ": " + rs.getString("name"));
+            }
+            
+            // 关闭资源
+            rs.close();
+            stmt.close();
+            conn.close();
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 }
 ```
 
-### 发布/订阅功能示例
+### 基于UDP的高可靠数据订阅与发布
+
+remdb提供了基于UDP的高可靠数据订阅与发布机制，支持单播、广播和组播模式，适合分布式系统中的数据同步：
 
 ```rust
 use std::time::Duration;
@@ -794,35 +381,107 @@ pubsub.publish(0, msg.as_bytes()).expect("Failed to publish");
 pubsub.unsubscribe(subscription_id).expect("Failed to unsubscribe");
 ```
 
-#### 文件模式使用示例
+## SQL查询示例
+
+remdb支持标准SQL SELECT语句查询内存数据库的数据：
 
 ```rust
-use remdb_macros::MemdbTable;
+// 执行SQL查询获取所有用户
+let result = db.sql_query("SELECT * FROM users").unwrap();
+println!("{}", result.to_string());
 
-// 使用外部DDL文件定义带索引的表
-#[derive(MemdbTable)]
-#[memdb_schema(file = "./schema.ddl")]
-struct MyDatabase;
+// 执行带条件的SQL查询
+let result = db.sql_query("SELECT name, age FROM users WHERE age > 25 ORDER BY name ASC LIMIT 10").unwrap();
+for row in result {
+    println!("{}: {}", row.get(0), row.get(1));
+}
 
-// schema.ddl内容:
-// CREATE TABLE user (
-//     id INTEGER PRIMARY KEY,
-//     name TEXT NOT NULL,
-//     email TEXT UNIQUE NOT NULL
-// );
-//
-// CREATE INDEX idx_user_name ON user USING btree (name);
-// CREATE INDEX idx_user_email ON user (email); -- 默认使用BTree
-//
-// CREATE TABLE product (
-//     id INTEGER PRIMARY KEY,
-//     name TEXT NOT NULL,
-//     price REAL NOT NULL,
-//     category TEXT
-// );
-//
-// CREATE INDEX idx_product_price ON product USING ttree (price);
-// CREATE INDEX idx_product_category ON product USING sortedarray (category);
+// 执行带条件和排序的SQL查询
+let result = db.sql_query("SELECT * FROM users WHERE active = true ORDER BY created_at DESC").unwrap();
+for row in result {
+    println!("ID: {}, Name: {}, Age: {}, Active: {}", 
+             row.get(0), row.get(1), row.get(2), row.get(3));
+}
+```
+
+## 时序数据库
+
+remdb提供了强大的时序数据库功能，专为时间序列数据的高效存储和查询而设计：
+
+### 基本使用
+
+```rust
+use remdb::*;
+use remdb::time_series::*;
+use std::time::{Duration, SystemTime};
+
+// 定义时序表结构
+remdb::table!(
+    sensor_data,
+    5000, // 最大记录数
+    primary_key: id,
+    secondary_index: timestamp,
+    fields: {
+        id: i32,
+        sensor_id: str(32),  // 传感器ID
+        sensor_type: str(32), // 传感器类型
+        value: f64,           // 传感器数值
+        timestamp: u64,       // 时间戳
+        location: str(64)     // 位置信息
+    }
+);
+
+// 定义数据库配置
+remdb::database!(
+    DB_CONFIG,
+    tables: [sensor_data]
+);
+
+fn main() {
+    unsafe {
+        // 初始化内存分配器
+        let memory_size = 128 * 1024 * 1024; // 128MB
+        static mut DB_MEMORY: [u8; 128 * 1024 * 1024] = [0u8; 128 * 1024 * 1024];
+        
+        memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).expect("Failed to initialize memory allocator");
+        
+        // 初始化平台抽象层
+        platform::init_platform(platform::posix::get_posix_platform());
+        
+        // 初始化全局数据库
+        let db = init_global_db(&DB_CONFIG).unwrap();
+        
+        // 获取表引用
+        let table_mut = db.get_table_mut(0).unwrap();
+        
+        // 模拟插入传感器数据...
+        
+        // 查询时间范围内的数据
+        let start_time = base_time;
+        let end_time = base_time + 30 * 60000; // 30分钟
+        
+        let mut result_buffer = [0u8; 160 * 50]; // 50条记录的缓冲区
+        let found_count = table_mut.get_records_in_time_window(
+            4, // timestamp字段索引
+            start_time,
+            end_time,
+            result_buffer.as_mut_ptr(),
+            50
+        ).unwrap();
+        
+        // 计算时间范围内的统计信息
+        match table_mut.aggregate_count(4, start_time, end_time) {
+            Ok(count) => {
+                println!("时间范围内记录数: {}", count);
+                // 计算平均值、总和、最小值、最大值...
+            },
+            Err(e) => println!("统计记录数失败: {:?}", e)
+        }
+    }
+}
 ```
 
 ## 平台支持
@@ -859,7 +518,7 @@ cargo test
 cargo check --tests --no-default-features
 ```
 
-在baremetal环境下检查编译：
+### 在baremetal环境下检查编译：
 
 ```bash
 cargo check --no-default-features --features=baremetal
@@ -892,20 +551,11 @@ cargo check --no-default-features --features=baremetal
 - `basic_usage.rs`：基本使用示例，展示表定义、插入、查询和事务操作
 - `low_power_mode.rs`：低功耗模式示例，展示如何配置和使用低功耗模式
 - `incremental_snapshot.rs`：增量快照示例，展示如何保存和恢复增量快照
-- `generate_snapshot.rs`：快照生成示例，展示如何生成和使用快照
 - `sql_query.rs`：SQL查询示例，展示如何使用SQL查询内存数据库
 - `ddl_example.rs`：DDL示例，展示如何使用DDL宏定义表和索引
-- `ddl_full_example.rs`：完整DDL示例，展示更复杂的DDL定义
 - `ddl_runtime_example.rs`：运行时DDL配置示例，展示如何使用运行时DDL API
-- `describe_table.rs`：表结构描述示例，展示如何获取表的详细信息
-- `export_example.rs`：导出功能示例，展示如何使用SQL导出功能
-- `ha_example.rs`：高可用示例，展示如何使用高可用功能
-- `multiple_tables.rs`：多表示例，展示如何使用多个表
 - `pubsub_example.rs`：发布/订阅示例，展示如何使用基于UDP的高可靠数据订阅与发布功能
-- `pubsub_wildcard.rs`：通配符发布/订阅示例，展示如何使用通配符订阅主题
-- `test_auto_increment.rs`：自增字段示例，展示如何使用自增字段
 - `time_series.rs`：时间序列示例，展示如何处理时间序列数据
-- `varchar_example.rs`：VARCHAR类型示例，展示如何使用VARCHAR类型
 
 ## 项目结构
 
@@ -944,18 +594,9 @@ remdb/
 │       ├── subscriber.rs   # 订阅者管理
 │       ├── publisher.rs    # 发布者管理
 │       └── crc32.rs       # CRC32校验实现
-├── examples/
-│   ├── basic_usage.rs      # 基本使用示例
-│   ├── low_power_mode.rs   # 低功耗模式示例
-│   ├── incremental_snapshot.rs # 增量快照示例
-│   └── generate_snapshot.rs     # 快照生成示例
-├── tests/
-│   ├── unit/
-│   │   ├── memory_test.rs  # 内存管理单元测试
-│   │   └── table_test.rs   # 表操作单元测试
+├── examples/               # 示例代码
+├── tests/                  # 测试代码
 ├── Cargo.toml              # 项目配置
-├── Cargo.lock              # 依赖锁定文件
-├── PLAN.md                 # 项目计划
 └── README.md               # 项目说明文档
 ```
 
@@ -980,10 +621,7 @@ MIT许可证
 - 提供更多的索引类型
 - 增加更多的示例和文档
 - 实现更复杂的内存优化算法
-- 添加低功耗模式下的性能监控
-- 实现自适应低功耗模式，根据系统负载自动切换模式
 - 完善运行时DDL配置API，支持完整的表和索引创建功能
 - 支持DROP TABLE和ALTER TABLE语句
-- 实现更灵活的内存分配策略
 - 优化运行时DDL操作的性能
 - 支持更复杂的索引配置选项

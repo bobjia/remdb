@@ -7,111 +7,25 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 ## Key Features
 
 - **In-Memory Table Storage**: Efficient in-memory table implementation supporting insert, delete, query, and traversal operations
-- **Indexing Mechanisms**:
+- **Indexing Mechanisms**: 
   - Hash-based primary key index providing O(1) query performance
-  - Multiple secondary index types:
-    - Hash
-    - SortedArray
-    - BTree (default)
-    - TTree
+  - Multiple secondary index types: Hash, SortedArray, BTree (default), TTree
   - Support for range queries with SortedArray, BTree and TTree indices
-- **Transaction Support**: Complete ACID transaction support, including:
-  - Atomicity: Transactions are either fully committed or fully rolled back
-  - Consistency: Ensures data integrity and correctness
-  - Isolation: Supports multiple isolation levels (Read Uncommitted, Read Committed, Repeatable Read, Serializable)
-  - Durability: Ensures data persistence through Write-Ahead Logging (WAL)
-  - Supports record-level locking (shared locks and exclusive locks)
-  - Supports transaction logging and crash recovery
-- **Memory Management**:
-  - Supports static memory allocation and dynamic memory allocation
-  - Fixed-size block memory pool enabling efficient memory management
-  - Dynamic memory allocator, supporting runtime DDL operations
+- **Transaction Support**: Complete ACID transaction support, including atomicity, consistency, isolation, and durability
+- **Memory Management**: Supports static and dynamic memory allocation with fixed-size block memory pool
 - **Platform Abstraction Layer**: Supports both POSIX and baremetal environments
-- **Compile-time Configuration**: Table and database configuration implemented via macros for performance optimization
-- **Low Power Mode**:
-  - Supports entering and exiting low power mode
-  - Optimized memory usage in low power mode
-  - Reduced transaction log write frequency, lowering disk I/O
-  - Automatically overwrites oldest records when record count exceeds limits
-- **Incremental Snapshot**:
-  - Supports both full snapshot and incremental snapshot
-  - Incremental snapshot only saves records with changed version numbers
-  - Reduces snapshot size and save time by only storing changed data
-  - Supports restoring data from incremental snapshots
-  - Version management mechanism to track data changes
-  - Compatible with existing snapshot format
-- **Rust-based Compile-time DDL Parsing and Type-safe Code Generation**:
-  - Parses SQLite3 syntax-compatible DDL files and generates type-safe Rust code
-  - Supports core SQLite3 DDL syntax: `CREATE TABLE`, `CREATE INDEX`, column definitions, `PRIMARY KEY`, `NOT NULL`, `UNIQUE` constraints
-  - Supports multiple index types in `CREATE INDEX` statements: `HASH`, `SORTEDARRAY`, `BTREE` (default), `TTREE`
-  - Performs syntax and semantic checks at compile time with clear error messages
-  - Generates strongly typed Rust structs with field names and types strictly corresponding to DDL definitions
-  - Generates static table metadata for database runtime use
-  - Generates type-safe API prototypes: `insert`, `get_by_id`, `update`, `delete` functions
-  - Zero runtime overhead, implemented using procedural macros
-- **Rust Procedural Macro-based Zero-cost DDL Integration**:
-  - Provides `MemdbTable` procedural macro supporting `#[derive(MemdbTable)]` syntax
-  - Supports inline mode: write DDL directly in attributes
-  - Supports file mode: associate external DDL files
-  - Maps SQL constraints to Rust type system constraints, catching errors at compile time
-  - Generated code is `#[repr(C)]` with memory layout identical to handwritten code
-- **SQL Query Support**:
-  - Supports standard SQL SELECT statements to query data in memory database
-  - Supports basic queries, conditional queries, sorting, and LIMIT constraints
-  - Supports comparison operators: `=`, `!=`, `<`, `<=`, `>`, `>=`
-  - Provides user-friendly result set interface, supporting iterative access and field retrieval
-- **Runtime DDL Configuration API**:
-  - Trait-based DDL executor design with `DdlExecutor` trait
-  - Supports runtime table and index creation
-  - Supports DDL operations via SQL statements: `CREATE TABLE`, `CREATE INDEX`
-  - Supports multiple index type configurations
-  - Memory allocator abstraction, supporting custom memory allocation strategies
-- **SQL Export Functionality**:
-  - Supports exporting complete DDL files (table structures and index definitions)
-  - Supports exporting table data as SQL INSERT statements
-  - Output is compatible with SQLite3 syntax while preserving project-specific keywords
-  - Supports writing export results to files or memory buffers
-- **UDP-based Reliable Data Pub/Sub**: 
-  - Supports lightweight UDP-based data publish/subscribe mechanism
-  - Performs CRC check on transmitted data to ensure data integrity
-  - Supports unicast, broadcast, and multicast modes
-  - Provides subscribe(topic_id, callback) and publish(topic_id, data) APIs
-  - Supports NACK-based retransmission mechanism to improve data reliability
-  - Supports heartbeat detection to automatically clean up inactive subscribers
-  - Supports at least 16 concurrent subscribers per topic
-  - Supports at least 32 different data topics
-  - Latency from calling publish API to data entering network stack is less than 100 microseconds
-  - Protocol header overhead is less than 10% of payload data
-  - Supports wildcard subscriptions, allowing topic pattern matching
-- **High Availability Support**: 
-  - Master-slave replication mechanism ensuring data consistency
-  - Automatic failure detection and failover
-  - Heartbeat monitoring for node status
-  - Support for multiple roles: Master, Slave, Auto mode
-  - Both synchronous and asynchronous replication modes
-  - Support for failure recovery and resynchronization
-  - High Availability Manager provided to simplify HA configuration and management
-- **Time Series Database Support**: 
-  - Dedicated time series table implementation optimized for time series data storage and querying
-  - Support for efficient time range queries
-  - Built-in multiple time series aggregation functions:
-    - COUNT: Count records
-    - SUM: Calculate sum
-    - AVG: Calculate average
-    - MIN: Get minimum value
-    - MAX: Get maximum value
-  - Support for time window aggregation with customizable window size
-  - Support for data compression algorithms:
-    - Delta encoding: Reduce storage space
-    - RunLength encoding: Optimize storage for consecutive repeated values
-  - Support for data lifecycle management, automatically cleaning up expired data
-  - Provides dedicated time series record batch insert API for improved write performance
-  - Support for latest data query, quickly retrieving the most recent records
+- **Compile-time Configuration**: Table and database configuration via macros for performance optimization
+- **Low Power Mode**: Optimized memory usage with reduced transaction log write frequency
+- **Incremental Snapshot**: Only saves records with changed version numbers, reducing snapshot size and save time
+- **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data
+- **UDP-based Reliable Data Pub/Sub**: Supports unicast, broadcast, and multicast modes with NACK-based retransmission
+- **High Availability Support**: Master-slave replication mechanism with automatic failure detection and failover
+- **Time Series Database Support**: Dedicated time series table implementation optimized for time series data storage and querying
 
 ## Technical Characteristics
 
 - **Zero External Dependencies**: No external library dependencies, supports no_std environments
-- **Memory Allocation**: Supports both static and dynamic memory allocation with predictable memory usage suitable for resource-constrained embedded systems
+- **Predictable Memory Usage**: Static memory allocation suitable for resource-constrained embedded systems
 - **Compile-time Optimization**: Compile-time configuration via macros reduces runtime overhead
 - **Multi-platform Support**: Supports both POSIX and baremetal environments
 - **Type Safety**: Leverages Rust's type system to ensure data safety
@@ -131,7 +45,13 @@ remdb = { path = "./remdb", default-features = false }
 # features = ["std", "posix"]
 ```
 
-### Basic Usage Example
+## Three Ways to Use remdb with Rust
+
+remdb provides three main ways to use it with Rust to meet different scenario requirements:
+
+### 1. Direct Table Data Structure Definition
+
+Use the `remdb::table!` macro to directly define table structures, which is the most basic usage suitable for simple scenarios:
 
 ```rust
 #![no_std]
@@ -145,7 +65,7 @@ use remdb::*;
 // Define memory buffer
 static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
 
-// Define table structure
+// Directly define table structure
 remdb::table!(
     users,
     100, // Maximum record count
@@ -173,9 +93,6 @@ fn alloc_error_handler(layout: Layout) -> ! {
 
 fn main() {
     unsafe {
-        // Get database configuration
-        let config = database!(tables: [users]);
-        
         // Initialize memory allocator
         memory::allocator::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
@@ -185,126 +102,24 @@ fn main() {
         // Initialize platform abstraction layer
         platform::init_platform(platform::posix::get_posix_platform());
         
-        // Calculate required memory size
-        let table_size = MemoryTable::calculate_memory_size(config.tables[0]);
-        let primary_index_size = PrimaryIndex::calculate_memory_size(
-            config.tables[0],
-            128, // Hash table size
-            100  // Maximum index item count
-        );
-        let secondary_index_size = SecondaryIndex::calculate_memory_size(100);
-        
-        // Allocate memory
-        let table_ptr = memory::allocator::alloc(table_size).unwrap().as_ptr() as *mut u8;
-        let status_ptr = memory::allocator::alloc(
-            core::mem::size_of::<types::RecordHeader>() * config.tables[0].max_records
-        ).unwrap().as_ptr() as *mut types::RecordHeader;
-        
-        let hash_table_ptr = memory::allocator::alloc(
-            128 * core::mem::size_of::<Option<NonNull<index::PrimaryIndexItem>>>()
-        ).unwrap().as_ptr() as *mut Option<NonNull<index::PrimaryIndexItem>>;
-        
-        let primary_index_items_ptr = memory::allocator::alloc(
-            100 * core::mem::size_of::<index::PrimaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::PrimaryIndexItem;
-        
-        let secondary_index_items_ptr = memory::allocator::alloc(
-            100 * core::mem::size_of::<index::SecondaryIndexItem>()
-        ).unwrap().as_ptr() as *mut index::SecondaryIndexItem;
-        
-        // Create table and indices
-        let mut table = MemoryTable::new(config.tables[0], table_ptr, status_ptr);
-        let mut primary_index = PrimaryIndex::new(
-            config.tables[0],
-            hash_table_ptr,
-            primary_index_items_ptr,
-            128,
-            100
-        );
-        let mut secondary_index = SecondaryIndex::new(config.tables[0], secondary_index_items_ptr, 100);
-        
-        // Initialize table and index arrays
-        static mut TABLES: [Option<MemoryTable>; 1] = [None; 1];
-        static mut PRIMARY_INDICES: [Option<PrimaryIndex>; 1] = [None; 1];
-        static mut SECONDARY_INDICES: [Option<SecondaryIndex>; 1] = [None; 1];
-        
-        TABLES[0] = Some(table);
-        PRIMARY_INDICES[0] = Some(primary_index);
-        SECONDARY_INDICES[0] = Some(secondary_index);
-        
         // Initialize global database
         let db = init_global_db(
-            config,
-            &mut TABLES,
-            &mut PRIMARY_INDICES,
-            &mut SECONDARY_INDICES
+            database!(tables: [users]),
+            &mut [None; 1],
+            &mut [None; 1],
+            &mut [None; 1]
         ).unwrap();
         
         // Use database...
     }
 }
-
-### SQL Query Example
-
-```rust
-// Execute SQL query to get all users
-let result = db.sql_query("SELECT * FROM users").unwrap();
-println!("{}", result.to_string());
-
-// Execute SQL query with condition
-let result = db.sql_query("SELECT name, age FROM users WHERE age > 25 ORDER BY name ASC LIMIT 10").unwrap();
-for row in result {
-    println!("{}: {}", row.get(0), row.get(1));
-}
-
-// Execute SQL query with condition and sorting
-let result = db.sql_query("SELECT * FROM users WHERE active = true ORDER BY created_at DESC").unwrap();
-for row in result {
-    println!("ID: {}, Name: {}, Age: {}, Active: {}", 
-             row.get(0), row.get(1), row.get(2), row.get(3));
-}
 ```
 
-### Low Power Mode Usage Example
+### 2. MemTable Definition with Macros
 
-```rust
-// Define database with low power mode support
-remdb::database!(
-    TEST_DB,
-    tables: [
-        TEST_TABLE
-    ],
-    low_power: true,
-    low_power_max_records: 100
-);
+Use the `#[derive(MemdbTable)]` macro to define tables, supporting inline DDL and external DDL files for more flexible table definition:
 
-// Initialize database
-let db = remdb::init_global_db(
-    &TEST_DB,
-    &mut tables,
-    &mut primary_indices,
-    &mut secondary_indices
-).unwrap();
-
-// Enter low power mode
-db.enter_low_power_mode().unwrap();
-
-// Check current low power mode status
-let is_low_power = db.is_low_power_mode();
-
-// Insert records in low power mode
-for i in 0..150 {
-    match db.get_table_mut(0).unwrap().insert(record_data) {
-        Ok(id) => println!("Inserted successfully, record ID: {}", id),
-        Err(e) => println!("Insertion failed, error: {:?}", e),
-    }
-}
-
-// Exit low power mode
-db.exit_low_power_mode().unwrap();
-```
-
-### DDL Macro Usage Example
+#### Inline DDL Mode
 
 ```rust
 use remdb_macros::MemdbTable;
@@ -328,307 +143,33 @@ fn main() {
     println!("Generated User struct: {:?}", user);
     println!("User name: {}", user.name);
     println!("User age: {:?}", user.age);
-    
-    // Test database configuration
-    println!("Database tables count: {}", DATABASE.tables.len());
-    
-    // Test API functions (placeholder implementation)
-    // user::insert(&mut db, user);
-    // let result = user::get_by_id(&db, 1);
 }
 ```
 
-## Time Series Database
-
-remdb provides powerful time series database functionality, specifically designed for efficient storage and querying of time series data. The time series database supports efficient storage and querying of sensor data, monitoring data, log data, and other time series data.
-
-### Design Philosophy
-
-The time series database adopts the following design philosophies:
-
-1. **Efficient Storage**: Optimized storage structure for time series data characteristics, reducing storage space usage
-2. **Fast Query**: Supports efficient time range queries and latest data queries
-3. **Built-in Aggregation**: Provides rich built-in aggregation functions, supporting real-time calculation of statistical information
-4. **Data Compression**: Supports multiple data compression algorithms to reduce storage space usage
-5. **Batch Insertion**: Provides dedicated batch insertion API to improve write performance
-6. **Lifecycle Management**: Supports automatic cleanup of expired data to optimize memory usage
-
-### Core Features
-
-- **Dedicated Time Series Tables**: Optimized time series table structure suitable for storing large amounts of time series data
-- **Efficient Time Range Queries**: Supports fast queries for data within specified time ranges
-- **Built-in Aggregation Functions**: Provides COUNT, SUM, AVG, MIN, MAX and other aggregation functions
-- **Time Window Aggregation**: Supports aggregation calculations with custom time windows
-- **Data Compression**: Supports Delta encoding and RunLength encoding
-- **Batch Insertion Optimization**: Provides dedicated batch insertion API to improve write performance
-- **Latest Data Query**: Supports fast retrieval of the most recent time series data
-
-### Usage Examples
-
-#### Basic Usage
+#### File Mode
 
 ```rust
-use remdb::*;
-use remdb::time_series::*;
-use std::time::{Duration, SystemTime};
+use remdb_macros::MemdbTable;
 
-// Define time series table structure
-remdb::table!(
-    sensor_data,
-    5000, // Maximum record count
-    primary_key: id,
-    secondary_index: timestamp,
-    fields: {
-        id: i32,
-        sensor_id: str(32),  // Sensor ID
-        sensor_type: str(32), // Sensor type
-        value: f64,           // Sensor value
-        timestamp: u64,       // Timestamp
-        location: str(64)     // Location information
-    }
-);
+// Define tables with indexes using external DDL file
+#[derive(MemdbTable)]
+#[memdb_schema(file = "./schema.ddl")]
+struct MyDatabase;
 
-// Define database configuration
-remdb::database!(
-    DB_CONFIG,
-    tables: [sensor_data]
-);
-
-fn main() {
-    unsafe {
-        // Initialize memory allocator
-        let memory_size = 128 * 1024 * 1024; // 128MB
-        static mut DB_MEMORY: [u8; 128 * 1024 * 1024] = [0u8; 128 * 1024 * 1024];
-        
-        memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        ).expect("Failed to initialize memory allocator");
-        
-        // Initialize platform abstraction layer
-        platform::init_platform(platform::posix::get_posix_platform());
-        
-        // Initialize global database
-        let db = init_global_db(&DB_CONFIG).unwrap();
-        
-        // Get table reference
-        let table_mut = db.get_table_mut(0).unwrap();
-        
-        // Simulate inserting sensor data
-        let base_time = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        
-        // Batch insert test data
-        let mut records_buffer = [0u8; 160 * 100]; // Buffer for 100 records
-        let mut record_ids = [0usize; 100];
-        let record_size = table_mut.record_size;
-        
-        for i in 0..100 {
-            // Set field values
-            let id: i32 = i as i32 + 1;
-            let sensor_id = "temp_sensor_001";
-            let sensor_type = "temperature";
-            let value: f64 = (i as f64) * 0.5 + 20.0; // 20.0 to 69.5
-            let timestamp: u64 = base_time + (i as u64) * 60000; // One record per minute
-            let location = "room_101";
-            
-            // Manually fill record data
-            let record_ptr = records_buffer.as_mut_ptr().add(i * record_size);
-            
-            // Fill id (offset 0)
-            core::ptr::copy_nonoverlapping(
-                &id as *const i32 as *const u8,
-                record_ptr,
-                4
-            );
-            
-            // Fill sensor_id (offset 4)
-            let sensor_id_bytes = sensor_id.as_bytes();
-            core::ptr::copy_nonoverlapping(
-                sensor_id_bytes.as_ptr(),
-                record_ptr.add(4),
-                sensor_id_bytes.len()
-            );
-            
-            // Fill sensor_type (offset 36)
-            let sensor_type_bytes = sensor_type.as_bytes();
-            core::ptr::copy_nonoverlapping(
-                sensor_type_bytes.as_ptr(),
-                record_ptr.add(36),
-                sensor_type_bytes.len()
-            );
-            
-            // Fill value (offset 68)
-            core::ptr::copy_nonoverlapping(
-                &value as *const f64 as *const u8,
-                record_ptr.add(68),
-                8
-            );
-            
-            // Fill timestamp (offset 76)
-            core::ptr::copy_nonoverlapping(
-                &timestamp as *const u64 as *const u8,
-                record_ptr.add(76),
-                8
-            );
-            
-            // Fill location (offset 84)
-            let location_bytes = location.as_bytes();
-            core::ptr::copy_nonoverlapping(
-                location_bytes.as_ptr(),
-                record_ptr.add(84),
-                location_bytes.len()
-            );
-        }
-        
-        // Use time series batch insert optimization
-        let inserted_count = table_mut.time_series_batch_insert(
-            records_buffer.as_ptr(),
-            100,
-            record_ids.as_mut_ptr()
-        ).unwrap();
-        
-        println!("Successfully inserted {} time series records", inserted_count);
-        
-        // Query data within time range
-        let start_time = base_time;
-        let end_time = base_time + 30 * 60000; // 30 minutes
-        
-        let mut result_buffer = [0u8; 160 * 50]; // Buffer for 50 records
-        let found_count = table_mut.get_records_in_time_window(
-            4, // timestamp field index
-            start_time,
-            end_time,
-            result_buffer.as_mut_ptr(),
-            50
-        ).unwrap();
-        
-        println!("Found {} records in time range", found_count);
-        
-        // Calculate statistics within time range
-        match table_mut.aggregate_count(4, start_time, end_time) {
-            Ok(count) => {
-                println!("Record count within time range: {}", count);
-                
-                if count > 0 {
-                    if let Ok(avg) = table_mut.aggregate_avg(4, 3, start_time, end_time) {
-                        println!("Average value within time range: {:.2}", avg);
-                    }
-                    
-                    if let Ok(sum) = table_mut.aggregate_sum(4, 3, start_time, end_time) {
-                        println!("Sum within time range: {:.2}", sum);
-                    }
-                    
-                    if let Ok(min) = table_mut.aggregate_min(4, 3, start_time, end_time) {
-                        println!("Minimum value within time range: {:.2}", min);
-                    }
-                    
-                    if let Ok(max) = table_mut.aggregate_max(4, 3, start_time, end_time) {
-                        println!("Maximum value within time range: {:.2}", max);
-                    }
-                }
-            },
-            Err(e) => println!("Failed to count records: {:?}", e)
-        }
-        
-        // Get latest records
-        let mut latest_buffer = [0u8; 160 * 10]; // Buffer for 10 latest records
-        let latest_count = table_mut.get_latest_records(
-            4, // timestamp field index
-            10,
-            latest_buffer.as_mut_ptr()
-        ).unwrap();
-        
-        println!("Retrieved {} latest records", latest_count);
-        
-        // Time window aggregation
-        let window_aggregates = table_mut.get_aggregate_in_time_window(
-            4, // timestamp field index
-            3, // value field index
-            start_time,
-            end_time,
-            60000 // 1 minute window
-        ).unwrap();
-        
-        println!("Time window aggregation results ({} windows total):", window_aggregates.len());
-        for (i, (window_start, sum, avg, min, max, count)) in window_aggregates.iter().enumerate() {
-            println!("Window {}: start_time={}, count={}, avg={:.2}, min={:.2}, max={:.2}", 
-                     i+1, window_start, count, avg, min, max);
-        }
-    }
-}
+// schema.ddl content:
+// CREATE TABLE user (
+//     id INTEGER PRIMARY KEY,
+//     name TEXT NOT NULL,
+//     email TEXT UNIQUE NOT NULL
+// );
+//
+// CREATE INDEX idx_user_name ON user USING btree (name);
+// CREATE INDEX idx_user_email ON user (email); -- Default to BTree
 ```
 
-#### Advanced Usage
+### 3. Dynamic DDL Creation with DdlExecutor
 
-##### Data Compression
-
-remdb supports multiple data compression algorithms, which can reduce the storage space usage of time series data:
-
-```rust
-// Compress data using Delta encoding
-let compressed_data = compress_delta(&raw_data).unwrap();
-
-// Compress data using RunLength encoding
-let compressed_data = compress_run_length(&raw_data).unwrap();
-```
-
-##### Lifecycle Management
-
-remdb supports automatic cleanup of expired data to optimize memory usage:
-
-```rust
-// Set data retention time (e.g., retain 7 days of data)
-table_mut.set_data_retention(7 * 24 * 60 * 60 * 1000).unwrap();
-
-// Manually clean up expired data
-table_mut.cleanup_expired_data().unwrap();
-```
-
-##### Multi-sensor Data Management
-
-remdb supports managing data from multiple sensors, distinguished by sensor ID and type:
-
-```rust
-// Insert data from different sensors
-for i in 0..100 {
-    // Temperature sensor data
-    let temp_record = SensorData {
-        id: i as i32 + 1,
-        sensor_id: "temp_sensor_001",
-        sensor_type: "temperature",
-        value: (i as f64) * 0.5 + 20.0,
-        timestamp: base_time + (i as u64) * 60000,
-        location: "room_101"
-    };
-    
-    // Humidity sensor data
-    let humi_record = SensorData {
-        id: i as i32 + 1001,
-        sensor_id: "humi_sensor_001",
-        sensor_type: "humidity",
-        value: (i as f64) * 0.3 + 40.0,
-        timestamp: base_time + (i as u64) * 60000,
-        location: "room_101"
-    };
-    
-    // Insert data
-    table_mut.insert(&temp_record).unwrap();
-    table_mut.insert(&humi_record).unwrap();
-}
-
-// Query data from a specific sensor
-let mut result_buffer = [0u8; 160 * 50];
-let found_count = table_mut.get_records_by_sensor_id(
-    "temp_sensor_001",
-    result_buffer.as_mut_ptr(),
-    50
-).unwrap();
-```
-
-### Runtime DDL Configuration API Example
+Use the `DdlExecutor` trait to dynamically create tables and indexes at runtime, suitable for scenarios requiring flexible configuration:
 
 ```rust
 use remdb::{RemDb, DdlExecutor, types::{DataType, IndexType}};
@@ -721,38 +262,84 @@ fn main() {
         "name",
         IndexType::BTree
     );
+}
+```
+
+## Other Access Methods
+
+### C Language Interface Access
+
+remdb provides a C language interface for C/C++ applications:
+
+```c
+#include "remdb_c.h"
+
+int main() {
+    // Initialize database
+    remdb_t *db = remdb_init();
     
-    // Create index using SQL statement
-    let result = db.sql_query(
-        "CREATE INDEX idx_product_name ON products (name) USING BTree;"
-    );
+    // Create table
+    remdb_create_table(db, "users", ...);
+    
+    // Insert data
+    remdb_insert(db, "users", ...);
+    
+    // Query data
+    remdb_result_t *result = remdb_query(db, "SELECT * FROM users");
+    
+    // Process results...
+    
+    // Free resources
+    remdb_free_result(result);
+    remdb_close(db);
+    
+    return 0;
 }
 ```
 
-### SQL Export Functionality Example
+### JDBC Access
 
-```rust
-// Export DDL (table structures and indexes) to file
-let result = db.export_ddl("./exported_ddl.sql");
-if result.is_ok() {
-    println!("DDL exported successfully!");
-}
+remdb provides a JDBC driver, allowing Java applications to access remdb databases through JDBC API:
 
-// Export table data to file
-let result = db.export_data("./exported_data.sql");
-if result.is_ok() {
-    println!("Data exported successfully!");
-}
+```java
+import java.sql.*;
 
-// Export data for specific tables
-// Parameters: filename, table name (optional, None means export all tables)
-let result = db.export_data_with_table("./exported_users.sql", Some("users"));
-if result.is_ok() {
-    println!("Users table data exported successfully!");
+public class RemdbExample {
+    public static void main(String[] args) {
+        try {
+            // Load driver
+            Class.forName("com.remdb.jdbc.Driver");
+            
+            // Establish connection
+            String url = "jdbc:remdb://localhost:8080/dbname";
+            Connection conn = DriverManager.getConnection(url);
+            
+            // Create Statement
+            Statement stmt = conn.createStatement();
+            
+            // Execute query
+            ResultSet rs = stmt.executeQuery("SELECT * FROM users");
+            
+            // Process result set
+            while (rs.next()) {
+                System.out.println(rs.getInt("id") + ": " + rs.getString("name"));
+            }
+            
+            // Close resources
+            rs.close();
+            stmt.close();
+            conn.close();
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 }
 ```
 
-### Publish/Subscribe Functionality Example
+### UDP-based Reliable Data Subscription and Publishing
+
+remdb provides a UDP-based reliable data publish/subscribe mechanism, supporting unicast, broadcast, and multicast modes, suitable for data synchronization in distributed systems:
 
 ```rust
 use std::time::Duration;
@@ -794,35 +381,107 @@ pubsub.publish(0, msg.as_bytes()).expect("Failed to publish");
 pubsub.unsubscribe(subscription_id).expect("Failed to unsubscribe");
 ```
 
-#### File Mode Usage Example
+## SQL Query Examples
+
+remdb supports standard SQL SELECT statements to query data in the in-memory database:
 
 ```rust
-use remdb_macros::MemdbTable;
+// Execute SQL query to get all users
+let result = db.sql_query("SELECT * FROM users").unwrap();
+println!("{}", result.to_string());
 
-// Define tables with indexes using external DDL file
-#[derive(MemdbTable)]
-#[memdb_schema(file = "./schema.ddl")]
-struct MyDatabase;
+// Execute SQL query with condition
+let result = db.sql_query("SELECT name, age FROM users WHERE age > 25 ORDER BY name ASC LIMIT 10").unwrap();
+for row in result {
+    println!("{}: {}", row.get(0), row.get(1));
+}
 
-// schema.ddl content:
-// CREATE TABLE user (
-//     id INTEGER PRIMARY KEY,
-//     name TEXT NOT NULL,
-//     email TEXT UNIQUE NOT NULL
-// );
-//
-// CREATE INDEX idx_user_name ON user USING btree (name);
-// CREATE INDEX idx_user_email ON user (email); -- Default to BTree
-//
-// CREATE TABLE product (
-//     id INTEGER PRIMARY KEY,
-//     name TEXT NOT NULL,
-//     price REAL NOT NULL,
-//     category TEXT
-// );
-//
-// CREATE INDEX idx_product_price ON product USING ttree (price);
-// CREATE INDEX idx_product_category ON product USING sortedarray (category);
+// Execute SQL query with condition and sorting
+let result = db.sql_query("SELECT * FROM users WHERE active = true ORDER BY created_at DESC").unwrap();
+for row in result {
+    println!("ID: {}, Name: {}, Age: {}, Active: {}", 
+             row.get(0), row.get(1), row.get(2), row.get(3));
+}
+```
+
+## Time Series Database
+
+remdb provides powerful time series database functionality, specifically designed for efficient storage and querying of time series data:
+
+### Basic Usage
+
+```rust
+use remdb::*;
+use remdb::time_series::*;
+use std::time::{Duration, SystemTime};
+
+// Define time series table structure
+remdb::table!(
+    sensor_data,
+    5000, // Maximum record count
+    primary_key: id,
+    secondary_index: timestamp,
+    fields: {
+        id: i32,
+        sensor_id: str(32),  // Sensor ID
+        sensor_type: str(32), // Sensor type
+        value: f64,           // Sensor value
+        timestamp: u64,       // Timestamp
+        location: str(64)     // Location information
+    }
+);
+
+// Define database configuration
+remdb::database!(
+    DB_CONFIG,
+    tables: [sensor_data]
+);
+
+fn main() {
+    unsafe {
+        // Initialize memory allocator
+        let memory_size = 128 * 1024 * 1024; // 128MB
+        static mut DB_MEMORY: [u8; 128 * 1024 * 1024] = [0u8; 128 * 1024 * 1024];
+        
+        memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).expect("Failed to initialize memory allocator");
+        
+        // Initialize platform abstraction layer
+        platform::init_platform(platform::posix::get_posix_platform());
+        
+        // Initialize global database
+        let db = init_global_db(&DB_CONFIG).unwrap();
+        
+        // Get table reference
+        let table_mut = db.get_table_mut(0).unwrap();
+        
+        // Simulate inserting sensor data...
+        
+        // Query data within time range
+        let start_time = base_time;
+        let end_time = base_time + 30 * 60000; // 30 minutes
+        
+        let mut result_buffer = [0u8; 160 * 50]; // Buffer for 50 records
+        let found_count = table_mut.get_records_in_time_window(
+            4, // timestamp field index
+            start_time,
+            end_time,
+            result_buffer.as_mut_ptr(),
+            50
+        ).unwrap();
+        
+        // Calculate statistics within time range
+        match table_mut.aggregate_count(4, start_time, end_time) {
+            Ok(count) => {
+                println!("Record count within time range: {}", count);
+                // Calculate average, sum, min, max...
+            },
+            Err(e) => println!("Failed to count records: {:?}", e)
+        }
+    }
+}
 ```
 
 ## Platform Support
@@ -859,7 +518,7 @@ Check compilation in no_std environment:
 cargo check --tests --no-default-features
 ```
 
-Check compilation in baremetal environment:
+### Check Compilation in baremetal environment:
 
 ```bash
 cargo check --no-default-features --features=baremetal
@@ -867,7 +526,7 @@ cargo check --no-default-features --features=baremetal
 
 ### Running Tests in Baremetal Environment
 
-Directly running `cargo test` in baremetal environment will fail because the test framework depends on the std library. However, you can verify the correctness of the code in baremetal environment through the following steps:
+Due to the test framework's dependency on the std library, directly running `cargo test` in a baremetal environment will fail. However, you can verify the correctness of the code in a baremetal environment through the following steps:
 
 1. Ensure the code compiles successfully:
    ```bash
@@ -892,20 +551,11 @@ Check the examples directory for sample code:
 - `basic_usage.rs`: Basic usage example demonstrating table definition, insertion, query, and transaction operations
 - `low_power_mode.rs`: Low power mode example demonstrating how to configure and use low power mode
 - `incremental_snapshot.rs`: Incremental snapshot example demonstrating how to save and restore incremental snapshots
-- `generate_snapshot.rs`: Snapshot generation example demonstrating how to generate and use snapshots
 - `sql_query.rs`: SQL query example demonstrating how to use SQL to query the in-memory database
 - `ddl_example.rs`: DDL example demonstrating how to define tables and indexes using DDL macros
-- `ddl_full_example.rs`: Complete DDL example demonstrating more complex DDL definitions
 - `ddl_runtime_example.rs`: Runtime DDL configuration example demonstrating how to use the runtime DDL API
-- `describe_table.rs`: Table description example demonstrating how to get detailed table information
-- `export_example.rs`: Export functionality example demonstrating how to use SQL export functionality
-- `ha_example.rs`: High availability example demonstrating how to use high availability features
-- `multiple_tables.rs`: Multiple tables example demonstrating how to use multiple tables
 - `pubsub_example.rs`: Pub/Sub example demonstrating how to use the UDP-based reliable data publish/subscribe functionality
-- `pubsub_wildcard.rs`: Wildcard Pub/Sub example demonstrating how to use wildcard subscriptions
-- `test_auto_increment.rs`: Auto-increment example demonstrating how to use auto-increment fields
 - `time_series.rs`: Time series example demonstrating how to handle time series data
-- `varchar_example.rs`: VARCHAR type example demonstrating how to use VARCHAR types
 
 ## Project Structure
 
@@ -944,18 +594,9 @@ remdb/
 │       ├── subscriber.rs   # Subscriber management
 │       ├── publisher.rs    # Publisher management
 │       └── crc32.rs       # CRC32 check implementation
-├── examples/
-│   ├── basic_usage.rs      # Basic usage example
-│   ├── low_power_mode.rs   # Low power mode example
-│   ├── incremental_snapshot.rs # Incremental snapshot example
-│   └── generate_snapshot.rs     # Snapshot generation example
-├── tests/
-│   ├── unit/
-│   │   ├── memory_test.rs  # Memory management unit tests
-│   │   └── table_test.rs   # Table operation unit tests
+├── examples/               # Example code
+├── tests/                  # Test code
 ├── Cargo.toml              # Project configuration
-├── Cargo.lock              # Dependency lock file
-├── PLAN.md                 # Project plan
 └── README.md               # Project documentation
 ```
 
@@ -980,8 +621,6 @@ Issues and pull requests are welcome!
 - Provide more index types
 - Add more examples and documentation
 - Implement more complex memory optimization algorithms
-- Add performance monitoring in low power mode
-- Implement adaptive low power mode that automatically switches based on system load
 - Complete runtime DDL configuration API, supporting full table and index creation functionality
 - Support DROP TABLE and ALTER TABLE statements
 - Implement more flexible memory allocation strategies
