@@ -335,6 +335,23 @@ fn test_sql_query() {
                "批量INSERT中的重复主键应该返回DuplicateKey错误");
     }
     
+    // 测试INSERT IGNORE - 应该跳过重复键，插入其他记录
+    let result = db.sql_query("INSERT IGNORE INTO TEST_TABLE (id, name, age, active, created_at) VALUES \
+                              (10, 'User10', 30, true, 1620000005000), \
+                              (1, 'DuplicateUser', 25, false, 1620000006000), \
+                              (11, 'User11', 35, true, 1620000007000)");
+    assert!(result.is_ok(), "INSERT IGNORE应该成功，即使有重复键");
+    
+    // 验证记录是否插入成功（应该插入2条新记录）
+    // 由于COUNT查询的结果处理方式不同，我们直接查询所有记录来验证
+    let result = db.sql_query("SELECT id FROM TEST_TABLE ORDER BY id");
+    assert!(result.is_ok(), "SELECT应该成功");
+    if let Ok(result_set) = result {
+        // 应该有7条记录：5（原有） + 10,11（INSERT IGNORE中成功的）
+        // 注意：INSERT IGNORE跳过了重复的ID 1，但插入了10和11
+        assert_eq!(result_set.rows.len(), 7, "应该有7条记录");
+    }
+    
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
 }

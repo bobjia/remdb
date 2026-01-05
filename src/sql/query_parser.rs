@@ -36,6 +36,8 @@ pub struct SqlQuery {
     pub index_type: Option<String>,
     /// 更新的字段值对（用于UPDATE）：(字段名, 新值)
     pub update_pairs: Vec<(String, Value)>,
+    /// 是否忽略重复键
+    pub ignore_duplicates: bool,
 }
 
 /// 查询类型
@@ -293,6 +295,7 @@ impl SqlParser {
             index_column: None,
             index_type: None,
             update_pairs,
+            ignore_duplicates: false,
         })
     }
 
@@ -321,11 +324,19 @@ impl SqlParser {
             index_column: None,
             index_type: None,
             update_pairs: Vec::new(),
+            ignore_duplicates: false,
         })
     }
     
     /// 解析INSERT查询
     fn parse_insert_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 检查是否有IGNORE关键字
+        let mut ignore_duplicates = false;
+        self.skip_whitespace();
+        if self.match_keyword("IGNORE") {
+            ignore_duplicates = true;
+        }
+        
         // 解析INTO关键字
         self.skip_whitespace();
         self.expect_keyword("INTO")?;
@@ -359,6 +370,7 @@ impl SqlParser {
             index_column: None,
             index_type: None,
             update_pairs: Vec::new(),
+            ignore_duplicates,
         })
     }
     
@@ -460,6 +472,7 @@ impl SqlParser {
             index_column: None,
             index_type: None,
             update_pairs: Vec::new(),
+            ignore_duplicates: false,
         })
     }
     
@@ -551,6 +564,7 @@ impl SqlParser {
             index_column: None,
             index_type: None,
             update_pairs: Vec::new(),
+            ignore_duplicates: false,
         })
     }
     
@@ -603,6 +617,7 @@ impl SqlParser {
             index_column: Some(index_column),
             index_type,
             update_pairs: Vec::new(),
+            ignore_duplicates: false,
         })
     }
 
@@ -671,6 +686,7 @@ impl SqlParser {
             index_column: None,
             index_type: None,
             update_pairs: Vec::new(),
+            ignore_duplicates: false,
         })
     }
 

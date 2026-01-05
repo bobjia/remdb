@@ -693,7 +693,15 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
             Ok(_) => affected_rows += 1,
             Err(e) => {
                 match e {
-                    RemDbError::InvalidRecordSize | RemDbError::DuplicateKey | RemDbError::TypeMismatch => {
+                    RemDbError::DuplicateKey => {
+                        if query.ignore_duplicates {
+                            // 忽略重复键，继续处理下一条记录
+                            continue;
+                        } else {
+                            return Err(QueryExecutionError::ConstraintsConflicts);
+                        }
+                    },
+                    RemDbError::InvalidRecordSize | RemDbError::TypeMismatch => {
                         return Err(QueryExecutionError::ConstraintsConflicts);
                     },
                     RemDbError::OutOfMemory => {
