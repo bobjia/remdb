@@ -486,8 +486,7 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     
     // 6. 如果有ORDER BY子句，对记录进行排序
     if let Some(order_by) = &query.order_by {
-        // TODO: 实现对包含函数表达式的结果进行排序
-        // sort_rows(&mut matched_rows, table, order_by)?;
+        sort_rows(&mut matched_rows, table, order_by)?;
     }
     
     // 7. 应用LIMIT限制

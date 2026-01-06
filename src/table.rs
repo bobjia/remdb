@@ -272,6 +272,122 @@ impl MemoryTable {
             }
         }
         
+        // 验证唯一约束（UNIQUE）
+        for unique_field in self.def.fields.iter().filter(|f| f.unique) {
+            // 跳过主键字段，因为已经检查过了
+            if unique_field.primary_key {
+                continue;
+            }
+            
+            // 遍历所有记录，检查是否存在重复值
+            for slot_id in 0..self.def.max_records {
+                // 跳过要排除的槽位（用于更新操作）
+                if exclude_slot == Some(slot_id) {
+                    continue;
+                }
+                
+                let status_ptr = self.status_array.as_ptr().add(slot_id);
+                let status = &*status_ptr;
+                
+                // 只检查已使用的记录
+                if status.status == RecordStatus::Used {
+                    // 获取记录数据指针
+                    let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
+                    
+                    // 根据字段类型比较值
+                    let is_duplicate = match unique_field.data_type {
+                        DataType::UInt8 => {
+                            let current = *(record_data.add(unique_field.offset) as *const u8);
+                            let existing = *(record_ptr.add(unique_field.offset) as *const u8);
+                            current == existing
+                        },
+                        DataType::UInt16 => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const u16);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const u16);
+                            current == existing
+                        },
+                        DataType::UInt32 => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const u32);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const u32);
+                            current == existing
+                        },
+                        DataType::UInt64 => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const u64);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const u64);
+                            current == existing
+                        },
+                        DataType::Int8 => {
+                            let current = *(record_data.add(unique_field.offset) as *const i8);
+                            let existing = *(record_ptr.add(unique_field.offset) as *const i8);
+                            current == existing
+                        },
+                        DataType::Int16 => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const i16);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const i16);
+                            current == existing
+                        },
+                        DataType::Int32 => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const i32);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const i32);
+                            current == existing
+                        },
+                        DataType::Int64 => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const i64);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const i64);
+                            current == existing
+                        },
+                        DataType::Float32 => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const f32);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const f32);
+                            current == existing
+                        },
+                        DataType::Float64 => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const f64);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const f64);
+                            current == existing
+                        },
+                        DataType::Bool => {
+                            let current = *(record_data.add(unique_field.offset) as *const bool);
+                            let existing = *(record_ptr.add(unique_field.offset) as *const bool);
+                            current == existing
+                        },
+                        DataType::Timestamp => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const crate::types::db_timestamp);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const crate::types::db_timestamp);
+                            current.value == existing.value
+                        },
+                        DataType::TimestampTZ => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const crate::types::db_timestamp);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const crate::types::db_timestamp);
+                            current.value == existing.value && current.tz_offset == existing.tz_offset
+                        },
+                        DataType::String => {
+                            // 比较字符串内容
+                            let current_str = record_data.add(unique_field.offset) as *const u8;
+                            let existing_str = record_ptr.add(unique_field.offset) as *const u8;
+                            let mut is_equal = true;
+                            for i in 0..unique_field.size {
+                                if *current_str.add(i) != *existing_str.add(i) {
+                                    is_equal = false;
+                                    break;
+                                }
+                            }
+                            is_equal
+                        },
+                        DataType::Interval => {
+                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const crate::types::db_interval);
+                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const crate::types::db_interval);
+                            current.value == existing.value
+                        },
+                    };
+                    
+                    if is_duplicate {
+                        return Err(RemDbError::DuplicateKey);
+                    }
+                }
+            }
+        }
+        
         Ok(())
     }
     
