@@ -99,7 +99,9 @@ impl From<&FieldDef> for RemDbFieldDef {
                 DataType::Float64 => RemDbDataType::Float64,
                 DataType::Bool => RemDbDataType::Bool,
                 DataType::Timestamp => RemDbDataType::Timestamp,
+                DataType::TimestampTZ => RemDbDataType::Timestamp, // 映射为Timestamp
                 DataType::String => RemDbDataType::String,
+                DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
             },
             size: rust_field.size,
             offset: rust_field.offset,
@@ -282,13 +284,14 @@ impl From<RemDbCompressionType> for crate::time_series::CompressionType {
         match c_type {
             RemDbCompressionType::None => crate::time_series::CompressionType::None,
             RemDbCompressionType::DeltaRunLength => crate::time_series::CompressionType::DeltaRunLength,
-            RemDbCompressionType::Snappy => crate::time_series::CompressionType::Snappy,
+            RemDbCompressionType::Snappy => crate::time_series::CompressionType::DeltaRunLength, // 不支持Snappy，使用DeltaRunLength替代
         }
     }
 }
 
 /// C API: 时序数据记录
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct RemDbTimeSeriesRecord {
     pub timestamp: u64,
     pub value: f64,
@@ -320,6 +323,7 @@ impl From<crate::time_series::TimeSeriesRecord> for RemDbTimeSeriesRecord {
 
 /// C API: 时序数据配置
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct RemDbTimeSeriesConfig {
     pub partition_duration_secs: u64,
     pub retention_period_secs: u64,
@@ -419,6 +423,7 @@ impl From<crate::RemDbError> for RemDbError {
             crate::RemDbError::DuplicateKey => RemDbError::DuplicateKey,
             crate::RemDbError::FieldNotFound => RemDbError::FieldNotFound,
             crate::RemDbError::TypeMismatch => RemDbError::TypeMismatch,
+            crate::RemDbError::NotNullViolation => RemDbError::TypeMismatch, // 映射为TypeMismatch
             crate::RemDbError::TransactionError => RemDbError::TransactionError,
             crate::RemDbError::ConfigError => RemDbError::ConfigError,
             crate::RemDbError::UnsupportedOperation => RemDbError::UnsupportedOperation,
@@ -507,6 +512,7 @@ pub unsafe extern "C" fn remdb_init_global(
                 not_null: j == c_table.primary_key, // 主键默认非空
                 unique: j == c_table.primary_key, // 主键默认唯一
                 auto_increment: false, // 默认不自增
+                default_value: None, // 默认无默认值
             });
         }
         
@@ -589,6 +595,7 @@ pub unsafe extern "C" fn remdb_init_global(
                         not_null: j == c_time_series_table.primary_key, // 主键默认非空
                         unique: j == c_time_series_table.primary_key, // 主键默认唯一
                         auto_increment: false, // 默认不自增
+                        default_value: None, // 默认无默认值
                     });
                 }
                 
@@ -633,12 +640,12 @@ pub unsafe extern "C" fn remdb_init_global(
                 // 创建时序表
                 match crate::time_series::TimeSeriesTable::new(
                     alloc::sync::Arc::new(time_series_table_def),
-                    alloc::sync::Arc::new(time_series_index),
+                    time_series_index,
                 ) {
                     Ok(time_series_table) => {
                         // 将时序表添加到数据库
-                        if db_mut.time_series_tables.len() <= i {
-                            db_mut.time_series_tables.resize(i + 1, None);
+                        while db_mut.time_series_tables.len() <= i {
+                            db_mut.time_series_tables.push(None);
                         }
                         db_mut.time_series_tables[i] = Some(time_series_table);
                     },
@@ -1256,7 +1263,7 @@ pub unsafe extern "C" fn remdb_time_series_batch_write(
             // 2. 将C记录转换为Rust记录
             let mut rust_records = Vec::with_capacity(count);
             for i in 0..count {
-                let c_record = *records.add(i);
+                let c_record = unsafe { *records.offset(i as isize) };
                 rust_records.push(c_record.into());
             }
             
