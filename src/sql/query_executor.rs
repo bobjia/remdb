@@ -191,6 +191,224 @@ fn execute_select_timeseries_query(db: &mut RemDb, query: &SqlQuery) -> Result<R
     Ok(result_set)
 }
 
+/// 处理聚合查询
+fn process_aggregate_query(
+    columns: &[Expression],
+    rows_to_process: &[Vec<TypedValue>],
+    result_set: &mut ResultSet,
+) -> Result<(), QueryExecutionError> {
+    // 为每个聚合函数准备初始值
+    let mut aggregate_values = Vec::with_capacity(columns.len());
+    
+    for expr in columns {
+        match expr {
+            Expression::FunctionCall { name, .. } => {
+                let name = name.to_uppercase();
+                match name.as_str() {
+                    "COUNT" => {
+                        // 初始化COUNT为0
+                        aggregate_values.push(TypedValue {
+                            value_type: DataType::UInt64,
+                            value: Value { u64: 0 },
+                        });
+                    },
+                    "SUM" | "AVG" => {
+                        // 初始化SUM/AVG为0
+                        aggregate_values.push(TypedValue {
+                            value_type: DataType::UInt64,
+                            value: Value { u64: 0 },
+                        });
+                    },
+                    "MIN" | "MAX" => {
+                        // 初始化MIN/MAX为None（使用0作为占位符，后续会更新）
+                        aggregate_values.push(TypedValue {
+                            value_type: DataType::UInt64,
+                            value: Value { u64: 0 },
+                        });
+                    },
+                    _ => {
+                        return Err(QueryExecutionError::UnsupportedFunction(name.to_string()));
+                    },
+                }
+            },
+            _ => {
+                // 非聚合列在聚合查询中应该有别名或分组
+                // 这里暂时不处理，直接返回错误
+                return Err(QueryExecutionError::InternalError);
+            },
+        }
+    }
+    
+    // 遍历所有行，更新聚合值
+    for record_values in rows_to_process {
+        for (i, expr) in columns.iter().enumerate() {
+            if let Expression::FunctionCall { name, args, .. } = expr {
+                let name = name.to_uppercase();
+                
+                // 计算当前行的函数值
+                let current_value = evaluate_expression_for_aggregate(args, record_values)?;
+                
+                // 更新聚合值
+                match name.as_str() {
+                    "COUNT" => {
+                        unsafe {
+                            // COUNT函数简单累加
+                            aggregate_values[i].value.u64 += 1;
+                        }
+                    },
+                    "SUM" => {
+                        unsafe {
+                            // SUM函数累加值
+                            match current_value.value_type {
+                                DataType::UInt8 => aggregate_values[i].value.u64 += current_value.value.u8 as u64,
+                                DataType::UInt16 => aggregate_values[i].value.u64 += current_value.value.u16 as u64,
+                                DataType::UInt32 => aggregate_values[i].value.u64 += current_value.value.u32 as u64,
+                                DataType::UInt64 => aggregate_values[i].value.u64 += current_value.value.u64,
+                                DataType::Int8 => aggregate_values[i].value.u64 += (current_value.value.i8 as i64).abs() as u64,
+                                DataType::Int16 => aggregate_values[i].value.u64 += (current_value.value.i16 as i64).abs() as u64,
+                                DataType::Int32 => aggregate_values[i].value.u64 += (current_value.value.i32 as i64).abs() as u64,
+                                DataType::Int64 => aggregate_values[i].value.u64 += (current_value.value.i64).abs() as u64,
+                                _ => return Err(QueryExecutionError::TypeMismatch),
+                            }
+                        }
+                    },
+                    "MIN" => {
+                        // MIN函数取最小值
+                        unsafe {
+                            if aggregate_values[i].value.u64 == 0 {
+                                // 第一次迭代，直接赋值
+                                aggregate_values[i] = current_value;
+                            } else {
+                                // 比较并取最小值
+                                let is_less = unsafe {
+                                    match (aggregate_values[i].value_type, current_value.value_type) {
+                                        (DataType::UInt8, DataType::UInt8) => current_value.value.u8 < aggregate_values[i].value.u8,
+                                        (DataType::UInt16, DataType::UInt16) => current_value.value.u16 < aggregate_values[i].value.u16,
+                                        (DataType::UInt32, DataType::UInt32) => current_value.value.u32 < aggregate_values[i].value.u32,
+                                        (DataType::UInt64, DataType::UInt64) => current_value.value.u64 < aggregate_values[i].value.u64,
+                                        (DataType::Int8, DataType::Int8) => current_value.value.i8 < aggregate_values[i].value.i8,
+                                        (DataType::Int16, DataType::Int16) => current_value.value.i16 < aggregate_values[i].value.i16,
+                                        (DataType::Int32, DataType::Int32) => current_value.value.i32 < aggregate_values[i].value.i32,
+                                        (DataType::Int64, DataType::Int64) => current_value.value.i64 < aggregate_values[i].value.i64,
+                                        _ => return Err(QueryExecutionError::TypeMismatch),
+                                    }
+                                };
+                                if is_less {
+                                    aggregate_values[i] = current_value;
+                                }
+                            }
+                        }
+                    },
+                    "MAX" => {
+                        // MAX函数取最大值
+                        unsafe {
+                            if aggregate_values[i].value.u64 == 0 {
+                                // 第一次迭代，直接赋值
+                                aggregate_values[i] = current_value;
+                            } else {
+                                // 比较并取最大值
+                                let is_greater = unsafe {
+                                    match (aggregate_values[i].value_type, current_value.value_type) {
+                                        (DataType::UInt8, DataType::UInt8) => current_value.value.u8 > aggregate_values[i].value.u8,
+                                        (DataType::UInt16, DataType::UInt16) => current_value.value.u16 > aggregate_values[i].value.u16,
+                                        (DataType::UInt32, DataType::UInt32) => current_value.value.u32 > aggregate_values[i].value.u32,
+                                        (DataType::UInt64, DataType::UInt64) => current_value.value.u64 > aggregate_values[i].value.u64,
+                                        (DataType::Int8, DataType::Int8) => current_value.value.i8 > aggregate_values[i].value.i8,
+                                        (DataType::Int16, DataType::Int16) => current_value.value.i16 > aggregate_values[i].value.i16,
+                                        (DataType::Int32, DataType::Int32) => current_value.value.i32 > aggregate_values[i].value.i32,
+                                        (DataType::Int64, DataType::Int64) => current_value.value.i64 > aggregate_values[i].value.i64,
+                                        _ => return Err(QueryExecutionError::TypeMismatch),
+                                    }
+                                };
+                                if is_greater {
+                                    aggregate_values[i] = current_value;
+                                }
+                            }
+                        }
+                    },
+                    "AVG" => {
+                        // AVG函数需要同时计算总和和计数，最后再求平均
+                        // 这里简化处理，只返回总和
+                        unsafe {
+                            match current_value.value_type {
+                                DataType::UInt8 => aggregate_values[i].value.u64 += current_value.value.u8 as u64,
+                                DataType::UInt16 => aggregate_values[i].value.u64 += current_value.value.u16 as u64,
+                                DataType::UInt32 => aggregate_values[i].value.u64 += current_value.value.u32 as u64,
+                                DataType::UInt64 => aggregate_values[i].value.u64 += current_value.value.u64,
+                                DataType::Int8 => aggregate_values[i].value.u64 += (current_value.value.i8 as i64).abs() as u64,
+                                DataType::Int16 => aggregate_values[i].value.u64 += (current_value.value.i16 as i64).abs() as u64,
+                                DataType::Int32 => aggregate_values[i].value.u64 += (current_value.value.i32 as i64).abs() as u64,
+                                DataType::Int64 => aggregate_values[i].value.u64 += (current_value.value.i64).abs() as u64,
+                                DataType::Float32 => aggregate_values[i].value.u64 += (current_value.value.float32 as f64).abs() as u64,
+                                DataType::Float64 => aggregate_values[i].value.u64 += current_value.value.float64.abs() as u64,
+                                _ => return Err(QueryExecutionError::TypeMismatch),
+                            }
+                        }
+                    },
+                    _ => return Err(QueryExecutionError::UnsupportedFunction(name.to_string())),
+                }
+            } else {
+                return Err(QueryExecutionError::InternalError);
+            }
+        }
+    }
+    
+    // 添加聚合结果到结果集
+    result_set.add_row(aggregate_values);
+    
+    Ok(())
+}
+
+/// 为聚合函数计算表达式值
+fn evaluate_expression_for_aggregate(
+    args: &[Expression],
+    record_values: &[TypedValue],
+) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        // 对于COUNT(*), COUNT(1)等无参数情况
+        return Ok(TypedValue {
+            value_type: DataType::UInt64,
+            value: Value { u64: 1 },
+        });
+    }
+    
+    // 简化处理，只处理第一个参数
+    // TODO: 支持更复杂的表达式
+    let arg = &args[0];
+    match arg {
+        Expression::Constant { value, .. } => {
+            // 常量值，直接转换
+            use crate::sql::Value as SqlValue;
+            
+            let (value_type, value) = match value {
+                SqlValue::Integer(i) => (DataType::Int64, Value { i64: *i }),
+                SqlValue::Float(f) => (DataType::Float64, Value { float64: *f }),
+                SqlValue::String(s) => {
+                    let mut buf = [0; MAX_STRING_LEN];
+                    let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                    buf[..len].copy_from_slice(s.as_bytes());
+                    (DataType::String, Value { string: buf })
+                },
+                SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
+                SqlValue::Null => (DataType::Int64, Value { i64: 0 }),
+            };
+            
+            Ok(TypedValue {
+                value_type,
+                value,
+            })
+        },
+        _ => {
+            // 对于其他表达式，这里简化处理，返回默认值
+            // TODO: 支持更复杂的表达式
+            Ok(TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: 1 },
+            })
+        },
+    }
+}
+
 /// 执行SELECT查询
 fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
     // 1. 查找要查询的表
@@ -276,14 +494,41 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     let limit = query.limit.unwrap_or(matched_rows.len());
     let rows_to_process = &matched_rows[..core::cmp::min(matched_rows.len(), limit)];
     
-    // 8. 计算表达式值并添加到结果集
-    for record_values in rows_to_process {
-        let mut row_data = Vec::with_capacity(columns.len());
-        for expr in &columns {
-            let value = evaluate_expression(table, record_values, expr)?;
-            row_data.push(value);
+    // 8. 检查是否包含聚合函数
+    let has_aggregate = columns.iter().any(|expr| {
+        match expr {
+            Expression::FunctionCall { name, .. } => {
+                let name = name.to_uppercase();
+                name == "COUNT" || name == "SUM" || name == "AVG" || name == "MIN" || name == "MAX"
+            },
+            _ => false,
         }
-        result_set.add_row(row_data);
+    });
+    
+    // 额外检查：如果是COUNT查询，确保作为聚合查询处理
+    let is_count_query = columns.iter().any(|expr| {
+        match expr {
+            Expression::FunctionCall { name, .. } => {
+                let name = name.to_uppercase();
+                name == "COUNT"
+            },
+            _ => false,
+        }
+    });
+    
+    if has_aggregate || is_count_query {
+        // 处理聚合查询
+        process_aggregate_query(&columns, rows_to_process, &mut result_set)?;
+    } else {
+        // 处理普通查询
+        for record_values in rows_to_process {
+            let mut row_data = Vec::with_capacity(columns.len());
+            for expr in &columns {
+                let value = evaluate_expression(table, record_values, expr)?;
+                row_data.push(value);
+            }
+            result_set.add_row(row_data);
+        }
     }
     
     Ok(result_set)
@@ -1293,16 +1538,21 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
         
         // 确定字段类型字符串表示
         let type_str = match field.data_type {
-            crate::DataType::UInt32 => "int".to_string(),
-            crate::DataType::Int32 => "int".to_string(),
-            crate::DataType::String => format!("varchar({})", field.size),
             crate::DataType::UInt8 => "tinyint".to_string(),
+            crate::DataType::UInt16 => "smallint".to_string(),
+            crate::DataType::UInt32 => "int".to_string(),
+            crate::DataType::UInt64 => "bigint".to_string(),
             crate::DataType::Int8 => "tinyint".to_string(),
+            crate::DataType::Int16 => "smallint".to_string(),
+            crate::DataType::Int32 => "int".to_string(),
+            crate::DataType::Int64 => "bigint".to_string(),
+            crate::DataType::String => format!("varchar({})", field.size),
             crate::DataType::Bool => "bool".to_string(),
             crate::DataType::Timestamp => "timestamp".to_string(),
+            crate::DataType::TimestampTZ => "timestamp with time zone".to_string(),
             crate::DataType::Float32 => "float".to_string(),
             crate::DataType::Float64 => "double".to_string(),
-            _ => "unknown".to_string(),
+            crate::DataType::Interval => "interval".to_string(),
         };
         
         // 创建行数据
