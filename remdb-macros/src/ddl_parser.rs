@@ -8,6 +8,7 @@ pub struct ColumnDef {
 }
 
 pub struct IndexDef {
+    #[allow(dead_code)]
     pub name: String,
     pub table_name: String,
     pub field: String,
@@ -115,6 +116,7 @@ fn parse_columns(columns_part: &str) -> Result<Vec<ColumnDef>, String> {
         let mut typ = String::new();
         
         // 解析类型，处理UNSIGNED修饰符
+        #[allow(clippy::while_let_on_iterator)]
         while let Some(part) = parts.next() {
             match part {
                 "unsigned" => {
@@ -151,6 +153,7 @@ fn parse_columns(columns_part: &str) -> Result<Vec<ColumnDef>, String> {
         let mut auto_increment = false;
         
         // 解析约束
+        #[allow(clippy::while_let_on_iterator)]
         while let Some(part) = parts.next() {
             match part {
                 "not" => {

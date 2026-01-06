@@ -691,6 +691,8 @@ pub enum RemDbError {
     InvalidRecordSize,
     /// 无效的SQL查询
     InvalidSqlQuery,
+    /// 没有可覆盖的记录
+    NoRecordsToOverwrite,
     /// 内部错误
     InternalError,
 }
@@ -718,6 +720,7 @@ impl fmt::Display for RemDbError {
             RemDbError::TableNotFound => write!(f, "Table not found"),
             RemDbError::InvalidRecordSize => write!(f, "Invalid record size"),
             RemDbError::InvalidSqlQuery => write!(f, "Invalid SQL query"),
+            RemDbError::NoRecordsToOverwrite => write!(f, "No records to overwrite"),
             RemDbError::InternalError => write!(f, "Internal error"),
         }
     }

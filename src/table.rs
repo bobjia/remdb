@@ -333,7 +333,7 @@ impl MemoryTable {
             if self.low_power_mode {
             // 低功耗模式：覆盖最旧的记录
             // 查找最旧的记录
-            let mut oldest_id = 0;
+            let mut oldest_id = None;
             let mut oldest_version = u16::MAX;
             
             for i in 0..self.def.max_records {
@@ -341,13 +341,18 @@ impl MemoryTable {
                     let status_ptr = self.status_array.as_ptr().add(i);
                     let status = &*status_ptr;
                     if status.status == RecordStatus::Used && status.version < oldest_version {
-                        oldest_id = i;
+                        oldest_id = Some(i);
                         oldest_version = status.version;
                     }
                 }
             }
             
-            slot_id = oldest_id;
+            let slot_id_val = match oldest_id {
+                Some(id) => id,
+                None => return Err(RemDbError::NoRecordsToOverwrite),
+            };
+            
+            slot_id = slot_id_val;
             is_overwrite = true;
         } else {
                 // 正常模式：返回错误

@@ -12,8 +12,7 @@ pub fn define_schema(input: TokenStream) -> TokenStream {
     
     match ddl_parser::parse_ddl(&schema) {
         Ok(table_defs) => {
-            let output = codegen::generate_code(table_defs);
-            output.into()
+            codegen::generate_code(table_defs)
         },
         Err(e) => {
             panic!("Failed to parse DDL: {}", e);
@@ -49,8 +48,7 @@ pub fn derive_memdb_table(input: TokenStream) -> TokenStream {
     // 解析DDL并生成代码
     match ddl_parser::parse_ddl(&ddl) {
         Ok(table_defs) => {
-            let generated_code = codegen::generate_code(table_defs);
-            generated_code.into()
+            codegen::generate_code(table_defs)
         },
         Err(e) => {
             panic!("Failed to parse DDL: {}", e);
@@ -64,6 +62,7 @@ use syn::parse::{Parse, ParseStream};
 // 字段定义
 struct Field {
     name: Ident,
+    #[allow(dead_code)]
     colon: Token![:],
     // 自定义类型解析，支持 str(32) 这种语法
     type_name: Ident,
@@ -122,7 +121,7 @@ impl Parse for TableArgs {
         let _comma2: Token![,] = input.parse()?;
         
         // 解析primary_key
-        let primary_key_keyword: Ident = input.parse()?;
+        let _primary_key_keyword: Ident = input.parse()?;
         let _colon1: Token![:] = input.parse()?;
         let primary_key = input.parse()?;
         

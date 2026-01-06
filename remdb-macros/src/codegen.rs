@@ -25,7 +25,7 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
             })
             .collect::<String>();
         let struct_name = syn::Ident::new(&struct_name_str, Span::call_site());
-        let table_ident = syn::Ident::new(&format!("{}", table_name.to_uppercase()), Span::call_site());
+        let table_ident = syn::Ident::new(&table_name.to_uppercase().to_string(), Span::call_site());
         
         // 生成结构体定义
         let struct_fields = table.columns.iter().map(|col| {
@@ -62,7 +62,7 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
             // 提取标签字段索引（所有非时间和非值字段）
             let tag_field_indices: Vec<usize> = table.columns.iter()
                 .enumerate()
-                .filter(|(i, col)| *i != time_field_index && *i != value_field_index)
+                .filter(|(i, _col)| *i != time_field_index && *i != value_field_index)
                 .map(|(i, _)| i)
                 .collect();
             
@@ -211,7 +211,7 @@ fn generate_field_defs(
         }
         
         // 检查是否有索引
-        if let Some(index) = indices.get(0) {
+        if let Some(index) = indices.first() {
             if index.field == *name {
                 secondary_index = Some(i);
                 secondary_index_type = match index.index_type.to_lowercase().as_str() {
