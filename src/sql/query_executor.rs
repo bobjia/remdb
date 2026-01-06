@@ -1533,37 +1533,7 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
         let null_str = if field.not_null { "NO" } else { "YES" };
         
         // 确定默认值
-                let default_str = if let Some(default_val) = &field.default_value {
-                    // 根据字段类型格式化默认值
-                    match field.data_type {
-                        // 整数类型
-                        DataType::UInt8 => format!("{}", unsafe { default_val.u8 }),
-                        DataType::UInt16 => format!("{}", unsafe { default_val.u16 }),
-                        DataType::UInt32 => format!("{}", unsafe { default_val.u32 }),
-                        DataType::UInt64 => format!("{}", unsafe { default_val.u64 }),
-                        DataType::Int8 => format!("{}", unsafe { default_val.i8 }),
-                        DataType::Int16 => format!("{}", unsafe { default_val.i16 }),
-                        DataType::Int32 => format!("{}", unsafe { default_val.i32 }),
-                        DataType::Int64 => format!("{}", unsafe { default_val.i64 }),
-                        // 布尔类型
-                        DataType::Bool => format!("{}", unsafe { default_val.bool }),
-                        // 浮点数类型
-                        DataType::Float32 => format!("{}", unsafe { default_val.float32 }),
-                        DataType::Float64 => format!("{}", unsafe { default_val.float64 }),
-                        // 时间类型
-                        DataType::Timestamp => format!("{}", unsafe { default_val.time.value }),
-                        DataType::TimestampTZ => format!("{}", unsafe { default_val.time.value }),
-                        // 字符串类型
-                        DataType::String => {
-                            let str_val = unsafe { &default_val.string };
-                            String::from_utf8_lossy(str_val).trim_end_matches(char::from(0)).to_string()
-                        },
-                        // 时间间隔类型
-                        DataType::Interval => format!("{}", unsafe { default_val.interval.value }),
-                    }
-                } else {
-                    "".to_string()
-                };
+        let default_str = if field.default_value.is_some() { "0" } else { "" };
         
         // 确定字段类型字符串表示
         let type_str = match field.data_type {
