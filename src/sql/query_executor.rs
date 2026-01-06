@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 
 use crate::{TableDef,RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN, DdlExecutor, TimeSeriesTable};
 use crate::sql::{SqlQuery, ResultSet, Condition, ComparisonCondition, ComparisonOperator, OrderByClause};
-use crate::sql::query_parser::{BetweenCondition, Expression};
+use crate::sql::query_parser::{BetweenCondition, Expression, BinaryOperator};
 
 /// 解析数据类型字符串，提取基本类型和精度
 /// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6)
@@ -151,6 +151,9 @@ fn execute_select_timeseries_query(db: &mut RemDb, query: &SqlQuery) -> Result<R
                 Expression::Constant { alias, .. } => {
                     alias.clone().unwrap_or_else(|| "constant".to_string())
                 },
+                Expression::BinaryOp { alias, .. } => {
+                    alias.clone().unwrap_or_else(|| "binary_op".to_string())
+                },
             }
         })
         .collect();
@@ -221,6 +224,9 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                 },
                 Expression::Constant { alias, .. } => {
                     alias.clone().unwrap_or_else(|| "constant".to_string())
+                },
+                Expression::BinaryOp { alias, .. } => {
+                    alias.clone().unwrap_or_else(|| "binary_op".to_string())
                 },
             }
         })
@@ -332,6 +338,216 @@ fn evaluate_expression(
                 value,
             })
         }
+        Expression::BinaryOp { left, op, right, .. } => {
+            // 评估左右操作数
+            let left_val = evaluate_expression(table, record_values, left)?;
+            let right_val = evaluate_expression(table, record_values, right)?;
+            
+            // 执行二元操作
+            evaluate_binary_op(left_val, *op, right_val)
+        }
+    }
+}
+
+/// 评估二元操作
+fn evaluate_binary_op(
+    left: TypedValue,
+    op: BinaryOperator,
+    right: TypedValue,
+) -> Result<TypedValue, QueryExecutionError> {
+    // 首先处理比较操作符
+    match op {
+        BinaryOperator::Equal | 
+        BinaryOperator::NotEqual | 
+        BinaryOperator::LessThan | 
+        BinaryOperator::LessThanOrEqual | 
+        BinaryOperator::GreaterThan | 
+        BinaryOperator::GreaterThanOrEqual => {
+            // 比较操作符需要返回布尔值
+            unsafe {
+                // 比较两个时间类型的值
+                let t1 = match left.value_type {
+                    DataType::Timestamp => left.value.time.value,
+                    DataType::TimestampTZ => left.value.time.value,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                
+                let t2 = match right.value_type {
+                    DataType::Timestamp => right.value.time.value,
+                    DataType::TimestampTZ => right.value.time.value,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                
+                // 执行比较操作
+                let result = match op {
+                    BinaryOperator::Equal => t1 == t2,
+                    BinaryOperator::NotEqual => t1 != t2,
+                    BinaryOperator::LessThan => t1 < t2,
+                    BinaryOperator::LessThanOrEqual => t1 <= t2,
+                    BinaryOperator::GreaterThan => t1 > t2,
+                    BinaryOperator::GreaterThanOrEqual => t1 >= t2,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                
+                // 返回布尔结果
+                return Ok(TypedValue {
+                    value_type: DataType::Bool,
+                    value: Value { bool: result },
+                });
+            }
+        },
+        _ => {}, // 其他操作符继续处理
+    }
+    
+    // 处理减法操作中两个时间类型相减的情况（Timestamp - Timestamp = Interval）
+    if op == BinaryOperator::Subtract {
+        unsafe {
+            // 检查是否是时间类型之间的减法
+            match (left.value_type, right.value_type) {
+                (DataType::Timestamp, DataType::Timestamp) | 
+                (DataType::TimestampTZ, DataType::TimestampTZ) |
+                (DataType::Timestamp, DataType::TimestampTZ) |
+                (DataType::TimestampTZ, DataType::Timestamp) => {
+                    // 任意时间类型之间的减法都返回Interval
+                    let t1 = left.value.time.value;
+                    let t2 = right.value.time.value;
+                    let diff = t1 - t2;
+                    
+                    return Ok(TypedValue {
+                        value_type: DataType::Interval,
+                        value: Value {
+                            interval: crate::types::db_interval::new(diff, 6, 0)
+                        },
+                    });
+                },
+                _ => {}, // 其他情况继续处理
+            }
+        }
+    }
+    
+    // 解析间隔值，支持字符串格式（如"1 HOUR"）和数值格式（微秒）
+    let interval_micros = match right.value_type {
+        DataType::Int64 => unsafe { right.value.i64 },
+        DataType::String => {
+            unsafe {
+                let interval_str = core::str::from_utf8(&right.value.string)
+                    .map_err(|_| QueryExecutionError::TypeMismatch)?
+                    .trim_end_matches(char::from(0));
+                parse_interval_string(interval_str)?
+            }
+        },
+        _ => return Err(QueryExecutionError::TypeMismatch),
+    };
+    
+    match op {
+        BinaryOperator::Add => {
+            // 处理时间类型加法（时间 + 间隔 = 时间）
+            unsafe {
+                match left.value_type {
+                    // Timestamp + Interval = Timestamp
+                    DataType::Timestamp => {
+                        let timestamp = left.value.time.value;
+                        let new_timestamp = timestamp + interval_micros;
+                        
+                        Ok(TypedValue {
+                            value_type: DataType::Timestamp,
+                            value: Value {
+                                time: crate::types::db_timestamp::new(new_timestamp, 0, 6, 0)
+                            },
+                        })
+                    },
+                    // TimestampTZ + Interval = TimestampTZ
+                    DataType::TimestampTZ => {
+                        let timestamp = left.value.time.value;
+                        let tz_offset = left.value.time.tz_offset;
+                        let new_timestamp = timestamp + interval_micros;
+                        
+                        Ok(TypedValue {
+                            value_type: DataType::TimestampTZ,
+                            value: Value {
+                                time: crate::types::db_timestamp::new(new_timestamp, tz_offset, 6, 0)
+                            },
+                        })
+                    },
+                    // 其他类型的加法操作（暂时不支持）
+                    _ => Err(QueryExecutionError::TypeMismatch),
+                }
+            }
+        },
+        BinaryOperator::Subtract => {
+            // 处理时间类型减法（时间 - 间隔 = 时间）
+            unsafe {
+                match left.value_type {
+                    // Timestamp - Interval = Timestamp
+                    DataType::Timestamp => {
+                        let timestamp = left.value.time.value;
+                        let new_timestamp = timestamp - interval_micros;
+                        
+                        Ok(TypedValue {
+                            value_type: DataType::Timestamp,
+                            value: Value {
+                                time: crate::types::db_timestamp::new(new_timestamp, 0, 6, 0)
+                            },
+                        })
+                    },
+                    // TimestampTZ - Interval = TimestampTZ
+                    DataType::TimestampTZ => {
+                        let timestamp = left.value.time.value;
+                        let tz_offset = left.value.time.tz_offset;
+                        let new_timestamp = timestamp - interval_micros;
+                        
+                        Ok(TypedValue {
+                            value_type: DataType::TimestampTZ,
+                            value: Value {
+                                time: crate::types::db_timestamp::new(new_timestamp, tz_offset, 6, 0)
+                            },
+                        })
+                    },
+                    // 其他类型的减法操作（暂时不支持）
+                    _ => Err(QueryExecutionError::TypeMismatch),
+                }
+            }
+        },
+        // 处理比较操作符
+        BinaryOperator::Equal | 
+        BinaryOperator::NotEqual | 
+        BinaryOperator::LessThan | 
+        BinaryOperator::LessThanOrEqual | 
+        BinaryOperator::GreaterThan | 
+        BinaryOperator::GreaterThanOrEqual => {
+            // 比较操作符需要返回布尔值
+            unsafe {
+                // 比较两个时间类型的值
+                let t1 = match left.value_type {
+                    DataType::Timestamp => left.value.time.value,
+                    DataType::TimestampTZ => left.value.time.value,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                
+                let t2 = match right.value_type {
+                    DataType::Timestamp => right.value.time.value,
+                    DataType::TimestampTZ => right.value.time.value,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                
+                // 执行比较操作
+                let result = match op {
+                    BinaryOperator::Equal => t1 == t2,
+                    BinaryOperator::NotEqual => t1 != t2,
+                    BinaryOperator::LessThan => t1 < t2,
+                    BinaryOperator::LessThanOrEqual => t1 <= t2,
+                    BinaryOperator::GreaterThan => t1 > t2,
+                    BinaryOperator::GreaterThanOrEqual => t1 >= t2,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                
+                // 返回布尔结果
+                Ok(TypedValue {
+                    value_type: DataType::Bool,
+                    value: Value { bool: result },
+                })
+            }
+        },
     }
 }
 
@@ -988,6 +1204,11 @@ fn validate_expression(table: &MemoryTable, expr: &Expression) -> Result<(), Que
         }
         Expression::Constant { .. } => {
             // 常量值不需要验证
+        }
+        Expression::BinaryOp { left, right, .. } => {
+            // 验证二元操作的左右操作数
+            validate_expression(table, left)?;
+            validate_expression(table, right)?;
         }
     }
     

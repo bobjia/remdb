@@ -365,26 +365,38 @@ fn test_time_arithmetic() {
     assert!(result.is_ok());
     
     // 测试1: 时间加法运算
-    let add_sql = "SELECT 
-        start_time + INTERVAL 1 HOUR as one_hour_later,
-        end_time + INTERVAL 30 MINUTE as thirty_minutes_later
-        FROM test_time_arithmetic";
-    let result = db.sql_query(add_sql);
-    assert!(result.is_ok());
+        let add_sql = "SELECT 
+            start_time + INTERVAL 1 HOUR as one_hour_later,
+            end_time + INTERVAL 30 MINUTE as thirty_minutes_later
+            FROM test_time_arithmetic";
+        println!("Executing SQL: {}", add_sql);
+        let result = db.sql_query(add_sql);
+        if let Err(e) = &result {
+            println!("Error executing SQL: {:?}", e);
+        }
+        assert!(result.is_ok(), "Error executing SQL: {:?}", result.err());
     
     // 测试2: 时间减法运算
     let sub_sql = "SELECT 
         start_time - INTERVAL 1 DAY as one_day_ago,
         end_time - INTERVAL 1 WEEK as one_week_ago
         FROM test_time_arithmetic";
+    println!("Executing SQL: {}", sub_sql);
     let result = db.sql_query(sub_sql);
+    if let Err(e) = &result {
+        println!("Error executing SQL: {:?}", e);
+    }
     assert!(result.is_ok());
     
     // 测试3: 计算时间差
     let diff_sql = "SELECT 
         end_time - start_time as time_diff
         FROM test_time_arithmetic";
+    println!("Executing SQL: {}", diff_sql);
     let result = db.sql_query(diff_sql);
+    if let Err(e) = &result {
+        println!("Error executing SQL: {:?}", e);
+    }
     assert!(result.is_ok());
     
     // 测试4: 时间比较
@@ -393,7 +405,11 @@ fn test_time_arithmetic() {
         start_time = end_time as is_same,
         start_time > end_time as is_start_later
         FROM test_time_arithmetic";
+    println!("Executing SQL: {}", compare_sql);
     let result = db.sql_query(compare_sql);
+    if let Err(e) = &result {
+        println!("Error executing SQL: {:?}", e);
+    }
     assert!(result.is_ok());
     
     println!("测试通过: 时间运算和比较功能验证成功");

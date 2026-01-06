@@ -193,6 +193,38 @@ pub enum Expression {
         /// 别名
         alias: Option<String>,
     },
+    /// 二元操作
+    BinaryOp {
+        /// 左操作数
+        left: Box<Expression>,
+        /// 操作符
+        op: BinaryOperator,
+        /// 右操作数
+        right: Box<Expression>,
+        /// 别名
+        alias: Option<String>,
+    },
+}
+
+/// 二元操作符
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BinaryOperator {
+    /// 加法
+    Add,
+    /// 减法
+    Subtract,
+    /// 等于
+    Equal,
+    /// 不等于
+    NotEqual,
+    /// 大于
+    GreaterThan,
+    /// 大于等于
+    GreaterThanOrEqual,
+    /// 小于
+    LessThan,
+    /// 小于等于
+    LessThanOrEqual,
 }
 
 /// 值类型
@@ -773,6 +805,110 @@ impl SqlParser {
     fn parse_expression(&mut self) -> Result<Expression, QueryParseError> {
         self.skip_whitespace();
         
+        let mut left_expr = self.parse_primary_expression()?;
+        
+        // 检查是否有二元操作符
+        loop {
+            self.skip_whitespace();
+            
+            let saved_pos = self.position;
+            let saved_col = self.column;
+            
+            // 尝试解析二元操作符
+            let op = match self.peek_char() {
+                Some('+') => {
+                    self.next_char();
+                    BinaryOperator::Add
+                }
+                Some('-') => {
+                    self.next_char();
+                    BinaryOperator::Subtract
+                }
+                Some('<') => {
+                    self.next_char();
+                    if self.peek_char() == Some('=') {
+                        self.next_char();
+                        BinaryOperator::LessThanOrEqual
+                    } else {
+                        BinaryOperator::LessThan
+                    }
+                }
+                Some('>') => {
+                    self.next_char();
+                    if self.peek_char() == Some('=') {
+                        self.next_char();
+                        BinaryOperator::GreaterThanOrEqual
+                    } else {
+                        BinaryOperator::GreaterThan
+                    }
+                }
+                Some('=') => {
+                    self.next_char();
+                    BinaryOperator::Equal
+                }
+                Some('!') => {
+                    self.next_char();
+                    if self.peek_char() == Some('=') {
+                        self.next_char();
+                        BinaryOperator::NotEqual
+                    } else {
+                        break;
+                    }
+                }
+                _ => break,
+            };
+            
+            self.skip_whitespace();
+            let right_expr = self.parse_primary_expression()?;
+            
+            // 构建新的表达式，将之前的表达式作为左操作数
+            left_expr = Expression::BinaryOp {
+                left: Box::new(left_expr),
+                op,
+                right: Box::new(right_expr),
+                alias: None,
+            };
+        }
+        
+        self.skip_whitespace();
+        let alias = self.parse_alias()?;
+        
+        // 如果有别名，需要更新表达式的别名
+        match left_expr {
+            Expression::Field { alias: mut expr_alias, name, .. } => {
+                Ok(Expression::Field {
+                    name,
+                    alias: alias.or(expr_alias),
+                })
+            },
+            Expression::FunctionCall { alias: mut expr_alias, name, args, .. } => {
+                Ok(Expression::FunctionCall {
+                    name,
+                    args,
+                    alias: alias.or(expr_alias),
+                })
+            },
+            Expression::Constant { alias: mut expr_alias, value, .. } => {
+                Ok(Expression::Constant {
+                    value,
+                    alias: alias.or(expr_alias),
+                })
+            },
+            Expression::BinaryOp { left, op, right, .. } => {
+                Ok(Expression::BinaryOp {
+                    left,
+                    op,
+                    right,
+                    alias,
+                })
+            },
+        }
+    }
+    
+    /// 解析基本表达式（字段、函数调用、常量、INTERVAL）
+    fn parse_primary_expression(&mut self) -> Result<Expression, QueryParseError> {
+        self.skip_whitespace();
+        
         // 保存当前位置，用于回溯
         let saved_pos = self.position;
         let saved_col = self.column;
@@ -788,14 +924,41 @@ impl SqlParser {
                 
                 // 解析函数调用
                 return self.parse_function_call();
+            } else if identifier.eq_ignore_ascii_case("INTERVAL") {
+                // 解析INTERVAL常量
+                self.skip_whitespace();
+                
+                // 解析间隔值（可能是数字或字符串）
+                let interval_value = self.parse_value()?;
+                
+                // 检查是否有单位（如HOUR, MINUTE等）
+                self.skip_whitespace();
+                if let Ok(unit) = self.parse_identifier() {
+                    // 组合值和单位为字符串，如"1 HOUR"或"30 MINUTE"
+                    let interval_str = match interval_value {
+                        Value::Integer(i) => format!("{} {}", i, unit),
+                        Value::String(s) => format!("{} {}", s, unit),
+                        _ => return Err(QueryParseError::InvalidValue),
+                    };
+                    
+                    // 将组合后的间隔字符串转换为微秒值
+                    // 这里我们暂时返回一个占位符，实际解析将在执行时进行
+                    return Ok(Expression::Constant {
+                        value: Value::String(interval_str),
+                        alias: None,
+                    });
+                } else {
+                    // 只有值，没有单位
+                    return Ok(Expression::Constant {
+                        value: interval_value,
+                        alias: None,
+                    });
+                }
             } else {
                 // 不是函数调用，返回字段表达式
-                self.skip_whitespace();
-                let alias = self.parse_alias()?;
-                
                 return Ok(Expression::Field {
                     name: identifier,
-                    alias,
+                    alias: None,
                 });
             }
         }
@@ -806,13 +969,10 @@ impl SqlParser {
         
         // 尝试解析常量值
         let value = self.parse_value()?;
-        self.skip_whitespace();
-        let alias = self.parse_alias()?;
-        
-        Ok(Expression::Constant {
+        return Ok(Expression::Constant {
             value,
-            alias,
-        })
+            alias: None,
+        });
     }
     
     /// 解析函数调用
