@@ -753,7 +753,8 @@ impl LogManager {
                     );
                     
                     // 获取或创建分区
-                    let partition = ts_table.partitions.get_or_create_partition(record.timestamp);
+                    let mut partitions_guard = ts_table.partitions.lock().unwrap();
+                    let partition = partitions_guard.get_or_create_partition(record.timestamp);
                     
                     // 写入记录到分区
                     let mut partition_guard = partition.lock().unwrap();
@@ -1032,17 +1033,18 @@ impl TransactionManager {
                             core::mem::size_of::<crate::time_series::TimeSeriesRecord>()
                         );
                         
-                        // 获取或创建分区
-                        let partition = ts_table.partitions.get_or_create_partition(record.timestamp);
-                        
-                        // 从分区中删除记录
-                        let mut partition_guard = partition.lock().unwrap();
-                        if let Some(index) = partition_guard.records.iter().position(|r| r.timestamp == record.timestamp) {
-                            partition_guard.records.remove(index);
-                            partition_guard.stats.record_count = partition_guard.records.len();
-                            
-                            // 更新索引
-                            ts_table.index.remove(record.timestamp);
+                        // 获取分区
+                        let partitions_guard = ts_table.partitions.lock().unwrap();
+                        if let Some(partition) = partitions_guard.get_partition(record.timestamp) {
+                            // 从分区中删除记录
+                            let mut partition_guard = partition.lock().unwrap();
+                            if let Some(index) = partition_guard.records.iter().position(|r| r.timestamp == record.timestamp) {
+                                partition_guard.records.remove(index);
+                                partition_guard.stats.record_count = partition_guard.records.len();
+                                
+                                // 更新索引
+                                ts_table.index.remove(record.timestamp);
+                            }
                         }
                     },
                 }

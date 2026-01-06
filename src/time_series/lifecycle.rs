@@ -2,6 +2,7 @@
 
 use core::time::Duration;
 use core::sync::atomic::{AtomicBool, Ordering};
+use alloc::sync::Arc;
 
 
 /// 数据保留策略
@@ -21,8 +22,10 @@ pub struct LifecycleManager {
     retention_period: Duration,
     /// 清理间隔
     cleanup_interval: Duration,
-    /// 是否正在运行（原子布尔值）
-    running: AtomicBool,
+    /// 是否正在运行（原子布尔值，Arc包装）
+    running: Arc<AtomicBool>,
+    /// 清理闭包，线程安全
+    cleanup_callback: Option<Arc<dyn Fn() + Send + Sync + 'static>>,
 }
 
 impl LifecycleManager {
@@ -31,13 +34,22 @@ impl LifecycleManager {
         Self {
             retention_period,
             cleanup_interval: Duration::from_secs(5 * 60), // 5分钟
-            running: AtomicBool::new(false),
+            running: Arc::new(AtomicBool::new(false)),
+            cleanup_callback: None,
         }
     }
     
     /// 设置清理间隔
     pub fn set_cleanup_interval(&mut self, interval: Duration) {
         self.cleanup_interval = interval;
+    }
+    
+    /// 设置清理闭包
+    pub fn set_cleanup_callback<F>(&mut self, callback: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        self.cleanup_callback = Some(Arc::new(callback));
     }
     
     /// 获取当前时间戳（秒）
@@ -72,27 +84,25 @@ impl LifecycleManager {
         
         self.running.store(true, Ordering::SeqCst);
         
-        // 注意：暂时注释掉清理线程，因为存在线程安全问题
-        // 后续需要重新设计清理机制
-        /*
         #[cfg(feature = "std")] 
         {
-            // 创建清理任务的克隆副本
-            let retention_period = self.retention_period;
+            // 克隆所需数据
             let cleanup_interval = self.cleanup_interval;
-            let running = &self.running;
+            let running = self.running.clone();
+            let cleanup = self.cleanup_callback.clone();
             
             std::thread::spawn(move || {
                 while running.load(Ordering::SeqCst) {
                     // 执行清理逻辑
-                    // 注意：这里需要调整清理逻辑，因为无法直接访问self
+                    if let Some(callback) = cleanup.as_ref() {
+                        callback();
+                    }
                     
                     // 休眠指定间隔
                     std::thread::sleep(cleanup_interval);
                 }
             });
         }
-        */
     }
     
     /// 停止清理任务
@@ -100,8 +110,10 @@ impl LifecycleManager {
         self.running.store(false, Ordering::SeqCst);
     }
     
-    /// 执行清理逻辑（需要被子模块实现）
+    /// 执行清理逻辑
     pub fn cleanup(&self) {
-        // 默认实现，具体清理逻辑由使用方实现
+        if let Some(callback) = &self.cleanup_callback {
+            callback();
+        }
     }
 }

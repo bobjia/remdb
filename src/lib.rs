@@ -1142,7 +1142,8 @@ impl RemDb {
             // 注意：这不是完整的ACID事务，但确保了基本的批量写入功能
             for record in data_points {
                 // 获取或创建分区
-                let partition = table.partitions.get_or_create_partition(record.timestamp);
+                let mut partitions_guard = table.partitions.lock().unwrap();
+                let partition = partitions_guard.get_or_create_partition(record.timestamp);
                 
                 // 写入记录到分区
                 let mut partition_guard = partition.lock().unwrap();
