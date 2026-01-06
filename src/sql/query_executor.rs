@@ -1531,10 +1531,10 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
         };
         
         // 确定是否允许NULL
-        let null_str = "NO"; // 目前所有字段都不允许NULL
+        let null_str = if field.not_null { "NO" } else { "YES" };
         
         // 确定默认值
-        let default_str = "0";
+        let default_str = if field.default_value.is_some() { "0" } else { "" };
         
         // 确定字段类型字符串表示
         let type_str = match field.data_type {
