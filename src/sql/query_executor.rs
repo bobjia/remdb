@@ -830,13 +830,68 @@ fn evaluate_binary_op(
                     
                     return Ok(TypedValue {
                         value_type: DataType::Interval,
-                        value: Value {
+                        value: Value { 
                             interval: crate::types::db_interval::new(diff, 6, 0)
                         },
                     });
                 },
                 _ => {}, // 其他情况继续处理
             }
+        }
+    }
+    
+    // 处理算术运算：先检查是否是数值类型运算
+    if matches!(left.value_type, 
+                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
+                DataType::Float32 | DataType::Float64) && 
+       matches!(right.value_type, 
+                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
+                DataType::Float32 | DataType::Float64) {
+        // 执行数值运算
+        unsafe {
+            // 将操作数转换为f64进行计算
+            let left_val = match left.value_type {
+                DataType::UInt8 => left.value.u8 as f64,
+                DataType::UInt16 => left.value.u16 as f64,
+                DataType::UInt32 => left.value.u32 as f64,
+                DataType::UInt64 => left.value.u64 as f64,
+                DataType::Int8 => left.value.i8 as f64,
+                DataType::Int16 => left.value.i16 as f64,
+                DataType::Int32 => left.value.i32 as f64,
+                DataType::Int64 => left.value.i64 as f64,
+                DataType::Float32 => left.value.float32 as f64,
+                DataType::Float64 => left.value.float64,
+                _ => unreachable!(),
+            };
+            
+            let right_val = match right.value_type {
+                DataType::UInt8 => right.value.u8 as f64,
+                DataType::UInt16 => right.value.u16 as f64,
+                DataType::UInt32 => right.value.u32 as f64,
+                DataType::UInt64 => right.value.u64 as f64,
+                DataType::Int8 => right.value.i8 as f64,
+                DataType::Int16 => right.value.i16 as f64,
+                DataType::Int32 => right.value.i32 as f64,
+                DataType::Int64 => right.value.i64 as f64,
+                DataType::Float32 => right.value.float32 as f64,
+                DataType::Float64 => right.value.float64,
+                _ => unreachable!(),
+            };
+            
+            let result = match op {
+                BinaryOperator::Add => left_val + right_val,
+                BinaryOperator::Subtract => left_val - right_val,
+                BinaryOperator::Multiply => left_val * right_val,
+                _ => return Err(QueryExecutionError::TypeMismatch),
+            };
+            
+            // 返回FLOAT64类型结果
+            return Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: result },
+            });
         }
     }
     
@@ -963,6 +1018,8 @@ fn evaluate_binary_op(
                 })
             }
         },
+        // 处理其他操作符（如Multiply），这些操作符在前面的数值运算部分已经处理
+        _ => Err(QueryExecutionError::TypeMismatch),
     }
 }
 

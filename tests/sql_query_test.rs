@@ -417,6 +417,22 @@ fn test_sql_functions() {
     let result = db.sql_query("SELECT id, name FROM TEST_TABLE WHERE age > 25");
     assert!(result.is_ok(), "带WHERE条件的SELECT查询应该成功");
     
+    // 测试组合数学计算
+    println!("=== 测试组合数学计算 ===");
+    
+    // 使用现有的TEST_TABLE进行组合数学计算测试，使用id和age字段
+    let result = db.sql_query("SELECT id, age, ROUND(SQRT(ABS(POWER(id, 2) + POWER(age, 2))), 2) as combined_result FROM TEST_TABLE");
+    assert!(result.is_ok(), "组合数学计算查询应该成功");
+    
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 5, "组合数学计算查询结果行数应该为5");
+    assert_eq!(result_set.column_count(), 3, "组合数学计算查询结果列数应该为3");
+    
+    println!("组合数学计算查询结果:");
+    for (i, row) in result_set.rows.iter().enumerate() {
+        println!("行 {}: {:?}", i + 1, row.values);
+    }
+    
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
 }

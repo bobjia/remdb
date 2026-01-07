@@ -213,6 +213,8 @@ pub enum BinaryOperator {
     Add,
     /// 减法
     Subtract,
+    /// 乘法
+    Multiply,
     /// 等于
     Equal,
     /// 不等于
@@ -823,6 +825,10 @@ impl SqlParser {
                 Some('-') => {
                     self.next_char();
                     BinaryOperator::Subtract
+                }
+                Some('*') => {
+                    self.next_char();
+                    BinaryOperator::Multiply
                 }
                 Some('<') => {
                     self.next_char();
