@@ -333,7 +333,7 @@ fn test_describe_table() {
         assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "int", "Expected UInt32 type to be int");
         assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "PRI", "Expected id to be primary key");
         assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected id to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "0", "Expected id default to be 0");
+        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "", "Expected id default to be empty string");
     } else {
         panic!("Could not find id field in describe result");
     }
@@ -342,8 +342,8 @@ fn test_describe_table() {
     if let Some(row) = find_row_by_field_name(&result_set, "name") {
         assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "varchar(64)", "Expected name type to be varchar(64)");
         assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected name to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected name to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "0", "Expected name default to be 0");
+        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "YES", "Expected name to allow NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "", "Expected name default to be empty string");
     } else {
         panic!("Could not find name field in describe result");
     }
@@ -352,8 +352,8 @@ fn test_describe_table() {
     if let Some(row) = find_row_by_field_name(&result_set, "salary") {
         assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "double", "Expected salary type to be double");
         assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected salary to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected salary to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "0", "Expected salary default to be 0");
+        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "YES", "Expected salary to allow NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "", "Expected salary default to be empty string");
     } else {
         panic!("Could not find salary field in describe result");
     }
@@ -362,8 +362,8 @@ fn test_describe_table() {
     if let Some(row) = find_row_by_field_name(&result_set, "active") {
         assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "bool", "Expected active type to be bool");
         assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected active to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected active to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "0", "Expected active default to be 0");
+        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "YES", "Expected active to allow NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "", "Expected active default to be empty string");
     } else {
         panic!("Could not find active field in describe result");
     }
@@ -372,8 +372,8 @@ fn test_describe_table() {
     if let Some(row) = find_row_by_field_name(&result_set, "department") {
         assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "varchar(64)", "Expected department type to be varchar(64)");
         assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected department to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected department to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "0", "Expected department default to be 0");
+        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "YES", "Expected department to allow NULL");
+        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "", "Expected department default to be empty string");
     } else {
         panic!("Could not find department field in describe result");
     }

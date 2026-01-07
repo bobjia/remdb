@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use core::ptr::NonNull;
+use crate::table::Defer;
 
 // 导出公共API
 pub mod types;
@@ -1665,23 +1666,7 @@ impl RemDb {
     }
 }
 
-/// 延迟执行结构体（用于确保资源释放）
-struct Defer<F: FnMut()>(Option<F>);
 
-impl<F: FnMut()> Defer<F> {
-    /// 创建新的延迟执行实例
-    pub fn new(f: F) -> Self {
-        Defer(Some(f))
-    }
-}
-
-impl<F: FnMut()> Drop for Defer<F> {
-    fn drop(&mut self) {
-        if let Some(mut f) = self.0.take() {
-            f();
-        }
-    }
-}
 
 
 /// 全局数据库实例 - 使用静态可变变量存储
