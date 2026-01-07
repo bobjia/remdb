@@ -534,64 +534,70 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
 }
 
 /// 评估表达式值
-fn evaluate_expression(
-    table: &MemoryTable,
-    record_values: &[TypedValue],
-    expr: &Expression,
-) -> Result<TypedValue, QueryExecutionError> {
-    match expr {
-        Expression::Field { name: field_name, .. } => {
-            // 查找字段索引
-            let field_index = table.def.fields
-                .iter()
-                .position(|field| field.name == field_name)
-                .ok_or(QueryExecutionError::FieldNotFound)?;
-            
-            // 返回记录中的字段值
-            Ok(record_values[field_index].clone())
-        }
-        Expression::FunctionCall { name, args, .. } => {
-            // 评估函数参数
-            let mut arg_values = Vec::with_capacity(args.len());
-            for arg in args {
-                arg_values.push(evaluate_expression(table, record_values, arg)?);
+    fn evaluate_expression(
+        table: &MemoryTable,
+        record_values: &[TypedValue],
+        expr: &Expression,
+    ) -> Result<TypedValue, QueryExecutionError> {
+        match expr {
+            Expression::Field { name: field_name, .. } => {
+                // 查找字段索引
+                if field_name == "*" {
+                    // 对于COUNT(*), 返回第一个字段的值作为占位符
+                    // 实际COUNT函数不使用这个值，只是简单累加
+                    Ok(record_values[0].clone())
+                } else {
+                    let field_index = table.def.fields
+                        .iter()
+                        .position(|field| field.name == field_name)
+                        .ok_or(QueryExecutionError::FieldNotFound)?;
+                    
+                    // 返回记录中的字段值
+                    Ok(record_values[field_index].clone())
+                }
             }
-            
-            // 执行函数调用
-            execute_function_call(name, &arg_values)
-        }
-        Expression::Constant { value: constant, .. } => {
-            // 将sql::Value转换为types::TypedValue
-            use crate::sql::Value as SqlValue;
-            
-            let (value_type, value) = match constant {
-                SqlValue::Integer(i) => (DataType::Int64, Value { i64: *i }),
-                SqlValue::Float(f) => (DataType::Float64, Value { float64: *f }),
-                SqlValue::String(s) => {
-                    let mut buf = [0; MAX_STRING_LEN];
-                    let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-                    buf[..len].copy_from_slice(s.as_bytes());
-                    (DataType::String, Value { string: buf })
-                },
-                SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
-                SqlValue::Null => (DataType::Int64, Value { i64: 0 }),
-            };
-            
-            Ok(TypedValue {
-                value_type,
-                value,
-            })
-        }
-        Expression::BinaryOp { left, op, right, .. } => {
-            // 评估左右操作数
-            let left_val = evaluate_expression(table, record_values, left)?;
-            let right_val = evaluate_expression(table, record_values, right)?;
-            
-            // 执行二元操作
-            evaluate_binary_op(left_val, *op, right_val)
+            Expression::FunctionCall { name, args, .. } => {
+                // 评估函数参数
+                let mut arg_values = Vec::with_capacity(args.len());
+                for arg in args {
+                    arg_values.push(evaluate_expression(table, record_values, arg)?);
+                }
+                
+                // 执行函数调用
+                execute_function_call(name, &arg_values)
+            }
+            Expression::Constant { value: constant, .. } => {
+                // 将sql::Value转换为types::TypedValue
+                use crate::sql::Value as SqlValue;
+                
+                let (value_type, value) = match constant {
+                    SqlValue::Integer(i) => (DataType::Int64, Value { i64: *i }),
+                    SqlValue::Float(f) => (DataType::Float64, Value { float64: *f }),
+                    SqlValue::String(s) => {
+                        let mut buf = [0; MAX_STRING_LEN];
+                        let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                        buf[..len].copy_from_slice(s.as_bytes());
+                        (DataType::String, Value { string: buf })
+                    },
+                    SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
+                    SqlValue::Null => (DataType::Int64, Value { i64: 0 }),
+                };
+                
+                Ok(TypedValue {
+                    value_type,
+                    value,
+                })
+            }
+            Expression::BinaryOp { left, op, right, .. } => {
+                // 评估左右操作数
+                let left_val = evaluate_expression(table, record_values, left)?;
+                let right_val = evaluate_expression(table, record_values, right)?;
+                
+                // 执行二元操作
+                evaluate_binary_op(left_val, *op, right_val)
+            }
         }
     }
-}
 
 /// 评估二元操作
 fn evaluate_binary_op(
@@ -1436,7 +1442,8 @@ fn find_table_by_name<'a>(db: &'a RemDb, table_name: &str) -> Result<&'a MemoryT
 fn validate_expression(table: &MemoryTable, expr: &Expression) -> Result<(), QueryExecutionError> {
     match expr {
         Expression::Field { name: field_name, .. } => {
-            if !table.def.fields.iter().any(|field| field.name == field_name) {
+            // 跳过对 * 的验证，它是一个特殊情况
+            if field_name != "*" && !table.def.fields.iter().any(|field| field.name == field_name) {
                 return Err(QueryExecutionError::FieldNotFound);
             }
         }

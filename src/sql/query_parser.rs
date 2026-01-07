@@ -905,13 +905,22 @@ impl SqlParser {
         }
     }
     
-    /// 解析基本表达式（字段、函数调用、常量、INTERVAL）
+    /// 解析基本表达式（字段、函数调用、常量、INTERVAL、*）
     fn parse_primary_expression(&mut self) -> Result<Expression, QueryParseError> {
         self.skip_whitespace();
         
         // 保存当前位置，用于回溯
         let saved_pos = self.position;
         let saved_col = self.column;
+        
+        // 检查是否是星号
+        if self.match_char('*') {
+            // 返回字段表达式，代表所有字段
+            return Ok(Expression::Field {
+                name: "*".to_string(),
+                alias: None,
+            });
+        }
         
         // 尝试解析标识符
         if let Ok(identifier) = self.parse_identifier() {

@@ -422,3 +422,132 @@ fn test_sql_functions() {
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
 }
+
+#[cfg_attr(any(test, feature = "std"), test)]
+fn test_sql_aggregate_functions() {
+    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
+    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    
+    // 初始化内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).unwrap();
+    }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+    
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    
+    // 初始化数据库
+    let config = &TEST_DB;
+    let db = unsafe {
+        init_global_db(config).unwrap()
+    };
+    
+    // 准备测试数据
+    let test_data = [
+        (1, "Alice", 25, true, 1620000000000),
+        (2, "Bob", 30, true, 1620000001000),
+        (3, "Charlie", 35, false, 1620000002000),
+        (4, "David", 22, true, 1620000003000),
+        (5, "Eve", 28, false, 1620000004000),
+    ];
+    
+    // 插入测试数据
+    #[repr(C)]
+    struct TestRecord {
+        id: i32,          // 4字节
+        name: [u8; 32],   // 32字节
+        age: i8,          // 1字节
+        active: u8,       // 1字节（bool在C中通常是1字节）
+        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐
+        created_at: u64,  // 8字节
+    }
+    
+    for (id, name, age, active, created_at) in test_data {
+        let mut record = TestRecord {
+            id,
+            name: [0u8; 32],
+            age,
+            active: if active { 1 } else { 0 }, // 将bool转换为u8
+            _padding: [0u8; 2], // 初始化填充字段为0
+            created_at,
+        };
+        
+        let name_bytes = name.as_bytes();
+        record.name[..name_bytes.len()].copy_from_slice(name_bytes);
+        
+        let insert_id = unsafe {
+            db.get_table_mut(0).unwrap().insert(&record as *const _ as *const u8).unwrap()
+        };
+        assert!(insert_id < config.tables[0].max_records);
+    }
+    
+    // 测试聚合函数
+    println!("=== 测试聚合函数 ===");
+    
+    // 1. 测试COUNT函数
+    println!("测试COUNT函数...");
+    let result = db.sql_query("SELECT COUNT(*) FROM TEST_TABLE").unwrap();
+    assert_eq!(result.row_count(), 1, "COUNT查询结果应该只有1行");
+    assert_eq!(result.column_count(), 1, "COUNT查询结果应该只有1列");
+    
+    // 2. 测试COUNT(field)
+    let result = db.sql_query("SELECT COUNT(id) FROM TEST_TABLE").unwrap();
+    assert_eq!(result.row_count(), 1, "COUNT(field)查询结果应该只有1行");
+    assert_eq!(result.column_count(), 1, "COUNT(field)查询结果应该只有1列");
+    
+    // 3. 测试SUM函数
+    println!("测试SUM函数...");
+    let result = db.sql_query("SELECT SUM(age) FROM TEST_TABLE").unwrap();
+    assert_eq!(result.row_count(), 1, "SUM查询结果应该只有1行");
+    assert_eq!(result.column_count(), 1, "SUM查询结果应该只有1列");
+    
+    // 4. 测试AVG函数
+    println!("测试AVG函数...");
+    let result = db.sql_query("SELECT AVG(age) FROM TEST_TABLE").unwrap();
+    assert_eq!(result.row_count(), 1, "AVG查询结果应该只有1行");
+    assert_eq!(result.column_count(), 1, "AVG查询结果应该只有1列");
+    
+    // 5. 测试MIN函数
+    println!("测试MIN函数...");
+    let result = db.sql_query("SELECT MIN(age) FROM TEST_TABLE").unwrap();
+    assert_eq!(result.row_count(), 1, "MIN查询结果应该只有1行");
+    assert_eq!(result.column_count(), 1, "MIN查询结果应该只有1列");
+    
+    // 6. 测试MAX函数
+    println!("测试MAX函数...");
+    let result = db.sql_query("SELECT MAX(age) FROM TEST_TABLE").unwrap();
+    assert_eq!(result.row_count(), 1, "MAX查询结果应该只有1行");
+    assert_eq!(result.column_count(), 1, "MAX查询结果应该只有1列");
+    
+    // 7. 测试带WHERE条件的聚合函数
+    println!("测试带WHERE条件的聚合函数...");
+    let result = db.sql_query("SELECT COUNT(*) FROM TEST_TABLE WHERE active = true").unwrap();
+    assert_eq!(result.row_count(), 1, "带WHERE条件的COUNT查询结果应该只有1行");
+    assert_eq!(result.column_count(), 1, "带WHERE条件的COUNT查询结果应该只有1列");
+    
+    let result = db.sql_query("SELECT SUM(age) FROM TEST_TABLE WHERE active = true").unwrap();
+    assert_eq!(result.row_count(), 1, "带WHERE条件的SUM查询结果应该只有1行");
+    
+    // 8. 测试多个聚合函数组合
+    println!("测试多个聚合函数组合...");
+    let result = db.sql_query("SELECT COUNT(*), SUM(age), AVG(age), MIN(age), MAX(age) FROM TEST_TABLE").unwrap();
+    assert_eq!(result.row_count(), 1, "多个聚合函数组合查询结果应该只有1行");
+    assert_eq!(result.column_count(), 5, "多个聚合函数组合查询结果应该有5列");
+    
+    // 9. 测试COUNT(*), COUNT(1), COUNT(id)的等价性
+    println!("测试COUNT函数等价性...");
+    let result1 = db.sql_query("SELECT COUNT(*) FROM TEST_TABLE").unwrap();
+    let result2 = db.sql_query("SELECT COUNT(1) FROM TEST_TABLE").unwrap();
+    let result3 = db.sql_query("SELECT COUNT(id) FROM TEST_TABLE").unwrap();
+    assert_eq!(result1.row_count(), result2.row_count(), "COUNT(*) 和 COUNT(1) 应该返回相同行数");
+    assert_eq!(result2.row_count(), result3.row_count(), "COUNT(1) 和 COUNT(id) 应该返回相同行数");
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+}
