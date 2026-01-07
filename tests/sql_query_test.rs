@@ -190,14 +190,13 @@ fn test_sql_query() {
     // 插入测试数据
     // 确保TestRecord的内存布局与table!宏生成的字段偏移量匹配
     // 使用精确的#[repr(C)]布局，确保字段顺序和大小与table!宏定义一致
-    // 添加2字节填充，因为created_at需要8字节对齐
+    // Rust的#[repr(C)]会自动处理对齐，不需要手动添加填充
     #[repr(C)]
     struct TestRecord {
         id: i32,          // 4字节
         name: [u8; 32],   // 32字节
         age: i8,          // 1字节
         active: u8,       // 1字节（bool在C中通常是1字节）
-        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐
         created_at: u64,  // 8字节
     }
     
@@ -216,7 +215,6 @@ fn test_sql_query() {
             name: [0u8; 32],
             age,
             active: if active { 1 } else { 0 }, // 将bool转换为u8
-            _padding: [0u8; 2], // 初始化填充字段为0
             created_at,
         };
         

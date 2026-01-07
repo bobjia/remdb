@@ -229,6 +229,31 @@ SELECT COUNT(*) FROM sensor_data WHERE temperature > 25;
 | `MOVING_SUM` | 计算滑动窗口内的数值总和 | 数值字段, 窗口大小 | `REAL` | `MOVING_SUM(temperature, 3)` |
 | `MOVING_AVERAGE` | 计算滑动窗口内的平均值 | 数值字段, 窗口大小 | `REAL` | `MOVING_AVERAGE(temperature, 3)` |
 
+##### 字符串函数
+
+| 函数名 | 描述 | 参数 | 返回类型 | 示例 |
+|--------|------|------|----------|------|
+| `CONCAT` | 连接多个字符串 | 字符串1, 字符串2, ... | `TEXT` | `CONCAT('Hello', ' ', 'World')` |
+| `SUBSTRING` | 截取字符串 | 字符串, 起始位置, [长度] | `TEXT` | `SUBSTRING('Hello', 1, 3)` |
+| `UPPER` | 转换为大写 | 字符串 | `TEXT` | `UPPER('hello')` |
+| `LOWER` | 转换为小写 | 字符串 | `TEXT` | `LOWER('HELLO')` |
+
+##### 数学函数
+
+| 函数名 | 描述 | 参数 | 返回类型 | 示例 |
+|--------|------|------|----------|------|
+| `ABS` | 计算绝对值 | 数值 | 数值类型 | `ABS(-10)` |
+| `SQRT` | 计算平方根 | 数值 | `REAL` | `SQRT(16)` |
+| `POWER` | 计算幂 | 底数, 指数 | `REAL` | `POWER(2, 3)` |
+| `SIN` | 计算正弦值 | 弧度 | `REAL` | `SIN(0)` |
+| `COS` | 计算余弦值 | 弧度 | `REAL` | `COS(0)` |
+| `LOG` | 计算自然对数 | 数值 | `REAL` | `LOG(10)` |
+| `EXP` | 计算指数值 | 数值 | `REAL` | `EXP(1)` |
+| `ROUND` | 四舍五入 | 数值, [小数位数] | 数值类型 | `ROUND(3.14159, 2)` |
+| `CEIL` | 向上取整 | 数值 | 数值类型 | `CEIL(3.14)` |
+| `FLOOR` | 向下取整 | 数值 | 数值类型 | `FLOOR(3.99)` |
+| `MOD` | 计算模运算 | 被除数, 除数 | 数值类型 | `MOD(10, 3)` |
+
 ##### 时间窗口函数
 
 | 函数名 | 描述 | 参数 | 返回类型 | 示例 |
@@ -562,7 +587,63 @@ FROM sensor_readings
 GROUP BY hour_window, day_window;
 ```
 
-### 9.3 复合函数示例
+### 9.5 字符串函数示例
+
+```sql
+-- 连接字符串
+SELECT CONCAT('Hello', ' ', 'World') AS greeting;
+
+-- 截取字符串
+SELECT SUBSTRING('Hello World', 7, 5) AS substring_result;
+
+-- 转换为大写
+SELECT UPPER('hello world') AS uppercase_result;
+
+-- 转换为小写
+SELECT LOWER('HELLO WORLD') AS lowercase_result;
+
+-- 结合多个字符串函数
+SELECT UPPER(CONCAT('Hello', ' ', 'World')) AS uppercase_greeting;
+
+-- 在WHERE条件中使用字符串函数
+SELECT * FROM users WHERE UPPER(name) = 'ALICE';
+```
+
+### 9.6 数学函数示例
+
+```sql
+-- 计算绝对值
+SELECT ABS(-10) AS absolute_value;
+
+-- 计算平方根
+SELECT SQRT(16) AS square_root;
+
+-- 计算幂
+SELECT POWER(2, 3) AS power_result;
+
+-- 计算正弦和余弦值
+SELECT SIN(0) AS sin_zero, COS(0) AS cos_zero;
+
+-- 计算自然对数和指数
+SELECT LOG(10) AS natural_log, EXP(1) AS exp_one;
+
+-- 四舍五入
+SELECT ROUND(3.14159, 2) AS rounded_pi;
+
+-- 向上取整和向下取整
+SELECT CEIL(3.14) AS ceil_result, FLOOR(3.99) AS floor_result;
+
+-- 模运算
+SELECT MOD(10, 3) AS mod_result;
+
+-- 结合多个数学函数
+SELECT SQRT(ABS(-16)) AS sqrt_abs;
+
+-- 在SELECT列表中使用数学函数
+SELECT temperature, ROUND(temperature, 1) AS rounded_temp FROM sensor_readings;
+```
+
+### 9.7 复合函数示例
 
 ```sql
 -- 结合WHERE条件和聚合函数
@@ -584,6 +665,15 @@ FROM sensor_readings
 WHERE sensor_id IN (1, 2)
 GROUP BY sensor_id, time_window
 ORDER BY sensor_id, time_window;
+
+-- 结合数学函数和聚合函数
+SELECT 
+    sensor_id,
+    AVG(temperature) AS avg_temp,
+    STDDEV(temperature) AS stddev_temp,
+    ROUND(AVG(temperature), 2) AS rounded_avg_temp
+FROM sensor_readings 
+GROUP BY sensor_id;
 ```
 
 # 总结
@@ -599,6 +689,8 @@ RemDB提供了轻量级的SQL支持，适合嵌入式系统和边缘计算场景
    - 基础统计聚合函数：COUNT、SUM、AVG、MIN、MAX
    - 扩展统计函数：VAR、STDDEV（总体方差和标准差）、VAR_SAMP、STDDEV_SAMP（样本方差和标准差）
    - 滑动窗口函数：MOVING_SUM、MOVING_AVERAGE
+   - 字符串函数：CONCAT、SUBSTRING、UPPER、LOWER
+   - 数学函数：ABS、SQRT、POWER、SIN、COS、LOG、EXP、ROUND、CEIL、FLOOR、MOD
    - 时间窗口函数：TIME_BUCKET，支持多种时间间隔格式
 5. **高效的查询执行**：优化的查询执行器，支持表达式求值和函数调用
 
