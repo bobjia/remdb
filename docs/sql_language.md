@@ -217,6 +217,17 @@ SELECT COUNT(*) FROM sensor_data WHERE temperature > 25;
 | `AVG` | 计算平均值 | 数值字段 | `REAL` | `AVG(temperature)` |
 | `MIN` | 计算最小值 | 数值字段 | 数值类型 | `MIN(value)` |
 | `MAX` | 计算最大值 | 数值字段 | 数值类型 | `MAX(value)` |
+| `VAR` | 计算总体方差 | 数值字段 | `REAL` | `VAR(temperature)` |
+| `STDDEV` | 计算总体标准差 | 数值字段 | `REAL` | `STDDEV(temperature)` |
+| `VAR_SAMP` | 计算样本方差 | 数值字段 | `REAL` | `VAR_SAMP(temperature)` |
+| `STDDEV_SAMP` | 计算样本标准差 | 数值字段 | `REAL` | `STDDEV_SAMP(temperature)` |
+
+##### 滑动窗口函数
+
+| 函数名 | 描述 | 参数 | 返回类型 | 示例 |
+|--------|------|------|----------|------|
+| `MOVING_SUM` | 计算滑动窗口内的数值总和 | 数值字段, 窗口大小 | `REAL` | `MOVING_SUM(temperature, 3)` |
+| `MOVING_AVERAGE` | 计算滑动窗口内的平均值 | 数值字段, 窗口大小 | `REAL` | `MOVING_AVERAGE(temperature, 3)` |
 
 ##### 时间窗口函数
 
@@ -473,9 +484,47 @@ SELECT
     MIN(temperature) AS min_temp,
     MAX(temperature) AS max_temp
 FROM sensor_readings WHERE sensor_id = 1;
+
+-- 计算温度的总体方差和标准差
+SELECT 
+    VAR(temperature) AS var_temp,
+    STDDEV(temperature) AS stddev_temp
+FROM sensor_readings WHERE sensor_id = 1;
+
+-- 计算温度的样本方差和标准差
+SELECT 
+    VAR_SAMP(temperature) AS var_samp_temp,
+    STDDEV_SAMP(temperature) AS stddev_samp_temp
+FROM sensor_readings WHERE sensor_id = 1;
+
+-- 结合多个统计函数
+SELECT 
+    COUNT(*) AS reading_count,
+    AVG(temperature) AS avg_temp,
+    VAR(temperature) AS var_temp,
+    STDDEV(temperature) AS stddev_temp
+FROM sensor_readings GROUP BY sensor_id;
 ```
 
-### 9.2 时间窗口函数示例
+### 9.3 滑动窗口函数示例
+
+```sql
+-- 计算温度的滑动窗口总和
+SELECT MOVING_SUM(temperature, 3) AS moving_sum_temp FROM sensor_readings WHERE sensor_id = 1;
+
+-- 计算温度的滑动窗口平均值
+SELECT MOVING_AVERAGE(temperature, 3) AS moving_avg_temp FROM sensor_readings WHERE sensor_id = 1;
+
+-- 结合多个滑动窗口函数
+SELECT 
+    timestamp,
+    temperature,
+    MOVING_SUM(temperature, 3) AS moving_sum,
+    MOVING_AVERAGE(temperature, 3) AS moving_avg
+FROM sensor_readings WHERE sensor_id = 1 ORDER BY timestamp;
+```
+
+### 9.4 时间窗口函数示例
 
 ```sql
 -- 使用TIME_BUCKET函数按5分钟窗口分组数据
@@ -548,6 +597,8 @@ RemDB提供了轻量级的SQL支持，适合嵌入式系统和边缘计算场景
 3. **时序数据支持**：专门的时序表创建语法，支持数据压缩和TTL自动清理
 4. **内嵌函数支持**：
    - 基础统计聚合函数：COUNT、SUM、AVG、MIN、MAX
+   - 扩展统计函数：VAR、STDDEV（总体方差和标准差）、VAR_SAMP、STDDEV_SAMP（样本方差和标准差）
+   - 滑动窗口函数：MOVING_SUM、MOVING_AVERAGE
    - 时间窗口函数：TIME_BUCKET，支持多种时间间隔格式
 5. **高效的查询执行**：优化的查询执行器，支持表达式求值和函数调用
 

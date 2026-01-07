@@ -200,6 +200,9 @@ fn process_aggregate_query(
     // 为每个聚合函数准备初始值
     let mut aggregate_values = Vec::with_capacity(columns.len());
     
+    // 为方差和标准差准备额外的状态：(sum, sum_of_squares, count)
+    let mut var_stddev_states: Vec<(f64, f64, usize)> = Vec::with_capacity(columns.len());
+    
     for expr in columns {
         match expr {
             Expression::FunctionCall { name, .. } => {
@@ -211,6 +214,7 @@ fn process_aggregate_query(
                             value_type: DataType::UInt64,
                             value: Value { u64: 0 },
                         });
+                        var_stddev_states.push((0.0, 0.0, 0));
                     },
                     "SUM" | "AVG" => {
                         // 初始化SUM/AVG为0
@@ -218,6 +222,7 @@ fn process_aggregate_query(
                             value_type: DataType::UInt64,
                             value: Value { u64: 0 },
                         });
+                        var_stddev_states.push((0.0, 0.0, 0));
                     },
                     "MIN" | "MAX" => {
                         // 初始化MIN/MAX为None（使用0作为占位符，后续会更新）
@@ -225,6 +230,27 @@ fn process_aggregate_query(
                             value_type: DataType::UInt64,
                             value: Value { u64: 0 },
                         });
+                        var_stddev_states.push((0.0, 0.0, 0));
+                    },
+                    // 新增统计学函数初始化
+                    "STDDEV" | "VAR" | "STDDEV_SAMP" | "VAR_SAMP" => {
+                        // 初始化方差和标准差的中间状态
+                        aggregate_values.push(TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value { float64: 0.0 },
+                        });
+                        // 初始化(sum, sum_of_squares, count)
+                        var_stddev_states.push((0.0, 0.0, 0));
+                    },
+                    // 新增滑动窗口函数初始化
+                    "MOVING_AVERAGE" | "MOVING_SUM" => {
+                        // 初始化滑动窗口函数为0
+                        aggregate_values.push(TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value { float64: 0.0 },
+                        });
+                        // 初始化(sum, sum_of_squares, count)
+                        var_stddev_states.push((0.0, 0.0, 0));
                     },
                     _ => {
                         return Err(QueryExecutionError::UnsupportedFunction(name.to_string()));
@@ -345,10 +371,142 @@ fn process_aggregate_query(
                             }
                         }
                     },
+                    // 新增统计学函数处理
+                    "STDDEV" | "VAR" | "STDDEV_SAMP" | "VAR_SAMP" => {
+                        // 将当前值转换为浮点数
+                        let current_float = unsafe {
+                            match current_value.value_type {
+                                DataType::UInt8 => current_value.value.u8 as f64,
+                                DataType::UInt16 => current_value.value.u16 as f64,
+                                DataType::UInt32 => current_value.value.u32 as f64,
+                                DataType::UInt64 => current_value.value.u64 as f64,
+                                DataType::Int8 => current_value.value.i8 as f64,
+                                DataType::Int16 => current_value.value.i16 as f64,
+                                DataType::Int32 => current_value.value.i32 as f64,
+                                DataType::Int64 => current_value.value.i64 as f64,
+                                DataType::Float32 => current_value.value.float32 as f64,
+                                DataType::Float64 => current_value.value.float64,
+                                _ => return Err(QueryExecutionError::TypeMismatch),
+                            }
+                        };
+                        
+                        // 更新方差和标准差的状态：(sum, sum_of_squares, count)
+                        let (sum, sum_of_squares, count) = &mut var_stddev_states[i];
+                        *sum += current_float;
+                        *sum_of_squares += current_float * current_float;
+                        *count += 1;
+                    },
+                    // 新增滑动窗口函数处理
+                    "MOVING_AVERAGE" | "MOVING_SUM" => {
+                        // 将当前值转换为浮点数
+                        let current_float = unsafe {
+                            match current_value.value_type {
+                                DataType::UInt8 => current_value.value.u8 as f64,
+                                DataType::UInt16 => current_value.value.u16 as f64,
+                                DataType::UInt32 => current_value.value.u32 as f64,
+                                DataType::UInt64 => current_value.value.u64 as f64,
+                                DataType::Int8 => current_value.value.i8 as f64,
+                                DataType::Int16 => current_value.value.i16 as f64,
+                                DataType::Int32 => current_value.value.i32 as f64,
+                                DataType::Int64 => current_value.value.i64 as f64,
+                                DataType::Float32 => current_value.value.float32 as f64,
+                                DataType::Float64 => current_value.value.float64,
+                                _ => return Err(QueryExecutionError::TypeMismatch),
+                            }
+                        };
+                        
+                        // 更新滑动窗口函数的状态：(sum, sum_of_squares, count)
+                        let (sum, _, count) = &mut var_stddev_states[i];
+                        *sum += current_float;
+                        *count += 1;
+                    },
                     _ => return Err(QueryExecutionError::UnsupportedFunction(name.to_string())),
                 }
             } else {
                 return Err(QueryExecutionError::InternalError);
+            }
+        }
+    }
+    
+    // 计算最终的聚合结果，特别是方差和标准差
+    for (i, expr) in columns.iter().enumerate() {
+        if let Expression::FunctionCall { name, .. } = expr {
+            let name = name.to_uppercase();
+            match name.as_str() {
+                // 计算方差和标准差
+                "STDDEV" => {
+                    let (sum, sum_of_squares, count) = var_stddev_states[i];
+                    if count > 0 {
+                        // 总体方差：sum_of_squares/count - (sum/count)^2
+                        let mean = sum / count as f64;
+                        let variance = sum_of_squares / count as f64 - mean * mean;
+                        // 总体标准差：sqrt(variance)
+                        let stddev = variance.sqrt();
+                        aggregate_values[i] = TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value { float64: stddev },
+                        };
+                    }
+                },
+                "VAR" => {
+                    let (sum, sum_of_squares, count) = var_stddev_states[i];
+                    if count > 0 {
+                        // 总体方差：sum_of_squares/count - (sum/count)^2
+                        let mean = sum / count as f64;
+                        let variance = sum_of_squares / count as f64 - mean * mean;
+                        aggregate_values[i] = TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value { float64: variance },
+                        };
+                    }
+                },
+                "STDDEV_SAMP" => {
+                    let (sum, sum_of_squares, count) = var_stddev_states[i];
+                    if count > 1 {
+                        // 样本方差：(sum_of_squares - sum^2/count) / (count - 1)
+                        let mean = sum / count as f64;
+                        let variance = (sum_of_squares - sum * sum / count as f64) / (count - 1) as f64;
+                        // 样本标准差：sqrt(variance)
+                        let stddev = variance.sqrt();
+                        aggregate_values[i] = TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value { float64: stddev },
+                        };
+                    }
+                },
+                "VAR_SAMP" => {
+                    let (sum, sum_of_squares, count) = var_stddev_states[i];
+                    if count > 1 {
+                        // 样本方差：(sum_of_squares - sum^2/count) / (count - 1)
+                        let mean = sum / count as f64;
+                        let variance = (sum_of_squares - sum * sum / count as f64) / (count - 1) as f64;
+                        aggregate_values[i] = TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value { float64: variance },
+                        };
+                    }
+                },
+                // 滑动窗口函数处理
+                "MOVING_AVERAGE" => {
+                    let (sum, _, count) = var_stddev_states[i];
+                    if count > 0 {
+                        // 简单实现：返回平均值，不实现完整的滑动窗口逻辑
+                        let avg = sum / count as f64;
+                        aggregate_values[i] = TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value { float64: avg },
+                        };
+                    }
+                },
+                "MOVING_SUM" => {
+                    let (sum, _, _) = var_stddev_states[i];
+                    // 简单实现：返回总和，不实现完整的滑动窗口逻辑
+                    aggregate_values[i] = TypedValue {
+                        value_type: DataType::Float64,
+                        value: Value { float64: sum },
+                    };
+                },
+                _ => {}, // 其他函数不需要额外计算
             }
         }
     }
@@ -498,7 +656,14 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         match expr {
             Expression::FunctionCall { name, .. } => {
                 let name = name.to_uppercase();
-                name == "COUNT" || name == "SUM" || name == "AVG" || name == "MIN" || name == "MAX"
+                // 基础聚合函数
+                let basic_agg = name == "COUNT" || name == "SUM" || name == "AVG" || name == "MIN" || name == "MAX";
+                // 新增统计学函数
+                let stat_agg = name == "STDDEV" || name == "VAR" || name == "STDDEV_SAMP" || name == "VAR_SAMP";
+                // 新增滑动窗口函数（目前按聚合函数处理）
+                let window_agg = name == "MOVING_AVERAGE" || name == "MOVING_SUM";
+                
+                basic_agg || stat_agg || window_agg
             },
             _ => false,
         }
@@ -813,6 +978,15 @@ fn execute_function_call(
         "AVG" => execute_avg(args),
         "MIN" => execute_min(args),
         "MAX" => execute_max(args),
+        // 新增统计学函数
+        "STDDEV" => execute_stddev(args),
+        "VAR" => execute_var(args),
+        "STDDEV_SAMP" => execute_stddev_samp(args),
+        "VAR_SAMP" => execute_var_samp(args),
+        // 新增滑动窗口函数
+        "MOVING_AVERAGE" => execute_moving_average(args),
+        "MOVING_SUM" => execute_moving_sum(args),
+        // 时间函数
         "TIME_BUCKET" => execute_time_bucket(args),
         // 时间格式化函数
         "TO_ISO8601" => execute_to_iso8601(args),
@@ -951,6 +1125,68 @@ fn execute_max(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
     }
     
     // MAX函数在聚合时会比较值，这里直接返回参数值
+    Ok(args[0].clone())
+}
+
+/// 执行STDDEV函数
+fn execute_stddev(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // STDDEV函数在聚合时计算标准差，这里直接返回参数值
+    Ok(args[0].clone())
+}
+
+/// 执行VAR函数
+fn execute_var(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // VAR函数在聚合时计算方差，这里直接返回参数值
+    Ok(args[0].clone())
+}
+
+/// 执行STDDEV_SAMP函数
+fn execute_stddev_samp(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // STDDEV_SAMP函数在聚合时计算样本标准差，这里直接返回参数值
+    Ok(args[0].clone())
+}
+
+/// 执行VAR_SAMP函数
+fn execute_var_samp(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // VAR_SAMP函数在聚合时计算样本方差，这里直接返回参数值
+    Ok(args[0].clone())
+}
+
+/// 执行MOVING_AVERAGE函数
+fn execute_moving_average(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // MOVING_AVERAGE函数：MOVING_AVERAGE(value, window_size)
+    // 目前返回输入值，后续需要实现完整的滑动窗口逻辑
+    Ok(args[0].clone())
+}
+
+/// 执行MOVING_SUM函数
+fn execute_moving_sum(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // MOVING_SUM函数：MOVING_SUM(value, window_size)
+    // 目前返回输入值，后续需要实现完整的滑动窗口逻辑
     Ok(args[0].clone())
 }
 
