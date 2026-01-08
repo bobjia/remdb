@@ -3,7 +3,7 @@ use core::mem::size_of;
 
 /// 基本数据类型枚举
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum DataType {
     /// 8位无符号整数
     UInt8 = 0,
@@ -443,6 +443,78 @@ impl PartialEq for TypedValue {
                 }
             }
         }
+    }
+}
+
+/// 手动实现Eq trait，因为Rust不支持为union类型自动派生Eq
+impl Eq for TypedValue {}
+
+/// 手动实现PartialOrd trait，用于比较TypedValue
+impl PartialOrd for TypedValue {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        // 首先比较类型
+        match self.value_type.cmp(&other.value_type) {
+            core::cmp::Ordering::Equal => {
+                // 类型相同，比较值
+                unsafe {
+                    match self.value_type {
+                        DataType::UInt8 => Some(self.value.u8.cmp(&other.value.u8)),
+                        DataType::UInt16 => Some(self.value.u16.cmp(&other.value.u16)),
+                        DataType::UInt32 => Some(self.value.u32.cmp(&other.value.u32)),
+                        DataType::UInt64 => Some(self.value.u64.cmp(&other.value.u64)),
+                        DataType::Int8 => Some(self.value.i8.cmp(&other.value.i8)),
+                        DataType::Int16 => Some(self.value.i16.cmp(&other.value.i16)),
+                        DataType::Int32 => Some(self.value.i32.cmp(&other.value.i32)),
+                        DataType::Int64 => Some(self.value.i64.cmp(&other.value.i64)),
+                        DataType::Float32 => {
+                            // 处理浮点数的特殊情况：NaN
+                            let a = self.value.float32;
+                            let b = other.value.float32;
+                            if a.is_nan() || b.is_nan() {
+                                None // NaN 无法比较
+                            } else {
+                                Some(a.partial_cmp(&b).unwrap())
+                            }
+                        },
+                        DataType::Float64 => {
+                            let a = self.value.float64;
+                            let b = other.value.float64;
+                            if a.is_nan() || b.is_nan() {
+                                None // NaN 无法比较
+                            } else {
+                                Some(a.partial_cmp(&b).unwrap())
+                            }
+                        },
+                        DataType::Bool => Some(self.value.bool.cmp(&other.value.bool)),
+                        DataType::Timestamp => Some(self.value.time.value.cmp(&other.value.time.value)),
+                        DataType::TimestampTZ => {
+                            // 先比较时间值，再比较时区偏移
+                            match self.value.time.value.cmp(&other.value.time.value) {
+                                core::cmp::Ordering::Equal => {
+                                    Some(self.value.time.tz_offset.cmp(&other.value.time.tz_offset))
+                                },
+                                ordering => Some(ordering),
+                            }
+                        },
+                        DataType::Interval => Some(self.value.interval.value.cmp(&other.value.interval.value)),
+                        DataType::String => {
+                            // 比较字符串内容
+                            let a_str = core::str::from_utf8(&self.value.string).unwrap_or("");
+                            let b_str = core::str::from_utf8(&other.value.string).unwrap_or("");
+                            Some(a_str.trim_end_matches(char::from(0)).cmp(b_str.trim_end_matches(char::from(0))))
+                        },
+                    }
+                }
+            },
+            ordering => Some(ordering),
+        }
+    }
+}
+
+/// 手动实现Ord trait，用于在BTreeMap中用作键
+impl Ord for TypedValue {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.partial_cmp(other).unwrap_or(core::cmp::Ordering::Equal)
     }
 }
 

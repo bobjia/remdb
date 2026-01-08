@@ -30,6 +30,13 @@ fn parse_time_string(time_str: &str) -> Result<i64, ()> {
     }
 }
 
+/// GROUP BY子句
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupByClause {
+    /// 分组字段列表
+    pub fields: Vec<String>,
+}
+
 /// SQL查询结构
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlQuery {
@@ -43,6 +50,8 @@ pub struct SqlQuery {
     pub select_all: bool,
     /// 查询条件
     pub where_clause: Option<WhereClause>,
+    /// 分组条件
+    pub group_by: Option<GroupByClause>,
     /// 排序条件
     pub order_by: Option<OrderByClause>,
     /// 结果限制
@@ -373,6 +382,7 @@ impl SqlParser {
             columns: Vec::new(),
             select_all: false,
             where_clause,
+            group_by: None,
             order_by: None,
             limit: None,
             insert_columns: Vec::new(),
@@ -402,6 +412,7 @@ impl SqlParser {
             columns: Vec::new(),
             select_all: false,
             where_clause: None,
+            group_by: None,
             order_by: None,
             limit: None,
             insert_columns: Vec::new(),
@@ -448,6 +459,7 @@ impl SqlParser {
             columns: Vec::new(),
             select_all: false,
             where_clause: None,
+            group_by: None,
             order_by: None,
             limit: None,
             insert_columns,
@@ -550,6 +562,7 @@ impl SqlParser {
             columns: Vec::new(),
             select_all: false,
             where_clause,
+            group_by: None,
             order_by: None,
             limit: None,
             insert_columns: Vec::new(),
@@ -642,6 +655,7 @@ impl SqlParser {
             columns: Vec::new(),
             select_all: false,
             where_clause: None,
+            group_by: None,
             order_by: None,
             limit: None,
             insert_columns: Vec::new(),
@@ -695,6 +709,7 @@ impl SqlParser {
             columns: Vec::new(),
             select_all: false,
             where_clause: None,
+            group_by: None,
             order_by: None,
             limit: None,
             insert_columns: Vec::new(),
@@ -752,6 +767,9 @@ impl SqlParser {
         // 解析WHERE子句（可选）
         let where_clause = self.parse_where_clause()?;
         
+        // 解析GROUP BY子句（可选）
+        let group_by = self.parse_group_by_clause()?;
+        
         // 解析ORDER BY子句（可选）
         let order_by = self.parse_order_by_clause()?;
         
@@ -764,6 +782,7 @@ impl SqlParser {
             columns,
             select_all,
             where_clause,
+            group_by,
             order_by,
             limit,
             insert_columns: Vec::new(),
@@ -1108,6 +1127,33 @@ impl SqlParser {
         }
     }
 
+    /// 解析GROUP BY子句（可选）
+    fn parse_group_by_clause(&mut self) -> Result<Option<GroupByClause>, QueryParseError> {
+        self.skip_whitespace();
+        
+        if self.match_keyword("GROUP") {
+            self.skip_whitespace();
+            self.expect_keyword("BY")?;
+            
+            let mut fields = Vec::new();
+            
+            loop {
+                self.skip_whitespace();
+                let field = self.parse_identifier()?;
+                fields.push(field);
+                
+                self.skip_whitespace();
+                if !self.match_char(',') {
+                    break;
+                }
+            }
+            
+            Ok(Some(GroupByClause { fields }))
+        } else {
+            Ok(None)
+        }
+    }
+    
     /// 解析ORDER BY子句（可选）
     fn parse_order_by_clause(&mut self) -> Result<Option<OrderByClause>, QueryParseError> {
         self.skip_whitespace();

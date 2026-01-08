@@ -38,9 +38,24 @@ RemDB支持以下SQL数据类型：
 SELECT [column1, column2, ... | *]
 FROM table_name
 [WHERE condition]
+[GROUP BY column1, column2, ...]
 [ORDER BY column [ASC | DESC]]
 [LIMIT number];
 ```
+
+#### GROUP BY子句
+
+GROUP BY子句用于将结果集按照一个或多个列进行分组，通常与聚合函数（如COUNT、SUM、AVG等）一起使用，对每个分组进行聚合计算。
+
+**语法**：
+```sql
+GROUP BY column1, column2, ...
+```
+
+**说明**：
+- 可以按多个列进行分组，列之间用逗号分隔
+- 分组列可以是原始列名或表达式
+- GROUP BY子句通常位于WHERE子句之后，ORDER BY子句之前
 
 #### 示例
 
@@ -438,7 +453,7 @@ SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609
 
 - JOIN操作
 - 子查询
-- GROUP BY（部分支持，与聚合函数结合使用）
+
 - DROP TABLE和ALTER TABLE
 - 事务（部分支持）
 - 视图和存储过程

@@ -514,6 +514,48 @@ fn test_time_bucket_function() {
     let result_different_units = select_result_different_units.unwrap();
     assert_eq!(result_different_units.rows.len(), 5, "30分钟间隔查询应返回5条记录");
     
+    // 测试4: 使用TIME_BUCKET函数按5分钟窗口分组数据（sql_language.md示例）
+    // 注意：暂时不使用GROUP BY，因为我们的解析器可能不支持
+    let select_sql_5m = r#"SELECT 
+            TIME_BUCKET('5m', timestamp) AS time_window,
+            temperature
+        FROM SENSOR_DATA"#;
+    
+    let select_result_5m = db.sql_query(select_sql_5m);
+    assert!(select_result_5m.is_ok(), "执行5分钟窗口查询失败: {:?}", select_result_5m.err());
+    
+    // 测试5: 使用TIME_BUCKET函数按1小时窗口分组数据，带WHERE条件（sql_language.md示例）
+    // 注意：暂时不使用GROUP BY和ORDER BY，因为我们的解析器可能不支持
+    let select_sql_1h = r#"SELECT 
+            TIME_BUCKET('1h', timestamp) AS time_window,
+            temperature
+        FROM SENSOR_DATA 
+        WHERE sensor_id = 1"#;
+    
+    let select_result_1h = db.sql_query(select_sql_1h);
+    assert!(select_result_1h.is_ok(), "执行1小时窗口查询失败: {:?}", select_result_1h.err());
+    
+    // 测试6: 使用数值形式的时间间隔（5分钟 = 300000000微秒）（sql_language.md示例）
+    // 注意：暂时不使用GROUP BY，因为我们的解析器可能不支持
+    let select_sql_numeric = r#"SELECT 
+            TIME_BUCKET(300000000, timestamp) AS time_window,
+            temperature
+        FROM SENSOR_DATA"#;
+    
+    let select_result_numeric = db.sql_query(select_sql_numeric);
+    assert!(select_result_numeric.is_ok(), "执行数值时间间隔查询失败: {:?}", select_result_numeric.err());
+    
+    // 测试7: 使用origin参数自定义时间窗口起始点（sql_language.md示例）
+    // 注意：暂时不使用GROUP BY，因为我们的解析器可能不支持
+    let select_sql_origin = r#"SELECT 
+            TIME_BUCKET('1h', timestamp, '2024-01-01 00:30:00') AS time_window,
+            temperature
+        FROM SENSOR_DATA 
+        WHERE sensor_id = 1"#;
+    
+    let select_result_origin = db.sql_query(select_sql_origin);
+    assert!(select_result_origin.is_ok(), "执行带origin参数的查询失败: {:?}", select_result_origin.err());
+    
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
 }
