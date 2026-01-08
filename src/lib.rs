@@ -362,6 +362,10 @@ impl RemDb {
             // 默认使用POSIX平台（如果可用）
             #[cfg(feature = "posix")]
             crate::platform::init_platform(crate::platform::posix::get_posix_platform());
+            
+            // 如果POSIX平台不可用（例如在Windows上），使用裸机平台作为备选
+            #[cfg(not(feature = "posix"))]
+            crate::platform::init_platform(crate::platform::baremetal::get_baremetal_platform());
         }
         
         // 初始化日志管理器（如果配置了日志）

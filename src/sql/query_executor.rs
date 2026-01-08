@@ -252,6 +252,15 @@ fn process_aggregate_query(
                         // 初始化(sum, sum_of_squares, count)
                         var_stddev_states.push((0.0, 0.0, 0));
                     },
+                    // 时间窗口函数初始化
+                    "TIME_BUCKET" => {
+                        // TIME_BUCKET函数需要为每个分组保存结果，这里先使用默认值
+                        aggregate_values.push(TypedValue {
+                            value_type: DataType::UInt64,
+                            value: Value { u64: 0 },
+                        });
+                        var_stddev_states.push((0.0, 0.0, 0));
+                    },
                     _ => {
                         return Err(QueryExecutionError::UnsupportedFunction(name.to_string()));
                     },
@@ -419,6 +428,12 @@ fn process_aggregate_query(
                         let (sum, _, count) = &mut var_stddev_states[i];
                         *sum += current_float;
                         *count += 1;
+                    },
+                    // 时间窗口函数处理
+                    "TIME_BUCKET" => {
+                        // TIME_BUCKET函数的处理逻辑在execute_time_bucket中已经实现
+                        // 这里我们只需要保存当前值
+                        aggregate_values[i] = current_value;
                     },
                     _ => return Err(QueryExecutionError::UnsupportedFunction(name.to_string())),
                 }
@@ -1276,33 +1291,168 @@ fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecution
     // 获取时间戳参数
     let timestamp_arg = &args[1];
     
+    // 解析可选的origin参数
+    let origin_micros = if args.len() > 2 {
+        parse_origin_timestamp(&args[2])?
+    } else {
+        0 // 默认从1970-01-01 00:00:00开始
+    };
+    
     unsafe {
+        // 从不同类型中提取时间戳值
+        let timestamp = match timestamp_arg.value_type {
+            DataType::Timestamp => timestamp_arg.value.time.value,
+            DataType::TimestampTZ => timestamp_arg.value.time.value,
+            DataType::UInt64 => timestamp_arg.value.u64 as i64,
+            DataType::Int64 => timestamp_arg.value.i64,
+            DataType::UInt32 => timestamp_arg.value.u32 as i64,
+            DataType::Int32 => timestamp_arg.value.i32 as i64,
+            DataType::UInt16 => timestamp_arg.value.u16 as i64,
+            DataType::Int16 => timestamp_arg.value.i16 as i64,
+            DataType::UInt8 => timestamp_arg.value.u8 as i64,
+            DataType::Int8 => timestamp_arg.value.i8 as i64,
+            _ => return Err(QueryExecutionError::TypeMismatch),
+        };
+        
+        // 将时间戳对齐到指定的时间窗口，考虑origin
+        let bucketed_timestamp = origin_micros + ((timestamp - origin_micros) / interval_micros) * interval_micros;
+        
+        // 根据输入类型返回相同类型的结果
         match timestamp_arg.value_type {
-            DataType::Timestamp => {
-                let timestamp = timestamp_arg.value.time.value;
-                // 将时间戳对齐到指定的时间窗口
-                let bucketed_timestamp = timestamp - (timestamp % interval_micros);
+            DataType::Timestamp => Ok(TypedValue {
+                value_type: DataType::Timestamp,
+                value: Value { 
+                    time: crate::types::db_timestamp::new(bucketed_timestamp, 0, 6, 0) 
+                },
+            }),
+            DataType::TimestampTZ => Ok(TypedValue {
+                value_type: DataType::TimestampTZ,
+                value: Value { 
+                    time: crate::types::db_timestamp::new(bucketed_timestamp, timestamp_arg.value.time.tz_offset, 6, 0) 
+                },
+            }),
+            DataType::UInt64 => Ok(TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: bucketed_timestamp as u64 },
+            }),
+            DataType::Int64 => Ok(TypedValue {
+                value_type: DataType::Int64,
+                value: Value { i64: bucketed_timestamp },
+            }),
+            DataType::UInt32 => Ok(TypedValue {
+                value_type: DataType::UInt32,
+                value: Value { u32: bucketed_timestamp as u32 },
+            }),
+            DataType::Int32 => Ok(TypedValue {
+                value_type: DataType::Int32,
+                value: Value { i32: bucketed_timestamp as i32 },
+            }),
+            DataType::UInt16 => Ok(TypedValue {
+                value_type: DataType::UInt16,
+                value: Value { u16: bucketed_timestamp as u16 },
+            }),
+            DataType::Int16 => Ok(TypedValue {
+                value_type: DataType::Int16,
+                value: Value { i16: bucketed_timestamp as i16 },
+            }),
+            DataType::UInt8 => Ok(TypedValue {
+                value_type: DataType::UInt8,
+                value: Value { u8: bucketed_timestamp as u8 },
+            }),
+            DataType::Int8 => Ok(TypedValue {
+                value_type: DataType::Int8,
+                value: Value { i8: bucketed_timestamp as i8 },
+            }),
+            _ => Err(QueryExecutionError::TypeMismatch),
+        }
+    }
+}
+
+/// 解析时间字符串为微秒时间戳
+fn parse_time_string(time_str: &str) -> Result<i64, QueryExecutionError> {
+    // 这里实现一个简单的时间字符串解析
+    // 支持的格式：'YYYY-MM-DD' 或 'YYYY-MM-DD HH:MM:SS'
+    
+    let time_str = time_str.trim();
+    let mut parts = time_str.split_whitespace();
+    
+    // 解析日期部分
+    let date_part = parts.next().ok_or(QueryExecutionError::TypeMismatch)?;
+    let date_components: Vec<&str> = date_part.split('-').collect();
+    if date_components.len() != 3 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    let year = date_components[0].parse::<i64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+    let month = date_components[1].parse::<i64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+    let day = date_components[2].parse::<i64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+    
+    // 解析时间部分（可选）
+    let mut hour = 0;
+    let mut minute = 0;
+    let mut second = 0;
+    
+    if let Some(time_part) = parts.next() {
+        let time_components: Vec<&str> = time_part.split(':').collect();
+        if time_components.len() != 3 {
+            return Err(QueryExecutionError::TypeMismatch);
+        }
+        
+        hour = time_components[0].parse::<i64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+        minute = time_components[1].parse::<i64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+        second = time_components[2].parse::<i64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+    }
+    
+    // 计算从1970-01-01到指定日期的秒数
+    // 简化实现，只处理非闰年的情况
+    let mut seconds = 0;
+    
+    // 计算年份贡献的秒数（忽略闰年）
+    for y in 1970..year {
+        seconds += 365 * 24 * 60 * 60;
+    }
+    
+    // 计算月份贡献的秒数（忽略闰年）
+    let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    for m in 0..(month-1) {
+        seconds += days_in_month[m as usize] * 24 * 60 * 60;
+    }
+    
+    // 计算日期、小时、分钟、秒贡献的秒数
+    seconds += (day - 1) * 24 * 60 * 60;
+    seconds += hour * 60 * 60;
+    seconds += minute * 60;
+    seconds += second;
+    
+    // 转换为微秒
+    Ok(seconds * 1000000)
+}
+
+/// 解析origin时间戳参数
+fn parse_origin_timestamp(origin_arg: &TypedValue) -> Result<i64, QueryExecutionError> {
+    unsafe {
+        match origin_arg.value_type {
+            // 数值形式的时间戳（微秒）
+            DataType::UInt8 => Ok(origin_arg.value.u8 as i64),
+            DataType::UInt16 => Ok(origin_arg.value.u16 as i64),
+            DataType::UInt32 => Ok(origin_arg.value.u32 as i64),
+            DataType::UInt64 => Ok(origin_arg.value.u64 as i64),
+            DataType::Int8 => Ok(origin_arg.value.i8 as i64),
+            DataType::Int16 => Ok(origin_arg.value.i16 as i64),
+            DataType::Int32 => Ok(origin_arg.value.i32 as i64),
+            DataType::Int64 => Ok(origin_arg.value.i64),
+            // 字符串形式的时间戳（如'2020-01-01'）
+            DataType::String => {
+                let origin_str = core::str::from_utf8(&origin_arg.value.string)
+                    .map_err(|_| QueryExecutionError::TypeMismatch)?
+                    .trim_end_matches(char::from(0));
                 
-                Ok(TypedValue {
-                    value_type: DataType::Timestamp,
-                    value: Value { 
-                        time: crate::types::db_timestamp::new(bucketed_timestamp, 0, 6, 0) 
-                    },
-                })
+                // 尝试解析为时间字符串
+                parse_time_string(origin_str)
             },
-            DataType::TimestampTZ => {
-                let timestamp = timestamp_arg.value.time.value;
-                let tz_offset = timestamp_arg.value.time.tz_offset;
-                // 将时间戳对齐到指定的时间窗口
-                let bucketed_timestamp = timestamp - (timestamp % interval_micros);
-                
-                Ok(TypedValue {
-                    value_type: DataType::TimestampTZ,
-                    value: Value { 
-                        time: crate::types::db_timestamp::new(bucketed_timestamp, tz_offset, 6, 0) 
-                    },
-                })
-            },
+            // 时间类型
+            DataType::Timestamp => Ok(origin_arg.value.time.value),
+            DataType::TimestampTZ => Ok(origin_arg.value.time.value),
             _ => Err(QueryExecutionError::TypeMismatch),
         }
     }

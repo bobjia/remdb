@@ -2,6 +2,7 @@ extern crate alloc;
 
 use remdb::*;
 use remdb::time_series::*;
+use remdb::time_series::compression::*;
 use serial_test::serial;
 
 // 测试时序数据模块的核心功能
@@ -41,9 +42,11 @@ fn test_compression_algorithms() {
     
     // 注意：当前压缩模块只实现了Delta编码，其他压缩算法将在后续实现
     // 这里暂时注释掉未实现的压缩算法测试
-    /*
+    
     // 测试Run-Length编码（简化测试）
-    let run_values = [5, 5, 5, 5, 5, 3, 3, 3, 7, 7];
+    // 注意：当前Run-Length编码实现仅支持u64类型，不支持i32类型
+    // 所以我们使用u64类型的数据进行测试
+    let run_values = [5u64, 5u64, 5u64, 5u64, 5u64, 3u64, 3u64, 3u64, 7u64, 7u64];
     let run_compressed = compress_run_length(&run_values);
     assert!(run_compressed.len() < run_values.len() * 8, "Run-Length编码应该能压缩重复数据");
     
@@ -59,7 +62,7 @@ fn test_compression_algorithms() {
     for i in 0..float_values.len() {
         assert!((float_decompressed[i] - float_values[i]).abs() < 0.0001, "浮点数Delta解码应能正确恢复原始数据");
     }
-    */
+    
 }
 
 // 测试时序索引
@@ -256,6 +259,106 @@ fn test_time_series_batch_performance() {
         
         // 创建RemDb实例
         let mut db = RemDb::new(config);
+        
+        // 直接初始化baremetal平台，解决Windows上Platform not initialized错误
+        if crate::platform::PLATFORM.get().is_none() {
+            // 使用裸机平台实现，不依赖于posix特性
+            struct TestPlatform;
+            
+            impl crate::platform::Platform for TestPlatform {
+                fn get_timestamp(&self) -> u64 {
+                    1609459200000
+                }
+                
+                fn get_timestamp_us(&self) -> u64 {
+                    1609459200000000
+                }
+                
+                fn spin_lock(&self, lock: &mut u32) {
+                    while unsafe {
+                        core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
+                            .compare_exchange(0, 1, 
+                                            core::sync::atomic::Ordering::Acquire,
+                                            core::sync::atomic::Ordering::Relaxed)
+                            .is_err()
+                    } {
+                        core::hint::spin_loop();
+                    }
+                }
+                
+                fn spin_unlock(&self, lock: &mut u32) {
+                    unsafe {
+                        core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
+                            .store(0, core::sync::atomic::Ordering::Release);
+                    }
+                }
+                
+                fn compiler_barrier(&self) {
+                    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+                }
+                
+                fn full_memory_barrier(&self) {
+                    core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                }
+                
+                fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
+                    unsafe {
+                        core::ptr::copy(src, dest, size);
+                    }
+                }
+                
+                fn memset(&self, dest: *mut u8, value: u8, size: usize) {
+                    unsafe {
+                        core::ptr::write_bytes(dest, value, size);
+                    }
+                }
+                
+                fn delay_ms(&self, ms: u32) {
+                    std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+                }
+                
+                fn delay_us(&self, us: u32) {
+                    std::thread::sleep(std::time::Duration::from_micros(us as u64));
+                }
+                
+                fn file_open(&self, _path: &str, _mode: crate::platform::FileMode) -> crate::platform::FileResult<crate::platform::FileHandle> {
+                    Err(())
+                }
+                
+                fn file_close(&self, _handle: crate::platform::FileHandle) -> crate::platform::FileResult<()> {
+                    Err(())
+                }
+                
+                fn file_write(&self, _handle: crate::platform::FileHandle, _buffer: *const u8, _size: usize) -> crate::platform::FileResult<usize> {
+                    Err(())
+                }
+                
+                fn file_read(&self, _handle: crate::platform::FileHandle, _buffer: *mut u8, _size: usize) -> crate::platform::FileResult<usize> {
+                    Err(())
+                }
+                
+                fn file_seek(&self, _handle: crate::platform::FileHandle, _offset: i64, _whence: crate::platform::SeekWhence) -> crate::platform::FileResult<u64> {
+                    Err(())
+                }
+                
+                fn file_remove(&self, _path: &str) -> crate::platform::FileResult<()> {
+                    Err(())
+                }
+                
+                fn file_size(&self, _path: &str) -> crate::platform::FileResult<usize> {
+                    Err(())
+                }
+                
+                fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+                    0
+                }
+            }
+            
+            static TEST_PLATFORM: TestPlatform = TestPlatform;
+            crate::platform::init_platform(&TEST_PLATFORM);
+        }
+        
+        db.init().unwrap();
         
         // 创建测试记录
         let record_count = 1000;

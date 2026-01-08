@@ -258,7 +258,7 @@ SELECT COUNT(*) FROM sensor_data WHERE temperature > 25;
 
 | 函数名 | 描述 | 参数 | 返回类型 | 示例 |
 |--------|------|------|----------|------|
-| `TIME_BUCKET` | 将时间戳分组到指定的时间窗口 | `interval` (字符串或数值), `time_field` (TIMESTAMP) | `TIMESTAMP` | `TIME_BUCKET('5m', timestamp)` |
+| `TIME_BUCKET` | 将时间戳分组到指定的时间窗口 | `interval` (字符串或数值), `time_field` (TIMESTAMP), `origin` (可选，字符串或数值，默认1970-01-01 00:00:00) | `TIMESTAMP` | `TIME_BUCKET('5m', timestamp)` 或 `TIME_BUCKET('1h', timestamp, '2020-01-01')` |
 
 ##### 时间间隔格式
 
@@ -585,6 +585,15 @@ SELECT
     COUNT(*) AS reading_count
 FROM sensor_readings 
 GROUP BY hour_window, day_window;
+
+-- 使用origin参数自定义时间窗口起始点
+SELECT 
+    TIME_BUCKET('1h', timestamp, '2024-01-01 00:30:00') AS time_window,
+    AVG(temperature) AS avg_temp
+FROM sensor_readings 
+WHERE sensor_id = 1
+GROUP BY time_window
+ORDER BY time_window;
 ```
 
 ### 9.5 字符串函数示例

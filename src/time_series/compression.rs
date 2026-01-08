@@ -285,7 +285,7 @@ pub fn decompress_run_length(compressed: &[u8]) -> Vec<u64> {
     let mut result = Vec::new();
     let mut index = 0;
     
-    while index + 16 <= compressed.len() {
+    while index + 12 <= compressed.len() {
         let value = u64::from_le_bytes(compressed[index..index + 8].try_into().unwrap());
         let count = u32::from_le_bytes(compressed[index + 8..index + 12].try_into().unwrap());
         
@@ -293,7 +293,7 @@ pub fn decompress_run_length(compressed: &[u8]) -> Vec<u64> {
             result.push(value);
         }
         
-        index += 16;
+        index += 12;
     }
     
     result
