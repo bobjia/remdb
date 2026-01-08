@@ -343,6 +343,142 @@ fn test_sql_query() {
 }
 
 #[cfg_attr(any(test, feature = "std"), test)]
+fn test_sql_aliases() {
+    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
+    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    
+    // 初始化内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).unwrap();
+    }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+    
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    
+    // 初始化数据库
+    let config = &TEST_DB;
+    let db = unsafe {
+        init_global_db(config).unwrap()
+    };
+    
+    // 准备测试数据
+    let test_data = [
+        (1, "Alice", 25, true, 1620000000000),
+        (2, "Bob", 30, true, 1620000001000),
+        (3, "Charlie", 35, false, 1620000002000),
+        (4, "David", 22, true, 1620000003000),
+        (5, "Eve", 28, false, 1620000004000),
+    ];
+    
+    // 插入测试数据
+    #[repr(C)]
+    struct TestRecord {
+        id: i32,          // 4字节
+        name: [u8; 32],   // 32字节
+        age: i8,          // 1字节
+        active: u8,       // 1字节（bool在C中通常是1字节）
+        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐
+        created_at: u64,  // 8字节
+    }
+    
+    for (id, name, age, active, created_at) in test_data {
+        let mut record = TestRecord {
+            id,
+            name: [0u8; 32],
+            age,
+            active: if active { 1 } else { 0 }, // 将bool转换为u8
+            _padding: [0u8; 2], // 初始化填充字段为0
+            created_at,
+        };
+        
+        let name_bytes = name.as_bytes();
+        record.name[..name_bytes.len()].copy_from_slice(name_bytes);
+        
+        let insert_id = unsafe {
+            db.get_table_mut(0).unwrap().insert(&record as *const _ as *const u8).unwrap()
+        };
+        assert!(insert_id < config.tables[0].max_records);
+    }
+    
+    // 测试列别名
+    println!("=== 测试列别名 ===");
+    
+    // 1. 基本列别名功能
+    let result = db.sql_query("SELECT id AS user_id, name AS user_name, age FROM TEST_TABLE");
+    assert!(result.is_ok(), "基本列别名查询应该成功");
+    
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 5, "基本列别名查询应该返回5行");
+    assert_eq!(result_set.column_count(), 3, "基本列别名查询应该返回3列");
+    
+    // 2. 函数调用的别名
+    let result = db.sql_query("SELECT COUNT(*) AS total_count FROM TEST_TABLE");
+    assert!(result.is_ok(), "函数别名查询应该成功");
+    
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 1, "函数别名查询应该返回1行");
+    assert_eq!(result_set.column_count(), 1, "函数别名查询应该返回1列");
+    
+    // 3. 带AS关键字的列别名
+    let result = db.sql_query("SELECT id AS user_id, name, age AS user_age FROM TEST_TABLE WHERE active = true");
+    assert!(result.is_ok(), "带AS关键字的列别名查询应该成功");
+    
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 3, "带AS关键字的列别名查询应该返回3行");
+    
+    // 测试表别名
+    println!("=== 测试表别名 ===");
+    
+    // 1. 基本表别名功能（不带AS关键字）
+    let result = db.sql_query("SELECT t.id, t.name FROM TEST_TABLE t");
+    if let Err(ref err) = result {
+        println!("基本表别名查询失败，错误信息：{:?}", err);
+    }
+    assert!(result.is_ok(), "基本表别名查询应该成功");
+    
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 5, "基本表别名查询应该返回5行");
+    assert_eq!(result_set.column_count(), 2, "基本表别名查询应该返回2列");
+    
+    // 2. 带AS关键字的表别名
+    let result = db.sql_query("SELECT t.id, t.name FROM TEST_TABLE AS t");
+    assert!(result.is_ok(), "带AS关键字的表别名查询应该成功");
+    
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 5, "带AS关键字的表别名查询应该返回5行");
+    
+    // 3. 使用表别名的WHERE条件
+    let result = db.sql_query("SELECT t.id, t.name, t.age FROM TEST_TABLE t WHERE t.age > 25");
+    assert!(result.is_ok(), "使用表别名的WHERE条件查询应该成功");
+    
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 3, "使用表别名的WHERE条件查询应该返回3行");
+    
+    // 4. 表别名和列别名结合使用
+    let result = db.sql_query("SELECT t.id AS user_id, t.name AS user_name FROM TEST_TABLE AS t WHERE t.active = true");
+    assert!(result.is_ok(), "表别名和列别名结合查询应该成功");
+    
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 3, "表别名和列别名结合查询应该返回3行");
+    
+    // 5. 使用表别名的ORDER BY
+    let result = db.sql_query("SELECT t.id, t.name, t.age FROM TEST_TABLE t ORDER BY t.age DESC");
+    assert!(result.is_ok(), "使用表别名的ORDER BY查询应该成功");
+    
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 5, "使用表别名的ORDER BY查询应该返回5行");
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+}
+
+#[cfg_attr(any(test, feature = "std"), test)]
 fn test_time_bucket_core_logic() {
     // 直接测试time_bucket的核心计算逻辑
     

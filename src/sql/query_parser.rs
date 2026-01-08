@@ -44,6 +44,8 @@ pub struct SqlQuery {
     pub query_type: QueryType,
     /// 要查询的表名
     pub table_name: String,
+    /// 表别名
+    pub table_alias: Option<String>,
     /// 要选择的字段列表（支持表达式）
     pub columns: Vec<Expression>,
     /// 是否选择所有字段（*）
@@ -379,6 +381,7 @@ impl SqlParser {
         Ok(SqlQuery {
             query_type: QueryType::Update,
             table_name,
+            table_alias: None,
             columns: Vec::new(),
             select_all: false,
             where_clause,
@@ -409,6 +412,7 @@ impl SqlParser {
         Ok(SqlQuery {
             query_type: QueryType::Describe,
             table_name,
+            table_alias: None,
             columns: Vec::new(),
             select_all: false,
             where_clause: None,
@@ -456,6 +460,7 @@ impl SqlParser {
         Ok(SqlQuery {
             query_type: QueryType::Insert,
             table_name,
+            table_alias: None,
             columns: Vec::new(),
             select_all: false,
             where_clause: None,
@@ -559,6 +564,7 @@ impl SqlParser {
         Ok(SqlQuery {
             query_type: QueryType::Delete,
             table_name,
+            table_alias: None,
             columns: Vec::new(),
             select_all: false,
             where_clause,
@@ -652,6 +658,7 @@ impl SqlParser {
         Ok(SqlQuery {
             query_type: QueryType::CreateTable,
             table_name,
+            table_alias: None,
             columns: Vec::new(),
             select_all: false,
             where_clause: None,
@@ -706,6 +713,7 @@ impl SqlParser {
         Ok(SqlQuery {
             query_type: QueryType::CreateIndex,
             table_name,
+            table_alias: None,
             columns: Vec::new(),
             select_all: false,
             where_clause: None,
@@ -762,7 +770,7 @@ impl SqlParser {
         let (columns, select_all) = self.parse_select_clause()?;
         
         // 解析FROM子句
-        let table_name = self.parse_from_clause()?;
+        let (table_name, table_alias) = self.parse_from_clause()?;
         
         // 解析WHERE子句（可选）
         let where_clause = self.parse_where_clause()?;
@@ -779,6 +787,7 @@ impl SqlParser {
         Ok(SqlQuery {
             query_type: QueryType::Select,
             table_name,
+            table_alias,
             columns,
             select_all,
             where_clause,
@@ -1104,14 +1113,18 @@ impl SqlParser {
     }
 
     /// 解析FROM子句
-    fn parse_from_clause(&mut self) -> Result<String, QueryParseError> {
+    fn parse_from_clause(&mut self) -> Result<(String, Option<String>), QueryParseError> {
         self.skip_whitespace();
         self.expect_keyword("FROM")?;
         
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
         
-        Ok(table_name)
+        // 解析表别名
+        self.skip_whitespace();
+        let table_alias = self.parse_alias()?;
+        
+        Ok((table_name, table_alias))
     }
 
     /// 解析WHERE子句（可选）
@@ -1415,7 +1428,7 @@ impl SqlParser {
         }
     }
 
-    /// 解析标识符（表名、字段名）
+    /// 解析标识符（表名、字段名，支持带点号的字段名如t.id）
     fn parse_identifier(&mut self) -> Result<String, QueryParseError> {
         let start = self.position;
         
@@ -1427,9 +1440,9 @@ impl SqlParser {
         
         self.next_char();
         
-        // 后续字符可以是字母、数字或下划线
+        // 后续字符可以是字母、数字、下划线或点号（支持表别名，如t.id）
         while let Some(c) = self.peek_char() {
-            if c.is_ascii_alphanumeric() || c == '_' {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
                 self.next_char();
             } else {
                 break;

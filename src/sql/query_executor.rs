@@ -736,9 +736,18 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                     // 实际COUNT函数不使用这个值，只是简单累加
                     Ok(record_values[0].clone())
                 } else {
+                    // 处理带表别名的字段名，如 "t.id"
+                    let actual_field_name = if field_name.contains('.') {
+                        // 提取点号后面的部分作为实际字段名
+                        field_name.split('.').last().unwrap()
+                    } else {
+                        // 没有表别名，直接使用字段名
+                        field_name
+                    };
+                    
                     let field_index = table.def.fields
                         .iter()
-                        .position(|field| field.name == field_name)
+                        .position(|field| field.name == actual_field_name)
                         .ok_or(QueryExecutionError::FieldNotFound)?;
                     
                     // 返回记录中的字段值
@@ -2762,8 +2771,19 @@ fn validate_expression(table: &MemoryTable, expr: &Expression) -> Result<(), Que
     match expr {
         Expression::Field { name: field_name, .. } => {
             // 跳过对 * 的验证，它是一个特殊情况
-            if field_name != "*" && !table.def.fields.iter().any(|field| field.name == field_name) {
-                return Err(QueryExecutionError::FieldNotFound);
+            if field_name != "*" {
+                // 处理带表别名的字段名，如 "t.id"
+                let actual_field_name = if field_name.contains('.') {
+                    // 提取点号后面的部分作为实际字段名
+                    field_name.split('.').last().unwrap()
+                } else {
+                    // 没有表别名，直接使用字段名
+                    field_name
+                };
+                
+                if !table.def.fields.iter().any(|field| field.name == actual_field_name) {
+                    return Err(QueryExecutionError::FieldNotFound);
+                }
             }
         }
         Expression::FunctionCall { args, .. } => {
@@ -3613,9 +3633,18 @@ unsafe fn evaluate_condition(table: &MemoryTable, record_ptr: *const u8, conditi
 /// 评估BETWEEN条件
 unsafe fn evaluate_between(table: &MemoryTable, record_ptr: *const u8, between: &BetweenCondition) -> bool {
     // 获取字段索引
+    // 处理带表别名的字段名，如 "t.id"
+    let actual_field_name = if between.field.contains('.') {
+        // 提取点号后面的部分作为实际字段名
+        between.field.split('.').last().unwrap()
+    } else {
+        // 没有表别名，直接使用字段名
+        &between.field
+    };
+    
     let field_index = match table.def.fields
         .iter()
-        .position(|field| field.name == &between.field) {
+        .position(|field| field.name == actual_field_name) {
         Some(index) => index,
         None => return false, // 字段不存在，条件不成立
     };
@@ -3637,9 +3666,18 @@ unsafe fn evaluate_between(table: &MemoryTable, record_ptr: *const u8, between: 
 /// 评估比较条件
 unsafe fn evaluate_comparison(table: &MemoryTable, record_ptr: *const u8, comp: &ComparisonCondition) -> bool {
     // 获取字段索引
+    // 处理带表别名的字段名，如 "t.id"
+    let actual_field_name = if comp.field.contains('.') {
+        // 提取点号后面的部分作为实际字段名
+        comp.field.split('.').last().unwrap()
+    } else {
+        // 没有表别名，直接使用字段名
+        &comp.field
+    };
+    
     let field_index = match table.def.fields
         .iter()
-        .position(|field| field.name == &comp.field) {
+        .position(|field| field.name == actual_field_name) {
         Some(index) => index,
         None => return false, // 字段不存在，条件不成立
     };
@@ -3932,10 +3970,19 @@ fn process_to_epoch(timestamp: &crate::types::db_timestamp) -> Result<f64, Query
 
 /// 对行进行排序
 fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &OrderByClause) -> Result<(), QueryExecutionError> {
+    // 处理带表别名的字段名，如 "t.id"
+    let actual_field_name = if order_by.field.contains('.') {
+        // 提取点号后面的部分作为实际字段名
+        order_by.field.split('.').last().unwrap()
+    } else {
+        // 没有表别名，直接使用字段名
+        &order_by.field
+    };
+    
     // 查找排序字段在表中的索引
     let field_index = table.def.fields
         .iter()
-        .position(|field| field.name == order_by.field)
+        .position(|field| field.name == actual_field_name)
         .ok_or(QueryExecutionError::FieldNotFound)?;
     
     let field_type = table.def.fields[field_index].data_type;
@@ -3946,7 +3993,7 @@ fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &Or
         // 遍历表的所有字段，找到在返回列中对应的索引
         let mut sort_col_index = 0;
         for (i, field) in table.def.fields.iter().enumerate() {
-            if field.name == order_by.field {
+            if field.name == actual_field_name {
                 sort_col_index = i;
                 break;
             }
@@ -4068,9 +4115,18 @@ fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &Or
 /// 获取字段值
 unsafe fn get_field_value(table: &MemoryTable, record_ptr: *const u8, field_name: &str) -> Result<TypedValue, QueryExecutionError> {
     // 查找字段索引
+    // 处理带表别名的字段名，如 "t.id"
+    let actual_field_name = if field_name.contains('.') {
+        // 提取点号后面的部分作为实际字段名
+        field_name.split('.').last().unwrap()
+    } else {
+        // 没有表别名，直接使用字段名
+        field_name
+    };
+    
     let field_index = table.def.fields
         .iter()
-        .position(|field| field.name == field_name)
+        .position(|field| field.name == actual_field_name)
         .ok_or(QueryExecutionError::FieldNotFound)?;
     
     let field = &table.def.fields[field_index];

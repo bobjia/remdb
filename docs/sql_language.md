@@ -35,12 +35,71 @@ RemDB支持以下SQL数据类型：
 ### 2.1 SELECT语句
 
 ```sql
-SELECT [column1, column2, ... | *]
-FROM table_name
+SELECT [column1 [AS] alias1, column2 [AS] alias2, ... | *]
+FROM table_name [AS] table_alias
 [WHERE condition]
 [GROUP BY column1, column2, ...]
 [ORDER BY column [ASC | DESC]]
 [LIMIT number];
+```
+
+#### 别名支持
+
+RemDB支持列别名和表别名，允许用户在查询中为列和表指定替代名称，使查询结果更易读或简化查询语法。
+
+##### 列别名
+
+列别名用于为查询结果中的列指定一个更具描述性的名称，或简化列名。
+
+**语法**：
+```sql
+column_name [AS] alias_name
+```
+
+**说明**：
+- `column_name`：原始列名或表达式
+- `AS`：可选的关键字，用于分隔列名和别名
+- `alias_name`：自定义的列别名
+
+**示例**：
+```sql
+-- 使用AS关键字指定列别名
+SELECT id AS user_id, name AS user_name FROM users;
+
+-- 不使用AS关键字指定列别名
+SELECT id user_id, name user_name FROM users;
+
+-- 为函数调用结果指定别名
+SELECT COUNT(*) total_users FROM users;
+```
+
+##### 表别名
+
+表别名用于为表指定一个简短的替代名称，通常在查询中多次引用同一表时使用，或简化查询语法。
+
+**语法**：
+```sql
+table_name [AS] table_alias
+```
+
+**说明**：
+- `table_name`：原始表名
+- `AS`：可选的关键字，用于分隔表名和别名
+- `table_alias`：自定义的表别名
+
+**示例**：
+```sql
+-- 使用AS关键字指定表别名
+SELECT u.id, u.name FROM users AS u;
+
+-- 不使用AS关键字指定表别名
+SELECT u.id, u.name FROM users u;
+
+-- 在WHERE子句中使用表别名
+SELECT u.id, u.name FROM users u WHERE u.age > 18;
+
+-- 在ORDER BY子句中使用表别名
+SELECT u.id, u.name FROM users u ORDER BY u.name DESC;
 ```
 
 #### GROUP BY子句
