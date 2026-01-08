@@ -95,7 +95,7 @@ mod tests {
         let config = PubSubConfig {
             udp_mode: UdpMode::Broadcast,
             multicast_addr: None,
-            port: 5557,
+            port: 6667, // 使用不同的端口
             max_topics: 32,
             max_subscribers_per_topic: 16,
             buffer_size: 4096,
@@ -124,5 +124,8 @@ mod tests {
         
         // 取消订阅
         pubsub.unsubscribe(subscription_id).expect("Failed to unsubscribe");
+        
+        // 关闭实例
+        pubsub.shutdown().expect("Failed to shutdown PubSub");
     }
 }

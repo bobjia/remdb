@@ -125,14 +125,14 @@ remdb::database!(
 
 #[cfg_attr(any(test, feature = "std"), test)]
 fn test_sql_query() {
-    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 262144];
     
     // 初始化内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
+            db_memory.as_mut_ptr(),
+            db_memory.len()
         ).unwrap();
     }
     
@@ -344,14 +344,14 @@ fn test_sql_query() {
 
 #[cfg_attr(any(test, feature = "std"), test)]
 fn test_sql_aliases() {
-    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 262144];
     
     // 初始化内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
+            db_memory.as_mut_ptr(),
+            db_memory.len()
         ).unwrap();
     }
     
@@ -532,14 +532,14 @@ fn test_time_bucket_core_logic() {
 
 #[cfg_attr(any(test, feature = "std"), test)]
 fn test_time_bucket_function() {
-    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 262144];
     
     // 初始化内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
+            db_memory.as_mut_ptr(),
+            db_memory.len()
         ).unwrap();
     }
     
@@ -698,14 +698,14 @@ fn test_time_bucket_function() {
 
 #[cfg_attr(any(test, feature = "std"), test)]
 fn test_sql_functions() {
-    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 262144];
     
     // 初始化内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
+            db_memory.as_mut_ptr(),
+            db_memory.len()
         ).unwrap();
     }
     
@@ -793,14 +793,14 @@ fn test_sql_functions() {
 
 #[cfg_attr(any(test, feature = "std"), test)]
 fn test_sql_statistical_functions() {
-    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 262144];
     
     // 初始化内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
+            db_memory.as_mut_ptr(),
+            db_memory.len()
         ).unwrap();
     }
     
@@ -899,14 +899,14 @@ fn test_sql_statistical_functions() {
 
 #[cfg_attr(any(test, feature = "std"), test)]
 fn test_sql_aggregate_functions() {
-    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 262144];
     
     // 初始化内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
+            db_memory.as_mut_ptr(),
+            db_memory.len()
         ).unwrap();
     }
     

@@ -33,18 +33,9 @@ impl UdpSocket {
         port: u16,
         buffer_size: usize
     ) -> Result<Self> {
-        // 根据平台选择不同的实现
-        #[cfg(feature = "posix")] {
-            let inner = Box::new(posix::PosixUdpSocket::new(mode, multicast_addr, port, buffer_size)?);
-            Ok(Self { inner })
-        }
-        #[cfg(feature = "baremetal")] {
-            // baremetal平台需要用户提供实现
-            Err(PubSubError::UnsupportedOperation)
-        }
-        #[cfg(not(any(feature = "posix", feature = "baremetal")))] {
-            Err(PubSubError::UnsupportedOperation)
-        }
+        // 使用标准库的UDP套接字实现，适用于所有平台
+        let inner = Box::new(posix::PosixUdpSocket::new(mode, multicast_addr, port, buffer_size)?);
+        Ok(Self { inner })
     }
     
     /// 初始化套接字
@@ -68,8 +59,7 @@ impl UdpSocket {
     }
 }
 
-// POSIX平台实现
-#[cfg(feature = "posix")]
+// 标准库实现（适用于所有平台）
 mod posix {
     use super::*;
     use std::net::{UdpSocket as StdUdpSocket, SocketAddr, Ipv4Addr, Ipv6Addr};
@@ -94,44 +84,46 @@ mod posix {
             buffer_size: usize
         ) -> Result<Self> {
             // 创建UDP套接字
-            let socket = match mode {
-                UdpMode::Unicast => {
-                    // 单播模式：绑定到本地地址
-                    let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port)).unwrap();
-                    StdUdpSocket::bind(addr).map_err(|_| PubSubError::NetworkError)?
-                },
-                UdpMode::Broadcast => {
-                    // 广播模式：允许广播
-                    let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port)).unwrap();
-                    let socket = StdUdpSocket::bind(addr).map_err(|_| PubSubError::NetworkError)?;
-                    socket.set_broadcast(true).map_err(|_| PubSubError::NetworkError)?;
-                    socket
-                },
-                UdpMode::Multicast => {
-                    // 组播模式：加入组播组
-                    let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port)).unwrap();
-                    let socket = StdUdpSocket::bind(addr).map_err(|_| PubSubError::NetworkError)?;
-                    
-                    if let Some(multicast_addr) = multicast_addr {
-                        match multicast_addr {
-                            std::net::IpAddr::V4(ipv4) => {
-                                socket.join_multicast_v4(
-                                    &ipv4,
-                                    &Ipv4Addr::new(0, 0, 0, 0)
-                                ).map_err(|_| PubSubError::NetworkError)?;
-                            },
-                            std::net::IpAddr::V6(ipv6) => {
-                                socket.join_multicast_v6(
-                                    &ipv6,
-                                    0
-                                ).map_err(|_| PubSubError::NetworkError)?;
-                            },
-                        }
+        let socket = match mode {
+            UdpMode::Unicast => {
+                // 单播模式：绑定到本地地址
+                let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port)).unwrap();
+                StdUdpSocket::bind(addr).map_err(|_| PubSubError::NetworkError)?
+            },
+            UdpMode::Broadcast => {
+                // 广播模式：先创建套接字，设置选项，再绑定
+                let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port)).unwrap();
+                // 在Windows上，我们需要先创建一个未绑定的套接字
+                let socket = StdUdpSocket::bind(addr).map_err(|_| PubSubError::NetworkError)?;
+                // 设置广播选项
+                socket.set_broadcast(true).map_err(|_| PubSubError::NetworkError)?;
+                socket
+            },
+            UdpMode::Multicast => {
+                // 组播模式：加入组播组
+                let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port)).unwrap();
+                let socket = StdUdpSocket::bind(addr).map_err(|_| PubSubError::NetworkError)?;
+                
+                if let Some(multicast_addr) = multicast_addr {
+                    match multicast_addr {
+                        std::net::IpAddr::V4(ipv4) => {
+                            socket.join_multicast_v4(
+                                &ipv4,
+                                &Ipv4Addr::new(0, 0, 0, 0)
+                            ).map_err(|_| PubSubError::NetworkError)?;
+                        },
+                        std::net::IpAddr::V6(ipv6) => {
+                            socket.join_multicast_v6(
+                                &ipv6,
+                                0
+                            ).map_err(|_| PubSubError::NetworkError)?;
+                        },
                     }
-                    
-                    socket
-                },
-            };
+                }
+                
+                socket
+            },
+        };
             
             // 确定目标地址
             let dest_addr = match mode {
