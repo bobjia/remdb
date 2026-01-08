@@ -1716,6 +1716,10 @@ pub fn get_global_db() -> Option<&'static mut RemDb> {
 pub fn reset_global_db() {
     unsafe {
         DB_INSTANCE = None;
+        // 重置事务管理器状态，包括日志管理器
+        crate::transaction::TX_MANAGER.reset();
+        // 清除日志管理器，确保测试之间的完全隔离
+        crate::transaction::TX_MANAGER.clear_log_manager();
     }
 }
 

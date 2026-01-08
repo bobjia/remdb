@@ -53,6 +53,12 @@ pub enum LogOperation {
     Update = 2,
     /// 时序数据插入
     TimeSeriesInsert = 3,
+    /// 事务提交
+    Commit = 5,
+    /// 事务回滚
+    Abort = 6,
+    /// 检查点
+    Checkpoint = 7,
 }
 
 /// 日志文件头
@@ -630,11 +636,71 @@ impl LogManager {
             checksum: 0, // 会在write_checkpoint中重新计算
         };
         
+        // 创建检查点日志项
+        let log_item = LogItem {
+            op_type: LogOperation::Checkpoint,
+            table_id: 0, // 检查点操作不关联特定表
+            record_id: 0, // 检查点操作不关联特定记录
+            data_size: 0, // 检查点操作没有数据
+            old_data: [0; 512],
+            new_data: [0; 512],
+            tx_id: 0, // 检查点操作不关联特定事务
+            timestamp: now,
+            checksum: 0, // 后面会计算
+        };
+        
+        // 计算校验和
+        let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
+        core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut LogItem, log_item);
+        let mut check_bytes = log_bytes.clone();
+        let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<LogItem>() - 4) as *mut u32;
+        *checksum_ptr = 0;
+        let calculated_checksum = Transaction::calculate_checksum(&check_bytes);
+        
+        let mut final_log_item = log_item;
+        final_log_item.checksum = calculated_checksum;
+        
+        // 写入检查点日志
+        let log_offset = core::mem::size_of::<LogHeader>() + 
+                        core::mem::size_of::<LogCheckpoint>() + 
+                        (self.header.record_count as usize) * core::mem::size_of::<LogItem>();
+        
+        crate::platform::file_seek(
+            self.log_handle,
+            log_offset as i64,
+            crate::platform::SeekWhence::SeekSet
+        ).map_err(|_| RemDbError::FileIoError)?;
+
+        // 写入日志项
+        let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
+        core::ptr::write_unaligned(
+            log_bytes.as_mut_ptr() as *mut LogItem,
+            final_log_item
+        );
+        
+        let written = crate::platform::file_write(
+            self.log_handle,
+            log_bytes.as_ptr(),
+            log_bytes.len()
+        ).map_err(|_| RemDbError::FileIoError)?;
+        
+        if written != log_bytes.len() {
+            crate::platform::spin_unlock(&mut self.lock);
+            return Err(RemDbError::FileIoError);
+        }
+        
+        // 更新日志头记录计数
+        self.header.record_count += 1;
+        self.header.checksum = 0; // 会在write_header中重新计算
+        
         // 释放锁，避免在write_checkpoint中再次借用冲突
         crate::platform::spin_unlock(&mut self.lock);
         
         // 写入检查点
         self.write_checkpoint()?;
+        
+        // 更新日志头
+        self.write_header()?;
         
         // 更新上次检查点时间
         self.last_checkpoint_time = now / 1000;
@@ -764,7 +830,18 @@ impl LogManager {
                     // 更新索引
                     ts_table.index.insert(record.timestamp, partition_guard.records.len() - 1);
                 },
-        }
+                LogOperation::Commit => {
+                    // 提交操作不需要特殊处理，只需要确保事务的一致性
+                    // 事务日志已经包含了所有需要的操作
+                },
+                LogOperation::Abort => {
+                    // 回滚操作不需要特殊处理，因为恢复过程会重新执行所有未提交的操作
+                    // 而提交的事务已经被应用到数据库中
+                },
+                LogOperation::Checkpoint => {
+                    // 检查点操作不需要特殊处理，它只是标记了一个恢复点
+                },
+            }
         }
         
         Ok(())
@@ -914,6 +991,37 @@ impl TransactionManager {
         if !is_dangling {
             // 测试环境：更新事务状态
             let tx = &mut *tx_ptr.as_ptr();
+            
+            // 记录提交日志
+            if let Some(log_manager) = &mut self.log_manager {
+                // 创建提交日志项
+                let log_item = LogItem {
+                    op_type: LogOperation::Commit,
+                    table_id: 0, // 提交操作不关联特定表
+                    record_id: 0, // 提交操作不关联特定记录
+                    data_size: 0, // 提交操作没有数据
+                    old_data: [0; 512],
+                    new_data: [0; 512],
+                    tx_id: tx.id,
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0, // 后面会计算
+                };
+                
+                // 计算校验和
+                let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
+                core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut LogItem, log_item);
+                let mut check_bytes = log_bytes.clone();
+                let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<LogItem>() - 4) as *mut u32;
+                *checksum_ptr = 0;
+                let calculated_checksum = Transaction::calculate_checksum(&check_bytes);
+                
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+                
+                // 写入日志
+                log_manager.write_log_item(&final_log_item)?;
+            }
+            
             tx.status = TransactionStatus::Committed;
         }
         
@@ -1047,11 +1155,41 @@ impl TransactionManager {
                             }
                         }
                     },
+                    _ => continue,
                 }
             }
             
+            // 记录回滚日志
+            if let Some(log_manager) = &mut self.log_manager {
+                // 创建回滚日志项
+                let log_item = LogItem {
+                    op_type: LogOperation::Abort,
+                    table_id: 0, // 回滚操作不关联特定表
+                    record_id: 0, // 回滚操作不关联特定记录
+                    data_size: 0, // 回滚操作没有数据
+                    old_data: [0; 512],
+                    new_data: [0; 512],
+                    tx_id: tx.id,
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0, // 后面会计算
+                };
+                
+                // 计算校验和
+                let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
+                core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut LogItem, log_item);
+                let mut check_bytes = log_bytes.clone();
+                let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<LogItem>() - 4) as *mut u32;
+                *checksum_ptr = 0;
+                let calculated_checksum = Transaction::calculate_checksum(&check_bytes);
+                
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+                
+                // 写入日志
+                log_manager.write_log_item(&final_log_item)?;
+            }
+            
             // 更新事务状态
-            let tx = &mut *tx_ptr.as_ptr();
             tx.status = TransactionStatus::RolledBack;
         }
         

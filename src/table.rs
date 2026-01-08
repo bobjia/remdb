@@ -988,7 +988,15 @@ impl MemoryTable {
             inserted_count = actual_count;
         }
         
-        // 更新空闲槽计数
+        // 检查是否有活跃事务
+        let has_active_tx = crate::transaction::has_active_tx();
+        let current_tx = if has_active_tx {
+            crate::transaction::get_current_tx()
+        } else {
+            None
+        };
+        
+        // 释放锁，准备批量处理
         crate::platform::spin_unlock(&mut self.lock);
         
         // 批量处理记录，不持有锁
@@ -1003,6 +1011,27 @@ impl MemoryTable {
             // 计算记录地址
             let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
             let src_ptr = records.add(j * self.record_size);
+            
+            // 记录日志（如果有活跃事务）
+            if let Some(mut tx) = current_tx {
+                let tx_mut = tx.as_mut();
+                if tx_mut.is_active() && !tx_mut.is_read_only() {
+                    // 保存新数据
+                    let mut new_data = Vec::with_capacity(self.record_size);
+                    new_data.resize(self.record_size, 0);
+                    memcpy(new_data.as_mut_ptr(), src_ptr, self.record_size);
+                    
+                    // 添加日志项
+                    tx_mut.add_log_item(
+                        crate::transaction::LogOperation::Insert,
+                        self.def.id,
+                        slot_id as u16,
+                        core::ptr::null(),
+                        new_data.as_ptr(),
+                        self.record_size
+                    )?;
+                }
+            }
             
             // 拷贝记录数据
             memcpy(record_ptr, src_ptr, self.record_size);
@@ -1061,6 +1090,14 @@ impl MemoryTable {
         // 批量更新空闲槽计数
         self.free_slot_count = end_free_slot;
         
+        // 检查是否有活跃事务
+        let has_active_tx = crate::transaction::has_active_tx();
+        let current_tx = if has_active_tx {
+            crate::transaction::get_current_tx()
+        } else {
+            None
+        };
+        
         // 解锁，减少锁持有时间
         crate::platform::spin_unlock(&mut self.lock);
         
@@ -1080,6 +1117,27 @@ impl MemoryTable {
             // 计算记录地址
             let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
             let src_ptr = records.add(i * self.record_size);
+            
+            // 记录日志（如果有活跃事务）
+            if let Some(mut tx) = current_tx {
+                let tx_mut = tx.as_mut();
+                if tx_mut.is_active() && !tx_mut.is_read_only() {
+                    // 保存新数据
+                    let mut new_data = Vec::with_capacity(self.record_size);
+                    new_data.resize(self.record_size, 0);
+                    memcpy(new_data.as_mut_ptr(), src_ptr, self.record_size);
+                    
+                    // 添加日志项（使用TimeSeriesInsert操作类型）
+                    tx_mut.add_log_item(
+                        crate::transaction::LogOperation::TimeSeriesInsert,
+                        self.def.id,
+                        slot_id as u16,
+                        core::ptr::null(),
+                        new_data.as_ptr(),
+                        self.record_size
+                    )?;
+                }
+            }
             
             // 拷贝记录数据
             memcpy(record_ptr, src_ptr, self.record_size);
