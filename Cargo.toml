@@ -2,6 +2,7 @@
 members = [
     ".",
     "remdb-macros",
+    "examples/pubsub_test_system",
 ]
 
 [package]
@@ -25,6 +26,7 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 rand = { version = "0.8.5", optional = true }
 remdb-macros = { path = "./remdb-macros", version = "0.2.1" }
+socket2 = { version = "0.5.5", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -36,7 +38,7 @@ harness = false
 
 [features]
 default = ["std", "posix"]
-std = ["rand"]
+std = ["rand", "socket2"]
 posix = ["std"]
 baremetal = []
 debug = []

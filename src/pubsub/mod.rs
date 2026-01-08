@@ -158,6 +158,11 @@ impl PubSub {
         })
     }
     
+    /// 获取实际使用的端口
+    pub fn get_actual_port(&self) -> Result<u16> {
+        self.udp_socket.get_port()
+    }
+    
     /// 初始化发布/订阅系统
     pub fn init(&mut self) -> Result<()> {
         // 初始化UDP套接字
@@ -182,8 +187,8 @@ impl PubSub {
         Err(PubSubError::UnsupportedOperation)
     }
     
-    /// 接收循环（内部使用）
-    fn receive_loop(&mut self) {
+    /// 接收循环（外部可调用）
+    pub fn receive_loop(&mut self) {
         // 分配接收缓冲区
         let mut buf = alloc::vec::Vec::with_capacity(self.config.buffer_size);
         buf.resize(self.config.buffer_size, 0);

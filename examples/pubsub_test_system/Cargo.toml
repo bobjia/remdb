@@ -1,0 +1,13 @@
+[package]
+name = "pubsub_test_system"
+version = "0.1.0"
+edition = "2021"
+authors = ["remdb contributors"]
+description = "PubSub test system for remdb"
+
+[dependencies]
+remdb = { path = "../../" }
+
+[lib]
+name = "pubsub_test_system"
+path = "src/lib.rs"
