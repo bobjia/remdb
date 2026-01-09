@@ -125,6 +125,7 @@ fn test_index_recovery() -> Result<()> {
             low_power_max_records: None,
             default_max_records: 100,
             memory_allocator: &remdb::config::DefaultMemoryAllocator {},
+            log_path: "index_recovery_test.wal",
             log_mode: remdb::config::LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,

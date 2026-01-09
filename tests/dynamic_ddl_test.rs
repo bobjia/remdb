@@ -14,6 +14,7 @@ static TEST_CONFIG: config::DbConfig = unsafe {
         low_power_max_records: None,
         default_max_records: 100, // 减小值以避免内存不足
         memory_allocator: &mut DEFAULT_ALLOCATOR,
+        log_path: "dynamic_ddl_test.wal",
         log_mode: config::LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
@@ -98,8 +99,8 @@ impl Platform for TestPlatform {
         Ok(())
     }
     
-    fn file_write(&self, _handle: FileHandle, _buffer: *const u8, _size: usize) -> FileResult<usize> {
-        Ok(0)
+    fn file_write(&self, _handle: FileHandle, _buffer: *const u8, size: usize) -> FileResult<usize> {
+        Ok(size)
     }
     
     fn file_read(&self, _handle: FileHandle, _buffer: *mut u8, _size: usize) -> FileResult<usize> {

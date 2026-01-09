@@ -30,6 +30,7 @@ static CONFIG: DbConfig = DbConfig {
     low_power_max_records: None,
     default_max_records: 10000,
     memory_allocator: &ALLOCATOR,
+    log_path: "example_remdb.wal",
     log_mode: remdb::config::LogMode::Sync,
     checkpoint_interval_ms: 60000,
     log_file_size_limit: 16 * 1024 * 1024,

@@ -132,6 +132,7 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
                 static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
                 &mut DEFAULT_ALLOCATOR
             },
+            log_path: "remdb.wal",
             log_mode: remdb::config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,

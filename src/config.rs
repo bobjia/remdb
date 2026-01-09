@@ -68,6 +68,8 @@ pub struct DbConfig {
     pub default_max_records: usize,
     /// 内存分配器
     pub memory_allocator: &'static dyn MemoryAllocator,
+    /// 日志文件路径
+    pub log_path: &'static str,
     /// 日志模式（同步/异步）
     pub log_mode: LogMode,
     /// 检查点间隔（毫秒，默认60秒）

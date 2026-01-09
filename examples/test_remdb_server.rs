@@ -130,6 +130,7 @@ fn main() {
         low_power_max_records: None,
         default_max_records: 10000,
         memory_allocator: &ALLOCATOR, // 使用我们的静态内存分配器
+        log_path: "test_remdb_server.wal",
         log_mode: remdb::config::LogMode::Async,
         checkpoint_interval_ms: 60000, // 60秒
         log_file_size_limit: 16 * 1024 * 1024, // 16MB
@@ -391,8 +392,8 @@ fn main() {
         } 
     }); 
     
-    // 运行10分钟后自动停止 
-    thread::sleep(Duration::from_secs(600)); 
+    // 运行1分钟后自动停止 
+    thread::sleep(Duration::from_secs(60)); 
     
     // 停止所有线程 
     *running.lock().unwrap() = false; 

@@ -16,6 +16,7 @@ static CONFIG: DbConfig = unsafe {
         low_power_max_records: None,
         default_max_records: 10, // 减少默认最大记录数，避免内存不足
         memory_allocator: &mut DEFAULT_ALLOCATOR,
+        log_path: "test_default_value.wal",
         log_mode: LogMode::Sync,
         log_prealloc_size: 1 * 1024 * 1024,
         log_segment_size: 16 * 1024 * 1024,

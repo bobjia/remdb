@@ -134,8 +134,8 @@ fn main() {
     println!("- table.test_table (ID: 12)");
     println!("Client is running and receiving messages...");
     
-    // 运行2分钟后自动停止
-    thread::sleep(Duration::from_secs(120));
+    // 运行1分钟后自动停止
+    thread::sleep(Duration::from_secs(60));
     
     println!("PubSub test client stopped!");
 }

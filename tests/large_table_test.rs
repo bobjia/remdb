@@ -171,6 +171,7 @@ fn test_large_table_performance() {
             static mut DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
             &mut DEFAULT_ALLOCATOR
         },
+        log_path: "large_table_test.wal",
         log_mode: remdb::config::LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,

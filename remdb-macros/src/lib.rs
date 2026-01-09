@@ -450,6 +450,7 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 &mut DEFAULT_ALLOCATOR
             },
             // 日志相关配置
+            log_path: "remdb.wal",
             log_mode: remdb::config::LogMode::Sync,
             checkpoint_interval_ms: 60000, // 默认60秒
             log_file_size_limit: 16 * 1024 * 1024, // 默认16MB

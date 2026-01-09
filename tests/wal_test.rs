@@ -135,6 +135,7 @@ fn test_wal_log_manager_creation() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
+        log_path: "/tmp/test_wal.log",
         log_mode: LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
@@ -154,7 +155,7 @@ fn test_wal_log_manager_creation() {
     // 测试创建 LogManager
     unsafe {
         let log_path = "/tmp/test_wal.log";
-        let log_manager = LogManager::new(log_path, &config);
+        let log_manager = LogManager::new(&config);
         assert!(log_manager.is_ok());
     }
 }
@@ -177,6 +178,7 @@ fn test_wal_log_write_sync_mode() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
+        log_path: "/tmp/test_wal.log",
         log_mode: LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
@@ -195,7 +197,7 @@ fn test_wal_log_write_sync_mode() {
     
     unsafe {
         let log_path = "/tmp/test_wal_sync.log";
-        let mut log_manager = LogManager::new(log_path, &config).unwrap();
+        let mut log_manager = LogManager::new(&config).unwrap();
         
         // 创建测试日志项
         let mut new_data = [0u8; 512];
@@ -237,6 +239,7 @@ fn test_wal_log_write_async_mode() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
+        log_path: "/tmp/test_wal.log",
         log_mode: LogMode::Async,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
@@ -255,7 +258,7 @@ fn test_wal_log_write_async_mode() {
     
     unsafe {
         let log_path = "/tmp/test_wal_async.log";
-        let mut log_manager = LogManager::new(log_path, &config).unwrap();
+        let mut log_manager = LogManager::new(&config).unwrap();
         
         // 创建测试日志项
         let mut old_data = [0u8; 512];
@@ -304,6 +307,7 @@ fn test_wal_checkpoint_mechanism() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
+        log_path: "/tmp/test_wal_checkpoint.log",
         log_mode: LogMode::Sync,
         checkpoint_interval_ms: 100, // 100毫秒检查点间隔
         log_file_size_limit: 16 * 1024 * 1024,
@@ -322,7 +326,7 @@ fn test_wal_checkpoint_mechanism() {
     
     unsafe {
         let log_path = "/tmp/test_wal_checkpoint.log";
-        let mut log_manager = LogManager::new(log_path, &config).unwrap();
+        let mut log_manager = LogManager::new(&config).unwrap();
         
         // 模拟检查点触发
         let result = log_manager.check_flush_and_checkpoint();
@@ -386,11 +390,12 @@ fn test_wal_log_preallocation() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        log_path: "/tmp/test_wal_prealloc.log",
     };
     
     unsafe {
         let log_path = "/tmp/test_wal_prealloc.log";
-        let log_manager = LogManager::new(log_path, &config);
+        let log_manager = LogManager::new(&config);
         assert!(log_manager.is_ok());
         
         // 这里可以添加文件大小检查，但需要平台特定的API
@@ -437,10 +442,11 @@ fn test_wal_different_log_modes() {
             sync_timeout_ms: 2000,
             master_address: None,
             master_port: None,
+            log_path,
         };
         
         unsafe {
-            let mut log_manager = LogManager::new(log_path, &config).unwrap();
+            let mut log_manager = LogManager::new(&config).unwrap();
             
             // 写入测试日志项
             let mut new_data = [0u8; 512];
@@ -482,33 +488,34 @@ fn test_wal_recovery_flow() {
     
     // 创建数据库配置（简化版，不包含tables字段）
     let config = DbConfig {
-        tables: &[],
-        total_memory: 1024 * 1024, // 1MB
-        low_power_mode_supported: false,
-        low_power_max_records: None,
-        default_max_records: 1000,
-        memory_allocator: &ALLOCATOR,
-        log_mode: LogMode::Sync,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
-        time_series_defaults: TimeSeriesConfig::DEFAULT,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
-        ha_role: HARole::Auto,
-        replication_mode: ReplicationMode::Async,
-        heartbeat_interval_ms: 1000,
-        failure_detection_ms: 3000,
-        sync_timeout_ms: 2000,
-        master_address: None,
-        master_port: None,
-    };
+            tables: &[],
+            total_memory: 1024 * 1024, // 1MB
+            low_power_mode_supported: false,
+            low_power_max_records: None,
+            default_max_records: 1000,
+            memory_allocator: &ALLOCATOR,
+            log_path: "/tmp/test_wal.log",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            time_series_defaults: TimeSeriesConfig::DEFAULT,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
+        };
     
     unsafe {
         let log_path = "/tmp/test_wal_recovery.log";
         
         // 步骤1: 创建日志管理器
-        let mut log_manager = LogManager::new(log_path, &config).unwrap();
+        let mut log_manager = LogManager::new(&config).unwrap();
         
         println!("=== WAL恢复流程测试开始 ===");
         
@@ -643,14 +650,14 @@ fn test_wal_recovery_flow() {
         // 步骤6: 从崩溃中恢复
         println!("=== 从崩溃中恢复 ===");
         // 重新创建日志管理器，模拟系统重启
-        let _recovered_log_manager = LogManager::new(log_path, &config).unwrap();
+        let _recovered_log_manager = LogManager::new(&config).unwrap();
         println!("日志管理器重启成功");
         
         // 步骤7: 验证恢复逻辑
         println!("=== 验证恢复逻辑 ===");
         
         // 重新创建日志管理器用于测试恢复
-        let mut final_log_manager = LogManager::new(log_path, &config).unwrap();
+        let mut final_log_manager = LogManager::new(&config).unwrap();
         
         // 测试继续写入新日志
         let mut new_log_data = [0u8; 512];

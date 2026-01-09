@@ -22,11 +22,12 @@ fn main() {
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
     static CONFIG: DbConfig = DbConfig {
         tables: &[],
-        total_memory: MEMORY_SIZE,
+        total_memory: 1024 * 1024 * 10, // 10MB
         low_power_mode_supported: false,
         low_power_max_records: None,
-        default_max_records: 1000,
+        default_max_records: 10000,
         memory_allocator: &ALLOCATOR,
+        log_path: "create_timeseries_table.wal",
         log_mode: LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,

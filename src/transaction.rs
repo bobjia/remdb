@@ -182,10 +182,10 @@ pub struct LogManager {
 
 impl LogManager {
     /// 创建新的日志管理器
-    pub unsafe fn new(log_path: &'static str, config: &crate::config::DbConfig) -> Result<Self> {
+    pub unsafe fn new(config: &crate::config::DbConfig) -> Result<Self> {
         // 尝试打开日志文件，如果不存在则创建
         let log_handle = crate::platform::file_open(
-            log_path,
+            config.log_path,
             crate::platform::FileMode::ReadWrite
         ).map_err(|_| RemDbError::FileIoError)?;
         
@@ -194,7 +194,7 @@ impl LogManager {
         let now_ms = now / 1000;
         
         let mut manager = LogManager {
-            log_path,
+            log_path: config.log_path,
             log_handle,
             header: LogHeader {
                 magic: 0x4C4F474D, // 'LOGM'

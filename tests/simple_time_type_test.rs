@@ -11,6 +11,7 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     default_max_records: 100,
     low_power_mode_supported: false,
     low_power_max_records: None,
+    log_path: "simple_time_type_test.wal",
     log_mode: config::LogMode::Async,
     log_prealloc_size: 0,
     log_file_size_limit: 104857600,

@@ -248,8 +248,8 @@ fn main() {
         }
     });
     
-    // 运行10分钟后自动停止
-    thread::sleep(Duration::from_secs(600));
+    // 运行1分钟后自动停止
+    thread::sleep(Duration::from_secs(60));
     
     // 停止所有线程
     *running.lock().unwrap() = false;

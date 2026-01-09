@@ -240,6 +240,7 @@ fn test_time_series_batch_performance() {
             low_power_max_records: None,
             default_max_records: 10000,
             memory_allocator: &crate::config::DefaultMemoryAllocator,
+            log_path: "time_series_module_test.wal",
             log_mode: crate::config::LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,

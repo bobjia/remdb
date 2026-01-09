@@ -105,6 +105,7 @@ static TEST_DB_CONFIG: remdb::config::DbConfig = remdb::config::DbConfig {
     default_max_records: 100, // 降低默认记录数，减少内存需求
     low_power_mode_supported: false,
     low_power_max_records: None,
+    log_path: "sql_insert_ignore_test.wal",
     log_mode: remdb::config::LogMode::Async,
     log_prealloc_size: 0,
     log_file_size_limit: 1048576,
