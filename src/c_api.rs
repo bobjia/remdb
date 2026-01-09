@@ -561,6 +561,8 @@ pub unsafe extern "C" fn remdb_init_global(
         sync_timeout_ms: 1000, // 默认1秒
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
         time_series_defaults: crate::time_series::TimeSeriesConfig::DEFAULT,
     };
     

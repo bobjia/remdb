@@ -144,6 +144,8 @@ fn main() {
         sync_timeout_ms: 5000, // 5秒
         master_address: master_ip,
         master_port: master_port,
+        replication_port: 5556,
+        heartbeat_port: 5557,
         time_series_defaults: TimeSeriesConfig {
             partition_duration_secs: 3600, // 1小时
             retention_period_secs: 7 * 24 * 3600, // 7天

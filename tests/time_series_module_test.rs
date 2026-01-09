@@ -254,6 +254,8 @@ fn test_time_series_batch_performance() {
             sync_timeout_ms: 5000,
             master_address: None,
             master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
             time_series_defaults: TimeSeriesConfig::DEFAULT,
         };
         let config = &TEST_CONFIG;

@@ -238,6 +238,8 @@ fn test_ha_manager_failover() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
     };
     
     // 创建HA管理器
@@ -325,6 +327,8 @@ fn test_ha_manager() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
     };
     
     // 创建HA管理器
@@ -376,6 +380,8 @@ fn test_ha_manager_role_switch() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
     };
     
     // 创建HA管理器
@@ -447,6 +453,8 @@ fn test_ha_config_validation() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     };
     
@@ -476,6 +484,8 @@ fn test_ha_config_validation() {
         sync_timeout_ms: 2000, // 2秒
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     };
     

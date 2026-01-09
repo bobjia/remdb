@@ -185,6 +185,8 @@ fn test_large_table_performance() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
         time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
     };
     

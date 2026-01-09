@@ -150,6 +150,8 @@ fn test_wal_log_manager_creation() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
     };
     
     // 测试创建 LogManager
@@ -193,6 +195,8 @@ fn test_wal_log_write_sync_mode() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
     };
     
     unsafe {
@@ -254,6 +258,8 @@ fn test_wal_log_write_async_mode() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
     };
     
     unsafe {
@@ -321,6 +327,8 @@ fn test_wal_checkpoint_mechanism() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
         time_series_defaults: TimeSeriesConfig::DEFAULT,
     };
     
@@ -390,6 +398,8 @@ fn test_wal_log_preallocation() {
         sync_timeout_ms: 2000,
         master_address: None,
         master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
         log_path: "/tmp/test_wal_prealloc.log",
     };
     
@@ -442,6 +452,8 @@ fn test_wal_different_log_modes() {
             sync_timeout_ms: 2000,
             master_address: None,
             master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
             log_path,
         };
         
@@ -509,6 +521,8 @@ fn test_wal_recovery_flow() {
             sync_timeout_ms: 2000,
             master_address: None,
             master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
         };
     
     unsafe {

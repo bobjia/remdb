@@ -35,9 +35,11 @@ fn main() {
             failure_detection_ms: 3000,
             sync_timeout_ms: 2000,
             master_address: None,
-        master_port: None,
-        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
-    };
+            master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
+            time_series_defaults: config::TimeSeriesConfig::DEFAULT,
+        };
         
         // 初始化数据库
         let mut db = init_global_db(&CONFIG).expect("Failed to initialize database");

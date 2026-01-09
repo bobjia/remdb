@@ -30,6 +30,8 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     sync_timeout_ms: 1000,
     master_address: None,
     master_port: None,
+    replication_port: 5556,
+    heartbeat_port: 5557,
     time_series_defaults: TimeSeriesConfig::DEFAULT,
 };
 
@@ -56,6 +58,8 @@ static PERFORMANCE_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     sync_timeout_ms: 1000,
     master_address: None,
     master_port: None,
+    replication_port: 5556,
+    heartbeat_port: 5557,
     time_series_defaults: TimeSeriesConfig::DEFAULT,
 };
 
@@ -82,6 +86,8 @@ static ROLLBACK_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     sync_timeout_ms: 1000,
     master_address: None,
     master_port: None,
+    replication_port: 5556,
+    heartbeat_port: 5557,
     time_series_defaults: TimeSeriesConfig::DEFAULT,
 };
 

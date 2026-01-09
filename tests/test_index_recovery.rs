@@ -139,6 +139,8 @@ fn test_index_recovery() -> Result<()> {
             sync_timeout_ms: 1000,
             master_address: None,
             master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
             time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
         })
     }?;
