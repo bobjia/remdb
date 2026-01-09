@@ -888,7 +888,123 @@ impl DdlExecutor for RemDb {
                 log_data[1..1+name_len].copy_from_slice(&name_bytes[..name_len]);
                 // 写入字段数量
                 log_data[65] = table_def.fields.len() as u8;
-                // 写入其他表定义信息...
+                // 写入主键索引
+                log_data[66] = table_def.primary_key as u8;
+                
+                // 写入字段定义信息
+                let mut offset = 67;
+                for (i, field) in table_def.fields.iter().enumerate() {
+                    // 写入字段名
+                    let field_name = field.name;
+                    let field_name_bytes = field_name.as_bytes();
+                    let field_name_len = core::cmp::min(field_name_bytes.len(), 32);
+                    log_data[offset] = field_name_len as u8;
+                    offset += 1;
+                    log_data[offset..offset+field_name_len].copy_from_slice(&field_name_bytes[..field_name_len]);
+                    offset += 32; // 固定32字节字段名空间
+                    
+                    // 写入数据类型
+                    log_data[offset] = field.data_type as u8;
+                    offset += 1;
+                    
+                    // 写入字段约束
+                    let mut constraints = 0u8;
+                    if field.primary_key { constraints |= 0b0001; }
+                    if field.not_null { constraints |= 0b0010; }
+                    if field.unique { constraints |= 0b0100; }
+                    if field.auto_increment { constraints |= 0b1000; }
+                    log_data[offset] = constraints;
+                    offset += 1;
+                    
+                    // 写入默认值存在标志
+                    let has_default = field.default_value.is_some();
+                    log_data[offset] = has_default as u8;
+                    offset += 1;
+                    
+                    // 写入默认值（如果有）
+                    if let Some(default_value) = field.default_value {
+                        // 根据数据类型写入默认值
+                        match field.data_type {
+                            crate::types::DataType::Bool => {
+                                let b = unsafe { default_value.bool };
+                                log_data[offset] = b as u8;
+                                offset += 1;
+                            },
+                            crate::types::DataType::Int8 => {
+                                let i = unsafe { default_value.i8 };
+                                log_data[offset] = i as u8;
+                                offset += 1;
+                            },
+                            crate::types::DataType::UInt8 => {
+                                let u = unsafe { default_value.u8 };
+                                log_data[offset] = u;
+                                offset += 1;
+                            },
+                            crate::types::DataType::Int16 => {
+                                let i = unsafe { default_value.i16 };
+                                log_data[offset..offset+2].copy_from_slice(&i.to_le_bytes());
+                                offset += 2;
+                            },
+                            crate::types::DataType::UInt16 => {
+                                let u = unsafe { default_value.u16 };
+                                log_data[offset..offset+2].copy_from_slice(&u.to_le_bytes());
+                                offset += 2;
+                            },
+                            crate::types::DataType::Int32 => {
+                                let i = unsafe { default_value.i32 };
+                                log_data[offset..offset+4].copy_from_slice(&i.to_le_bytes());
+                                offset += 4;
+                            },
+                            crate::types::DataType::UInt32 => {
+                                let u = unsafe { default_value.u32 };
+                                log_data[offset..offset+4].copy_from_slice(&u.to_le_bytes());
+                                offset += 4;
+                            },
+                            crate::types::DataType::Int64 => {
+                                let i = unsafe { default_value.i64 };
+                                log_data[offset..offset+8].copy_from_slice(&i.to_le_bytes());
+                                offset += 8;
+                            },
+                            crate::types::DataType::UInt64 => {
+                                let u = unsafe { default_value.u64 };
+                                log_data[offset..offset+8].copy_from_slice(&u.to_le_bytes());
+                                offset += 8;
+                            },
+                            crate::types::DataType::Float32 => {
+                                let f = unsafe { default_value.float32 };
+                                log_data[offset..offset+4].copy_from_slice(&f.to_le_bytes());
+                                offset += 4;
+                            },
+                            crate::types::DataType::Float64 => {
+                                let f = unsafe { default_value.float64 };
+                                log_data[offset..offset+8].copy_from_slice(&f.to_le_bytes());
+                                offset += 8;
+                            },
+                            crate::types::DataType::String => {
+                                let s = unsafe { default_value.string };
+                                let string_len = core::cmp::min(s.iter().position(|&c| c == 0).unwrap_or(64), 64);
+                                log_data[offset] = string_len as u8;
+                                offset += 1;
+                                log_data[offset..offset+string_len].copy_from_slice(&s[..string_len]);
+                                offset += 64; // 固定64字节字符串空间
+                            },
+                            crate::types::DataType::Timestamp | crate::types::DataType::TimestampTZ => {
+                                let t = unsafe { default_value.timestamp };
+                                log_data[offset..offset+8].copy_from_slice(&t.to_le_bytes());
+                                offset += 8;
+                            },
+                            crate::types::DataType::Interval => {
+                                let interval = unsafe { default_value.interval };
+                                log_data[offset..offset+8].copy_from_slice(&interval.value.to_le_bytes());
+                                offset += 8;
+                                log_data[offset] = interval.precision;
+                                offset += 1;
+                                log_data[offset] = interval.flags;
+                                offset += 1;
+                            },
+                        }
+                    }
+                }
                 
                 // 创建日志项
                 let log_item = crate::transaction::LogItem {

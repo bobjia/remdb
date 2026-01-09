@@ -37,6 +37,30 @@ pub enum DataType {
     Interval = 14,
 }
 
+/// 实现从u8到DataType的转换
+impl From<u8> for DataType {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => DataType::UInt8,
+            1 => DataType::UInt16,
+            2 => DataType::UInt32,
+            3 => DataType::UInt64,
+            4 => DataType::Int8,
+            5 => DataType::Int16,
+            6 => DataType::Int32,
+            7 => DataType::Int64,
+            8 => DataType::Float32,
+            9 => DataType::Float64,
+            10 => DataType::Bool,
+            11 => DataType::Timestamp,
+            12 => DataType::TimestampTZ,
+            13 => DataType::String,
+            14 => DataType::Interval,
+            _ => DataType::String, // 默认为String类型
+        }
+    }
+}
+
 impl DataType {
     /// 获取数据类型的大小（字节）
     /// 时间类型根据精度自动调整大小：

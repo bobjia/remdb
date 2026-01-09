@@ -190,13 +190,14 @@ fn test_sql_query() {
     // 插入测试数据
     // 确保TestRecord的内存布局与table!宏生成的字段偏移量匹配
     // 使用精确的#[repr(C)]布局，确保字段顺序和大小与table!宏定义一致
-    // Rust的#[repr(C)]会自动处理对齐，不需要手动添加填充
+    // 添加必要的填充以确保8字节对齐：bool(1字节) + 6字节填充 = 7字节，确保u64字段8字节对齐
     #[repr(C)]
     struct TestRecord {
         id: i32,          // 4字节
         name: [u8; 32],   // 32字节
         age: i8,          // 1字节
         active: u8,       // 1字节（bool在C中通常是1字节）
+        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐（从偏移38到40）
         created_at: u64,  // 8字节
     }
     
@@ -215,6 +216,7 @@ fn test_sql_query() {
             name: [0u8; 32],
             age,
             active: if active { 1 } else { 0 }, // 将bool转换为u8
+            _padding: [0u8; 2], // 初始化填充字段为0
             created_at,
         };
         
@@ -383,7 +385,7 @@ fn test_sql_aliases() {
         name: [u8; 32],   // 32字节
         age: i8,          // 1字节
         active: u8,       // 1字节（bool在C中通常是1字节）
-        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐
+        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐（从偏移38到40）
         created_at: u64,  // 8字节
     }
     
@@ -737,7 +739,7 @@ fn test_sql_functions() {
         name: [u8; 32],   // 32字节
         age: i8,          // 1字节
         active: u8,       // 1字节（bool在C中通常是1字节）
-        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐
+        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐（从偏移38到40）
         created_at: u64,  // 8字节
     }
     
@@ -834,7 +836,7 @@ fn test_sql_statistical_functions() {
         name: [u8; 32],   // 32字节
         age: i8,          // 1字节
         active: u8,       // 1字节（bool在C中通常是1字节）
-        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐
+        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐（从偏移38到40）
         created_at: u64,  // 8字节
     }
     
@@ -938,7 +940,7 @@ fn test_sql_aggregate_functions() {
         name: [u8; 32],   // 32字节
         age: i8,          // 1字节
         active: u8,       // 1字节（bool在C中通常是1字节）
-        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐
+        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐（从偏移38到40）
         created_at: u64,  // 8字节
     }
     

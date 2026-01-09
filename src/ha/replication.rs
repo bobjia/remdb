@@ -201,17 +201,138 @@ impl ReplicationManager {
                         // 从日志中解析字段数量
                         let field_count = log_item.new_data[65] as usize;
                         
-                        // TODO: 完整实现从日志中恢复表结构
-                        // 目前我们只记录了表名和字段数量，需要扩展日志格式以包含完整的表定义
-                        // 对于测试目的，我们使用默认的字段定义
-                        let fields = &[(
-                            "id",
-                            crate::types::DataType::Int32,
-                            Some(crate::types::Value { i32: 0 })
-                        )];
+                        // 从日志中解析主键索引
+                        let primary_key = log_item.new_data[66] as usize;
+                        
+                        // 解析字段定义
+                        let mut offset = 67;
+                        let mut fields = Vec::with_capacity(field_count);
+                        
+                        for _ in 0..field_count {
+                            // 解析字段名
+                            let field_name_len = log_item.new_data[offset] as usize;
+                            offset += 1;
+                            let field_name = core::str::from_utf8(&log_item.new_data[offset..offset+field_name_len]).unwrap_or("unknown");
+                            offset += 32; // 跳过固定32字节字段名空间
+                            
+                            // 解析数据类型
+                            let data_type = crate::types::DataType::from(log_item.new_data[offset]);
+                            offset += 1;
+                            
+                            // 解析字段约束
+                            let constraints = log_item.new_data[offset];
+                            offset += 1;
+                            let primary_key_flag = (constraints & 0b0001) != 0;
+                            let not_null_flag = (constraints & 0b0010) != 0;
+                            let unique_flag = (constraints & 0b0100) != 0;
+                            let auto_increment_flag = (constraints & 0b1000) != 0;
+                            
+                            // 解析默认值存在标志
+                            let has_default = log_item.new_data[offset] != 0;
+                            offset += 1;
+                            
+                            // 解析默认值（如果有）
+                            let default_value = if has_default {
+                                // 根据数据类型解析默认值
+                                let mut value = crate::types::Value { u64: 0 };
+                                match data_type {
+                                    crate::types::DataType::Bool => {
+                                        let bool_value = log_item.new_data[offset] != 0;
+                                        offset += 1;
+                                        unsafe { value.bool = bool_value; }
+                                    },
+                                    crate::types::DataType::Int8 => {
+                                        let i8_value = i8::from_le_bytes([log_item.new_data[offset]]);
+                                        offset += 1;
+                                        unsafe { value.i8 = i8_value; }
+                                    },
+                                    crate::types::DataType::UInt8 => {
+                                        let u8_value = log_item.new_data[offset];
+                                        offset += 1;
+                                        unsafe { value.u8 = u8_value; }
+                                    },
+                                    crate::types::DataType::Int16 => {
+                                        let i16_value = i16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
+                                        offset += 2;
+                                        unsafe { value.i16 = i16_value; }
+                                    },
+                                    crate::types::DataType::UInt16 => {
+                                        let u16_value = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
+                                        offset += 2;
+                                        unsafe { value.u16 = u16_value; }
+                                    },
+                                    crate::types::DataType::Int32 => {
+                                        let i32_value = i32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
+                                        offset += 4;
+                                        unsafe { value.i32 = i32_value; }
+                                    },
+                                    crate::types::DataType::UInt32 => {
+                                        let u32_value = u32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
+                                        offset += 4;
+                                        unsafe { value.u32 = u32_value; }
+                                    },
+                                    crate::types::DataType::Int64 => {
+                                        let i64_value = i64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
+                                        offset += 8;
+                                        unsafe { value.i64 = i64_value; }
+                                    },
+                                    crate::types::DataType::UInt64 => {
+                                        let u64_value = u64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
+                                        offset += 8;
+                                        unsafe { value.u64 = u64_value; }
+                                    },
+                                    crate::types::DataType::Float32 => {
+                                        let float32_value = f32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
+                                        offset += 4;
+                                        unsafe { value.float32 = float32_value; }
+                                    },
+                                    crate::types::DataType::Float64 => {
+                                        let float64_value = f64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
+                                        offset += 8;
+                                        unsafe { value.float64 = float64_value; }
+                                    },
+                                    crate::types::DataType::String => {
+                                        let string_len = log_item.new_data[offset] as usize;
+                                        offset += 1;
+                                        let mut string_data = [0u8; 64];
+                                        string_data[..string_len].copy_from_slice(&log_item.new_data[offset..offset+string_len]);
+                                        offset += 64; // 跳过固定64字节字符串空间
+                                        unsafe { value.string = string_data; }
+                                    },
+                                    crate::types::DataType::Timestamp | crate::types::DataType::TimestampTZ => {
+                                        let timestamp_value = u64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
+                                        offset += 8;
+                                        unsafe { value.timestamp = timestamp_value; }
+                                    },
+                                    crate::types::DataType::Interval => {
+                                        // 解析Interval类型，读取value、precision和flags
+                                        let interval_value_bytes = log_item.new_data[offset..offset+8].try_into().unwrap();
+                                        let interval_value = i64::from_le_bytes(interval_value_bytes);
+                                        offset += 8;
+                                        let precision = log_item.new_data[offset];
+                                        offset += 1;
+                                        let flags = log_item.new_data[offset];
+                                        offset += 1;
+                                        unsafe {
+                                            value.interval = crate::types::db_interval {
+                                                value: interval_value,
+                                                precision,
+                                                flags
+                                            };
+                                        }
+                                    },
+                                }
+                                Some(value)
+                            } else {
+                                None
+                            };
+                            
+                            // 添加字段到列表
+                            fields.push((field_name, data_type, default_value));
+                        }
                         
                         // 调用全局数据库的create_table方法
-                        let _ = db.create_table(table_name, fields, Some(0));
+                        let _ = db.create_table(table_name, &fields, Some(primary_key));
                         
                         eprintln!("[Slave] Created table: {}", table_name);
                     },
