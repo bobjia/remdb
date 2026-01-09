@@ -2,7 +2,6 @@
 members = [
     ".",
     "remdb-macros",
-    "examples/pubsub_test_system",
 ]
 
 [package]

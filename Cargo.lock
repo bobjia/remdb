@@ -465,13 +465,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pubsub_test_system"
-version = "0.1.0"
-dependencies = [
- "remdb",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
