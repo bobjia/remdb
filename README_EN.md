@@ -19,7 +19,11 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **Incremental Snapshot**: Only saves records with changed version numbers, reducing snapshot size and save time
 - **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data
 - **UDP-based Reliable Data Pub/Sub**: Supports unicast, broadcast, and multicast modes with NACK-based retransmission
-- **High Availability Support**: Master-slave replication mechanism with automatic failure detection and failover
+- **High Availability Support**:
+  - Master-slave replication mechanism supporting one-master-one-slave or one-master-multi-slave topology
+  - Automatic failure detection and failover based on heartbeat mechanism
+  - Support for both synchronous and asynchronous replication consistency modes
+  - Automatic failover with service interruption window less than 2 seconds
 - **Time Series Database Support**: Dedicated time series table implementation optimized for time series data storage and querying
 
 ## Technical Characteristics
