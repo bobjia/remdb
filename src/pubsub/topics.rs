@@ -24,6 +24,12 @@ pub const WAL_ABORT_TOPIC: &str = "wal.abort";
 /// WAL log topic for checkpoint operations
 pub const WAL_CHECKPOINT_TOPIC: &str = "wal.checkpoint";
 
+/// WAL log topic for create table operations
+pub const WAL_CREATE_TABLE_TOPIC: &str = "wal.createTable";
+
+/// WAL log topic for create index operations
+pub const WAL_CREATE_INDEX_TOPIC: &str = "wal.createIndex";
+
 /// WAL log topic for all operations (wildcard)
 pub const WAL_ALL_TOPIC: &str = "wal.*";
 
@@ -51,6 +57,8 @@ pub fn get_all_wal_topics() -> alloc::vec::Vec<&'static str> {
         WAL_UPDATE_TOPIC,
         WAL_DELETE_TOPIC,
         WAL_TIMESERIES_INSERT_TOPIC,
+        WAL_CREATE_TABLE_TOPIC,
+        WAL_CREATE_INDEX_TOPIC,
         WAL_COMMIT_TOPIC,
         WAL_ABORT_TOPIC,
         WAL_CHECKPOINT_TOPIC,

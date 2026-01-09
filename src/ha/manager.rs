@@ -46,7 +46,7 @@ impl HAManager {
     }
     
     /// 初始化HA管理器
-    pub fn init(&self) -> Result<()> {
+    pub fn init(&mut self) -> Result<()> {
         // 初始化角色管理器
         self.role_manager.init()?;
         
@@ -132,7 +132,7 @@ impl HAManager {
     }
     
     /// 复制WAL日志
-    pub fn replicate_wal(&self, log_item: &LogItem) -> Result<()> {
+    pub fn replicate_wal(&mut self, log_item: &LogItem) -> Result<()> {
         // 只有主节点需要复制WAL日志
         if self.role_manager.get_role() != HARole::Master {
             return Ok(());

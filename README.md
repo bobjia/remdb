@@ -22,8 +22,13 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
 - **高可用支持**：
   - 主从复制机制，支持一主一从或一主多从拓扑结构
   - 基于心跳机制的自动故障检测和切换
-  - 支持同步和异步两种复制一致性模式
+  - 支持同步和异步两种复制一致性模式：
+    - 同步模式：主节点等待至少一个从节点确认后才返回，确保数据一致性
+    - 异步模式：主节点立即返回，异步复制到从节点，提供更高的性能
   - 自动故障转移，服务中断窗口小于2秒
+  - 从节点确认机制：从节点接收到WAL日志后发送确认给主节点
+  - 复制状态检查：定期检查复制状态，包括从节点数量、延迟等
+  - 支持全量和增量同步：从节点可以请求全量同步或从特定日志索引开始的增量同步
 - **时序数据库支持**：专用的时序表实现，优化时间序列数据存储和查询
 
 ## 技术特点
@@ -579,6 +584,52 @@ cargo check --no-default-features --features=baremetal
 - `ddl_runtime_example.rs`：运行时DDL配置示例，展示如何使用运行时DDL API
 - `pubsub_example.rs`：发布/订阅示例，展示如何使用基于UDP的高可靠数据订阅与发布功能
 - `time_series.rs`：时间序列示例，展示如何处理时间序列数据
+- `test_remdb_server.rs`：主从复制示例，展示如何使用同步或异步复制模式运行主从服务器
+
+### 主从复制示例
+
+`test_remdb_server.rs`示例展示了如何使用主从复制功能，支持通过命令行参数设置同步或异步复制模式：
+
+#### 主节点启动命令
+
+```bash
+# 同步模式
+cargo run --example test_remdb_server master sync
+
+# 异步模式
+cargo run --example test_remdb_server master async
+```
+
+#### 从节点启动命令
+
+```bash
+# 同步模式
+cargo run --example test_remdb_server slave sync <master_ip> <master_port>
+
+# 异步模式
+cargo run --example test_remdb_server slave async <master_ip> <master_port>
+```
+
+#### 示例输出
+
+```
+Starting RemDB Server...
+Role: Master
+Replication Mode: Sync
+RemDB Server started successfully!
+Listening on UDP port 5555
+Topics available:
+- WAL_INSERT (ID: 1) - WAL insert operations
+- WAL_UPDATE (ID: 2) - WAL update operations
+- WAL_DELETE (ID: 3) - WAL delete operations
+- WAL_TIMESERIES_INSERT (ID: 4) - WAL timeseries insert operations
+- WAL_COMMIT (ID: 5) - WAL commit operations
+- WAL_ABORT (ID: 6) - WAL abort operations
+- WAL_CHECKPOINT (ID: 7) - WAL checkpoint operations
+- WAL_ALL (ID: 8) - All WAL operations
+- TABLES (ID: 9) - Table creation/deletion events
+- HEARTBEAT - Sent every 5 seconds
+```
 
 ## 项目结构
 

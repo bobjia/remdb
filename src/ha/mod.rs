@@ -57,7 +57,7 @@ pub fn init(config: &'static crate::config::DbConfig) -> Result<()> {
             return Err(HAError::InitFailed);
         }
         
-        let ha_manager = manager::HAManager::new(config)?;
+        let mut ha_manager = manager::HAManager::new(config)?;
         ha_manager.init()?;
         HA_MANAGER = Some(ha_manager);
         

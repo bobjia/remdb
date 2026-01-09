@@ -270,7 +270,7 @@ fn test_replication_manager() {
     init_test_platform();
     
     // 创建复制管理器，同步模式
-    let replication_manager = ReplicationManager::new(ReplicationMode::Sync).expect("Failed to create ReplicationManager");
+    let mut replication_manager = ReplicationManager::new(ReplicationMode::Sync).expect("Failed to create ReplicationManager");
     
     // 初始化复制管理器
     replication_manager.init().expect("Failed to initialize ReplicationManager");
@@ -326,7 +326,7 @@ fn test_ha_manager() {
     };
     
     // 创建HA管理器
-    let ha_manager = HAManager::new(&CONFIG).expect("Failed to create HAManager");
+    let mut ha_manager = HAManager::new(&CONFIG).expect("Failed to create HAManager");
     
     // 初始化HA管理器
     ha_manager.init().expect("Failed to initialize HAManager");

@@ -22,8 +22,13 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **High Availability Support**:
   - Master-slave replication mechanism supporting one-master-one-slave or one-master-multi-slave topology
   - Automatic failure detection and failover based on heartbeat mechanism
-  - Support for both synchronous and asynchronous replication consistency modes
+  - Support for both synchronous and asynchronous replication consistency modes:
+    - Synchronous mode: Master node waits for confirmation from at least one slave before returning, ensuring data consistency
+    - Asynchronous mode: Master node returns immediately, replicating to slaves asynchronously for higher performance
   - Automatic failover with service interruption window less than 2 seconds
+  - Slave node acknowledgment mechanism: Slaves send acknowledgment to master after receiving WAL logs
+  - Replication status checking: Regularly checks replication status including slave count and latency
+  - Support for full and incremental synchronization: Slaves can request full sync or incremental sync from specific log index
 - **Time Series Database Support**: Dedicated time series table implementation optimized for time series data storage and querying
 
 ## Technical Characteristics
@@ -579,6 +584,52 @@ Check the examples directory for sample code:
 - `ddl_runtime_example.rs`: Runtime DDL configuration example demonstrating how to use the runtime DDL API
 - `pubsub_example.rs`: Pub/Sub example demonstrating how to use the UDP-based reliable data publish/subscribe functionality
 - `time_series.rs`: Time series example demonstrating how to handle time series data
+- `test_remdb_server.rs`: Master-slave replication example demonstrating how to run master and slave servers with synchronous or asynchronous replication mode
+
+### Master-Slave Replication Example
+
+The `test_remdb_server.rs` example demonstrates how to use the master-slave replication feature, supporting setting synchronous or asynchronous replication mode via command line arguments:
+
+#### Master Node Start Command
+
+```bash
+# Synchronous mode
+cargo run --example test_remdb_server master sync
+
+# Asynchronous mode
+cargo run --example test_remdb_server master async
+```
+
+#### Slave Node Start Command
+
+```bash
+# Synchronous mode
+cargo run --example test_remdb_server slave sync <master_ip> <master_port>
+
+# Asynchronous mode
+cargo run --example test_remdb_server slave async <master_ip> <master_port>
+```
+
+#### Example Output
+
+```
+Starting RemDB Server...
+Role: Master
+Replication Mode: Sync
+RemDB Server started successfully!
+Listening on UDP port 5555
+Topics available:
+- WAL_INSERT (ID: 1) - WAL insert operations
+- WAL_UPDATE (ID: 2) - WAL update operations
+- WAL_DELETE (ID: 3) - WAL delete operations
+- WAL_TIMESERIES_INSERT (ID: 4) - WAL timeseries insert operations
+- WAL_COMMIT (ID: 5) - WAL commit operations
+- WAL_ABORT (ID: 6) - WAL abort operations
+- WAL_CHECKPOINT (ID: 7) - WAL checkpoint operations
+- WAL_ALL (ID: 8) - All WAL operations
+- TABLES (ID: 9) - Table creation/deletion events
+- HEARTBEAT - Sent every 5 seconds
+```
 
 ## Project Structure
 

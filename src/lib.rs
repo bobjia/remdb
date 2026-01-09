@@ -875,6 +875,50 @@ impl DdlExecutor for RemDb {
             let _ = crate::pubsub::publish(topic_id, table_creation_msg.as_bytes());
         }
         
+        // 记录CREATE_TABLE日志到WAL
+        unsafe {
+            // 直接使用LogManager写入日志，而不是通过TransactionManager
+            if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
+                // 序列化表定义信息
+                let mut log_data = [0u8; 512];
+                // 写入表名
+                let name_bytes = table_name_static.as_bytes();
+                let name_len = core::cmp::min(name_bytes.len(), 64);
+                log_data[0] = name_len as u8;
+                log_data[1..1+name_len].copy_from_slice(&name_bytes[..name_len]);
+                // 写入字段数量
+                log_data[65] = table_def.fields.len() as u8;
+                // 写入其他表定义信息...
+                
+                // 创建日志项
+                let log_item = crate::transaction::LogItem {
+                    op_type: crate::transaction::LogOperation::CreateTable,
+                    table_id: table_def.id,
+                    record_id: 0,
+                    data_size: 512,
+                    old_data: [0; 512],
+                    new_data: log_data,
+                    tx_id: 0,
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0,
+                };
+                
+                // 计算校验和
+                let mut log_bytes = [0u8; core::mem::size_of::<crate::transaction::LogItem>()];
+                core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut crate::transaction::LogItem, log_item);
+                let mut check_bytes = log_bytes.clone();
+                let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<crate::transaction::LogItem>() - 4) as *mut u32;
+                *checksum_ptr = 0;
+                let calculated_checksum = crate::transaction::Transaction::calculate_checksum(&check_bytes);
+                
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+                
+                // 写入日志
+                let _ = log_manager.write_log_item(&final_log_item);
+            }
+        }
+        
         Ok(())
     }
     
@@ -944,15 +988,63 @@ impl DdlExecutor for RemDb {
         let index_memory = crate::memory::allocator::alloc(index_size)?;
         
         // 6. 创建索引
-        unsafe {
-            let index = AnySecondaryIndex::new(
+        let index = unsafe {
+            AnySecondaryIndex::new(
                 alloc::sync::Arc::from(new_def),
                 index_memory.as_ptr(),
                 index_max_nodes
-            )?;
-            
-            // 7. 存储索引
-            self.secondary_indices[table_id] = Some(index);
+            )?
+        };
+        
+        // 7. 存储索引
+        self.secondary_indices[table_id] = Some(index);
+        
+        // 记录CREATE_INDEX日志到WAL
+        unsafe {
+            // 直接使用LogManager写入日志，而不是通过TransactionManager
+            if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
+                // 序列化索引创建信息
+                let mut log_data = [0u8; 512];
+                // 写入表名
+                let table_name_bytes = table_name.as_bytes();
+                let table_name_len = core::cmp::min(table_name_bytes.len(), 64);
+                log_data[0] = table_name_len as u8;
+                log_data[1..1+table_name_len].copy_from_slice(&table_name_bytes[..table_name_len]);
+                // 写入字段名
+                let field_name_bytes = field_name.as_bytes();
+                let field_name_len = core::cmp::min(field_name_bytes.len(), 64);
+                log_data[65] = field_name_len as u8;
+                log_data[66..66+field_name_len].copy_from_slice(&field_name_bytes[..field_name_len]);
+                // 写入索引类型
+                log_data[130] = index_type as u8;
+                
+                // 创建日志项
+                let log_item = crate::transaction::LogItem {
+                    op_type: crate::transaction::LogOperation::CreateIndex,
+                    table_id: table.def.id,
+                    record_id: 0,
+                    data_size: 512,
+                    old_data: [0; 512],
+                    new_data: log_data,
+                    tx_id: 0,
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0,
+                };
+                
+                // 计算校验和
+                let mut log_bytes = [0u8; core::mem::size_of::<crate::transaction::LogItem>()];
+                core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut crate::transaction::LogItem, log_item);
+                let mut check_bytes = log_bytes.clone();
+                let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<crate::transaction::LogItem>() - 4) as *mut u32;
+                *checksum_ptr = 0;
+                let calculated_checksum = crate::transaction::Transaction::calculate_checksum(&check_bytes);
+                
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+                
+                // 写入日志
+                let _ = log_manager.write_log_item(&final_log_item);
+            }
         }
         
         Ok(())

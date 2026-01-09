@@ -52,6 +52,7 @@ fn main() {
     let mut role = HARole::Master;
     let mut master_ip: Option<&'static str> = None;
     let mut master_port = None; 
+    let mut replication_mode = ReplicationMode::Async; // 默认异步复制
     
     // 解析命令行参数
     if args.len() > 1 {
@@ -60,27 +61,56 @@ fn main() {
             "slave" => role = HARole::Slave,
             _ => {
                 println!("Invalid role. Use 'master' or 'slave'.");
-                println!("Usage: {} [master|slave] [master_ip] [master_port]", args[0]);
+                println!("Usage: {} [master|slave] [replication_mode] [master_ip] [master_port]", args[0]);
+                println!("Replication modes: sync, async (default: async)");
                 return;
+            }
+        }
+        
+        // 解析复制模式
+        if args.len() > 2 {
+            match args[2].as_str() {
+                "sync" => replication_mode = ReplicationMode::Sync,
+                "async" => replication_mode = ReplicationMode::Async,
+                _ => {
+                    println!("Invalid replication mode. Use 'sync' or 'async'.");
+                    println!("Usage: {} [master|slave] [replication_mode] [master_ip] [master_port]", args[0]);
+                    return;
+                }
             }
         }
         
         // 如果是从节点，解析主节点IP和端口
         if role == HARole::Slave {
-            if args.len() < 4 {
+            let required_args = if args.len() > 2 && (args[2] == "sync" || args[2] == "async") {
+                5 // 包含复制模式的情况
+            } else {
+                4 // 不包含复制模式的情况
+            };
+            
+            if args.len() < required_args {
                 println!("Slave role requires master IP and port.");
-                println!("Usage: {} slave <master_ip> <master_port>", args[0]);
+                println!("Usage: {} slave [sync|async] <master_ip> <master_port>", args[0]);
                 return;
             }
             
+            let ip_arg_index = if args.len() > 2 && (args[2] == "sync" || args[2] == "async") {
+                3
+            } else {
+                2
+            };
+            
+            let port_arg_index = ip_arg_index + 1;
+            
             // 使用Box::leak将String转换为&'static str
-            master_ip = Some(Box::leak(args[2].clone().into_boxed_str()));
-            master_port = Some(args[3].parse::<u16>().expect("Invalid master port"));
+            master_ip = Some(Box::leak(args[ip_arg_index].clone().into_boxed_str()));
+            master_port = Some(args[port_arg_index].parse::<u16>().expect("Invalid master port"));
         }
     } 
     
     println!("Starting RemDB Server..."); 
     println!("Role: {:?}", role); 
+    println!("Replication Mode: {:?}", replication_mode); 
     if let (Some(ip), Some(port)) = (&master_ip, master_port) { 
         println!("Master: {}:{}", ip, port); 
     } 
@@ -107,7 +137,7 @@ fn main() {
         log_segment_size: 16 * 1024 * 1024, // 16MB
         retained_checkpoints: 2,
         ha_role: role,
-        replication_mode: ReplicationMode::Async,
+        replication_mode: replication_mode,
         heartbeat_interval_ms: 5000, // 5秒
         failure_detection_ms: 15000, // 15秒
         sync_timeout_ms: 5000, // 5秒

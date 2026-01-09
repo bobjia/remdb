@@ -650,6 +650,19 @@ pub enum IndexType {
     TTree = 3,
 }
 
+/// 为IndexType实现From<u8> trait，允许从u8转换为IndexType
+impl From<u8> for IndexType {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => IndexType::Hash,
+            1 => IndexType::SortedArray,
+            2 => IndexType::BTree,
+            3 => IndexType::TTree,
+            _ => IndexType::SortedArray, // 默认使用SortedArray
+        }
+    }
+}
+
 /// 表定义
 #[derive(Copy, Clone, Debug)]
 pub struct TableDef {
