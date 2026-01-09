@@ -551,7 +551,33 @@ impl MemoryTable {
             crate::get_global_db().map(|db| db.metrics.add_used_memory(self.record_size));
         }
         
-        Ok(slot_id)
+        let inserted_slot_id = slot_id;
+        let table_name = self.def.name;
+        let record_size = self.record_size;
+        
+        // 释放锁后发布到pubsub
+        Ok(inserted_slot_id)
+    }
+    
+    // 内联publish_to_pubsub逻辑，避免borrow checker问题
+    unsafe fn publish_to_pubsub_inline(table_name: &str, record_size: usize, id: usize, record_data: *const u8, is_insert: bool) {
+        let table_topic = crate::pubsub::topics::get_table_content_topic(table_name);
+        
+        // 获取主题ID
+        if let Some(topic_id) = crate::pubsub::get_topic_id(&table_topic) {
+            // 构建消息
+            let op_type = if is_insert { "INSERT" } else { "UPDATE" };
+            let mut msg = alloc::format!("{}:table={},id={},data=", op_type, table_name, id);
+            
+            // 添加记录数据（hex格式）
+            for i in 0..record_size {
+                let byte = *record_data.add(i);
+                msg.push_str(&format!("{:02x}", byte));
+            }
+            
+            // 发布到pubsub
+            let _ = crate::pubsub::publish(topic_id, msg.as_bytes());
+        }
     }
     
     /// 更新记录
@@ -697,6 +723,28 @@ impl MemoryTable {
         memcpy(dest, record_ptr, self.record_size);
         
         Ok(())
+    }
+    
+    /// 发布表数据变更到pubsub
+    unsafe fn publish_to_pubsub(&self, id: usize, record_data: *const u8, is_insert: bool) {
+        let table_name = self.def.name;
+        let table_topic = crate::pubsub::topics::get_table_content_topic(table_name);
+        
+        // 获取主题ID
+        if let Some(topic_id) = crate::pubsub::get_topic_id(&table_topic) {
+            // 构建消息
+            let op_type = if is_insert { "INSERT" } else { "UPDATE" };
+            let mut msg = alloc::format!("{}:table={},id={},data=", op_type, table_name, id);
+            
+            // 添加记录数据（hex格式）
+            for i in 0..self.record_size {
+                let byte = *record_data.add(i);
+                msg.push_str(&format!("{:02x}", byte));
+            }
+            
+            // 发布到pubsub
+            let _ = crate::pubsub::publish(topic_id, msg.as_bytes());
+        }
     }
     
     /// 获取字段值

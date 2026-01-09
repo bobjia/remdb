@@ -518,6 +518,9 @@ impl LogManager {
                 // 触发WAL复制
                 self.replicate_wal(log_item)?;
                 
+                // Publish to pubsub
+                self.publish_to_pubsub(log_item)?;
+                
                 Ok(())
             },
             crate::config::LogMode::Async => {
@@ -532,9 +535,47 @@ impl LogManager {
                 // 触发WAL复制
                 self.replicate_wal(log_item)?;
                 
+                // Publish to pubsub
+                self.publish_to_pubsub(log_item)?;
+                
                 Ok(())
             }
         }
+    }
+    
+    /// 发布WAL日志到pubsub
+    unsafe fn publish_to_pubsub(&self, log_item: &LogItem) -> Result<()> {
+        use crate::pubsub::topics::*;
+        
+        // Map LogOperation to topic
+        let topic_name = match log_item.op_type {
+            LogOperation::Insert => WAL_INSERT_TOPIC,
+            LogOperation::Delete => WAL_DELETE_TOPIC,
+            LogOperation::Update => WAL_UPDATE_TOPIC,
+            LogOperation::TimeSeriesInsert => WAL_TIMESERIES_INSERT_TOPIC,
+            LogOperation::Commit => WAL_COMMIT_TOPIC,
+            LogOperation::Abort => WAL_ABORT_TOPIC,
+            LogOperation::Checkpoint => WAL_CHECKPOINT_TOPIC,
+        };
+        
+        // Serialize log_item to bytes
+        let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
+        core::ptr::write_unaligned(
+            log_bytes.as_mut_ptr() as *mut LogItem,
+            *log_item
+        );
+        
+        // Publish to specific topic
+        if let Some(topic_id) = crate::pubsub::get_topic_id(topic_name) {
+            let _ = crate::pubsub::publish(topic_id, &log_bytes);
+        }
+        
+        // Publish to wildcard topic (wal.*)
+        if let Some(wildcard_id) = crate::pubsub::get_topic_id(WAL_ALL_TOPIC) {
+            let _ = crate::pubsub::publish(wildcard_id, &log_bytes);
+        }
+        
+        Ok(())
     }
     
     /// 复制WAL日志到从节点

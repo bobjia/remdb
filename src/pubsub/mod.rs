@@ -5,10 +5,12 @@ pub mod udp;
 pub mod subscriber;
 pub mod publisher;
 pub mod crc32;
+pub mod topics;
 
 use core::fmt;
 use alloc::vec::Vec;
 use protocol::ProtocolFrame;
+use crate::pubsub::topics::*;
 
 // 公共错误类型
 #[derive(Debug, PartialEq, Eq)]
@@ -375,10 +377,31 @@ pub fn init(config: PubSubConfig) -> Result<()> {
         
         let mut pubsub = PubSub::new(config)?;
         pubsub.init()?;
+        
+        // Register all predefined topics
+        register_predefined_topics(&mut pubsub)?;
+        
         PUB_SUB_INSTANCE = Some(pubsub);
         
         Ok(())
     }
+}
+
+/// Register all predefined topics
+fn register_predefined_topics(pubsub: &mut PubSub) -> Result<()> {
+    // Register WAL topics
+    let wal_topics = get_all_wal_topics();
+    for (i, topic) in wal_topics.iter().enumerate() {
+        pubsub.register_topic(topic, i as u16 + 1)?;
+    }
+    
+    // Register core topics
+    let core_topics = get_core_topics();
+    for (i, topic) in core_topics.iter().enumerate() {
+        pubsub.register_topic(topic, i as u16 + 10)?;
+    }
+    
+    Ok(())
 }
 
 /// 订阅主题

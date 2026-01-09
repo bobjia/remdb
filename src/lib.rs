@@ -692,7 +692,15 @@ impl RemDb {
     
     /// 创建指标快照
     pub fn metrics_snapshot(&self) -> monitor::DbMetricsSnapshot {
-        self.metrics.snapshot()
+        let snapshot = self.metrics.snapshot();
+        
+        // Publish metrics to pubsub
+        if let Some(topic_id) = crate::pubsub::get_topic_id(crate::pubsub::topics::METRICS_TOPIC) {
+            let metrics_bytes = snapshot.to_bytes();
+            let _ = crate::pubsub::publish(topic_id, &metrics_bytes);
+        }
+        
+        snapshot
     }
     
     /// 重置所有监控指标
@@ -702,20 +710,30 @@ impl RemDb {
 
     /// 执行健康检查
     pub fn health_check(&self) -> monitor::HealthCheckResult {
-        let metrics = self.metrics.snapshot();
-
-        // 健康检查逻辑
-        let memory_usage = metrics.used_memory as f64 / metrics.total_memory as f64;
-        
-        let (status, details) = if memory_usage > 0.9 {
-            (monitor::HealthStatus::Unhealthy, alloc::string::String::from("内存使用率过高"))
-        } else if memory_usage > 0.7 {
-            (monitor::HealthStatus::Warning, alloc::string::String::from("内存使用率较高"))
-        } else {
-            (monitor::HealthStatus::Healthy, alloc::string::String::from("数据库运行正常"))
+        let health_result = { // 作用域限制，确保snapshot不会被同时引用
+            let metrics = self.metrics.snapshot();
+            
+            // 健康检查逻辑
+            let memory_usage = metrics.used_memory as f64 / metrics.total_memory as f64;
+            
+            let (status, details) = if memory_usage > 0.9 {
+                (monitor::HealthStatus::Unhealthy, alloc::string::String::from("内存使用率过高"))
+            } else if memory_usage > 0.7 {
+                (monitor::HealthStatus::Warning, alloc::string::String::from("内存使用率较高"))
+            } else {
+                (monitor::HealthStatus::Healthy, alloc::string::String::from("数据库运行正常"))
+            };
+            
+            monitor::HealthCheckResult::new(status, metrics, details)
         };
         
-        monitor::HealthCheckResult::new(status, metrics, details)
+        // Publish health status to pubsub
+        if let Some(topic_id) = crate::pubsub::get_topic_id(crate::pubsub::topics::HEALTH_STATUS_TOPIC) {
+            let health_bytes = health_result.to_bytes();
+            let _ = crate::pubsub::publish(topic_id, &health_bytes);
+        }
+        
+        health_result
     }
 }
 
@@ -846,6 +864,16 @@ impl DdlExecutor for RemDb {
         
         // 8. 初始化辅助索引位置
         self.secondary_indices.push(None);
+        
+        // Publish table creation to pubsub
+        let table_creation_msg = alloc::format!("CREATE:table={},id={},fields={}", 
+            table_name_static, 
+            table_def.id, 
+            table_def.fields.len());
+        
+        if let Some(topic_id) = crate::pubsub::get_topic_id(crate::pubsub::topics::TABLES_TOPIC) {
+            let _ = crate::pubsub::publish(topic_id, table_creation_msg.as_bytes());
+        }
         
         Ok(())
     }

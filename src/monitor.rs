@@ -256,6 +256,33 @@ impl DbMetricsSnapshot {
         text.push_str("========================\n");
         text
     }
+    
+    /// 将指标转换为JSON格式
+    pub fn to_json(&self) -> String {
+        alloc::format!(
+            r#"{{"total_memory":{},"used_memory":{},"read_ops":{},"write_ops":{},"delete_ops":{},"update_ops":{},"cache_hits":{},"cache_misses":{},"cache_hit_rate":{:.2},"index_lookups":{},"index_inserts":{},"index_deletes":{},"transactions":{},"committed_transactions":{},"rolled_back_transactions":{}}}"#,
+            self.total_memory,
+            self.used_memory,
+            self.read_ops,
+            self.write_ops,
+            self.delete_ops,
+            self.update_ops,
+            self.cache_hits,
+            self.cache_misses,
+            self.cache_hit_rate,
+            self.index_lookups,
+            self.index_inserts,
+            self.index_deletes,
+            self.transactions,
+            self.committed_transactions,
+            self.rolled_back_transactions
+        )
+    }
+    
+    /// 将指标转换为字节数组
+    pub fn to_bytes(&self) -> alloc::vec::Vec<u8> {
+        self.to_json().into_bytes()
+    }
 }
 
 impl HealthCheckResult {
@@ -279,5 +306,21 @@ impl HealthCheckResult {
         text.push_str(&self.metrics.to_text());
         text.push_str("========================\n");
         text
+    }
+    
+    /// 将健康检查结果转换为JSON格式
+    pub fn to_json(&self) -> String {
+        alloc::format!(
+            r#"{{"status":"{:?}","timestamp":{},"metrics":{},"details":"{}"}}"#,
+            self.status,
+            self.timestamp,
+            self.metrics.to_json(),
+            self.details
+        )
+    }
+    
+    /// 将健康检查结果转换为字节数组
+    pub fn to_bytes(&self) -> alloc::vec::Vec<u8> {
+        self.to_json().into_bytes()
     }
 }

@@ -339,7 +339,26 @@ public class RemdbExample {
 
 ### 基于UDP的高可靠数据订阅与发布
 
-remdb提供了基于UDP的高可靠数据订阅与发布机制，支持单播、广播和组播模式，适合分布式系统中的数据同步：
+remdb提供了基于UDP的高可靠数据订阅与发布机制，支持单播、广播和组播模式，适合分布式系统中的数据同步。系统内置了多种预定义主题，用于发布不同类型的数据库事件：
+
+#### 预定义主题
+
+| 主题名称 | 描述 | 消息格式 |
+|---------|------|---------|
+| wal.insert | WAL插入操作 | WAL_LOG_<id>: Operation=INSERT, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.update | WAL更新操作 | WAL_LOG_<id>: Operation=UPDATE, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.delete | WAL删除操作 | WAL_LOG_<id>: Operation=DELETE, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.timeseriesInsert | WAL时序插入操作 | WAL_LOG_<id>: Operation=TIMESERIES_INSERT, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.commit | WAL提交操作 | WAL_LOG_<id>: Operation=COMMIT, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.abort | WAL回滚操作 | WAL_LOG_<id>: Operation=ABORT, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.checkpoint | WAL检查点操作 | WAL_LOG_<id>: Operation=CHECKPOINT, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.* | 所有WAL操作（通配符） | 与具体WAL操作相同 |
+| tables | 表创建/删除事件 | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> 或 DELETE:table=<table_name>,id=<table_id> |
+| metrics | 数据库指标 | JSON格式的数据库指标数据 |
+| healthstatus | 健康状态 | JSON格式的健康状态数据 |
+| table.<table_name> | 表内容变更 | INSERT:table=<table_name>,id=<record_id>,data=<hex_data> 或 UPDATE:table=<table_name>,id=<record_id>,data=<hex_data> |
+
+#### 使用示例
 
 ```rust
 use std::time::Duration;

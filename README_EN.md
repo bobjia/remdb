@@ -339,7 +339,26 @@ public class RemdbExample {
 
 ### UDP-based Reliable Data Subscription and Publishing
 
-remdb provides a UDP-based reliable data publish/subscribe mechanism, supporting unicast, broadcast, and multicast modes, suitable for data synchronization in distributed systems:
+remdb provides a UDP-based reliable data publish/subscribe mechanism, supporting unicast, broadcast, and multicast modes, suitable for data synchronization in distributed systems. The system includes several predefined topics for publishing different types of database events:
+
+#### Predefined Topics
+
+| Topic Name | Description | Message Format |
+|-----------|-------------|---------------|
+| wal.insert | WAL insert operation | WAL_LOG_<id>: Operation=INSERT, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.update | WAL update operation | WAL_LOG_<id>: Operation=UPDATE, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.delete | WAL delete operation | WAL_LOG_<id>: Operation=DELETE, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.timeseriesInsert | WAL timeseries insert operation | WAL_LOG_<id>: Operation=TIMESERIES_INSERT, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.commit | WAL commit operation | WAL_LOG_<id>: Operation=COMMIT, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.abort | WAL abort operation | WAL_LOG_<id>: Operation=ABORT, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.checkpoint | WAL checkpoint operation | WAL_LOG_<id>: Operation=CHECKPOINT, Table=<table_name>, ID=<record_id>, Data=<data> |
+| wal.* | All WAL operations (wildcard) | Same as specific WAL operation |
+| tables | Table creation/deletion events | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> or DELETE:table=<table_name>,id=<table_id> |
+| metrics | Database metrics | JSON-formatted database metrics data |
+| healthstatus | Health status | JSON-formatted health status data |
+| table.<table_name> | Table content changes | INSERT:table=<table_name>,id=<record_id>,data=<hex_data> or UPDATE:table=<table_name>,id=<record_id>,data=<hex_data> |
+
+#### Usage Example
 
 ```rust
 use std::time::Duration;
