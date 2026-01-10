@@ -52,6 +52,8 @@ pub struct SqlQuery {
     pub columns: Vec<Expression>,
     /// 是否选择所有字段（*）
     pub select_all: bool,
+    /// 是否使用DISTINCT去重
+    pub distinct: bool,
     /// 查询条件
     pub where_clause: Option<WhereClause>,
     /// 分组条件
@@ -386,6 +388,7 @@ impl SqlParser {
             table_alias: None,
             columns: Vec::new(),
             select_all: false,
+            distinct: false,
             where_clause,
             group_by: None,
             order_by: None,
@@ -417,6 +420,7 @@ impl SqlParser {
             table_alias: None,
             columns: Vec::new(),
             select_all: false,
+            distinct: false,
             where_clause: None,
             group_by: None,
             order_by: None,
@@ -465,6 +469,7 @@ impl SqlParser {
             table_alias: None,
             columns: Vec::new(),
             select_all: false,
+            distinct: false,
             where_clause: None,
             group_by: None,
             order_by: None,
@@ -569,6 +574,7 @@ impl SqlParser {
             table_alias: None,
             columns: Vec::new(),
             select_all: false,
+            distinct: false,
             where_clause,
             group_by: None,
             order_by: None,
@@ -663,6 +669,7 @@ impl SqlParser {
             table_alias: None,
             columns: Vec::new(),
             select_all: false,
+            distinct: false,
             where_clause: None,
             group_by: None,
             order_by: None,
@@ -718,6 +725,7 @@ impl SqlParser {
             table_alias: None,
             columns: Vec::new(),
             select_all: false,
+            distinct: false,
             where_clause: None,
             group_by: None,
             order_by: None,
@@ -769,7 +777,7 @@ impl SqlParser {
     /// 解析SELECT查询
     fn parse_select_query(&mut self) -> Result<SqlQuery, QueryParseError> {
         // 解析SELECT子句
-        let (columns, select_all) = self.parse_select_clause()?;
+        let (columns, select_all, distinct) = self.parse_select_clause()?;
         
         // 解析FROM子句
         let (table_name, table_alias) = self.parse_from_clause()?;
@@ -792,6 +800,7 @@ impl SqlParser {
             table_alias,
             columns,
             select_all,
+            distinct,
             where_clause,
             group_by,
             order_by,
@@ -808,12 +817,16 @@ impl SqlParser {
     }
 
     /// 解析SELECT子句
-    fn parse_select_clause(&mut self) -> Result<(Vec<Expression>, bool), QueryParseError> {
+    fn parse_select_clause(&mut self) -> Result<(Vec<Expression>, bool, bool), QueryParseError> {
+        self.skip_whitespace();
+        
+        // 检查是否使用DISTINCT
+        let distinct = self.match_keyword("DISTINCT");
         self.skip_whitespace();
         
         // 检查是否选择所有字段（*）
         if self.match_char('*') {
-            Ok((Vec::new(), true))
+            Ok((Vec::new(), true, distinct))
         } else {
             // 解析表达式列表
             let mut expressions = Vec::new();
@@ -829,7 +842,7 @@ impl SqlParser {
                 }
             }
             
-            Ok((expressions, false))
+            Ok((expressions, false, distinct))
         }
     }
     

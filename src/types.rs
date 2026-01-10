@@ -8,7 +8,7 @@ use alloc::string::ToString;
 
 /// 基本数据类型枚举
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum DataType {
     /// 8位无符号整数
     UInt8 = 0,
@@ -477,6 +477,59 @@ impl PartialEq for TypedValue {
 
 /// 手动实现Eq trait，因为Rust不支持为union类型自动派生Eq
 impl Eq for TypedValue {}
+
+/// 手动实现Hash trait，用于在HashSet中使用
+impl std::hash::Hash for TypedValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // 首先哈希类型
+        self.value_type.hash(state);
+        
+        unsafe {
+            match self.value_type {
+                DataType::UInt8 => self.value.u8.hash(state),
+                DataType::UInt16 => self.value.u16.hash(state),
+                DataType::UInt32 => self.value.u32.hash(state),
+                DataType::UInt64 => self.value.u64.hash(state),
+                DataType::Int8 => self.value.i8.hash(state),
+                DataType::Int16 => self.value.i16.hash(state),
+                DataType::Int32 => self.value.i32.hash(state),
+                DataType::Int64 => self.value.i64.hash(state),
+                DataType::Float32 => {
+                    // 处理浮点数的特殊情况：NaN 和无穷大
+                    let a = self.value.float32;
+                    if a.is_nan() {
+                        // 所有NaN使用相同的哈希值
+                        state.write_u32(0x7FC00000);
+                    } else {
+                        a.to_bits().hash(state);
+                    }
+                },
+                DataType::Float64 => {
+                    let a = self.value.float64;
+                    if a.is_nan() {
+                        // 所有NaN使用相同的哈希值
+                        state.write_u64(0x7FF8000000000000);
+                    } else {
+                        a.to_bits().hash(state);
+                    }
+                },
+                DataType::Bool => self.value.bool.hash(state),
+                DataType::Timestamp => self.value.time.value.hash(state),
+                DataType::TimestampTZ => {
+                    // 哈希值和时区偏移
+                    self.value.time.value.hash(state);
+                    self.value.time.tz_offset.hash(state);
+                },
+                DataType::Interval => self.value.interval.value.hash(state),
+                DataType::String => {
+                    // 哈希字符串内容，忽略末尾的空字符
+                    let s = core::str::from_utf8(&self.value.string).unwrap_or("");
+                    s.trim_end_matches(char::from(0)).hash(state);
+                }
+            }
+        }
+    }
+}
 
 /// 手动实现PartialOrd trait，用于比较TypedValue
 impl PartialOrd for TypedValue {

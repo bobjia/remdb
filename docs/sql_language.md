@@ -35,12 +35,51 @@ RemDB支持以下SQL数据类型：
 ### 2.1 SELECT语句
 
 ```sql
-SELECT [column1 [AS] alias1, column2 [AS] alias2, ... | *]
+SELECT [DISTINCT] [column1 [AS] alias1, column2 [AS] alias2, ... | *]
 FROM table_name [AS] table_alias
 [WHERE condition]
 [GROUP BY column1, column2, ...]
 [ORDER BY column [ASC | DESC]]
 [LIMIT number];
+```
+
+#### DISTINCT子句
+
+DISTINCT子句用于从查询结果中去除重复行，确保返回的每行都是唯一的。
+
+**语法**：
+```sql
+SELECT DISTINCT column1, column2, ...
+FROM table_name;
+```
+
+**说明**：
+- `DISTINCT`：关键字，用于指定去重操作
+- `column1, column2, ...`：要查询的列，可以是一个或多个
+- 当指定多个列时，DISTINCT会根据所有指定列的组合来判断是否重复
+
+**使用规则**：
+- DISTINCT必须紧跟在SELECT关键字之后
+- DISTINCT作用于所有指定的列，而不仅仅是紧跟其后的列
+- DISTINCT可以与WHERE、ORDER BY等子句结合使用
+- DISTINCT不适用于聚合函数的结果，因为聚合函数本身会产生唯一结果
+
+**示例**：
+```sql
+-- 单列去重：查询所有不同的用户名
+SELECT DISTINCT name FROM users;
+
+-- 多列组合去重：查询不同的姓名和年龄组合
+SELECT DISTINCT name, age FROM users;
+
+-- 结合WHERE条件：查询年龄大于25的不同用户名
+SELECT DISTINCT name FROM users WHERE age > 25;
+
+-- 结合ORDER BY：查询不同的城市，并按城市名称排序
+SELECT DISTINCT city FROM users ORDER BY city;
+
+-- 结合WHERE和ORDER BY：查询年龄大于25的不同城市，并按城市名称排序
+SELECT DISTINCT city FROM users WHERE age > 25 ORDER BY city;
 ```
 
 #### 别名支持

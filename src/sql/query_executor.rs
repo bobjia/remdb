@@ -716,13 +716,33 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         }
     } else {
         // 处理普通查询
-        for record_values in rows_to_process {
-            let mut row_data = Vec::with_capacity(columns.len());
-            for expr in &columns {
-                let value = evaluate_expression(table, record_values, expr)?;
-                row_data.push(value);
+        if query.distinct {
+            // 使用集合存储唯一行
+            let mut unique_rows = std::collections::HashSet::new();
+            
+            // 计算所有行的表达式值并去重
+            for record_values in rows_to_process {
+                let mut row_data = Vec::with_capacity(columns.len());
+                for expr in &columns {
+                    let value = evaluate_expression(table, record_values, expr)?;
+                    row_data.push(value);
+                }
+                
+                // 只有当行不在集合中时才添加
+                if unique_rows.insert(row_data.clone()) {
+                    result_set.add_row(row_data);
+                }
             }
-            result_set.add_row(row_data);
+        } else {
+            // 普通查询，不需要去重
+            for record_values in rows_to_process {
+                let mut row_data = Vec::with_capacity(columns.len());
+                for expr in &columns {
+                    let value = evaluate_expression(table, record_values, expr)?;
+                    row_data.push(value);
+                }
+                result_set.add_row(row_data);
+            }
         }
     }
     

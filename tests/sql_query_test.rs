@@ -387,6 +387,110 @@ fn test_sql_query() {
 
 #[test]
 #[serial]
+fn test_sql_distinct() {
+    println!("=== 测试SQL DISTINCT语句 ===");
+    
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 262144];
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+    
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    
+    // 初始化内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(
+            db_memory.as_mut_ptr(),
+            db_memory.len()
+        ).unwrap();
+    }
+    
+    // 初始化数据库
+    let config = &TEST_DB;
+    let db = unsafe {
+        init_global_db(config).unwrap()
+    };
+    
+    // 先清空表，为测试做准备
+    let result = db.sql_query("DELETE FROM TEST_TABLE");
+    assert!(result.is_ok(), "清空表应该成功");
+    
+    // 测试1: 插入测试数据，包含重复值
+    println!("=== 插入测试数据 ===");
+    
+    // 插入多条记录，包含重复值
+    let insert_queries = [
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (1, 'Alice', 25, true, 1620000000000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (2, 'Bob', 30, false, 1620000001000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (3, 'Alice', 25, true, 1620000002000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (4, 'Charlie', 35, true, 1620000003000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (5, 'Bob', 30, false, 1620000004000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (6, 'Alice', 30, false, 1620000005000)",
+    ];
+    
+    for query in insert_queries.iter() {
+        let result = db.sql_query(query);
+        assert!(result.is_ok(), "插入数据应该成功: {}", query);
+    }
+    
+    // 测试2: 单列去重
+    println!("=== 测试2: 单列去重 ===");
+    let result = db.sql_query("SELECT DISTINCT name FROM TEST_TABLE");
+    assert!(result.is_ok(), "单列DISTINCT查询应该成功");
+    let result_set = result.unwrap();
+    assert!(result_set.row_count() > 0, "单列DISTINCT查询应该返回结果");
+    println!("单列DISTINCT查询结果行数: {}", result_set.row_count());
+    println!("单列DISTINCT查询结果列: {:?}", result_set.columns);
+    
+    // 测试3: 多列组合去重
+    println!("=== 测试3: 多列组合去重 ===");
+    let result = db.sql_query("SELECT DISTINCT name, age FROM TEST_TABLE");
+    assert!(result.is_ok(), "多列DISTINCT查询应该成功");
+    let result_set = result.unwrap();
+    assert!(result_set.row_count() > 0, "多列DISTINCT查询应该返回结果");
+    println!("多列DISTINCT查询结果行数: {}", result_set.row_count());
+    println!("多列DISTINCT查询结果列: {:?}", result_set.columns);
+    
+    // 测试4: 结合WHERE和ORDER BY子句
+    println!("=== 测试4: 结合WHERE和ORDER BY子句 ===");
+    let result = db.sql_query("SELECT DISTINCT name FROM TEST_TABLE WHERE age > 25 ORDER BY name");
+    assert!(result.is_ok(), "结合WHERE和ORDER BY的DISTINCT查询应该成功");
+    let result_set = result.unwrap();
+    assert!(result_set.row_count() > 0, "结合WHERE和ORDER BY的DISTINCT查询应该返回结果");
+    println!("结合WHERE和ORDER BY的DISTINCT查询结果行数: {}", result_set.row_count());
+    println!("结合WHERE和ORDER BY的DISTINCT查询结果列: {:?}", result_set.columns);
+    
+    // 测试5: 验证去重效果（对比普通查询和DISTINCT查询的结果行数）
+    println!("=== 测试5: 验证去重效果 ===");
+    let result_normal = db.sql_query("SELECT name, age, active FROM TEST_TABLE");
+    let result_distinct = db.sql_query("SELECT DISTINCT name, age, active FROM TEST_TABLE");
+    
+    assert!(result_normal.is_ok(), "普通查询应该成功");
+    assert!(result_distinct.is_ok(), "DISTINCT查询应该成功");
+    
+    let normal_set = result_normal.unwrap();
+    let distinct_set = result_distinct.unwrap();
+    
+    println!("普通查询结果行数: {}", normal_set.row_count());
+    println!("DISTINCT查询结果行数: {}", distinct_set.row_count());
+    assert!(distinct_set.row_count() <= normal_set.row_count(), "DISTINCT查询结果行数应该小于或等于普通查询");
+    
+    // 测试6: 验证具体去重结果
+    println!("=== 测试6: 验证具体去重结果 ===");
+    let result = db.sql_query("SELECT DISTINCT active FROM TEST_TABLE");
+    assert!(result.is_ok(), "查询active字段去重结果应该成功");
+    let result_set = result.unwrap();
+    println!("active字段去重结果行数: {}", result_set.row_count());
+    assert!(result_set.row_count() <= 2, "active字段只有两个可能的值（true/false）");
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+}
+
+#[test]
+#[serial]
 fn test_sql_aliases() {
     // 使用局部内存缓冲区，确保测试之间的隔离
     let mut db_memory = [0u8; 262144];
