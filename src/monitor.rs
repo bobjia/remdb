@@ -1,6 +1,6 @@
-#![cfg_attr(not(feature = "std"), no_std)]
 
-use core::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
+
+use core::sync::atomic::{AtomicUsize, AtomicU32, Ordering};
 use alloc::string::String;
 
 /// 数据库健康状态
@@ -22,29 +22,29 @@ pub struct DbMetrics {
     /// 已使用内存（字节）
     pub used_memory: AtomicUsize,
     /// 读取操作计数
-    pub read_ops: AtomicU64,
+    pub read_ops: AtomicU32,
     /// 写入操作计数
-    pub write_ops: AtomicU64,
+    pub write_ops: AtomicU32,
     /// 删除操作计数
-    pub delete_ops: AtomicU64,
+    pub delete_ops: AtomicU32,
     /// 更新操作计数
-    pub update_ops: AtomicU64,
+    pub update_ops: AtomicU32,
     /// 缓存命中次数
-    pub cache_hits: AtomicU64,
+    pub cache_hits: AtomicU32,
     /// 缓存未命中次数
-    pub cache_misses: AtomicU64,
+    pub cache_misses: AtomicU32,
     /// 索引查找次数
-    pub index_lookups: AtomicU64,
+    pub index_lookups: AtomicU32,
     /// 索引插入次数
-    pub index_inserts: AtomicU64,
+    pub index_inserts: AtomicU32,
     /// 索引删除次数
-    pub index_deletes: AtomicU64,
+    pub index_deletes: AtomicU32,
     /// 事务总数
-    pub transactions: AtomicU64,
+    pub transactions: AtomicU32,
     /// 已提交事务数
-    pub committed_transactions: AtomicU64,
+    pub committed_transactions: AtomicU32,
     /// 已回滚事务数
-    pub rolled_back_transactions: AtomicU64,
+    pub rolled_back_transactions: AtomicU32,
 }
 
 /// 数据库监控指标快照
@@ -55,29 +55,29 @@ pub struct DbMetricsSnapshot {
     /// 已使用内存（字节）
     pub used_memory: usize,
     /// 读取操作计数
-    pub read_ops: u64,
+    pub read_ops: u32,
     /// 写入操作计数
-    pub write_ops: u64,
+    pub write_ops: u32,
     /// 删除操作计数
-    pub delete_ops: u64,
+    pub delete_ops: u32,
     /// 更新操作计数
-    pub update_ops: u64,
+    pub update_ops: u32,
     /// 缓存命中次数
-    pub cache_hits: u64,
+    pub cache_hits: u32,
     /// 缓存未命中次数
-    pub cache_misses: u64,
+    pub cache_misses: u32,
     /// 索引查找次数
-    pub index_lookups: u64,
+    pub index_lookups: u32,
     /// 索引插入次数
-    pub index_inserts: u64,
+    pub index_inserts: u32,
     /// 索引删除次数
-    pub index_deletes: u64,
+    pub index_deletes: u32,
     /// 事务总数
-    pub transactions: u64,
+    pub transactions: u32,
     /// 已提交事务数
-    pub committed_transactions: u64,
+    pub committed_transactions: u32,
     /// 已回滚事务数
-    pub rolled_back_transactions: u64,
+    pub rolled_back_transactions: u32,
     /// 缓存命中率（百分比）
     pub cache_hit_rate: f64,
 }
@@ -101,18 +101,18 @@ impl DbMetrics {
         DbMetrics {
             total_memory,
             used_memory: AtomicUsize::new(0),
-            read_ops: AtomicU64::new(0),
-            write_ops: AtomicU64::new(0),
-            delete_ops: AtomicU64::new(0),
-            update_ops: AtomicU64::new(0),
-            cache_hits: AtomicU64::new(0),
-            cache_misses: AtomicU64::new(0),
-            index_lookups: AtomicU64::new(0),
-            index_inserts: AtomicU64::new(0),
-            index_deletes: AtomicU64::new(0),
-            transactions: AtomicU64::new(0),
-            committed_transactions: AtomicU64::new(0),
-            rolled_back_transactions: AtomicU64::new(0),
+            read_ops: AtomicU32::new(0),
+            write_ops: AtomicU32::new(0),
+            delete_ops: AtomicU32::new(0),
+            update_ops: AtomicU32::new(0),
+            cache_hits: AtomicU32::new(0),
+            cache_misses: AtomicU32::new(0),
+            index_lookups: AtomicU32::new(0),
+            index_inserts: AtomicU32::new(0),
+            index_deletes: AtomicU32::new(0),
+            transactions: AtomicU32::new(0),
+            committed_transactions: AtomicU32::new(0),
+            rolled_back_transactions: AtomicU32::new(0),
         }
     }
 
@@ -244,14 +244,14 @@ impl DbMetricsSnapshot {
     pub fn to_text(&self) -> String {
         let mut text = alloc::string::String::new();
         text.push_str("===== 数据库监控指标 =====\n");
-        text.push_str(&format!("内存使用: {}/{} 字节\n", self.used_memory, self.total_memory));
-        text.push_str(&format!("操作计数: 读={}, 写={}, 删除={}, 更新={}\n", 
+        text.push_str(&alloc::format!("内存使用: {}/{} 字节\n", self.used_memory, self.total_memory));
+        text.push_str(&alloc::format!("操作计数: 读={}, 写={}, 删除={}, 更新={}\n", 
                                self.read_ops, self.write_ops, self.delete_ops, self.update_ops));
-        text.push_str(&format!("缓存统计: 命中={}, 未命中={}, 命中率={:.2}%\n", 
+        text.push_str(&alloc::format!("缓存统计: 命中={}, 未命中={}, 命中率={:.2}%\n", 
                                self.cache_hits, self.cache_misses, self.cache_hit_rate));
-        text.push_str(&format!("索引操作: 查找={}, 插入={}, 删除={}\n", 
+        text.push_str(&alloc::format!("索引操作: 查找={}, 插入={}, 删除={}\n", 
                                self.index_lookups, self.index_inserts, self.index_deletes));
-        text.push_str(&format!("事务统计: 总数={}, 已提交={}, 已回滚={}\n", 
+        text.push_str(&alloc::format!("事务统计: 总数={}, 已提交={}, 已回滚={}\n", 
                                self.transactions, self.committed_transactions, self.rolled_back_transactions));
         text.push_str("========================\n");
         text
@@ -299,10 +299,10 @@ impl HealthCheckResult {
     /// 将健康检查结果转换为文本格式
     pub fn to_text(&self) -> String {
         let mut text = alloc::string::String::new();
-        text.push_str(&format!("===== 健康检查结果 =====\n"));
-        text.push_str(&format!("时间戳: {}\n", self.timestamp));
-        text.push_str(&format!("状态: {:?}\n", self.status));
-        text.push_str(&format!("详细信息: {}\n", self.details));
+        text.push_str(&alloc::format!("===== 健康检查结果 =====\n"));
+        text.push_str(&alloc::format!("时间戳: {}\n", self.timestamp));
+        text.push_str(&alloc::format!("状态: {:?}\n", self.status));
+        text.push_str(&alloc::format!("详细信息: {}\n", self.details));
         text.push_str(&self.metrics.to_text());
         text.push_str("========================\n");
         text

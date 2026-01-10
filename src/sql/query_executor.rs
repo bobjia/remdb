@@ -3,6 +3,7 @@
 //! 该模块负责执行SQL查询并返回结果集。
 
 use alloc::string::String;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::{TableDef,RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN, DdlExecutor, TimeSeriesTable};
@@ -456,7 +457,10 @@ fn process_aggregate_query(
                         let mean = sum / count as f64;
                         let variance = sum_of_squares / count as f64 - mean * mean;
                         // 总体标准差：sqrt(variance)
+                        #[cfg(feature = "std")]
                         let stddev = variance.sqrt();
+                        #[cfg(not(feature = "std"))]
+                        let stddev = 0.0;
                         aggregate_values[i] = TypedValue {
                             value_type: DataType::Float64,
                             value: Value { float64: stddev },
@@ -482,7 +486,10 @@ fn process_aggregate_query(
                         let mean = sum / count as f64;
                         let variance = (sum_of_squares - sum * sum / count as f64) / (count - 1) as f64;
                         // 样本标准差：sqrt(variance)
+                        #[cfg(feature = "std")]
                         let stddev = variance.sqrt();
+                        #[cfg(not(feature = "std"))]
+                        let stddev = 0.0;
                         aggregate_values[i] = TypedValue {
                             value_type: DataType::Float64,
                             value: Value { float64: stddev },
@@ -1611,17 +1618,17 @@ fn execute_concat(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError
                         .map_err(|_| QueryExecutionError::TypeMismatch)?
                         .trim_end_matches(char::from(0)))
                 },
-                DataType::UInt8 => format!("{}", arg.value.u8),
-                DataType::UInt16 => format!("{}", arg.value.u16),
-                DataType::UInt32 => format!("{}", arg.value.u32),
-                DataType::UInt64 => format!("{}", arg.value.u64),
-                DataType::Int8 => format!("{}", arg.value.i8),
-                DataType::Int16 => format!("{}", arg.value.i16),
-                DataType::Int32 => format!("{}", arg.value.i32),
-                DataType::Int64 => format!("{}", arg.value.i64),
-                DataType::Float32 => format!("{}", arg.value.float32),
-                DataType::Float64 => format!("{}", arg.value.float64),
-                DataType::Bool => format!("{}", arg.value.bool),
+                DataType::UInt8 => alloc::format!("{}", arg.value.u8),
+                DataType::UInt16 => alloc::format!("{}", arg.value.u16),
+                DataType::UInt32 => alloc::format!("{}", arg.value.u32),
+                DataType::UInt64 => alloc::format!("{}", arg.value.u64),
+                DataType::Int8 => alloc::format!("{}", arg.value.i8),
+                DataType::Int16 => alloc::format!("{}", arg.value.i16),
+                DataType::Int32 => alloc::format!("{}", arg.value.i32),
+                DataType::Int64 => alloc::format!("{}", arg.value.i64),
+                DataType::Float32 => alloc::format!("{}", arg.value.float32),
+                DataType::Float64 => alloc::format!("{}", arg.value.float64),
+                DataType::Bool => alloc::format!("{}", arg.value.bool),
                 _ => return Err(QueryExecutionError::TypeMismatch),
             };
             result.push_str(&arg_str);
@@ -1839,7 +1846,10 @@ fn execute_sqrt(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> 
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
+        #[cfg(feature = "std")]
         let result = value.sqrt();
+        #[cfg(not(feature = "std"))]
+        let result = 0.0;
         
         Ok(TypedValue {
             value_type: DataType::Float64,
@@ -1886,7 +1896,10 @@ fn execute_power(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
+        #[cfg(feature = "std")]
         let result = base.powf(exponent);
+        #[cfg(not(feature = "std"))]
+        let result = 0.0;
         
         Ok(TypedValue {
             value_type: DataType::Float64,
@@ -1918,7 +1931,10 @@ fn execute_sin(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
+        #[cfg(feature = "std")]
         let result = value.sin();
+        #[cfg(not(feature = "std"))]
+        let result = 0.0;
         
         Ok(TypedValue {
             value_type: DataType::Float64,
@@ -1950,7 +1966,10 @@ fn execute_cos(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
+        #[cfg(feature = "std")]
         let result = value.cos();
+        #[cfg(not(feature = "std"))]
+        let result = 0.0;
         
         Ok(TypedValue {
             value_type: DataType::Float64,
@@ -1982,7 +2001,10 @@ fn execute_log(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
+        #[cfg(feature = "std")]
         let result = value.ln(); // 自然对数
+        #[cfg(not(feature = "std"))]
+        let result = 0.0;
         
         Ok(TypedValue {
             value_type: DataType::Float64,
@@ -2014,7 +2036,10 @@ fn execute_exp(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
+        #[cfg(feature = "std")]
         let result = value.exp();
+        #[cfg(not(feature = "std"))]
+        let result = 0.0;
         
         Ok(TypedValue {
             value_type: DataType::Float64,
@@ -2051,16 +2076,24 @@ fn execute_round(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
     unsafe {
         match arg.value_type {
             DataType::Float32 => {
+                #[cfg(feature = "std")]
                 let factor = 10.0f32.powi(decimals);
+                #[cfg(feature = "std")]
                 let result = (arg.value.float32 * factor).round() / factor;
+                #[cfg(not(feature = "std"))]
+                let result = arg.value.float32;
                 Ok(TypedValue {
                     value_type: DataType::Float32,
                     value: Value { float32: result },
                 })
             },
             DataType::Float64 => {
+                #[cfg(feature = "std")]
                 let factor = 10.0f64.powi(decimals);
+                #[cfg(feature = "std")]
                 let result = (arg.value.float64 * factor).round() / factor;
+                #[cfg(not(feature = "std"))]
+                let result = arg.value.float64;
                 Ok(TypedValue {
                     value_type: DataType::Float64,
                     value: Value { float64: result },
@@ -2084,14 +2117,32 @@ fn execute_ceil(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> 
     
     unsafe {
         match arg.value_type {
-            DataType::Float32 => Ok(TypedValue {
-                value_type: DataType::Float32,
-                value: Value { float32: arg.value.float32.ceil() },
-            }),
-            DataType::Float64 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value { float64: arg.value.float64.ceil() },
-            }),
+            DataType::Float32 => {
+                let result = {
+                    #[cfg(feature = "std")]
+                    let val = arg.value.float32.ceil();
+                    #[cfg(not(feature = "std"))]
+                    let val = arg.value.float32;
+                    val
+                };
+                Ok(TypedValue {
+                    value_type: DataType::Float32,
+                    value: Value { float32: result },
+                })
+            },
+            DataType::Float64 => {
+                let result = {
+                    #[cfg(feature = "std")]
+                    let val = arg.value.float64.ceil();
+                    #[cfg(not(feature = "std"))]
+                    let val = arg.value.float64;
+                    val
+                };
+                Ok(TypedValue {
+                    value_type: DataType::Float64,
+                    value: Value { float64: result },
+                })
+            },
             _ => {
                 // 对于整数类型，直接返回原值
                 Ok(arg.clone())
@@ -2110,14 +2161,32 @@ fn execute_floor(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
     
     unsafe {
         match arg.value_type {
-            DataType::Float32 => Ok(TypedValue {
-                value_type: DataType::Float32,
-                value: Value { float32: arg.value.float32.floor() },
-            }),
-            DataType::Float64 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value { float64: arg.value.float64.floor() },
-            }),
+            DataType::Float32 => {
+                let result = {
+                    #[cfg(feature = "std")]
+                    let val = arg.value.float32.floor();
+                    #[cfg(not(feature = "std"))]
+                    let val = arg.value.float32;
+                    val
+                };
+                Ok(TypedValue {
+                    value_type: DataType::Float32,
+                    value: Value { float32: result },
+                })
+            },
+            DataType::Float64 => {
+                let result = {
+                    #[cfg(feature = "std")]
+                    let val = arg.value.float64.floor();
+                    #[cfg(not(feature = "std"))]
+                    let val = arg.value.float64;
+                    val
+                };
+                Ok(TypedValue {
+                    value_type: DataType::Float64,
+                    value: Value { float64: result },
+                })
+            },
             _ => {
                 // 对于整数类型，直接返回原值
                 Ok(arg.clone())
@@ -2311,7 +2380,10 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                 
                 let current_time = if is_time_function {
                     // 获取当前时间（微秒）
+                    #[cfg(feature = "std")]
                     let now = crate::types::time_utils::now_micros();
+                    #[cfg(not(feature = "std"))]
+                    let now = 0;
                     now as i64
                 } else {
                     0
@@ -2486,9 +2558,9 @@ DdlExecutor::create_table(
 })?;
     
     // 创建结果集，返回成功消息
-    let columns = vec!["status".to_string()];
+    let columns = alloc::vec!["status".to_string()];
     let mut result_set = ResultSet::new(columns);
-    result_set.add_row(vec![TypedValue {
+    result_set.add_row(alloc::vec![TypedValue {
         value_type: DataType::String,
         value: Value { string: [b'0'; 64] },
     }]);
@@ -2521,9 +2593,9 @@ fn execute_create_index_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
     })?;
     
     // 创建结果集，返回成功消息
-    let columns = vec!["status".to_string()];
+    let columns = alloc::vec!["status".to_string()];
     let mut result_set = ResultSet::new(columns);
-    result_set.add_row(vec![TypedValue {
+    result_set.add_row(alloc::vec![TypedValue {
         value_type: DataType::String,
         value: Value { string: [b'0'; 64] },
     }]);
@@ -2847,7 +2919,7 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
     let table_def = table_def.ok_or(QueryExecutionError::TableNotFound)?;
     
     // 2. 定义结果集列名
-    let columns = vec![
+    let columns = alloc::vec![
         "Field".to_string(),
         "Type".to_string(),
         "Key".to_string(),
@@ -2883,29 +2955,29 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
             // 根据字段类型格式化默认值
             match field.data_type {
                 // 整数类型
-                DataType::UInt8 => format!("{}", unsafe { default_val.u8 }),
-                DataType::UInt16 => format!("{}", unsafe { default_val.u16 }),
-                DataType::UInt32 => format!("{}", unsafe { default_val.u32 }),
-                DataType::UInt64 => format!("{}", unsafe { default_val.u64 }),
-                DataType::Int8 => format!("{}", unsafe { default_val.i8 }),
-                DataType::Int16 => format!("{}", unsafe { default_val.i16 }),
-                DataType::Int32 => format!("{}", unsafe { default_val.i32 }),
-                DataType::Int64 => format!("{}", unsafe { default_val.i64 }),
+                DataType::UInt8 => alloc::format!("{}", unsafe { default_val.u8 }),
+                DataType::UInt16 => alloc::format!("{}", unsafe { default_val.u16 }),
+                DataType::UInt32 => alloc::format!("{}", unsafe { default_val.u32 }),
+                DataType::UInt64 => alloc::format!("{}", unsafe { default_val.u64 }),
+                DataType::Int8 => alloc::format!("{}", unsafe { default_val.i8 }),
+                DataType::Int16 => alloc::format!("{}", unsafe { default_val.i16 }),
+                DataType::Int32 => alloc::format!("{}", unsafe { default_val.i32 }),
+                DataType::Int64 => alloc::format!("{}", unsafe { default_val.i64 }),
                 // 布尔类型
-                DataType::Bool => format!("{}", unsafe { default_val.bool }),
+                DataType::Bool => alloc::format!("{}", unsafe { default_val.bool }),
                 // 浮点数类型
-                DataType::Float32 => format!("{}", unsafe { default_val.float32 }),
-                DataType::Float64 => format!("{}", unsafe { default_val.float64 }),
+                DataType::Float32 => alloc::format!("{}", unsafe { default_val.float32 }),
+                DataType::Float64 => alloc::format!("{}", unsafe { default_val.float64 }),
                 // 时间类型
-                DataType::Timestamp => format!("{}", unsafe { default_val.time.value }),
-                DataType::TimestampTZ => format!("{}", unsafe { default_val.time.value }),
+                DataType::Timestamp => alloc::format!("{}", unsafe { default_val.time.value }),
+                DataType::TimestampTZ => alloc::format!("{}", unsafe { default_val.time.value }),
                 // 字符串类型
                 DataType::String => {
                     let str_val = unsafe { &default_val.string };
                     String::from_utf8_lossy(str_val).trim_end_matches(char::from(0)).to_string()
                 },
                 // 时间间隔类型
-                DataType::Interval => format!("{}", unsafe { default_val.interval.value }),
+                DataType::Interval => alloc::format!("{}", unsafe { default_val.interval.value }),
             }
         } else {
             "".to_string()
@@ -2921,7 +2993,7 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
             crate::DataType::Int16 => "smallint".to_string(),
             crate::DataType::Int32 => "int".to_string(),
             crate::DataType::Int64 => "bigint".to_string(),
-            crate::DataType::String => format!("varchar({})", field.size),
+            crate::DataType::String => alloc::format!("varchar({})", field.size),
             crate::DataType::Bool => "bool".to_string(),
             crate::DataType::Timestamp => "timestamp".to_string(),
             crate::DataType::TimestampTZ => "timestamp with time zone".to_string(),
@@ -2988,7 +3060,7 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
             value: default_val,
         };
         
-        let row_data = vec![
+        let row_data = alloc::vec![
             field_name_typed_val, // Field name
             type_typed_val,       // Type
             key_typed_val,        // Key
@@ -3035,7 +3107,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     
     for values in &query.values {
         // 5. 创建记录数据缓冲区并初始化为0
-        let mut record_data = vec![0; table.record_size];
+        let mut record_data = alloc::vec![0; table.record_size];
         
         // 6. 将字段值写入缓冲区
         for (i, field) in table.def.fields.iter().enumerate() {
@@ -3190,10 +3262,10 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     }
     
     // 8. 创建结果集，返回受影响的行数
-    let columns = vec!["affected_rows".to_string()];
+    let columns = alloc::vec!["affected_rows".to_string()];
     let mut result_set = ResultSet::new(columns);
     
-    let row_data = vec![TypedValue {
+    let row_data = alloc::vec![TypedValue {
         value_type: DataType::UInt64,
         value: crate::Value { u64: affected_rows as u64 },
     }];
@@ -3253,10 +3325,10 @@ fn execute_delete_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     }
     
     // 6. 创建结果集，返回受影响的行数
-    let columns = vec!["affected_rows".to_string()];
+    let columns = alloc::vec!["affected_rows".to_string()];
     let mut result_set = ResultSet::new(columns);
     
-    let row_data = vec![TypedValue {
+    let row_data = alloc::vec![TypedValue {
         value_type: DataType::UInt64,
         value: crate::Value { u64: affected_rows as u64 },
     }];
@@ -3297,7 +3369,7 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
             
             if matches {
                 // 复制记录数据到临时缓冲区
-                let mut record_data = vec![0; record_size];
+                let mut record_data = alloc::vec![0; record_size];
                 core::ptr::copy_nonoverlapping(record_ptr, record_data.as_mut_ptr(), record_size);
                 to_update.push((id, record_data));
             }
@@ -3342,10 +3414,10 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     }
     
     // 6. 创建结果集，返回受影响的行数
-    let columns = vec!["affected_rows".to_string()];
+    let columns = alloc::vec!["affected_rows".to_string()];
     let mut result_set = ResultSet::new(columns);
     
-    let row_data = vec![TypedValue {
+    let row_data = alloc::vec![TypedValue {
         value_type: DataType::UInt64,
         value: crate::Value { u64: affected_rows as u64 },
     }];
@@ -3459,7 +3531,10 @@ fn set_field_value(record_data: &mut Vec<u8>, offset: usize, data_type: DataType
                     // 处理时间函数调用（占位符值为0）
                     crate::sql::Value::Integer(i) if *i == 0 => {
                         // 获取当前时间（微秒）
+                        #[cfg(feature = "std")]
                         let now = crate::types::time_utils::now_micros() as i64;
+                        #[cfg(not(feature = "std"))]
+                        let now = 0;
                         crate::types::db_timestamp::new(now, 0, 6, 0)
                     },
                     // 处理普通时间值
@@ -3477,7 +3552,10 @@ fn set_field_value(record_data: &mut Vec<u8>, offset: usize, data_type: DataType
                     // 处理时间函数调用（占位符值为0）
                     crate::sql::Value::Integer(i) if *i == 0 => {
                         // 获取当前时间（微秒）
+                        #[cfg(feature = "std")]
                         let now = crate::types::time_utils::now_micros() as i64;
+                        #[cfg(not(feature = "std"))]
+                        let now = 0;
                         crate::types::db_timestamp::new(now, 0, 6, 0)
                     },
                     // 处理普通时间值
@@ -3604,9 +3682,9 @@ fn execute_create_time_series_table_query(db: &mut RemDb, query: &SqlQuery) -> R
     })?;
     
     // 创建结果集，返回成功消息
-    let columns = vec!["status".to_string()];
+    let columns = alloc::vec!["status".to_string()];
     let mut result_set = ResultSet::new(columns);
-    result_set.add_row(vec![TypedValue {
+    result_set.add_row(alloc::vec![TypedValue {
         value_type: crate::DataType::String,
         value: crate::Value { string: [b'0'; 64] },
     }]);
@@ -3747,9 +3825,9 @@ fn compare_values(field_value: &Value, field_type: DataType, operator: &Comparis
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as i8;
                     // 调试输出
-                    println!("Int8 comparison: field_value={}, condition_value={}, operator={:?}", f_val, c_val, operator);
+                    #[cfg(feature = "std")] println!("Int8 comparison: field_value={}, condition_value={}, operator={:?}", f_val, c_val, operator);
                     let result = compare_numbers(f_val, c_val, operator);
-                    println!("Comparison result: {}", result);
+                    #[cfg(feature = "std")] println!("Comparison result: {}", result);
                     result
                 },
                 _ => false, // 类型不匹配

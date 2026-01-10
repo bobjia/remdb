@@ -8,6 +8,13 @@ use remdb::time_series::TimeSeriesConfig;
 use remdb::{RemDb, config};
 use remdb::config::HAConfig;
 use remdb::ha::{HARole, ReplicationMode};
+use std::sync::Mutex;
+
+// 全局互斥锁，确保测试串行执行
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+// 静态内存缓冲区，用于测试
+static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存
 
 /// 创建测试用的DbConfig
 static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
@@ -110,6 +117,19 @@ static ROLLBACK_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
 
 #[test]
 fn test_write_timeseries_batch_acid() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).unwrap();
+    }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+    
     // 创建数据库实例
     let mut db = RemDb::new(&TEST_DB_CONFIG);
     db.init().unwrap();
@@ -181,6 +201,19 @@ fn test_write_timeseries_batch_acid() {
 
 #[test]
 fn test_write_timeseries_batch_performance() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).unwrap();
+    }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+    
     // 创建数据库实例
     let mut db = RemDb::new(&PERFORMANCE_TEST_DB_CONFIG);
     db.init().unwrap();
@@ -239,6 +272,19 @@ fn test_write_timeseries_batch_performance() {
 
 #[test]
 fn test_write_timeseries_batch_rollback() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).unwrap();
+    }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+    
     // 简化测试，只验证基本的批量写入功能
     // 创建数据库实例
     let mut db = RemDb::new(&ROLLBACK_TEST_DB_CONFIG);
@@ -277,10 +323,9 @@ fn test_write_timeseries_batch_rollback() {
 
 #[test]
 fn test_time_type_support() {
-    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    let _guard = TEST_MUTEX.lock().unwrap();
     
-    // 初始化内存分配器
+    // 初始化全局内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
@@ -355,10 +400,9 @@ fn test_time_type_support() {
 
 #[test]
 fn test_time_arithmetic() {
-    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    let _guard = TEST_MUTEX.lock().unwrap();
     
-    // 初始化内存分配器
+    // 初始化全局内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
@@ -443,10 +487,9 @@ fn test_time_arithmetic() {
 
 #[test]
 fn test_time_precision_support() {
-    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    let _guard = TEST_MUTEX.lock().unwrap();
     
-    // 初始化内存分配器
+    // 初始化全局内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),

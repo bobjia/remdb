@@ -5,6 +5,7 @@ use crate::defer;
 
 // 引入alloc模块
 extern crate alloc;
+use alloc::vec::Vec;
 
 /// 内存表
 pub struct MemoryTable {

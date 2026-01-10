@@ -1,6 +1,11 @@
 use core::fmt;
 use core::mem::size_of;
 
+// 引入alloc模块
+extern crate alloc;
+use alloc::string::String;
+use alloc::string::ToString;
+
 /// 基本数据类型枚举
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -633,7 +638,7 @@ impl FieldDef {
                 match self.data_type {
                     DataType::String => {
                         let s = core::str::from_utf8(&default.string).unwrap_or("").trim_end_matches(char::from(0));
-                        constraints.push_str(&format!("'{}'", s));
+                        constraints.push_str(&alloc::format!("'{}'", s));
                     },
                     DataType::Bool => {
                         let b = default.bool;

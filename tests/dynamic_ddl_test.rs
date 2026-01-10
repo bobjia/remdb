@@ -1,43 +1,6 @@
 use remdb::*;
 use remdb::platform::{Platform, FileMode, FileHandle, FileResult, SeekWhence};
-
-// 定义测试用的内存缓冲区
-static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存
-
-// 静态配置，用于测试
-static mut DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
-static TEST_CONFIG: config::DbConfig = unsafe {
-    config::DbConfig {
-        tables: &[],
-        total_memory: 1024 * 1024, // 1MB
-        low_power_mode_supported: false,
-        low_power_max_records: None,
-        default_max_records: 100, // 减小值以避免内存不足
-        memory_allocator: &mut DEFAULT_ALLOCATOR,
-        log_path: "dynamic_ddl_test.wal",
-        log_mode: config::LogMode::Sync,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
-        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
-        #[cfg(feature = "pubsub")]
-        pubsub_config: None,
-        #[cfg(feature = "ha")]
-        ha_config: Some(config::HAConfig {
-            ha_role: remdb::ha::HARole::Auto,
-            replication_mode: remdb::ha::ReplicationMode::Async,
-            heartbeat_interval_ms: 1000,
-            failure_detection_ms: 3000,
-            sync_timeout_ms: 2000,
-            master_address: None,
-            master_port: None,
-            replication_port: 5556,
-            heartbeat_port: 5557,
-        }),
-    }
-};
+use std::sync::Mutex;
 
 // 定义测试平台
 struct TestPlatform;
@@ -131,25 +94,65 @@ impl Platform for TestPlatform {
     }
 }
 
+// 静态测试平台实例
 static TEST_PLATFORM: TestPlatform = TestPlatform;
+
+// 静态配置，用于测试
+static mut DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
+static TEST_CONFIG: config::DbConfig = unsafe {
+    config::DbConfig {
+        tables: &[],
+        total_memory: 1024 * 1024, // 1MB
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        default_max_records: 100, // 减小值以避免内存不足
+        memory_allocator: &mut DEFAULT_ALLOCATOR,
+        log_path: "dynamic_ddl_test.wal",
+        log_mode: config::LogMode::Sync,
+        checkpoint_interval_ms: 60000,
+        log_file_size_limit: 16 * 1024 * 1024,
+        log_prealloc_size: 1 * 1024 * 1024,
+        log_segment_size: 16 * 1024 * 1024,
+        retained_checkpoints: 3,
+        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: Some(config::HAConfig {
+            ha_role: remdb::ha::HARole::Auto,
+            replication_mode: remdb::ha::ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
+        }),
+    }
+};
+
+// 互斥锁，确保测试串行执行
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+// 定义测试用的内存缓冲区
+static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存
 
 #[test]
 fn test_create_table() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
-    unsafe {
-        platform::init_platform(&TEST_PLATFORM);
-    }
+    platform::init_platform(&TEST_PLATFORM);
     
-    // 初始化全局内存分配器
-    unsafe {
-        let result = memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        );
-        assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
-    }
+    // 使用共享内存缓冲区初始化全局内存分配器
+    let result = memory::allocator::init_global_allocator(
+        unsafe { DB_MEMORY.as_mut_ptr() },
+        unsafe { DB_MEMORY.len() }
+    );
+    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
     
-    // 创建数据库实例
+    // 创建数据库实例，使用共享配置
     let mut db = RemDb::new(&TEST_CONFIG);
     
     // 测试创建表
@@ -169,6 +172,8 @@ fn test_create_table() {
 
 #[test]
 fn test_create_table_invalid() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 无需平台初始化，直接测试参数验证逻辑
     let mut db = RemDb::new(&TEST_CONFIG);
     
@@ -187,21 +192,19 @@ fn test_create_table_invalid() {
 
 #[test]
 fn test_create_index() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
-    unsafe {
-        platform::init_platform(&TEST_PLATFORM);
-    }
+    platform::init_platform(&TEST_PLATFORM);
     
-    // 初始化全局内存分配器
-    unsafe {
-        let result = memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        );
-        assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
-    }
+    // 使用共享内存缓冲区初始化全局内存分配器
+    let result = memory::allocator::init_global_allocator(
+        unsafe { DB_MEMORY.as_mut_ptr() },
+        unsafe { DB_MEMORY.len() }
+    );
+    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
     
-    // 创建数据库实例
+    // 创建数据库实例，使用共享配置
     let mut db = RemDb::new(&TEST_CONFIG);
     
     // 先创建表
@@ -271,21 +274,19 @@ fn test_create_index() {
 
 #[test]
 fn test_describe_table() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
-    unsafe {
-        platform::init_platform(&TEST_PLATFORM);
-    }
+    platform::init_platform(&TEST_PLATFORM);
     
-    // 初始化全局内存分配器
-    unsafe {
-        let result = memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        );
-        assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
-    }
+    // 使用共享内存缓冲区初始化全局内存分配器
+    let result = memory::allocator::init_global_allocator(
+        unsafe { DB_MEMORY.as_mut_ptr() },
+        unsafe { DB_MEMORY.len() }
+    );
+    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
     
-    // 创建数据库实例
+    // 创建数据库实例，使用共享配置
     let mut db = RemDb::new(&TEST_CONFIG);
     
     // 先创建表
@@ -402,21 +403,19 @@ fn test_describe_table() {
 
 #[test]
 fn test_create_time_series_table() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
-    unsafe {
-        platform::init_platform(&TEST_PLATFORM);
-    }
+    platform::init_platform(&TEST_PLATFORM);
     
-    // 初始化全局内存分配器
-    unsafe {
-        let result = memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        );
-        assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
-    }
+    // 使用共享内存缓冲区初始化全局内存分配器
+    let result = memory::allocator::init_global_allocator(
+        unsafe { DB_MEMORY.as_mut_ptr() },
+        unsafe { DB_MEMORY.len() }
+    );
+    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
     
-    // 创建数据库实例
+    // 创建数据库实例，使用共享配置
     let mut db = RemDb::new(&TEST_CONFIG);
     
     // 测试创建默认配置的时序表
@@ -476,21 +475,19 @@ fn test_create_time_series_table() {
 
 #[test]
 fn test_ddl_export_with_time_series() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
-    unsafe {
-        platform::init_platform(&TEST_PLATFORM);
-    }
+    platform::init_platform(&TEST_PLATFORM);
     
-    // 初始化全局内存分配器
-    unsafe {
-        let result = memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        );
-        assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
-    }
+    // 使用共享内存缓冲区初始化全局内存分配器
+    let result = memory::allocator::init_global_allocator(
+        unsafe { DB_MEMORY.as_mut_ptr() },
+        unsafe { DB_MEMORY.len() }
+    );
+    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
     
-    // 创建数据库实例
+    // 创建数据库实例，使用共享配置
     let mut db = RemDb::new(&TEST_CONFIG);
     
     // 创建普通表
@@ -529,21 +526,19 @@ fn test_ddl_export_with_time_series() {
 
 #[test]
 fn test_describe_time_series_table() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
-    unsafe {
-        platform::init_platform(&TEST_PLATFORM);
-    }
+    platform::init_platform(&TEST_PLATFORM);
     
-    // 初始化全局内存分配器
-    unsafe {
-        let result = memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        );
-        assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
-    }
+    // 使用共享内存缓冲区初始化全局内存分配器
+    let result = memory::allocator::init_global_allocator(
+        unsafe { DB_MEMORY.as_mut_ptr() },
+        unsafe { DB_MEMORY.len() }
+    );
+    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
     
-    // 创建数据库实例
+    // 创建数据库实例，使用共享配置
     let mut db = RemDb::new(&TEST_CONFIG);
     
     // 创建时序表

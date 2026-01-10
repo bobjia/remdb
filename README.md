@@ -577,7 +577,7 @@ cargo test
 在no_std环境下检查编译：
 
 ```bash
-cargo check --tests --no-default-features
+$env:RUSTFLAGS = '-C panic=abort'; cargo check --tests --no-default-features
 ```
 
 ### 在baremetal环境下检查编译：
@@ -724,6 +724,11 @@ MIT许可证
 ## 贡献
 
 欢迎提交问题和拉取请求！
+
+## 项目链接
+- 国内：https://gitee.com/totaltrust/remdb
+- 国外：https://github.com/bobjia/remdb
+- Crates：https://crates.io/crates/remdb
 
 ## 注意事项
 

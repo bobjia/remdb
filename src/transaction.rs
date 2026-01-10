@@ -3,6 +3,10 @@ use crate::types::{Result, RemDbError};
 use crate::platform::{memcpy, memset};
 use crate::defer;
 
+// 引入alloc模块
+extern crate alloc;
+use alloc::vec::Vec;
+
 /// 事务隔离级别
 #[derive(PartialEq)]
 #[repr(u8)]

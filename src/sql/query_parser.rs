@@ -3,7 +3,9 @@
 //! 该模块负责将SQL查询字符串解析为结构化的查询对象。
 
 use alloc::string::String;
+use alloc::string::ToString;
 use alloc::vec::Vec;
+use alloc::boxed::Box;
 
 /// 解析时间字符串为微秒时间戳
 /// 支持的格式：
@@ -979,8 +981,8 @@ impl SqlParser {
                 if let Ok(unit) = self.parse_identifier() {
                     // 组合值和单位为字符串，如"1 HOUR"或"30 MINUTE"
                     let interval_str = match interval_value {
-                        Value::Integer(i) => format!("{} {}", i, unit),
-                        Value::String(s) => format!("{} {}", s, unit),
+                        Value::Integer(i) => alloc::format!("{} {}", i, unit),
+                        Value::String(s) => alloc::format!("{} {}", s, unit),
                         _ => return Err(QueryParseError::InvalidValue),
                     };
                     

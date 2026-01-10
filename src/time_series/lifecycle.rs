@@ -1,4 +1,3 @@
-#![cfg_attr(not(feature = "std"), no_std)]
 
 use core::time::Duration;
 use core::sync::atomic::{AtomicBool, Ordering};

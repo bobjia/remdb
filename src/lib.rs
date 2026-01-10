@@ -34,8 +34,11 @@ pub use remdb_macros::MemdbTable;
 
 // 引入alloc模块
 extern crate alloc;
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use alloc::string::String;
+use alloc::string::ToString;
 
 /// 字段约束信息
 pub struct FieldConstraint {
@@ -368,7 +371,7 @@ impl RemDb {
             
             // 如果POSIX平台不可用（例如在Windows上），使用裸机平台作为备选
             #[cfg(not(feature = "posix"))]
-            crate::platform::init_platform(crate::platform::baremetal::get_baremetal_platform());
+            #[cfg(feature = "baremetal")] crate::platform::init_platform(crate::platform::baremetal::get_baremetal_platform());
         }
         
         // 初始化日志管理器（如果配置了日志）
@@ -1209,7 +1212,7 @@ impl RemDb {
             crate::sql::QueryExecutionError::OutOfMemory => RemDbError::OutOfMemory,
             _ => {
                 // 保留原始错误信息，便于调试
-                eprintln!("SQL Execution Error: {:?}", err);
+                #[cfg(feature = "std")] eprintln!("SQL Execution Error: {:?}", err);
                 RemDbError::InternalError
             }
         }
@@ -1227,14 +1230,14 @@ impl RemDb {
             columns.join(", ") // 返回String类型
         };
         
-        let mut sql = format!("SELECT {} FROM {}", select_columns, table_name);
+        let mut sql = alloc::format!("SELECT {} FROM {}", select_columns, table_name);
         
         if let Some(where_clause) = where_clause {
-            sql.push_str(&format!(" WHERE {}", where_clause));
+            sql.push_str(&alloc::format!(" WHERE {}", where_clause));
         }
         
         if let Some(limit) = limit {
-            sql.push_str(&format!(" LIMIT {}", limit));
+            sql.push_str(&alloc::format!(" LIMIT {}", limit));
         }
         
         // 调用sql_query执行
@@ -1453,7 +1456,7 @@ impl RemDb {
         let columns = if column_names.is_empty() {
             "".to_string() // 返回String类型
         } else {
-            format!("({})
+            alloc::format!("({})
 ", column_names.join(", ")) // 返回String类型
         };
         
@@ -1464,14 +1467,14 @@ impl RemDb {
                 value.to_string()
             } else {
                 // 字符串类型，添加引号
-                format!("'{}'", value)
+                alloc::format!("'{}'", value)
             }
         }).collect();
         
-        let values_str = format!("({})
+        let values_str = alloc::format!("({})
 ", quoted_values.join(", "));
         
-        let sql = format!("INSERT INTO {}{} VALUES {}", table_name, columns, values_str);
+        let sql = alloc::format!("INSERT INTO {}{} VALUES {}", table_name, columns, values_str);
         
         // 执行查询
         let result_set = self.sql_query(&sql)?;
@@ -1500,7 +1503,7 @@ impl RemDb {
         let columns = if column_names.is_empty() {
             "".to_string()
         } else {
-            format!("({})
+            alloc::format!("({})
 ", column_names.join(", "))
         };
         
@@ -1514,16 +1517,16 @@ impl RemDb {
                     value.to_string()
                 } else {
                     // 字符串类型，添加引号
-                    format!("'{}'", value)
+                    alloc::format!("'{}'", value)
                 }
             }).collect();
             
-            all_values.push(format!("({})
+            all_values.push(alloc::format!("({})
 ", quoted_values.join(", ")));
         }
         
         let values_str = all_values.join(", ");
-        let sql = format!("INSERT INTO {}{} VALUES {}", table_name, columns, values_str);
+        let sql = alloc::format!("INSERT INTO {}{} VALUES {}", table_name, columns, values_str);
         
         // 执行查询
         let result_set = self.sql_query(&sql)?;
@@ -1545,10 +1548,10 @@ impl RemDb {
     /// 更新记录
     pub fn update_record(&mut self, table_name: &str, set_clause: &str, where_clause: Option<&str>) -> Result<usize> {
         // 构建UPDATE SQL语句
-        let mut sql = format!("UPDATE {} SET {}", table_name, set_clause);
+        let mut sql = alloc::format!("UPDATE {} SET {}", table_name, set_clause);
         
         if let Some(where_clause) = where_clause {
-            sql.push_str(&format!(" WHERE {}", where_clause));
+            sql.push_str(&alloc::format!(" WHERE {}", where_clause));
         }
         
         // 执行查询
@@ -1571,10 +1574,10 @@ impl RemDb {
     /// 删除记录
     pub fn delete_record(&mut self, table_name: &str, where_clause: Option<&str>) -> Result<usize> {
         // 构建DELETE SQL语句
-        let mut sql = format!("DELETE FROM {}", table_name);
+        let mut sql = alloc::format!("DELETE FROM {}", table_name);
         
         if let Some(where_clause) = where_clause {
-            sql.push_str(&format!(" WHERE {}", where_clause));
+            sql.push_str(&alloc::format!(" WHERE {}", where_clause));
         }
         
         // 执行查询
@@ -1595,6 +1598,7 @@ impl RemDb {
     }
     
     /// 导出完整的DDL文件
+    #[cfg(feature = "std")]
     pub fn export_ddl(&self, path: &str) -> Result<()> {
         // 使用标准库的文件操作
         use std::fs::File;
@@ -1702,6 +1706,7 @@ impl RemDb {
     }
     
     /// 导出数据到文件
+    #[cfg(feature = "std")]
     pub fn export_data(&self, path: &str) -> Result<()> {
         // 使用标准库的文件操作
         use std::fs::File;
@@ -1756,10 +1761,10 @@ impl RemDb {
                                         }
                                         str_value.push(c as char);
                                     }
-                                    format!("'{}'", str_value)
+                                    alloc::format!("'{}'", str_value)
                                 },
                                 DataType::Interval => {
-                                    format!("{}", core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval).value)
+                                    alloc::format!("{}", core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval).value)
                                 },
                             };
                             
@@ -1971,7 +1976,7 @@ pub fn reset_global_db() {
 mod c_api;
 
 // Panic handler for no_std environments
-#[cfg(not(feature = "std"))]
+#[cfg(all(not(feature = "std"), not(test)))]
 #[panic_handler]
 fn panic_handler(_info: &core::panic::PanicInfo) -> ! {
     loop {

@@ -1,4 +1,3 @@
-#![cfg_attr(not(feature = "std"), no_std)]
 
 // 导出时序数据相关类型和结构体
 pub mod table;

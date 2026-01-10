@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+
 
 use alloc::vec::Vec;
 

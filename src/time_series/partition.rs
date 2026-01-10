@@ -1,10 +1,13 @@
-#![cfg_attr(not(feature = "std"), no_std)]
 
 use core::time::Duration;
 use alloc::{sync::Arc, vec::Vec};
+use super::TimeSeriesRecord;
+
+#[cfg(feature = "std")]
 use std::sync::Mutex;
 
-use super::TimeSeriesRecord;
+#[cfg(not(feature = "std"))]
+use crate::memory::allocator::Mutex;
 
 /// 分区统计信息
 #[derive(Debug, Clone, Default)]

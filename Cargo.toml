@@ -6,7 +6,7 @@ members = [
 
 [package]
 name = "remdb"
-version = "0.2.1"
+version = "0.2.3"
 edition = "2021"
 authors = ["remdb contributors"]
 description = "嵌入式内存数据库"

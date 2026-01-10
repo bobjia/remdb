@@ -3,6 +3,7 @@
 //! 该模块负责处理SQL查询的结果集，提供友好的结果访问接口。
 
 use alloc::string::String;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::iter::Iterator;
 use core::option::Option;
@@ -199,7 +200,7 @@ impl<'a> ExactSizeIterator for ResultRowIter<'a> {
 pub fn string_to_columns(s: &str) -> Vec<String> {
     s.split(",")
         .map(|col| col.trim().to_string())
-        .filter(|col| !col.is_empty())
+        .filter(|col: &String| !col.is_empty())
         .collect()
 }
 
@@ -207,25 +208,25 @@ pub fn string_to_columns(s: &str) -> Vec<String> {
 fn value_to_string_repr(value: &TypedValue) -> String {
     unsafe {
         match value.value_type {
-            DataType::UInt8 => format!("{}", value.value.u8),
-            DataType::UInt16 => format!("{}", value.value.u16),
-            DataType::UInt32 => format!("{}", value.value.u32),
-            DataType::UInt64 => format!("{}", value.value.u64),
-            DataType::Int8 => format!("{}", value.value.i8),
-            DataType::Int16 => format!("{}", value.value.i16),
-            DataType::Int32 => format!("{}", value.value.i32),
-            DataType::Int64 => format!("{}", value.value.i64),
-            DataType::Float32 => format!("{}", value.value.float32),
-            DataType::Float64 => format!("{}", value.value.float64),
-            DataType::Bool => format!("{}", value.value.bool),
-            DataType::Timestamp => format!("{}", value.value.time.value),
-            DataType::TimestampTZ => format!("{}", value.value.time.value),
+            DataType::UInt8 => alloc::format!("{}", value.value.u8),
+            DataType::UInt16 => alloc::format!("{}", value.value.u16),
+            DataType::UInt32 => alloc::format!("{}", value.value.u32),
+            DataType::UInt64 => alloc::format!("{}", value.value.u64),
+            DataType::Int8 => alloc::format!("{}", value.value.i8),
+            DataType::Int16 => alloc::format!("{}", value.value.i16),
+            DataType::Int32 => alloc::format!("{}", value.value.i32),
+            DataType::Int64 => alloc::format!("{}", value.value.i64),
+            DataType::Float32 => alloc::format!("{}", value.value.float32),
+            DataType::Float64 => alloc::format!("{}", value.value.float64),
+            DataType::Bool => alloc::format!("{}", value.value.bool),
+            DataType::Timestamp => alloc::format!("{}", value.value.time.value),
+            DataType::TimestampTZ => alloc::format!("{}", value.value.time.value),
             DataType::String => {
                 let string_slice = core::str::from_utf8(&value.value.string).unwrap_or("");
                 string_slice.trim_end_matches(char::from(0)).to_string()
             },
             DataType::Interval => {
-                format!("{}", value.value.interval.value)
+                alloc::format!("{}", value.value.interval.value)
             },
         }
     }

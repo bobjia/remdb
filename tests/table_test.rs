@@ -3,6 +3,13 @@ use remdb::table::*;
 use remdb::types::*;
 use remdb::platform::*;
 use alloc::sync::Arc;
+use std::sync::Mutex;
+
+// 全局互斥锁，确保测试串行执行
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+// 静态内存缓冲区，用于测试
+static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存
 
 // 测试用Platform实现
 struct TestPlatform;
@@ -136,16 +143,16 @@ static TEST_TABLE_DEF: TableDef = TableDef {
 
 #[test]
 fn test_table_insert_delete() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
     unsafe {
-        // 预分配内存缓冲区并初始化全局分配器
-        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
-        memory_buffer.set_len(1000000);
+        // 使用静态内存缓冲区初始化全局分配器
         remdb::memory::allocator::init_global_allocator(
-            memory_buffer.as_mut_ptr(), 
-            1000000
+            DB_MEMORY.as_mut_ptr(), 
+            DB_MEMORY.len()
         ).unwrap();
         
         // 重置全局数据库实例，确保测试之间的隔离
@@ -199,16 +206,16 @@ fn test_table_insert_delete() {
 
 #[test]
 fn test_table_get_field() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
     unsafe {
-        // 预分配内存缓冲区并初始化全局分配器
-        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
-        memory_buffer.set_len(1000000);
+        // 使用静态内存缓冲区初始化全局分配器
         remdb::memory::allocator::init_global_allocator(
-            memory_buffer.as_mut_ptr(), 
-            1000000
+            DB_MEMORY.as_mut_ptr(), 
+            DB_MEMORY.len()
         ).unwrap();
         
         // 重置全局数据库实例，确保测试之间的隔离
@@ -257,16 +264,16 @@ fn test_table_get_field() {
 
 #[test]
 fn test_table_set_field() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
     unsafe {
-        // 预分配内存缓冲区并初始化全局分配器
-        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
-        memory_buffer.set_len(1000000);
+        // 使用静态内存缓冲区初始化全局分配器
         remdb::memory::allocator::init_global_allocator(
-            memory_buffer.as_mut_ptr(), 
-            1000000
+            DB_MEMORY.as_mut_ptr(), 
+            DB_MEMORY.len()
         ).unwrap();
         
         // 重置全局数据库实例，确保测试之间的隔离
@@ -316,16 +323,16 @@ fn test_table_set_field() {
 
 #[test]
 fn test_table_iterate() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
     unsafe {
-        // 预分配内存缓冲区并初始化全局分配器
-        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
-        memory_buffer.set_len(1000000);
+        // 使用静态内存缓冲区初始化全局分配器
         remdb::memory::allocator::init_global_allocator(
-            memory_buffer.as_mut_ptr(), 
-            1000000
+            DB_MEMORY.as_mut_ptr(), 
+            DB_MEMORY.len()
         ).unwrap();
         
         // 重置全局数据库实例，确保测试之间的隔离
@@ -400,16 +407,16 @@ static SMALL_TABLE_DEF: TableDef = TableDef {
 
 #[test]
 fn test_table_full() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
     unsafe {
-        // 预分配内存缓冲区并初始化全局分配器
-        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
-        memory_buffer.set_len(1000000);
+        // 使用静态内存缓冲区初始化全局分配器
         remdb::memory::allocator::init_global_allocator(
-            memory_buffer.as_mut_ptr(), 
-            1000000
+            DB_MEMORY.as_mut_ptr(), 
+            DB_MEMORY.len()
         ).unwrap();
         
         // 重置全局数据库实例，确保测试之间的隔离
@@ -465,16 +472,16 @@ fn test_table_full() {
 
 #[test]
 fn test_not_null_constraint() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+    
     // 初始化平台
     init_platform(&TEST_PLATFORM);
     
     unsafe {
-        // 预分配内存缓冲区并初始化全局分配器
-        let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
-        memory_buffer.set_len(1000000);
+        // 使用静态内存缓冲区初始化全局分配器
         remdb::memory::allocator::init_global_allocator(
-            memory_buffer.as_mut_ptr(), 
-            1000000
+            DB_MEMORY.as_mut_ptr(), 
+            DB_MEMORY.len()
         ).unwrap();
         
         // 重置全局数据库实例，确保测试之间的隔离

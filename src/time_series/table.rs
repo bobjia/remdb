@@ -1,10 +1,15 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+
 
 use core::time::Duration;
 use alloc::{sync::Arc, vec::Vec};
-use std::sync::Mutex;
 use crate::{TableDef, Result, RemDbError};
 use super::{CompressionType, TimeSeriesIndex, PartitionManager, LifecycleManager};
+
+#[cfg(feature = "std")]
+use std::sync::Mutex;
+
+#[cfg(not(feature = "std"))]
+use crate::memory::allocator::Mutex;
 
 /// 时序数据配置
 #[derive(Debug, Clone, Copy)]
