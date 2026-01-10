@@ -39,7 +39,7 @@ fn main() {
         default_max_records: 10000,
         memory_allocator: unsafe { &DEFAULT_ALLOCATOR },
         wal_config: WALConfig {
-            log_path: "timeseries_ddl_usage.wal",
+            log_path: "./wal",
             log_mode: remdb::config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,

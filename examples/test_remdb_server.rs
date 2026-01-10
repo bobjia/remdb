@@ -132,7 +132,7 @@ fn main() {
         default_max_records: 10000,
         memory_allocator: &ALLOCATOR, // 使用我们的静态内存分配器
         wal_config: WALConfig {
-            log_path: "test_remdb_server.wal",
+            log_path: "./wal",
             log_mode: remdb::config::LogMode::Async,
             checkpoint_interval_ms: 60000, // 60秒
             log_file_size_limit: 16 * 1024 * 1024, // 16MB

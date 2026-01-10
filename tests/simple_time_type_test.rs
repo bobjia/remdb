@@ -15,7 +15,7 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     // 添加缺少的字段
     memory_allocator: &config::DefaultMemoryAllocator,
     wal_config: WALConfig {
-        log_path: "simple_time_type_test.wal",
+        log_path: "./wal",
         log_mode: config::LogMode::Async,
         log_prealloc_size: 0,
         log_file_size_limit: 104857600,

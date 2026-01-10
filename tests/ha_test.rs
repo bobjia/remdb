@@ -223,7 +223,7 @@ fn test_ha_manager_failover() {
         default_max_records: 1000,
         memory_allocator: &config::DefaultMemoryAllocator,
         wal_config: WALConfig {
-            log_path: "ha_test_slave.wal",
+            log_path: "./wal",
             log_mode: LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 1 * 1024 * 1024,
@@ -320,7 +320,7 @@ fn test_ha_manager() {
         default_max_records: 1000,
         memory_allocator: &config::DefaultMemoryAllocator,
         wal_config: WALConfig {
-            log_path: "ha_test_master.wal",
+            log_path: "./wal",
             log_mode: LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 1 * 1024 * 1024,
@@ -381,7 +381,7 @@ fn test_ha_manager_role_switch() {
         default_max_records: 1000,
         memory_allocator: &config::DefaultMemoryAllocator,
         wal_config: WALConfig {
-            log_path: "ha_test_role_switch.wal",
+            log_path: "./wal",
             log_mode: LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 1 * 1024 * 1024,
@@ -463,7 +463,7 @@ fn test_ha_config_validation() {
         default_max_records: 1000,
         memory_allocator: &config::DefaultMemoryAllocator,
         wal_config: WALConfig {
-            log_path: "ha_test_invalid.wal",
+            log_path: "./wal",
             log_mode: LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 1 * 1024 * 1024,
@@ -501,7 +501,7 @@ fn test_ha_config_validation() {
         default_max_records: 1000,
         memory_allocator: &config::DefaultMemoryAllocator,
         wal_config: WALConfig {
-            log_path: "ha_test_valid.wal",
+            log_path: "./wal",
             log_mode: LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 1 * 1024 * 1024,

@@ -44,7 +44,7 @@ fn test_export_ddl() {
     
     // 在测试开始前，删除可能存在的日志文件，避免影响后续测试
     use std::fs::remove_file;
-    let _ = remove_file("remdb.wal");
+    let _ = remove_file("./wal");
     
     // 初始化全局内存分配器，使用静态内存缓冲区
     unsafe {
@@ -97,7 +97,7 @@ fn test_export_data() {
     
     // 在测试开始前，删除可能存在的日志文件，避免影响后续测试
     use std::fs::remove_file;
-    let _ = remove_file("remdb.wal");
+    let _ = remove_file("./wal");
     
     // 初始化全局内存分配器，使用静态内存缓冲区
     unsafe {
@@ -198,7 +198,7 @@ fn test_export_empty_table() {
     
     // 在测试开始前，删除可能存在的日志文件，避免影响后续测试
     use std::fs::remove_file;
-    let _ = remove_file("remdb.wal");
+    let _ = remove_file("./wal");
     
     // 初始化全局内存分配器，使用静态内存缓冲区
     unsafe {

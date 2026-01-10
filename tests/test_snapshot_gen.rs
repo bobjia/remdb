@@ -51,7 +51,7 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
         &mut DEFAULT_ALLOCATOR
     },
     wal_config: WALConfig {
-        log_path: "test_snapshot_gen.wal",
+        log_path: "./wal",
         log_mode: config::LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,

@@ -22,7 +22,7 @@ fn main() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "time_series_complete.wal",
+            log_path: "./wal",
             log_mode: config::LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,

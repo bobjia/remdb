@@ -109,7 +109,7 @@ static TEST_CONFIG: config::DbConfig = unsafe {
         default_max_records: 100, // 减小值以避免内存不足
         memory_allocator: &mut DEFAULT_ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "dynamic_ddl_test.wal",
+            log_path: "./wal",
             log_mode: config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,

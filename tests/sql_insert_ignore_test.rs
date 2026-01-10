@@ -108,7 +108,7 @@ static TEST_DB_CONFIG: remdb::config::DbConfig = remdb::config::DbConfig {
     low_power_max_records: None,
     memory_allocator: &remdb::config::DefaultMemoryAllocator,
     wal_config: WALConfig {
-        log_path: "sql_insert_ignore_test.wal",
+        log_path: "./wal",
         log_mode: remdb::config::LogMode::Async,
         log_prealloc_size: 0,
         log_file_size_limit: 1048576,

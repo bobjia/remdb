@@ -47,7 +47,7 @@ fn main() {
         default_max_records: 10, // 减少默认最大记录数，避免内存不足
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "ddl_runtime_example.wal",
+            log_path: "./wal",
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,

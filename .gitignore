@@ -2,3 +2,4 @@ target/*
 .trae/*
 *.remd
 *.wal
+wal/*
