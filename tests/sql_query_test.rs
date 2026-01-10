@@ -342,6 +342,31 @@ fn test_sql_query() {
         println!("实际查询到 {} 条记录", result_set.rows.len());
     }
     
+    // 测试SQL UPDATE语句
+    println!("=== 测试SQL UPDATE语句 ===");
+    
+    // 测试1: 基本UPDATE语句
+    let result = db.sql_query("UPDATE TEST_TABLE SET age = 35, active = false WHERE id = 1");
+    assert!(result.is_ok(), "基本UPDATE应该成功");
+    
+    // 验证UPDATE结果
+    let result = db.sql_query("SELECT age, active FROM TEST_TABLE WHERE id = 1");
+    assert!(result.is_ok(), "验证UPDATE结果的SELECT应该成功");
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 1, "UPDATE后应该找到1条记录");
+    
+    // 测试2: 更新多条记录
+    let result = db.sql_query("UPDATE TEST_TABLE SET active = true");
+    assert!(result.is_ok(), "更新所有记录的UPDATE应该成功");
+    
+    // 验证更新所有记录的结果
+    let result = db.sql_query("SELECT COUNT(*) FROM TEST_TABLE WHERE active = true");
+    assert!(result.is_ok(), "验证更新所有记录的SELECT应该成功");
+    
+    // 测试3: 带WHERE条件的UPDATE，更新不存在的记录
+    let result = db.sql_query("UPDATE TEST_TABLE SET age = 100 WHERE id = 999");
+    assert!(result.is_ok(), "更新不存在记录的UPDATE应该成功（影响0行）");
+    
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
 }
