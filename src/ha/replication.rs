@@ -1,6 +1,6 @@
 // 复制管理器实现
 
-use crate::config::ReplicationMode;
+use crate::ha::ReplicationMode;
 use crate::ha::{Result, HAError};
 use crate::transaction::LogItem;
 use crate::pubsub;

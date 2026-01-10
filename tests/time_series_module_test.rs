@@ -251,23 +251,17 @@ fn test_time_series_batch_performance() {
             #[cfg(feature = "pubsub")]
             pubsub_config: None,
             #[cfg(feature = "ha")]
-            ha_role: crate::config::HARole::Auto,
-            #[cfg(feature = "ha")]
-            replication_mode: crate::config::ReplicationMode::Async,
-            #[cfg(feature = "ha")]
-            heartbeat_interval_ms: 1000,
-            #[cfg(feature = "ha")]
-            failure_detection_ms: 5000,
-            #[cfg(feature = "ha")]
-            sync_timeout_ms: 5000,
-            #[cfg(feature = "ha")]
-            master_address: None,
-            #[cfg(feature = "ha")]
-            master_port: None,
-            #[cfg(feature = "ha")]
-            replication_port: 5556,
-            #[cfg(feature = "ha")]
-            heartbeat_port: 5557,
+            ha_config: Some(crate::config::HAConfig {
+                ha_role: crate::ha::HARole::Auto,
+                replication_mode: crate::ha::ReplicationMode::Async,
+                heartbeat_interval_ms: 1000,
+                failure_detection_ms: 5000,
+                sync_timeout_ms: 5000,
+                master_address: None,
+                master_port: None,
+                replication_port: 5556,
+                heartbeat_port: 5557,
+            }),
         };
         let config = &TEST_CONFIG;
         

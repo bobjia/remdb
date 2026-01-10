@@ -554,17 +554,19 @@ pub unsafe extern "C" fn remdb_init_global(
         log_prealloc_size: 16 * 1024 * 1024, // 默认16MB
         log_segment_size: 16 * 1024 * 1024, // 默认16MB
         retained_checkpoints: 2, // 默认保留2个检查点
-        // HA相关配置
-        ha_role: crate::config::HARole::Auto,
-        replication_mode: crate::config::ReplicationMode::Async,
-        heartbeat_interval_ms: 1000, // 默认1秒
-        failure_detection_ms: 5000, // 默认5秒
-        sync_timeout_ms: 1000, // 默认1秒
-        master_address: None,
-        master_port: None,
-        replication_port: 5556,
-        heartbeat_port: 5557,
         time_series_defaults: crate::time_series::TimeSeriesConfig::DEFAULT,
+        // HA相关配置
+        ha_config: Some(crate::ha::HAConfig {
+            ha_role: crate::ha::HARole::Auto,
+            replication_mode: crate::ha::ReplicationMode::Async,
+            heartbeat_interval_ms: 1000, // 默认1秒
+            failure_detection_ms: 5000, // 默认5秒
+            sync_timeout_ms: 1000, // 默认1秒
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
+        }),
     };
     
     // 初始化全局数据库

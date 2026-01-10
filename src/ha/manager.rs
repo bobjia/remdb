@@ -1,7 +1,7 @@
 // HA管理器实现
 
-use crate::config::{DbConfig, HARole, ReplicationMode};
-use crate::ha::{Result, HAError};
+use crate::config::DbConfig;
+use crate::ha::{HARole, ReplicationMode, Result, HAError};
 use crate::ha::role::RoleManager;
 use crate::ha::replication::ReplicationManager;
 use crate::ha::heartbeat::HeartbeatMonitor;
@@ -24,16 +24,19 @@ pub struct HAManager {
 impl HAManager {
     /// 创建新的HA管理器
     pub fn new(config: &'static DbConfig) -> Result<Self> {
+        // 获取HA配置
+        let ha_config = config.ha_config.as_ref().ok_or(HAError::InvalidParameter)?;
+        
         // 创建角色管理器
-        let role_manager = RoleManager::new(config.ha_role)?;
+        let role_manager = RoleManager::new(ha_config.ha_role)?;
         
         // 创建复制管理器
-        let replication_manager = ReplicationManager::new(config.replication_mode)?;
+        let replication_manager = ReplicationManager::new(ha_config.replication_mode)?;
         
         // 创建心跳监视器
         let heartbeat_monitor = HeartbeatMonitor::new(
-            config.heartbeat_interval_ms,
-            config.failure_detection_ms
+            ha_config.heartbeat_interval_ms,
+            ha_config.failure_detection_ms
         )?;
         
         Ok(Self {
@@ -118,7 +121,8 @@ impl HAManager {
     fn connect_to_master(&self) -> Result<()> {
         // 检查配置
         // 注意：在测试环境中，master_address和master_port可能未设置，此时跳过连接
-        if self.config.master_address.is_none() || self.config.master_port.is_none() {
+        let ha_config = self.config.ha_config.as_ref().ok_or(HAError::InvalidParameter)?;
+        if ha_config.master_address.is_none() || ha_config.master_port.is_none() {
             // 跳过连接，直接返回成功
             return Ok(());
         }

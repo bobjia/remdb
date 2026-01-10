@@ -8,6 +8,49 @@ pub mod role;
 use core::fmt;
 use alloc::vec::Vec;
 
+// HA角色
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum HARole {
+    /// 主节点
+    Master,
+    /// 从节点
+    Slave,
+    /// 自动模式（通过集群协商确定角色）
+    Auto,
+}
+
+// 复制模式
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum ReplicationMode {
+    /// 同步模式：等待至少一个从节点确认后才返回
+    Sync,
+    /// 异步模式：立即返回，异步复制
+    Async,
+}
+
+/// HA配置结构体
+#[derive(Copy, Clone, Debug)]
+pub struct HAConfig {
+    /// HA角色
+    pub ha_role: HARole,
+    /// 复制模式
+    pub replication_mode: ReplicationMode,
+    /// 心跳间隔（毫秒）
+    pub heartbeat_interval_ms: u64,
+    /// 故障检测时间（毫秒）
+    pub failure_detection_ms: u64,
+    /// 同步超时时间（毫秒）
+    pub sync_timeout_ms: u64,
+    /// 主节点地址（从节点使用）
+    pub master_address: Option<&'static str>,
+    /// 主节点端口（从节点使用）
+    pub master_port: Option<u16>,
+    /// 复制端口（用于WAL日志复制和数据同步）
+    pub replication_port: u16,
+    /// 心跳端口（用于节点间心跳检测）
+    pub heartbeat_port: u16,
+}
+
 // HA相关错误类型
 #[derive(Debug, PartialEq, Eq)]
 pub enum HAError {

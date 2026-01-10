@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use remdb::{RemDb, config::{DbConfig, LogMode, HARole, ReplicationMode}};
+use remdb::{RemDb, config::{DbConfig, LogMode, HAConfig}}; use remdb::ha::{HARole, ReplicationMode};
 use remdb::memory::allocator::init_global_allocator;
 use remdb::config::DefaultMemoryAllocator;
 
@@ -27,23 +27,17 @@ static CONFIG: DbConfig = unsafe {
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
-        ha_role: HARole::Auto,
-        #[cfg(feature = "ha")]
-        replication_mode: ReplicationMode::Async,
-        #[cfg(feature = "ha")]
-        heartbeat_interval_ms: 1000,
-        #[cfg(feature = "ha")]
-        failure_detection_ms: 3000,
-        #[cfg(feature = "ha")]
-        sync_timeout_ms: 2000,
-        #[cfg(feature = "ha")]
-        master_address: None,
-        #[cfg(feature = "ha")]
-        master_port: None,
-        #[cfg(feature = "ha")]
-        replication_port: 5556,
-        #[cfg(feature = "ha")]
-        heartbeat_port: 5557,
+        ha_config: Some(HAConfig {
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
+        }),
     }
 };
 

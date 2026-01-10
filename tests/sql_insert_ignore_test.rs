@@ -116,23 +116,17 @@ static TEST_DB_CONFIG: remdb::config::DbConfig = remdb::config::DbConfig {
     #[cfg(feature = "pubsub")]
     pubsub_config: None,
     #[cfg(feature = "ha")]
-    ha_role: remdb::config::HARole::Auto,
-    #[cfg(feature = "ha")]
-    replication_mode: remdb::config::ReplicationMode::Async,
-    #[cfg(feature = "ha")]
-    heartbeat_interval_ms: 1000,
-    #[cfg(feature = "ha")]
-    failure_detection_ms: 3000,
-    #[cfg(feature = "ha")]
-    sync_timeout_ms: 1000,
-    #[cfg(feature = "ha")]
-    master_address: None,
-    #[cfg(feature = "ha")]
-    master_port: None,
-    #[cfg(feature = "ha")]
-    replication_port: 5556,
-    #[cfg(feature = "ha")]
-    heartbeat_port: 5557,
+    ha_config: Some(remdb::config::HAConfig {
+        ha_role: remdb::ha::HARole::Auto,
+        replication_mode: remdb::ha::ReplicationMode::Async,
+        heartbeat_interval_ms: 1000,
+        failure_detection_ms: 3000,
+        sync_timeout_ms: 1000,
+        master_address: None,
+        master_port: None,
+        replication_port: 5556,
+        heartbeat_port: 5557,
+    }),
     time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
 };
 

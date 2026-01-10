@@ -3,7 +3,8 @@ use std::thread;
 use std::time::Duration; 
 use remdb::pubsub::{PubSub, PubSubConfig, UdpMode}; 
 use remdb::pubsub::topics::*; 
-use remdb::{RemDb, config::{DbConfig, MemoryAllocator, HARole, ReplicationMode}}; 
+use remdb::{RemDb, config::{DbConfig, MemoryAllocator, HAConfig}};
+use remdb::ha::{HARole, ReplicationMode}; 
 use remdb::time_series::table::TimeSeriesConfig; 
 use remdb::time_series::compression::CompressionType; 
 use core::ptr::NonNull; 
@@ -140,23 +141,17 @@ fn main() {
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
-        ha_role: role,
-        #[cfg(feature = "ha")]
-        replication_mode: replication_mode,
-        #[cfg(feature = "ha")]
-        heartbeat_interval_ms: 5000, // 5秒
-        #[cfg(feature = "ha")]
-        failure_detection_ms: 15000, // 15秒
-        #[cfg(feature = "ha")]
-        sync_timeout_ms: 5000, // 5秒
-        #[cfg(feature = "ha")]
-        master_address: master_ip,
-        #[cfg(feature = "ha")]
-        master_port: master_port,
-        #[cfg(feature = "ha")]
-        replication_port: 5556,
-        #[cfg(feature = "ha")]
-        heartbeat_port: 5557,
+        ha_config: Some(HAConfig {
+            ha_role: role,
+            replication_mode: replication_mode,
+            heartbeat_interval_ms: 5000, // 5秒
+            failure_detection_ms: 15000, // 15秒
+            sync_timeout_ms: 5000, // 5秒
+            master_address: master_ip,
+            master_port: master_port,
+            replication_port: 5556,
+            heartbeat_port: 5557,
+        }),
         time_series_defaults: TimeSeriesConfig {
             partition_duration_secs: 3600, // 1小时
             retention_period_secs: 7 * 24 * 3600, // 7天

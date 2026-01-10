@@ -1,6 +1,6 @@
 // 角色管理器实现
 
-use crate::config::HARole;
+use crate::ha::HARole;
 use crate::ha::{Result, HAError};
 use crate::pubsub;
 use crate::pubsub::{PubSubConfig, UdpMode, PubSubError};

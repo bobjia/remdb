@@ -1,4 +1,5 @@
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, HARole, ReplicationMode, TimeSeriesConfig};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, HAConfig, TimeSeriesConfig};
+use remdb::ha::{HARole, ReplicationMode};
 use remdb::transaction::{LogManager, LogItem, LogOperation};
 use remdb::platform::{Platform, FileMode, FileResult, FileHandle, SeekWhence, init_platform};
 
@@ -144,25 +145,19 @@ fn test_wal_log_manager_creation() {
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
         #[cfg(feature = "pubsub")]
-        pubsub_config: None,
-        #[cfg(feature = "ha")]
-        ha_role: HARole::Auto,
-        #[cfg(feature = "ha")]
-        replication_mode: ReplicationMode::Async,
-        #[cfg(feature = "ha")]
-        heartbeat_interval_ms: 1000,
-        #[cfg(feature = "ha")]
-        failure_detection_ms: 3000,
-        #[cfg(feature = "ha")]
-        sync_timeout_ms: 2000,
-        #[cfg(feature = "ha")]
-        master_address: None,
-        #[cfg(feature = "ha")]
-        master_port: None,
-        #[cfg(feature = "ha")]
-        replication_port: 5556,
-        #[cfg(feature = "ha")]
-        heartbeat_port: 5557,
+            pubsub_config: None,
+            #[cfg(feature = "ha")]
+            ha_config: Some(HAConfig {
+                ha_role: HARole::Auto,
+                replication_mode: ReplicationMode::Async,
+                heartbeat_interval_ms: 1000,
+                failure_detection_ms: 3000,
+                sync_timeout_ms: 2000,
+                master_address: None,
+                master_port: None,
+                replication_port: 5556,
+                heartbeat_port: 5557,
+            }),
     };
     
     // 测试创建 LogManager
@@ -202,23 +197,17 @@ fn test_wal_log_write_sync_mode() {
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
-        ha_role: HARole::Auto,
-        #[cfg(feature = "ha")]
-        replication_mode: ReplicationMode::Async,
-        #[cfg(feature = "ha")]
-        heartbeat_interval_ms: 1000,
-        #[cfg(feature = "ha")]
-        failure_detection_ms: 3000,
-        #[cfg(feature = "ha")]
-        sync_timeout_ms: 2000,
-        #[cfg(feature = "ha")]
-        master_address: None,
-        #[cfg(feature = "ha")]
-        master_port: None,
-        #[cfg(feature = "ha")]
-        replication_port: 5556,
-        #[cfg(feature = "ha")]
-        heartbeat_port: 5557,
+        ha_config: Some(HAConfig {
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
+        }),
     };
     
     unsafe {
@@ -276,23 +265,17 @@ fn test_wal_log_write_async_mode() {
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
-        ha_role: HARole::Auto,
-        #[cfg(feature = "ha")]
-        replication_mode: ReplicationMode::Async,
-        #[cfg(feature = "ha")]
-        heartbeat_interval_ms: 1000,
-        #[cfg(feature = "ha")]
-        failure_detection_ms: 3000,
-        #[cfg(feature = "ha")]
-        sync_timeout_ms: 2000,
-        #[cfg(feature = "ha")]
-        master_address: None,
-        #[cfg(feature = "ha")]
-        master_port: None,
-        #[cfg(feature = "ha")]
-        replication_port: 5556,
-        #[cfg(feature = "ha")]
-        heartbeat_port: 5557,
+        ha_config: Some(HAConfig {
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
+        }),
     };
     
     unsafe {
@@ -357,23 +340,17 @@ fn test_wal_checkpoint_mechanism() {
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
-        ha_role: HARole::Auto,
-        #[cfg(feature = "ha")]
-        replication_mode: ReplicationMode::Async,
-        #[cfg(feature = "ha")]
-        heartbeat_interval_ms: 1000,
-        #[cfg(feature = "ha")]
-        failure_detection_ms: 3000,
-        #[cfg(feature = "ha")]
-        sync_timeout_ms: 2000,
-        #[cfg(feature = "ha")]
-        master_address: None,
-        #[cfg(feature = "ha")]
-        master_port: None,
-        #[cfg(feature = "ha")]
-        replication_port: 5556,
-        #[cfg(feature = "ha")]
-        heartbeat_port: 5557,
+        ha_config: Some(HAConfig {
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
+        }),
     };
     
     unsafe {
@@ -438,23 +415,17 @@ fn test_wal_log_preallocation() {
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
-        ha_role: HARole::Auto,
-        #[cfg(feature = "ha")]
-        replication_mode: ReplicationMode::Async,
-        #[cfg(feature = "ha")]
-        heartbeat_interval_ms: 1000,
-        #[cfg(feature = "ha")]
-        failure_detection_ms: 3000,
-        #[cfg(feature = "ha")]
-        sync_timeout_ms: 2000,
-        #[cfg(feature = "ha")]
-        master_address: None,
-        #[cfg(feature = "ha")]
-        master_port: None,
-        #[cfg(feature = "ha")]
-        replication_port: 5556,
-        #[cfg(feature = "ha")]
-        heartbeat_port: 5557,
+        ha_config: Some(HAConfig {
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+            heartbeat_port: 5557,
+        }),
         log_path: "/tmp/test_wal_prealloc.log",
     };
     
@@ -503,23 +474,17 @@ fn test_wal_different_log_modes() {
             #[cfg(feature = "pubsub")]
             pubsub_config: None,
             #[cfg(feature = "ha")]
-            ha_role: HARole::Auto,
-            #[cfg(feature = "ha")]
-            replication_mode: ReplicationMode::Async,
-            #[cfg(feature = "ha")]
-            heartbeat_interval_ms: 1000,
-            #[cfg(feature = "ha")]
-            failure_detection_ms: 3000,
-            #[cfg(feature = "ha")]
-            sync_timeout_ms: 2000,
-            #[cfg(feature = "ha")]
-            master_address: None,
-            #[cfg(feature = "ha")]
-            master_port: None,
-            #[cfg(feature = "ha")]
-            replication_port: 5556,
-            #[cfg(feature = "ha")]
-            heartbeat_port: 5557,
+            ha_config: Some(HAConfig {
+                ha_role: HARole::Auto,
+                replication_mode: ReplicationMode::Async,
+                heartbeat_interval_ms: 1000,
+                failure_detection_ms: 3000,
+                sync_timeout_ms: 2000,
+                master_address: None,
+                master_port: None,
+                replication_port: 5556,
+                heartbeat_port: 5557,
+            }),
             log_path,
         };
         
@@ -583,23 +548,17 @@ fn test_wal_recovery_flow() {
             #[cfg(feature = "pubsub")]
             pubsub_config: None,
             #[cfg(feature = "ha")]
-            ha_role: HARole::Auto,
-            #[cfg(feature = "ha")]
-            replication_mode: ReplicationMode::Async,
-            #[cfg(feature = "ha")]
-            heartbeat_interval_ms: 1000,
-            #[cfg(feature = "ha")]
-            failure_detection_ms: 3000,
-            #[cfg(feature = "ha")]
-            sync_timeout_ms: 2000,
-            #[cfg(feature = "ha")]
-            master_address: None,
-            #[cfg(feature = "ha")]
-            master_port: None,
-            #[cfg(feature = "ha")]
-            replication_port: 5556,
-            #[cfg(feature = "ha")]
-            heartbeat_port: 5557,
+            ha_config: Some(HAConfig {
+                ha_role: HARole::Auto,
+                replication_mode: ReplicationMode::Async,
+                heartbeat_interval_ms: 1000,
+                failure_detection_ms: 3000,
+                sync_timeout_ms: 2000,
+                master_address: None,
+                master_port: None,
+                replication_port: 5556,
+                heartbeat_port: 5557,
+            }),
         };
     
     unsafe {

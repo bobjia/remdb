@@ -3,7 +3,7 @@
 use crate::ha::{Result, HAError};
 use crate::pubsub;
 use crate::pubsub::{PubSubConfig, UdpMode, PubSubError};
-use crate::config::HARole;
+use crate::ha::HARole;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use core::time::Duration;
 

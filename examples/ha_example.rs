@@ -5,7 +5,7 @@ extern crate remdb;
 
 use core::ptr::NonNull;
 use remdb::*;
-use remdb::config::{HARole, ReplicationMode};
+use remdb::ha::{HARole, ReplicationMode, HAConfig};
 
 // 定义内存缓冲区
 static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
