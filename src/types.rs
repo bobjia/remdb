@@ -649,8 +649,8 @@ impl FieldDef {
                     DataType::Int64 => constraints.push_str(&default.i64.to_string()),
                     DataType::Float32 => constraints.push_str(&default.float32.to_string()),
                     DataType::Float64 => constraints.push_str(&default.float64.to_string()),
-                    DataType::Timestamp => constraints.push_str(&default.time.value.to_string()),
-                    DataType::TimestampTZ => constraints.push_str(&default.time.value.to_string()),
+                    DataType::Timestamp => constraints.push_str(&default.timestamp.to_string()),
+                    DataType::TimestampTZ => constraints.push_str(&default.timestamp.to_string()),
                     DataType::Interval => constraints.push_str(&default.interval.value.to_string()),
                 }
             }

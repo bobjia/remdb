@@ -230,15 +230,27 @@ fn test_ha_manager_failover() {
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         log_segment_size: 1 * 1024 * 1024,
         retained_checkpoints: 1,
+        // PubSub配置（可选）
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
         // HA配置 - 从节点
+        #[cfg(feature = "ha")]
         ha_role: HARole::Slave,
+        #[cfg(feature = "ha")]
         replication_mode: ReplicationMode::Sync,
+        #[cfg(feature = "ha")]
         heartbeat_interval_ms: 1000,
+        #[cfg(feature = "ha")]
         failure_detection_ms: 3000,
+        #[cfg(feature = "ha")]
         sync_timeout_ms: 2000,
+        #[cfg(feature = "ha")]
         master_address: None,
+        #[cfg(feature = "ha")]
         master_port: None,
+        #[cfg(feature = "ha")]
         replication_port: 5556,
+        #[cfg(feature = "ha")]
         heartbeat_port: 5557,
     };
     
@@ -319,15 +331,27 @@ fn test_ha_manager() {
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         log_segment_size: 1 * 1024 * 1024,
         retained_checkpoints: 1,
+        // PubSub配置（可选）
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
         // HA配置
+        #[cfg(feature = "ha")]
         ha_role: HARole::Master,
+        #[cfg(feature = "ha")]
         replication_mode: ReplicationMode::Sync,
+        #[cfg(feature = "ha")]
         heartbeat_interval_ms: 1000,
+        #[cfg(feature = "ha")]
         failure_detection_ms: 3000,
+        #[cfg(feature = "ha")]
         sync_timeout_ms: 2000,
+        #[cfg(feature = "ha")]
         master_address: None,
+        #[cfg(feature = "ha")]
         master_port: None,
+        #[cfg(feature = "ha")]
         replication_port: 5556,
+        #[cfg(feature = "ha")]
         heartbeat_port: 5557,
     };
     
@@ -372,15 +396,27 @@ fn test_ha_manager_role_switch() {
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         log_segment_size: 1 * 1024 * 1024,
         retained_checkpoints: 1,
+        // PubSub配置（可选）
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
         // HA配置
+        #[cfg(feature = "ha")]
         ha_role: HARole::Master,
+        #[cfg(feature = "ha")]
         replication_mode: ReplicationMode::Sync,
+        #[cfg(feature = "ha")]
         heartbeat_interval_ms: 1000,
+        #[cfg(feature = "ha")]
         failure_detection_ms: 3000,
+        #[cfg(feature = "ha")]
         sync_timeout_ms: 2000,
+        #[cfg(feature = "ha")]
         master_address: None,
+        #[cfg(feature = "ha")]
         master_port: None,
+        #[cfg(feature = "ha")]
         replication_port: 5556,
+        #[cfg(feature = "ha")]
         heartbeat_port: 5557,
     };
     
@@ -446,14 +482,25 @@ fn test_ha_config_validation() {
         log_segment_size: 1 * 1024 * 1024,
         retained_checkpoints: 1,
         // 无效HA配置
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
         ha_role: HARole::Master,
+        #[cfg(feature = "ha")]
         replication_mode: ReplicationMode::Sync,
+        #[cfg(feature = "ha")]
         heartbeat_interval_ms: 50, // 心跳间隔太小，小于最小值100ms
+        #[cfg(feature = "ha")]
         failure_detection_ms: 3000,
+        #[cfg(feature = "ha")]
         sync_timeout_ms: 2000,
+        #[cfg(feature = "ha")]
         master_address: None,
+        #[cfg(feature = "ha")]
         master_port: None,
+        #[cfg(feature = "ha")]
         replication_port: 5556,
+        #[cfg(feature = "ha")]
         heartbeat_port: 5557,
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     };
@@ -477,14 +524,25 @@ fn test_ha_config_validation() {
         log_segment_size: 1 * 1024 * 1024,
         retained_checkpoints: 1,
         // 有效HA配置
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
         ha_role: HARole::Master,
+        #[cfg(feature = "ha")]
         replication_mode: ReplicationMode::Sync,
+        #[cfg(feature = "ha")]
         heartbeat_interval_ms: 1000, // 1秒
+        #[cfg(feature = "ha")]
         failure_detection_ms: 3000, // 3秒
+        #[cfg(feature = "ha")]
         sync_timeout_ms: 2000, // 2秒
+        #[cfg(feature = "ha")]
         master_address: None,
+        #[cfg(feature = "ha")]
         master_port: None,
+        #[cfg(feature = "ha")]
         replication_port: 5556,
+        #[cfg(feature = "ha")]
         heartbeat_port: 5557,
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     };

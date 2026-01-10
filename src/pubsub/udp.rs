@@ -260,7 +260,7 @@ mod baremetal {
         /// 创建新的Baremetal UDP套接字
         pub fn new(
             _mode: UdpMode,
-            _multicast_addr: Option<alloc::net::IpAddr>,
+            _multicast_addr: Option<std::net::IpAddr>,
             _port: u16,
             _buffer_size: usize
         ) -> Result<Self> {

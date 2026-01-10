@@ -439,6 +439,7 @@ impl From<crate::RemDbError> for RemDbError {
             crate::RemDbError::InvalidRecordSize => RemDbError::InvalidRecordSize,
             crate::RemDbError::InvalidSqlQuery => RemDbError::UnsupportedOperation,
             crate::RemDbError::InternalError => RemDbError::UnsupportedOperation,
+            crate::RemDbError::NoRecordsToOverwrite => RemDbError::RecordNotFound,
         }
     }
 }

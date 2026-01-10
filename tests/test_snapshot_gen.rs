@@ -56,16 +56,27 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     log_prealloc_size: 1 * 1024 * 1024,
     log_segment_size: 16 * 1024 * 1024,
     retained_checkpoints: 3,
-    ha_role: config::HARole::Auto,
-    replication_mode: config::ReplicationMode::Async,
-    heartbeat_interval_ms: 1000,
-    failure_detection_ms: 3000,
-    sync_timeout_ms: 2000,
-    master_address: None,
-    master_port: None,
-    replication_port: 5556,
-    heartbeat_port: 5557,
     time_series_defaults: config::TimeSeriesConfig::DEFAULT,
+    #[cfg(feature = "pubsub")]
+    pubsub_config: None,
+    #[cfg(feature = "ha")]
+    ha_role: config::HARole::Auto,
+    #[cfg(feature = "ha")]
+    replication_mode: config::ReplicationMode::Async,
+    #[cfg(feature = "ha")]
+    heartbeat_interval_ms: 1000,
+    #[cfg(feature = "ha")]
+    failure_detection_ms: 3000,
+    #[cfg(feature = "ha")]
+    sync_timeout_ms: 2000,
+    #[cfg(feature = "ha")]
+    master_address: None,
+    #[cfg(feature = "ha")]
+    master_port: None,
+    #[cfg(feature = "ha")]
+    replication_port: 5556,
+    #[cfg(feature = "ha")]
+    heartbeat_port: 5557,
 };
 
 // 静态缓冲区用于测试

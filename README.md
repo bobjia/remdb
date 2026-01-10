@@ -51,8 +51,18 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
 remdb = { path = "./remdb", default-features = false }
 
 # 可选特性
-# features = ["std", "posix"]
+# features = ["std", "posix", "pubsub", "ha"]
+# 注意：ha依赖pubsub功能，启用ha时会自动启用pubsub
 ```
+
+### 特性说明
+
+| 特性名 | 依赖 | 描述 |
+|-------|------|------|
+| std | - | 启用标准库支持 |
+| posix | - | 启用POSIX平台支持 |
+| pubsub | std | 启用基于UDP的高可靠数据订阅与发布功能 |
+| ha | pubsub | 启用高可用支持（主从复制机制） |
 
 ## Rust语言的三种使用方式
 
@@ -233,6 +243,16 @@ fn main() {
         low_power_mode_supported: false,
         low_power_max_records: None,
         memory_allocator: &allocator,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_role: remdb::config::HARole::Auto,
+        #[cfg(feature = "ha")]
+        replication_mode: remdb::config::ReplicationMode::Asynchronous,
+        #[cfg(feature = "ha")]
+        ha_config: None,
+        #[cfg(feature = "ha")]
+        replication_sync_timeout: 5000,
     };
     
     // 初始化表和索引数组
@@ -347,6 +367,8 @@ public class RemdbExample {
 ```
 
 ### 基于UDP的高可靠数据订阅与发布
+
+> 注意：使用此功能需要在Cargo.toml中启用`pubsub`特性
 
 remdb提供了基于UDP的高可靠数据订阅与发布机制，支持单播、广播和组播模式，适合分布式系统中的数据同步。系统内置了多种预定义主题，用于发布不同类型的数据库事件：
 
@@ -532,7 +554,19 @@ features = ["baremetal"]
 
 ## 测试
 
-### 运行单元测试
+### 运行核心库测试
+
+```bash
+cargo test --lib
+```
+
+### 运行带有特定特性的核心库测试
+
+```bash
+cargo test --lib --features "pubsub ha"
+```
+
+### 运行完整测试套件
 
 ```bash
 cargo test
@@ -572,6 +606,13 @@ cargo check --no-default-features --features=baremetal
    cargo build --target thumbv7m-none-eabi --no-default-features --features=baremetal
    ```
 
+### 测试注意事项
+
+- 核心库测试（`cargo test --lib`）不依赖于特定特性，是验证基本功能的最佳方式
+- 完整测试套件（`cargo test`）可能会因为示例和集成测试依赖特定特性而失败
+- 带有特性的测试（如`--features "pubsub ha"`）需要确保相关特性已正确配置
+- 部分示例和集成测试可能需要特定的运行环境或配置
+
 ## 示例
 
 查看`examples`目录下的示例代码：
@@ -587,6 +628,8 @@ cargo check --no-default-features --features=baremetal
 - `test_remdb_server.rs`：主从复制示例，展示如何使用同步或异步复制模式运行主从服务器
 
 ### 主从复制示例
+
+> 注意：使用此功能需要在Cargo.toml中启用`ha`特性
 
 `test_remdb_server.rs`示例展示了如何使用主从复制功能，支持通过命令行参数设置同步或异步复制模式：
 

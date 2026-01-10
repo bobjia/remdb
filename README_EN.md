@@ -51,8 +51,18 @@ Add remdb to your Cargo.toml file:
 remdb = { path = "./remdb", default-features = false }
 
 # Optional features
-# features = ["std", "posix"]
+# features = ["std", "posix", "pubsub", "ha"]
+# Note: ha depends on pubsub feature, enabling ha will automatically enable pubsub
 ```
+
+### Feature Description
+
+| Feature | Dependencies | Description |
+|--------|--------------|-------------|
+| std | - | Enable standard library support |
+| posix | - | Enable POSIX platform support |
+| pubsub | std | Enable UDP-based reliable data publish/subscribe functionality |
+| ha | pubsub | Enable high availability support (master-slave replication mechanism) |
 
 ## Three Ways to Use remdb with Rust
 
@@ -233,6 +243,16 @@ fn main() {
         low_power_mode_supported: false,
         low_power_max_records: None,
         memory_allocator: &allocator,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_role: remdb::config::HARole::Auto,
+        #[cfg(feature = "ha")]
+        replication_mode: remdb::config::ReplicationMode::Asynchronous,
+        #[cfg(feature = "ha")]
+        ha_config: None,
+        #[cfg(feature = "ha")]
+        replication_sync_timeout: 5000,
     };
     
     // Initialize table and index arrays
@@ -347,6 +367,8 @@ public class RemdbExample {
 ```
 
 ### UDP-based Reliable Data Subscription and Publishing
+
+> Note: Using this feature requires enabling the `pubsub` feature in Cargo.toml
 
 remdb provides a UDP-based reliable data publish/subscribe mechanism, supporting unicast, broadcast, and multicast modes, suitable for data synchronization in distributed systems. The system includes several predefined topics for publishing different types of database events:
 
@@ -532,7 +554,19 @@ features = ["baremetal"]
 
 ## Testing
 
-### Run Unit Tests
+### Run Core Library Tests
+
+```bash
+cargo test --lib
+```
+
+### Run Core Library Tests with Specific Features
+
+```bash
+cargo test --lib --features "pubsub ha"
+```
+
+### Run Full Test Suite
 
 ```bash
 cargo test
@@ -572,6 +606,13 @@ Due to the test framework's dependency on the std library, directly running `car
    cargo build --target thumbv7m-none-eabi --no-default-features --features=baremetal
    ```
 
+### Testing Notes
+
+- Core library tests (`cargo test --lib`) do not depend on specific features and are the best way to verify basic functionality
+- The full test suite (`cargo test`) may fail because examples and integration tests depend on specific features
+- Tests with features (such as `--features "pubsub ha"`) require that related features are correctly configured
+- Some examples and integration tests may require specific runtime environments or configurations
+
 ## Examples
 
 Check the examples directory for sample code:
@@ -587,6 +628,8 @@ Check the examples directory for sample code:
 - `test_remdb_server.rs`: Master-slave replication example demonstrating how to run master and slave servers with synchronous or asynchronous replication mode
 
 ### Master-Slave Replication Example
+
+> Note: Using this feature requires enabling the `ha` feature in Cargo.toml
 
 The `test_remdb_server.rs` example demonstrates how to use the master-slave replication feature, supporting setting synchronous or asynchronous replication mode via command line arguments:
 

@@ -137,14 +137,25 @@ fn main() {
         log_prealloc_size: 4 * 1024 * 1024, // 4MB
         log_segment_size: 16 * 1024 * 1024, // 16MB
         retained_checkpoints: 2,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
         ha_role: role,
+        #[cfg(feature = "ha")]
         replication_mode: replication_mode,
+        #[cfg(feature = "ha")]
         heartbeat_interval_ms: 5000, // 5秒
+        #[cfg(feature = "ha")]
         failure_detection_ms: 15000, // 15秒
+        #[cfg(feature = "ha")]
         sync_timeout_ms: 5000, // 5秒
+        #[cfg(feature = "ha")]
         master_address: master_ip,
+        #[cfg(feature = "ha")]
         master_port: master_port,
+        #[cfg(feature = "ha")]
         replication_port: 5556,
+        #[cfg(feature = "ha")]
         heartbeat_port: 5557,
         time_series_defaults: TimeSeriesConfig {
             partition_duration_secs: 3600, // 1小时
@@ -251,7 +262,7 @@ fn main() {
             } 
             
             // 直接使用预定义的表内容主题ID发布，不需要动态注册 
-            let users_table_topic = get_table_content_topic("users"); 
+            let users_table_topic = format!("table.{}", "users"); 
             let table_topic_id = 12; // 预定义的表内容主题ID 
             
             // 循环执行SQL操作，模拟数据变化 

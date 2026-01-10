@@ -1,5 +1,7 @@
 // 发布/订阅模块集成测试
 
+#![cfg(feature = "pubsub")]
+
 #[cfg(test)]
 mod tests {
     use std::net::IpAddr;

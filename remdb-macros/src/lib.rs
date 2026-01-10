@@ -457,17 +457,30 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             log_prealloc_size: 1 * 1024 * 1024, // 默认1MB预分配
             log_segment_size: 16 * 1024 * 1024, // 默认16MB分段
             retained_checkpoints: 3, // 保留3个检查点
-            // HA相关配置
-            ha_role: remdb::config::HARole::Auto,
-            replication_mode: remdb::config::ReplicationMode::Async,
-            heartbeat_interval_ms: 1000, // 默认1秒
-            failure_detection_ms: 3000, // 默认3秒
-            sync_timeout_ms: 2000, // 默认2秒
-            master_address: None,
-            master_port: None,
-            replication_port: 5556,
-            heartbeat_port: 5557,
+            // 时序数据默认配置
             time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
+            // PubSub配置（可选）
+            #[cfg(feature = "pubsub")]
+            pubsub_config: None,
+            // HA相关配置（可选）
+            #[cfg(feature = "ha")]
+            ha_role: remdb::config::HARole::Auto,
+            #[cfg(feature = "ha")]
+            replication_mode: remdb::config::ReplicationMode::Async,
+            #[cfg(feature = "ha")]
+            heartbeat_interval_ms: 1000, // 默认1秒
+            #[cfg(feature = "ha")]
+            failure_detection_ms: 3000, // 默认3秒
+            #[cfg(feature = "ha")]
+            sync_timeout_ms: 2000, // 默认2秒
+            #[cfg(feature = "ha")]
+            master_address: None,
+            #[cfg(feature = "ha")]
+            master_port: None,
+            #[cfg(feature = "ha")]
+            replication_port: 5556,
+            #[cfg(feature = "ha")]
+            heartbeat_port: 5557,
         };
     };
     

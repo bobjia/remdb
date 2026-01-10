@@ -13,7 +13,9 @@ pub mod memory;
 pub mod platform;
 pub mod monitor;
 pub mod sql;
+#[cfg(feature = "pubsub")]
 pub mod pubsub;
+#[cfg(feature = "ha")]
 pub mod ha;
 pub mod time_series;
 
@@ -108,6 +110,7 @@ unsafe impl Sync for RemDb {}
 impl Drop for RemDb {
     fn drop(&mut self) {
         // 关闭HA管理器
+        #[cfg(feature = "ha")]
         if let Err(_e) = crate::ha::shutdown() {
             // 关闭失败，记录错误但不影响程序退出
         }
@@ -392,6 +395,7 @@ impl RemDb {
         }
         
         // 初始化HA管理器
+        #[cfg(feature = "ha")]
         if let Err(_e) = crate::ha::init(self.config) {
             // HA初始化失败，记录错误但不影响数据库主体功能
             // 可以通过日志或监控系统报告
@@ -694,6 +698,7 @@ impl RemDb {
         let snapshot = self.metrics.snapshot();
         
         // Publish metrics to pubsub
+        #[cfg(feature = "pubsub")]
         if let Some(topic_id) = crate::pubsub::get_topic_id(crate::pubsub::topics::METRICS_TOPIC) {
             let metrics_bytes = snapshot.to_bytes();
             let _ = crate::pubsub::publish(topic_id, &metrics_bytes);
@@ -727,6 +732,7 @@ impl RemDb {
         };
         
         // Publish health status to pubsub
+        #[cfg(feature = "pubsub")]
         if let Some(topic_id) = crate::pubsub::get_topic_id(crate::pubsub::topics::HEALTH_STATUS_TOPIC) {
             let health_bytes = health_result.to_bytes();
             let _ = crate::pubsub::publish(topic_id, &health_bytes);
@@ -865,11 +871,13 @@ impl DdlExecutor for RemDb {
         self.secondary_indices.push(None);
         
         // Publish table creation to pubsub
+        #[cfg(feature = "pubsub")]
         let table_creation_msg = alloc::format!("CREATE:table={},id={},fields={}", 
             table_name_static, 
             table_def.id, 
             table_def.fields.len());
         
+        #[cfg(feature = "pubsub")]
         if let Some(topic_id) = crate::pubsub::get_topic_id(crate::pubsub::topics::TABLES_TOPIC) {
             let _ = crate::pubsub::publish(topic_id, table_creation_msg.as_bytes());
         }
@@ -1259,7 +1267,7 @@ impl RemDb {
             not_null: true,
             unique: false,
             auto_increment: false,
-            default_value: Some(Value { timestamp: 0 }),
+            default_value: Some(Value { time: crate::types::db_timestamp::new(0, 0, 0, 0) }),
         });
         offset += time_field_size;
         record_size += time_field_size;

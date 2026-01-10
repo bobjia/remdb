@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use remdb::pubsub::{PubSub, PubSubConfig, UdpMode};
+#[cfg(feature = "pubsub")]
 use remdb::pubsub::topics::*;
 
 // 主题ID定义
@@ -40,17 +41,19 @@ fn main() {
     pubsub.init().expect("Failed to initialize PubSub");
     
     // 注册所有预定义主题
-    pubsub.register_topic(WAL_INSERT_TOPIC, WAL_INSERT_TOPIC_ID).expect("Failed to register WAL insert topic");
-    pubsub.register_topic(WAL_UPDATE_TOPIC, WAL_UPDATE_TOPIC_ID).expect("Failed to register WAL update topic");
-    pubsub.register_topic(WAL_DELETE_TOPIC, WAL_DELETE_TOPIC_ID).expect("Failed to register WAL delete topic");
-    pubsub.register_topic(WAL_TIMESERIES_INSERT_TOPIC, WAL_TIMESERIES_INSERT_TOPIC_ID).expect("Failed to register WAL timeseries insert topic");
-    pubsub.register_topic(WAL_COMMIT_TOPIC, WAL_COMMIT_TOPIC_ID).expect("Failed to register WAL commit topic");
-    pubsub.register_topic(WAL_ABORT_TOPIC, WAL_ABORT_TOPIC_ID).expect("Failed to register WAL abort topic");
-    pubsub.register_topic(WAL_CHECKPOINT_TOPIC, WAL_CHECKPOINT_TOPIC_ID).expect("Failed to register WAL checkpoint topic");
-    pubsub.register_topic(WAL_ALL_TOPIC, WAL_ALL_TOPIC_ID).expect("Failed to register WAL all topic");
-    pubsub.register_topic(TABLES_TOPIC, TABLES_TOPIC_ID).expect("Failed to register tables topic");
-    pubsub.register_topic(METRICS_TOPIC, METRICS_TOPIC_ID).expect("Failed to register metrics topic");
-    pubsub.register_topic(HEALTH_STATUS_TOPIC, HEALTH_STATUS_TOPIC_ID).expect("Failed to register health status topic");
+    #[cfg(feature = "pubsub")] {
+        pubsub.register_topic(WAL_INSERT_TOPIC, WAL_INSERT_TOPIC_ID).expect("Failed to register WAL insert topic");
+        pubsub.register_topic(WAL_UPDATE_TOPIC, WAL_UPDATE_TOPIC_ID).expect("Failed to register WAL update topic");
+        pubsub.register_topic(WAL_DELETE_TOPIC, WAL_DELETE_TOPIC_ID).expect("Failed to register WAL delete topic");
+        pubsub.register_topic(WAL_TIMESERIES_INSERT_TOPIC, WAL_TIMESERIES_INSERT_TOPIC_ID).expect("Failed to register WAL timeseries insert topic");
+        pubsub.register_topic(WAL_COMMIT_TOPIC, WAL_COMMIT_TOPIC_ID).expect("Failed to register WAL commit topic");
+        pubsub.register_topic(WAL_ABORT_TOPIC, WAL_ABORT_TOPIC_ID).expect("Failed to register WAL abort topic");
+        pubsub.register_topic(WAL_CHECKPOINT_TOPIC, WAL_CHECKPOINT_TOPIC_ID).expect("Failed to register WAL checkpoint topic");
+        pubsub.register_topic(WAL_ALL_TOPIC, WAL_ALL_TOPIC_ID).expect("Failed to register WAL all topic");
+        pubsub.register_topic(TABLES_TOPIC, TABLES_TOPIC_ID).expect("Failed to register tables topic");
+        pubsub.register_topic(METRICS_TOPIC, METRICS_TOPIC_ID).expect("Failed to register metrics topic");
+        pubsub.register_topic(HEALTH_STATUS_TOPIC, HEALTH_STATUS_TOPIC_ID).expect("Failed to register health status topic");
+    }
     
     // 注册示例表内容主题
     let test_table_topic = format!("table.test_table");
@@ -95,40 +98,42 @@ fn main() {
     let running_clone_wal = running.clone();
     let server_clone_wal = pubsub_clone.clone();
     
-    let _wal_thread = thread::spawn(move || {
-        let mut interval = Duration::from_millis(1000);
-        let mut log_id = 0;
-        let wal_topics = [
-            (WAL_INSERT_TOPIC, WAL_INSERT_TOPIC_ID, "INSERT"),
-            (WAL_UPDATE_TOPIC, WAL_UPDATE_TOPIC_ID, "UPDATE"),
-            (WAL_DELETE_TOPIC, WAL_DELETE_TOPIC_ID, "DELETE"),
-            (WAL_TIMESERIES_INSERT_TOPIC, WAL_TIMESERIES_INSERT_TOPIC_ID, "TIMESERIES_INSERT"),
-            (WAL_COMMIT_TOPIC, WAL_COMMIT_TOPIC_ID, "COMMIT"),
-            (WAL_ABORT_TOPIC, WAL_ABORT_TOPIC_ID, "ABORT"),
-            (WAL_CHECKPOINT_TOPIC, WAL_CHECKPOINT_TOPIC_ID, "CHECKPOINT"),
-        ];
-        
-        while *running_clone_wal.lock().unwrap() {
-            // 循环遍历所有WAL主题类型
-            let (topic_name, topic_id, op_type) = wal_topics[log_id % wal_topics.len()];
-            let wal_data = format!("WAL_LOG_{}: Operation={}, Table=test_table, ID={}, Data={}", log_id, op_type, log_id, format!("test_data_{}", log_id));
+    #[cfg(feature = "pubsub")] {
+        let _wal_thread = thread::spawn(move || {
+            let mut interval = Duration::from_millis(1000);
+            let mut log_id = 0;
+            let wal_topics = [
+                (WAL_INSERT_TOPIC, WAL_INSERT_TOPIC_ID, "INSERT"),
+                (WAL_UPDATE_TOPIC, WAL_UPDATE_TOPIC_ID, "UPDATE"),
+                (WAL_DELETE_TOPIC, WAL_DELETE_TOPIC_ID, "DELETE"),
+                (WAL_TIMESERIES_INSERT_TOPIC, WAL_TIMESERIES_INSERT_TOPIC_ID, "TIMESERIES_INSERT"),
+                (WAL_COMMIT_TOPIC, WAL_COMMIT_TOPIC_ID, "COMMIT"),
+                (WAL_ABORT_TOPIC, WAL_ABORT_TOPIC_ID, "ABORT"),
+                (WAL_CHECKPOINT_TOPIC, WAL_CHECKPOINT_TOPIC_ID, "CHECKPOINT"),
+            ];
             
-            // 发布到特定WAL主题
-            match server_clone_wal.lock().unwrap().publish(topic_id, wal_data.as_bytes()) {
-                Ok(_) => println!("Published {}: {}", topic_name, wal_data),
-                Err(e) => println!("Failed to publish {}: {:?}", topic_name, e),
+            while *running_clone_wal.lock().unwrap() {
+                // 循环遍历所有WAL主题类型
+                let (topic_name, topic_id, op_type) = wal_topics[log_id % wal_topics.len()];
+                let wal_data = format!("WAL_LOG_{}: Operation={}, Table=test_table, ID={}, Data={}", log_id, op_type, log_id, format!("test_data_{}", log_id));
+                
+                // 发布到特定WAL主题
+                match server_clone_wal.lock().unwrap().publish(topic_id, wal_data.as_bytes()) {
+                    Ok(_) => println!("Published {}: {}", topic_name, wal_data),
+                    Err(e) => println!("Failed to publish {}: {:?}", topic_name, e),
+                }
+                
+                // 同时发布到wal.*主题
+                match server_clone_wal.lock().unwrap().publish(WAL_ALL_TOPIC_ID, wal_data.as_bytes()) {
+                    Ok(_) => (),
+                    Err(e) => println!("Failed to publish to wal.*: {:?}", e),
+                }
+                
+                log_id += 1;
+                thread::sleep(interval);
             }
-            
-            // 同时发布到wal.*主题
-            match server_clone_wal.lock().unwrap().publish(WAL_ALL_TOPIC_ID, wal_data.as_bytes()) {
-                Ok(_) => (),
-                Err(e) => println!("Failed to publish to wal.*: {:?}", e),
-            }
-            
-            log_id += 1;
-            thread::sleep(interval);
-        }
-    });
+        });
+    }
     
     // 启动表内容变更模拟发布线程
     let running_clone_table = running.clone();
@@ -137,7 +142,10 @@ fn main() {
     let _table_thread = thread::spawn(move || {
         let mut interval = Duration::from_millis(2000);
         let mut record_id = 0;
+        #[cfg(feature = "pubsub")]
         let test_table_topic = get_table_content_topic("test_table");
+        #[cfg(not(feature = "pubsub"))]
+        let test_table_topic = "table.test_table";
         
         while *running_clone_table.lock().unwrap() {
             let table_data = format!("TABLE_CONTENT_{}: Table=test_table, ID={}, Column1=value_{}, Column2={}", record_id, record_id, record_id, record_id * 2);

@@ -12,30 +12,42 @@ fn main() {
     
     // 2. 创建数据库配置
     println!("\n2. 创建数据库配置...");
+    static ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
     static DB_CONFIG: config::DbConfig = config::DbConfig {
         tables: &[],
         total_memory: 64 * 1024 * 1024, // 64MB
         low_power_mode_supported: false,
         low_power_max_records: None,
-        default_max_records: 100000,
-        memory_allocator: &config::DefaultMemoryAllocator,
+        default_max_records: 1000,
+        memory_allocator: &ALLOCATOR,
         log_path: "time_series_complete.wal",
         log_mode: config::LogMode::Async,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
         log_prealloc_size: 1 * 1024 * 1024,
-        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
+        retained_checkpoints: 2,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
         ha_role: config::HARole::Auto,
+        #[cfg(feature = "ha")]
         replication_mode: config::ReplicationMode::Async,
+        #[cfg(feature = "ha")]
         heartbeat_interval_ms: 1000,
+        #[cfg(feature = "ha")]
         failure_detection_ms: 3000,
+        #[cfg(feature = "ha")]
         sync_timeout_ms: 2000,
+        #[cfg(feature = "ha")]
         master_address: None,
+        #[cfg(feature = "ha")]
         master_port: None,
+        #[cfg(feature = "ha")]
         replication_port: 5556,
+        #[cfg(feature = "ha")]
         heartbeat_port: 5557,
+        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     };
     
     // 3. 初始化数据库

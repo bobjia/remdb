@@ -395,10 +395,10 @@ fn register_predefined_topics(pubsub: &mut PubSub) -> Result<()> {
         pubsub.register_topic(topic, i as u16 + 1)?;
     }
     
-    // Register core topics
+    // Register core topics (start from 11 to avoid overlap with WAL topics)
     let core_topics = get_core_topics();
     for (i, topic) in core_topics.iter().enumerate() {
-        pubsub.register_topic(topic, i as u16 + 10)?;
+        pubsub.register_topic(topic, i as u16 + 11)?;
     }
     
     Ok(())

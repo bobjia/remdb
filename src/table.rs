@@ -560,6 +560,7 @@ impl MemoryTable {
     }
     
     // 内联publish_to_pubsub逻辑，避免borrow checker问题
+    #[cfg(feature = "pubsub")]
     unsafe fn publish_to_pubsub_inline(table_name: &str, record_size: usize, id: usize, record_data: *const u8, is_insert: bool) {
         let table_topic = crate::pubsub::topics::get_table_content_topic(table_name);
         
@@ -726,6 +727,7 @@ impl MemoryTable {
     }
     
     /// 发布表数据变更到pubsub
+    #[cfg(feature = "pubsub")]
     unsafe fn publish_to_pubsub(&self, id: usize, record_data: *const u8, is_insert: bool) {
         let table_name = self.def.name;
         let table_topic = crate::pubsub::topics::get_table_content_topic(table_name);
@@ -804,7 +806,9 @@ impl MemoryTable {
             }
             crate::types::DataType::String => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
-                memcpy(str_value.as_mut_ptr(), field_ptr, field.size);
+                // 只复制不超过MAX_STRING_LEN的字节，避免缓冲区溢出
+                let copy_size = core::cmp::min(field.size, crate::types::MAX_STRING_LEN);
+                memcpy(str_value.as_mut_ptr(), field_ptr, copy_size);
                 Value { string: str_value }
             },
             crate::types::DataType::Interval => {

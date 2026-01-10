@@ -71,21 +71,32 @@ fn main() {
         log_prealloc_size: 4 * 1024 * 1024, // 4MB
         log_segment_size: 16 * 1024 * 1024, // 16MB
         retained_checkpoints: 2,
-        ha_role: remdb::config::HARole::Auto,
-        replication_mode: remdb::config::ReplicationMode::Async,
-        heartbeat_interval_ms: 5000, // 5秒
-        failure_detection_ms: 15000, // 15秒
-        sync_timeout_ms: 5000, // 5秒
-        master_address: None,
-        master_port: None,
-        replication_port: 5556,
-        heartbeat_port: 5557,
         time_series_defaults: TimeSeriesConfig {
             partition_duration_secs: 3600, // 1小时
             retention_period_secs: 7 * 24 * 3600, // 7天
             compression: CompressionType::None,
             max_partitions: 100,
         },
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_role: remdb::config::HARole::Auto,
+        #[cfg(feature = "ha")]
+        replication_mode: remdb::config::ReplicationMode::Async,
+        #[cfg(feature = "ha")]
+        heartbeat_interval_ms: 5000, // 5秒
+        #[cfg(feature = "ha")]
+        failure_detection_ms: 15000, // 15秒
+        #[cfg(feature = "ha")]
+        sync_timeout_ms: 5000, // 5秒
+        #[cfg(feature = "ha")]
+        master_address: None,
+        #[cfg(feature = "ha")]
+        master_port: None,
+        #[cfg(feature = "ha")]
+        replication_port: 5556,
+        #[cfg(feature = "ha")]
+        heartbeat_port: 5557,
     };
     
     // 创建数据库实例
@@ -183,7 +194,7 @@ fn main() {
         }
         
         // 直接使用预定义的表内容主题ID发布，不需要动态注册
-        let users_table_topic = get_table_content_topic("users");
+        let users_table_topic = format!("table.{}", "users");
         let table_topic_id = 12; // 预定义的表内容主题ID
         
         // 插入数据

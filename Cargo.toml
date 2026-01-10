@@ -36,12 +36,14 @@ name = "database"
 harness = false
 
 [features]
-default = ["std", "posix"]
+default = ["std", "posix", "ha", "pubsub"]
 std = ["rand", "socket2"]
 posix = ["std"]
 baremetal = []
 debug = []
 c-api = []
+pubsub = ["std"]
+ha = ["pubsub"]
 
 [profile.release]
 opt-level = "z"          # 优化大小
