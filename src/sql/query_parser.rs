@@ -72,8 +72,8 @@ pub struct SqlQuery {
     pub index_column: Option<String>,
     /// 索引类型（用于CREATE INDEX）
     pub index_type: Option<String>,
-    /// 更新的字段值对（用于UPDATE）：(字段名, 新值)
-    pub update_pairs: Vec<(String, Value)>,
+    /// 更新的字段值对（用于UPDATE）：(字段名, 新值表达式)
+    pub update_pairs: Vec<(String, Expression)>,
     /// 是否忽略重复键
     pub ignore_duplicates: bool,
 }
@@ -365,9 +365,9 @@ impl SqlParser {
             self.expect_char('=')?;
             
             self.skip_whitespace();
-            let value = self.parse_value()?;
+            let value_expr = self.parse_expression()?;
             
-            update_pairs.push((field_name, value));
+            update_pairs.push((field_name, value_expr));
             
             self.skip_whitespace();
             if self.match_char(',') {
@@ -999,6 +999,18 @@ impl SqlParser {
                         alias: None,
                     });
                 }
+            } else if identifier.eq_ignore_ascii_case("TRUE") {
+                // 布尔常量TRUE
+                return Ok(Expression::Constant {
+                    value: Value::Boolean(true),
+                    alias: None,
+                });
+            } else if identifier.eq_ignore_ascii_case("FALSE") {
+                // 布尔常量FALSE
+                return Ok(Expression::Constant {
+                    value: Value::Boolean(false),
+                    alias: None,
+                });
             } else {
                 // 不是函数调用，返回字段表达式
                 return Ok(Expression::Field {

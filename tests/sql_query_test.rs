@@ -347,6 +347,9 @@ fn test_sql_query() {
     
     // 测试1: 基本UPDATE语句
     let result = db.sql_query("UPDATE TEST_TABLE SET age = 35, active = false WHERE id = 1");
+    if let Err(e) = &result {
+        println!("UPDATE失败原因: {:?}", e);
+    }
     assert!(result.is_ok(), "基本UPDATE应该成功");
     
     // 验证UPDATE结果
@@ -367,6 +370,17 @@ fn test_sql_query() {
     let result = db.sql_query("UPDATE TEST_TABLE SET age = 100 WHERE id = 999");
     assert!(result.is_ok(), "更新不存在记录的UPDATE应该成功（影响0行）");
     
+
+    // 测试4: 值嵌套UPDATE语句
+    let result = db.sql_query("UPDATE TEST_TABLE SET age = age +1, active = false WHERE id = 1");
+    assert!(result.is_ok(), " 值嵌套UPDATE应该成功");
+
+    // 验证UPDATE结果
+    let result = db.sql_query("SELECT age, active FROM TEST_TABLE WHERE id = 1");
+    assert!(result.is_ok(), "验证UPDATE结果的SELECT应该成功");
+    let result_set = result.unwrap();
+    assert_eq!(result_set.row_count(), 1, "UPDATE后应该找到1条记录");
+
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
 }
