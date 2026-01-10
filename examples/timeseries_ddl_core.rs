@@ -1,4 +1,4 @@
-use remdb::{RemDb, config::DbConfig, time_series::TimeSeriesConfig, DdlExecutor};
+use remdb::{RemDb, config::{DbConfig, WALConfig}, time_series::TimeSeriesConfig, DdlExecutor};
 use remdb::memory::allocator::init_global_allocator;
 
 // 示例：使用derive(MemdbTable)宏定义时序表
@@ -30,13 +30,15 @@ static CONFIG: DbConfig = DbConfig {
     low_power_max_records: None,
     default_max_records: 10000,
     memory_allocator: &ALLOCATOR,
-    log_path: "example_remdb.wal",
-    log_mode: remdb::config::LogMode::Sync,
-    checkpoint_interval_ms: 60000,
-    log_file_size_limit: 16 * 1024 * 1024,
-    log_prealloc_size: 1 * 1024 * 1024,
-    log_segment_size: 16 * 1024 * 1024,
-    retained_checkpoints: 3,
+    wal_config: WALConfig {
+        log_path: "example_remdb.wal",
+        log_mode: remdb::config::LogMode::Sync,
+        checkpoint_interval_ms: 60000,
+        log_file_size_limit: 16 * 1024 * 1024,
+        log_prealloc_size: 1 * 1024 * 1024,
+        log_segment_size: 16 * 1024 * 1024,
+        retained_checkpoints: 3,
+    },
     time_series_defaults: TimeSeriesConfig::DEFAULT,
     #[cfg(feature = "pubsub")]
     pubsub_config: None,

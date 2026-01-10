@@ -2,7 +2,7 @@ use remdb::table::*;
 use remdb::types::*;
 use remdb::platform::*;
 use remdb::{init_global_db, PrimaryIndex, AnySecondaryIndex}; use remdb::config::DefaultMemoryAllocator;
-use remdb::config::DbConfig;
+use remdb::config::{DbConfig, WALConfig};
 use std::time::Instant;
 use rand::random;
 
@@ -171,13 +171,15 @@ fn test_large_table_performance() {
             static mut DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
             &mut DEFAULT_ALLOCATOR
         },
-        log_path: "large_table_test.wal",
-        log_mode: remdb::config::LogMode::Sync,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
+        wal_config: WALConfig {
+            log_path: "large_table_test.wal",
+            log_mode: remdb::config::LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+        },
         time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,

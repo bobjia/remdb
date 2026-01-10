@@ -36,7 +36,23 @@ pub enum LogMode {
     Async,
 }
 
-
+/// WAL日志配置
+pub struct WALConfig {
+    /// 日志文件路径
+    pub log_path: &'static str,
+    /// 日志模式（同步/异步）
+    pub log_mode: LogMode,
+    /// 检查点间隔（毫秒，默认60秒）
+    pub checkpoint_interval_ms: u64,
+    /// 日志文件大小限制（字节，默认16MB）
+    pub log_file_size_limit: usize,
+    /// 日志预分配大小（字节）
+    pub log_prealloc_size: usize,
+    /// 日志分段大小（字节，默认16MB）
+    pub log_segment_size: usize,
+    /// 保留的检查点数量
+    pub retained_checkpoints: usize,
+}
 
 /// 数据库全局配置
 pub struct DbConfig {
@@ -52,20 +68,8 @@ pub struct DbConfig {
     pub default_max_records: usize,
     /// 内存分配器
     pub memory_allocator: &'static dyn MemoryAllocator,
-    /// 日志文件路径
-    pub log_path: &'static str,
-    /// 日志模式（同步/异步）
-    pub log_mode: LogMode,
-    /// 检查点间隔（毫秒，默认60秒）
-    pub checkpoint_interval_ms: u64,
-    /// 日志文件大小限制（字节，默认16MB）
-    pub log_file_size_limit: usize,
-    /// 日志预分配大小（字节）
-    pub log_prealloc_size: usize,
-    /// 日志分段大小（字节，默认16MB）
-    pub log_segment_size: usize,
-    /// 保留的检查点数量
-    pub retained_checkpoints: usize,
+    /// WAL日志配置
+    pub wal_config: WALConfig,
     /// 时序数据默认配置
     pub time_series_defaults: TimeSeriesConfig,
     
@@ -100,23 +104,23 @@ pub const fn validate_config(config: &DbConfig) -> bool {
     }
     
     // 检查WAL和检查点配置
-    if config.checkpoint_interval_ms > 3600000 { // 最大1小时
+    if config.wal_config.checkpoint_interval_ms > 3600000 { // 最大1小时
         return false;
     }
     
-    if config.log_file_size_limit < 1024 * 1024 { // 最小1MB
+    if config.wal_config.log_file_size_limit < 1024 * 1024 { // 最小1MB
         return false;
     }
     
-    if config.log_prealloc_size > config.log_file_size_limit {
+    if config.wal_config.log_prealloc_size > config.wal_config.log_file_size_limit {
         return false;
     }
     
-    if config.log_segment_size < 1024 * 1024 { // 最小1MB
+    if config.wal_config.log_segment_size < 1024 * 1024 { // 最小1MB
         return false;
     }
     
-    if config.retained_checkpoints > 10 {
+    if config.wal_config.retained_checkpoints > 10 {
         return false;
     }
     

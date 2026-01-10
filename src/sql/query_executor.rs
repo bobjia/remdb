@@ -3630,13 +3630,50 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             },
             
             // 时间戳类型
-            // 时间戳类型暂不支持表达式更新
             DataType::Timestamp => {
-                return Err(QueryExecutionError::TypeMismatch);
+                // 支持从数值类型转换为时间戳
+                let timestamp_value = match evaluated_value.value_type {
+                    DataType::Int64 => evaluated_value.value.i64,
+                    DataType::UInt64 => evaluated_value.value.u64 as i64,
+                    DataType::Int32 => evaluated_value.value.i32 as i64,
+                    DataType::UInt32 => evaluated_value.value.u32 as i64,
+                    DataType::Int16 => evaluated_value.value.i16 as i64,
+                    DataType::UInt16 => evaluated_value.value.u16 as i64,
+                    DataType::Int8 => evaluated_value.value.i8 as i64,
+                    DataType::UInt8 => evaluated_value.value.u8 as i64,
+                    DataType::Float64 => evaluated_value.value.float64 as i64,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                
+                // 创建时间戳值
+                let timestamp = crate::types::db_timestamp::new(timestamp_value, 0, 0, 0);
+                
+                // 写入时间戳到记录数据
+                let ptr = record_data.as_mut_ptr().add(offset) as *mut crate::types::db_timestamp;
+                core::ptr::write_unaligned(ptr, timestamp);
             },
-            // 时间戳TZ类型暂不支持表达式更新
+            // 时间戳TZ类型
             DataType::TimestampTZ => {
-                return Err(QueryExecutionError::TypeMismatch);
+                // 支持从数值类型转换为时间戳TZ
+                let timestamp_value = match evaluated_value.value_type {
+                    DataType::Int64 => evaluated_value.value.i64,
+                    DataType::UInt64 => evaluated_value.value.u64 as i64,
+                    DataType::Int32 => evaluated_value.value.i32 as i64,
+                    DataType::UInt32 => evaluated_value.value.u32 as i64,
+                    DataType::Int16 => evaluated_value.value.i16 as i64,
+                    DataType::UInt16 => evaluated_value.value.u16 as i64,
+                    DataType::Int8 => evaluated_value.value.i8 as i64,
+                    DataType::UInt8 => evaluated_value.value.u8 as i64,
+                    DataType::Float64 => evaluated_value.value.float64 as i64,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                
+                // 创建时间戳值（默认UTC时区）
+                let timestamp = crate::types::db_timestamp::new(timestamp_value, 0, 0, 0);
+                
+                // 写入时间戳到记录数据
+                let ptr = record_data.as_mut_ptr().add(offset) as *mut crate::types::db_timestamp;
+                core::ptr::write_unaligned(ptr, timestamp);
             },
             
             // 字符串类型

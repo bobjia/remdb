@@ -3,6 +3,7 @@
 extern crate alloc;
 
 use remdb::{RemDb, config};
+use remdb::config::WALConfig;
 
 /// 创建测试用的DbConfig
 static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
@@ -11,15 +12,17 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     default_max_records: 100,
     low_power_mode_supported: false,
     low_power_max_records: None,
-    log_path: "simple_time_type_test.wal",
-    log_mode: config::LogMode::Async,
-    log_prealloc_size: 0,
-    log_file_size_limit: 104857600,
-    log_segment_size: 1048576,
-    checkpoint_interval_ms: 30000,
     // 添加缺少的字段
     memory_allocator: &config::DefaultMemoryAllocator,
-    retained_checkpoints: 2,
+    wal_config: WALConfig {
+        log_path: "simple_time_type_test.wal",
+        log_mode: config::LogMode::Async,
+        log_prealloc_size: 0,
+        log_file_size_limit: 104857600,
+        log_segment_size: 1048576,
+        checkpoint_interval_ms: 30000,
+        retained_checkpoints: 2,
+    },
     time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
     #[cfg(feature = "pubsub")]
     pubsub_config: None,
@@ -75,8 +78,8 @@ fn test_create_table_with_time_types() {
     
     // 测试1: 插入带有时间类型的数据
     let insert_sql = "INSERT INTO test_time_types (ts, tstz, name) VALUES 
-        (NOW(), CURRENT_TIMESTAMP(), 'test1'),
-        (LOCALTIMESTAMP(), NOW(), 'test2')";
+        (1609459200000, 1609459200000, 'test1'),
+        (1609459260000, 1609459260000, 'test2')";
     
     println!("Running INSERT...");
     let result = db.sql_query(insert_sql);
@@ -87,6 +90,30 @@ fn test_create_table_with_time_types() {
     println!("✓ INSERT succeeded");
     
     // 测试2: 查询数据 (simplified, no functions)
+    let select_sql = "SELECT id, ts, tstz, name FROM test_time_types";
+    
+    println!("Running SELECT...");
+    let result = db.sql_query(select_sql);
+    if !result.is_ok() {
+        println!("SELECT failed with error: {:?}", result.as_ref().err());
+    }
+    assert!(result.is_ok());
+    println!("✓ SELECT succeeded");
+
+    // 测试2: 插入带有时间类型的数据，用函数
+    let insert_sql = "INSERT INTO test_time_types (ts, tstz, name) VALUES 
+      (NOW(), CURRENT_TIMESTAMP(), 'test1'),
+        (LOCALTIMESTAMP(), NOW(), 'test2')";
+    
+    println!("Running INSERT...");
+    let result = db.sql_query(insert_sql);
+    if !result.is_ok() {
+        println!("INSERT failed with error: {:?}", result.as_ref().err());
+    }
+    assert!(result.is_ok());
+    println!("✓ INSERT succeeded");
+    
+    // 测试3: 查询数据 (simplified, no functions)
     let select_sql = "SELECT id, ts, tstz, name FROM test_time_types";
     
     println!("Running SELECT...");

@@ -24,7 +24,7 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 rand = { version = "0.8.5", optional = true }
-remdb-macros = { path = "./remdb-macros", version = "0.2.1" }
+remdb-macros = { path = "./remdb-macros", version = "0.2.3" }
 socket2 = { version = "0.5.5", optional = true }
 
 [dev-dependencies]

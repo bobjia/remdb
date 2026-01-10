@@ -1,6 +1,7 @@
 // 测试AUTO_INCREMENT支持
 
 use remdb::*;
+use remdb::config::WALConfig;
 
 // 定义数据库内存区域
 static mut DB_MEMORY: [u8; 1024 * 1024] = [0; 1024 * 1024];
@@ -22,13 +23,15 @@ fn main() {
             low_power_max_records: None,
             default_max_records: 1000,
             memory_allocator: &ALLOCATOR,
-            log_path: "auto_increment_test.wal",
-            log_mode: config::LogMode::Sync,
-            checkpoint_interval_ms: 60000,
-            log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
-            log_segment_size: 16 * 1024 * 1024,
-            retained_checkpoints: 3,
+            wal_config: WALConfig {
+                log_path: "auto_increment_test.wal",
+                log_mode: config::LogMode::Sync,
+                checkpoint_interval_ms: 60000,
+                log_file_size_limit: 16 * 1024 * 1024,
+                log_prealloc_size: 1 * 1024 * 1024,
+                log_segment_size: 16 * 1024 * 1024,
+                retained_checkpoints: 3,
+            },
             #[cfg(feature = "pubsub")]
             pubsub_config: None,
             #[cfg(feature = "ha")]

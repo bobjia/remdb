@@ -2,6 +2,7 @@
 extern crate alloc;
 
 use remdb::*;
+use remdb::config::WALConfig;
 
 // 简单的测试平台实现
 struct TestPlatform;
@@ -105,14 +106,16 @@ static TEST_DB_CONFIG: remdb::config::DbConfig = remdb::config::DbConfig {
     default_max_records: 100, // 降低默认记录数，减少内存需求
     low_power_mode_supported: false,
     low_power_max_records: None,
-    log_path: "sql_insert_ignore_test.wal",
-    log_mode: remdb::config::LogMode::Async,
-    log_prealloc_size: 0,
-    log_file_size_limit: 1048576,
-    log_segment_size: 1048576,
-    checkpoint_interval_ms: 30000,
     memory_allocator: &remdb::config::DefaultMemoryAllocator,
-    retained_checkpoints: 2,
+    wal_config: WALConfig {
+        log_path: "sql_insert_ignore_test.wal",
+        log_mode: remdb::config::LogMode::Async,
+        log_prealloc_size: 0,
+        log_file_size_limit: 1048576,
+        log_segment_size: 1048576,
+        checkpoint_interval_ms: 30000,
+        retained_checkpoints: 2,
+    },
     #[cfg(feature = "pubsub")]
     pubsub_config: None,
     #[cfg(feature = "ha")]

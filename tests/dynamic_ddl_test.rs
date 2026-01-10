@@ -1,4 +1,5 @@
 use remdb::*;
+use remdb::config::WALConfig;
 use remdb::platform::{Platform, FileMode, FileHandle, FileResult, SeekWhence};
 use std::sync::Mutex;
 
@@ -107,13 +108,15 @@ static TEST_CONFIG: config::DbConfig = unsafe {
         low_power_max_records: None,
         default_max_records: 100, // 减小值以避免内存不足
         memory_allocator: &mut DEFAULT_ALLOCATOR,
-        log_path: "dynamic_ddl_test.wal",
-        log_mode: config::LogMode::Sync,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
+        wal_config: WALConfig {
+            log_path: "dynamic_ddl_test.wal",
+            log_mode: config::LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+        },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,

@@ -6,7 +6,7 @@ use remdb::types::RemDbError;
 use remdb::time_series::TimeSeriesRecord;
 use remdb::time_series::TimeSeriesConfig;
 use remdb::{RemDb, config};
-use remdb::config::HAConfig;
+use remdb::config::{HAConfig, WALConfig};
 use remdb::ha::{HARole, ReplicationMode};
 use std::sync::Mutex;
 
@@ -23,15 +23,17 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     default_max_records: 100,
     low_power_mode_supported: false,
     low_power_max_records: None,
-    log_path: "test_remdb.wal",
-    log_mode: config::LogMode::Async,
-    log_prealloc_size: 0,
-    log_file_size_limit: 104857600,
-    log_segment_size: 1048576,
-    checkpoint_interval_ms: 30000,
     // 添加缺少的字段
     memory_allocator: &config::DefaultMemoryAllocator,
-    retained_checkpoints: 2,
+    wal_config: WALConfig {
+        log_path: "test_remdb.wal",
+        log_mode: config::LogMode::Async,
+        log_prealloc_size: 0,
+        log_file_size_limit: 104857600,
+        log_segment_size: 1048576,
+        checkpoint_interval_ms: 30000,
+        retained_checkpoints: 2,
+    },
     time_series_defaults: TimeSeriesConfig::DEFAULT,
     #[cfg(feature = "pubsub")]
     pubsub_config: None,
@@ -56,15 +58,17 @@ static PERFORMANCE_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     default_max_records: 100000,
     low_power_mode_supported: false,
     low_power_max_records: None,
-    log_path: "perf_test_remdb.wal",
-    log_mode: config::LogMode::Async,
-    log_prealloc_size: 0,
-    log_file_size_limit: 104857600,
-    log_segment_size: 1048576,
-    checkpoint_interval_ms: 30000,
     // 添加缺少的字段
     memory_allocator: &config::DefaultMemoryAllocator,
-    retained_checkpoints: 2,
+    wal_config: WALConfig {
+        log_path: "perf_test_remdb.wal",
+        log_mode: config::LogMode::Async,
+        log_prealloc_size: 0,
+        log_file_size_limit: 104857600,
+        log_segment_size: 1048576,
+        checkpoint_interval_ms: 30000,
+        retained_checkpoints: 2,
+    },
     time_series_defaults: TimeSeriesConfig::DEFAULT,
     #[cfg(feature = "pubsub")]
     pubsub_config: None,
@@ -89,15 +93,17 @@ static ROLLBACK_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     default_max_records: 10000,
     low_power_mode_supported: false,
     low_power_max_records: None,
-    log_path: "rollback_test_remdb.wal",
-    log_mode: config::LogMode::Sync,
-    log_prealloc_size: 0,
-    log_file_size_limit: 104857600,
-    log_segment_size: 1048576,
-    checkpoint_interval_ms: 30000,
     // 添加缺少的字段
     memory_allocator: &config::DefaultMemoryAllocator,
-    retained_checkpoints: 2,
+    wal_config: WALConfig {
+        log_path: "rollback_test_remdb.wal",
+        log_mode: config::LogMode::Sync,
+        log_prealloc_size: 0,
+        log_file_size_limit: 104857600,
+        log_segment_size: 1048576,
+        checkpoint_interval_ms: 30000,
+        retained_checkpoints: 2,
+    },
     time_series_defaults: TimeSeriesConfig::DEFAULT,
     #[cfg(feature = "pubsub")]
     pubsub_config: None,

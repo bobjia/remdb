@@ -1,5 +1,6 @@
 use remdb::*;
 use remdb::time_series::*;
+use remdb::config::WALConfig;
 use std::time::{Duration, SystemTime};
 
 fn main() {
@@ -20,13 +21,16 @@ fn main() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
-        log_path: "time_series_complete.wal",
-        log_mode: config::LogMode::Async,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 2,
+        wal_config: WALConfig {
+            log_path: "time_series_complete.wal",
+            log_mode: config::LogMode::Async,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 2,
+        },
+        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
@@ -41,7 +45,6 @@ fn main() {
             replication_port: 5556,
             heartbeat_port: 5557,
         }),
-        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     };
     
     // 3. 初始化数据库

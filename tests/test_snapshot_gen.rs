@@ -2,6 +2,7 @@ use core::mem::MaybeUninit;
 use remdb::*;
 use remdb::types::*;
 use remdb::platform::*;
+use remdb::config::WALConfig;
 
 // 简单的表定义用于测试
 static TEST_TABLE_DEF: TableDef = TableDef {
@@ -49,13 +50,15 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
         static mut DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
         &mut DEFAULT_ALLOCATOR
     },
-    log_path: "test_snapshot_gen.wal",
-    log_mode: config::LogMode::Sync,
-    checkpoint_interval_ms: 60000,
-    log_file_size_limit: 16 * 1024 * 1024,
-    log_prealloc_size: 1 * 1024 * 1024,
-    log_segment_size: 16 * 1024 * 1024,
-    retained_checkpoints: 3,
+    wal_config: WALConfig {
+        log_path: "test_snapshot_gen.wal",
+        log_mode: config::LogMode::Sync,
+        checkpoint_interval_ms: 60000,
+        log_file_size_limit: 16 * 1024 * 1024,
+        log_prealloc_size: 1 * 1024 * 1024,
+        log_segment_size: 16 * 1024 * 1024,
+        retained_checkpoints: 3,
+    },
     time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     #[cfg(feature = "pubsub")]
     pubsub_config: None,

@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 use remdb::pubsub::{PubSub, PubSubConfig, UdpMode};
 use remdb::pubsub::topics::*;
-use remdb::{RemDb, config::{DbConfig, MemoryAllocator}};
+use remdb::{RemDb, config::{DbConfig, MemoryAllocator, WALConfig}};
 use remdb::time_series::table::TimeSeriesConfig;
 use remdb::time_series::compression::CompressionType;
 use core::ptr::NonNull;
@@ -64,13 +64,15 @@ fn main() {
         low_power_max_records: None,
         default_max_records: 10000,
         memory_allocator: &ALLOCATOR, // 使用我们的静态内存分配器
-        log_path: "pubsub_sql_test.wal",
-        log_mode: remdb::config::LogMode::Async,
-        checkpoint_interval_ms: 60000, // 60秒
-        log_file_size_limit: 16 * 1024 * 1024, // 16MB
-        log_prealloc_size: 4 * 1024 * 1024, // 4MB
-        log_segment_size: 16 * 1024 * 1024, // 16MB
-        retained_checkpoints: 2,
+        wal_config: WALConfig {
+            log_path: "pubsub_sql_test.wal",
+            log_mode: remdb::config::LogMode::Async,
+            checkpoint_interval_ms: 60000, // 60秒
+            log_file_size_limit: 16 * 1024 * 1024, // 16MB
+            log_prealloc_size: 4 * 1024 * 1024, // 4MB
+            log_segment_size: 16 * 1024 * 1024, // 16MB
+            retained_checkpoints: 2,
+        },
         time_series_defaults: TimeSeriesConfig {
             partition_duration_secs: 3600, // 1小时
             retention_period_secs: 7 * 24 * 3600, // 7天

@@ -1,7 +1,7 @@
 // HA功能测试
 
 use remdb::*;
-use remdb::config::{LogMode, TimeSeriesConfig}; use remdb::ha::{HARole, ReplicationMode, HAConfig};
+use remdb::config::{LogMode, TimeSeriesConfig, WALConfig}; use remdb::ha::{HARole, ReplicationMode, HAConfig};
 use remdb::ha::HAError;
 use remdb::ha::role::RoleManager;
 use remdb::ha::heartbeat::HeartbeatMonitor;
@@ -222,14 +222,16 @@ fn test_ha_manager_failover() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &config::DefaultMemoryAllocator,
-        log_path: "ha_test_slave.wal",
-        log_mode: LogMode::Async,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 1 * 1024 * 1024,
-        log_prealloc_size: 0,
+        wal_config: WALConfig {
+            log_path: "ha_test_slave.wal",
+            log_mode: LogMode::Async,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 1 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 1 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
-        log_segment_size: 1 * 1024 * 1024,
-        retained_checkpoints: 1,
         // PubSub配置（可选）
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
@@ -317,14 +319,16 @@ fn test_ha_manager() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &config::DefaultMemoryAllocator,
-        log_path: "ha_test_master.wal",
-        log_mode: LogMode::Async,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 1 * 1024 * 1024,
-        log_prealloc_size: 0,
+        wal_config: WALConfig {
+            log_path: "ha_test_master.wal",
+            log_mode: LogMode::Async,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 1 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 1 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
-        log_segment_size: 1 * 1024 * 1024,
-        retained_checkpoints: 1,
         // PubSub配置（可选）
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
@@ -376,14 +380,16 @@ fn test_ha_manager_role_switch() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &config::DefaultMemoryAllocator,
-        log_path: "ha_test_role_switch.wal",
-        log_mode: LogMode::Async,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 1 * 1024 * 1024,
-        log_prealloc_size: 0,
+        wal_config: WALConfig {
+            log_path: "ha_test_role_switch.wal",
+            log_mode: LogMode::Async,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 1 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 1 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
-        log_segment_size: 1 * 1024 * 1024,
-        retained_checkpoints: 1,
         // PubSub配置（可选）
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
@@ -456,13 +462,15 @@ fn test_ha_config_validation() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &config::DefaultMemoryAllocator,
-        log_path: "ha_test_invalid.wal",
-        log_mode: LogMode::Async,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 1 * 1024 * 1024,
-        log_prealloc_size: 0,
-        log_segment_size: 1 * 1024 * 1024,
-        retained_checkpoints: 1,
+        wal_config: WALConfig {
+            log_path: "ha_test_invalid.wal",
+            log_mode: LogMode::Async,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 1 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 1 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         // 无效HA配置
         #[cfg(feature = "pubsub")]
@@ -492,13 +500,15 @@ fn test_ha_config_validation() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &config::DefaultMemoryAllocator,
-        log_path: "ha_test_valid.wal",
-        log_mode: LogMode::Async,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 1 * 1024 * 1024,
-        log_prealloc_size: 0,
-        log_segment_size: 1 * 1024 * 1024,
-        retained_checkpoints: 1,
+        wal_config: WALConfig {
+            log_path: "ha_test_valid.wal",
+            log_mode: LogMode::Async,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 1 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 1 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         // 有效HA配置
         #[cfg(feature = "pubsub")]

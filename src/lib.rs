@@ -381,9 +381,24 @@ impl RemDb {
             // 只有当平台能正常处理文件时，才初始化日志管理器
             // 测试平台的file_open返回null，会导致FileIoError
             use crate::transaction::LogManager;
+            use std::path::Path;
+            
+            // 构造完整的日志文件路径：log_path目录 + remdb.wal文件名
+            let log_dir = self.config.wal_config.log_path;
+            let wal_file_path = format!("{}/remdb.wal", log_dir);
+            
+            // 确保日志目录存在（仅在std环境下）
+            #[cfg(feature = "std")]
+            {
+                let log_path = Path::new(log_dir);
+                if !log_path.exists() {
+                    std::fs::create_dir_all(log_path).unwrap_or(());
+                }
+            }
+            
             unsafe {
                 // 先检查平台是否能正常打开文件且返回有效的句柄
-                match crate::platform::file_open(self.config.log_path, crate::platform::FileMode::ReadWrite) {
+                match crate::platform::file_open(wal_file_path.as_str(), crate::platform::FileMode::ReadWrite) {
                     Ok(handle) if !handle.is_null() => {
                         // 文件打开成功且句柄有效，关闭并继续初始化日志管理器
                         let _ = crate::platform::file_close(handle);

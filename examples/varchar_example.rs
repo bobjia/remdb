@@ -2,7 +2,7 @@
 
 extern crate alloc;
 use remdb::*;
-use remdb::config::{DbConfig, DefaultMemoryAllocator};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, WALConfig};
 
 // 定义数据库内存区域
 static mut DB_MEMORY: [u8; 1024 * 1024] = [0; 1024 * 1024];
@@ -24,13 +24,15 @@ fn main() {
             low_power_max_records: None,
             default_max_records: 1000,
             memory_allocator: &DefaultMemoryAllocator,
-            log_path: "varchar_example.wal",
-            log_mode: config::LogMode::Async,
-            checkpoint_interval_ms: 60000, // 60秒
-            log_file_size_limit: 16 * 1024 * 1024, // 16MB
-            log_prealloc_size: 1 * 1024 * 1024, // 1MB
-            log_segment_size: 16 * 1024 * 1024,
-            retained_checkpoints: 3,
+            wal_config: WALConfig {
+                log_path: "varchar_example.wal",
+                log_mode: config::LogMode::Async,
+                checkpoint_interval_ms: 60000, // 60秒
+                log_file_size_limit: 16 * 1024 * 1024, // 16MB
+                log_prealloc_size: 1 * 1024 * 1024, // 1MB
+                log_segment_size: 16 * 1024 * 1024,
+                retained_checkpoints: 3,
+            },
             time_series_defaults: config::TimeSeriesConfig::DEFAULT,
             #[cfg(feature = "pubsub")]
             pubsub_config: None,

@@ -548,12 +548,15 @@ pub unsafe extern "C" fn remdb_init_global(
         },
         default_max_records: 1000, // 默认值
         memory_allocator: &crate::config::DefaultMemoryAllocator,
-        log_mode: crate::config::LogMode::Sync,
-        checkpoint_interval_ms: 60000, // 默认60秒
-        log_file_size_limit: 16 * 1024 * 1024, // 默认16MB
-        log_prealloc_size: 16 * 1024 * 1024, // 默认16MB
-        log_segment_size: 16 * 1024 * 1024, // 默认16MB
-        retained_checkpoints: 2, // 默认保留2个检查点
+        wal_config: crate::config::WALConfig {
+            log_path: "remdb.wal", // 默认日志文件路径
+            log_mode: crate::config::LogMode::Sync,
+            checkpoint_interval_ms: 60000, // 默认60秒
+            log_file_size_limit: 16 * 1024 * 1024, // 默认16MB
+            log_prealloc_size: 16 * 1024 * 1024, // 默认16MB
+            log_segment_size: 16 * 1024 * 1024, // 默认16MB
+            retained_checkpoints: 2, // 默认保留2个检查点
+        },
         time_series_defaults: crate::time_series::TimeSeriesConfig::DEFAULT,
         // HA相关配置
         ha_config: Some(crate::ha::HAConfig {

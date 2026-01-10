@@ -1,4 +1,4 @@
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, HAConfig, TimeSeriesConfig};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, HAConfig, TimeSeriesConfig, WALConfig};
 use remdb::ha::{HARole, ReplicationMode};
 use remdb::transaction::{LogManager, LogItem, LogOperation};
 use remdb::platform::{Platform, FileMode, FileResult, FileHandle, SeekWhence, init_platform};
@@ -136,14 +136,16 @@ fn test_wal_log_manager_creation() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
-        log_path: "/tmp/test_wal.log",
-        log_mode: LogMode::Sync,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
+        wal_config: WALConfig {
+            log_path: "/tmp/test_wal.log",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+        },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
         #[cfg(feature = "pubsub")]
             pubsub_config: None,
             #[cfg(feature = "ha")]
@@ -186,14 +188,16 @@ fn test_wal_log_write_sync_mode() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
-        log_path: "/tmp/test_wal.log",
-        log_mode: LogMode::Sync,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
+        wal_config: WALConfig {
+            log_path: "/tmp/test_wal.log",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+        },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
@@ -254,14 +258,16 @@ fn test_wal_log_write_async_mode() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
-        log_path: "/tmp/test_wal.log",
-        log_mode: LogMode::Async,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
+        wal_config: WALConfig {
+            log_path: "/tmp/test_wal.log",
+            log_mode: LogMode::Async,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+        },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
@@ -329,13 +335,15 @@ fn test_wal_checkpoint_mechanism() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
-        log_path: "/tmp/test_wal_checkpoint.log",
-        log_mode: LogMode::Sync,
-        checkpoint_interval_ms: 100, // 100毫秒检查点间隔
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
+        wal_config: WALConfig {
+            log_path: "/tmp/test_wal_checkpoint.log",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 100, // 100毫秒检查点间隔
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+        },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
@@ -405,13 +413,16 @@ fn test_wal_log_preallocation() {
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
-        log_mode: LogMode::Sync,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 32 * 1024 * 1024, // 32MB 预分配大小
+        wal_config: WALConfig {
+            log_path: "/tmp/test_wal_prealloc.log",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 32 * 1024 * 1024, // 32MB 预分配大小
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+        },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
@@ -426,7 +437,6 @@ fn test_wal_log_preallocation() {
             replication_port: 5556,
             heartbeat_port: 5557,
         }),
-        log_path: "/tmp/test_wal_prealloc.log",
     };
     
     unsafe {
@@ -464,13 +474,16 @@ fn test_wal_different_log_modes() {
             low_power_max_records: None,
             default_max_records: 1000,
             memory_allocator: &ALLOCATOR,
-            log_mode: mode,
-            checkpoint_interval_ms: 60000,
-            log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
+            wal_config: WALConfig {
+                log_path,
+                log_mode: mode,
+                checkpoint_interval_ms: 60000,
+                log_file_size_limit: 16 * 1024 * 1024,
+                log_prealloc_size: 1 * 1024 * 1024,
+                log_segment_size: 16 * 1024 * 1024,
+                retained_checkpoints: 3,
+            },
             time_series_defaults: TimeSeriesConfig::DEFAULT,
-            log_segment_size: 16 * 1024 * 1024,
-            retained_checkpoints: 3,
             #[cfg(feature = "pubsub")]
             pubsub_config: None,
             #[cfg(feature = "ha")]
@@ -485,7 +498,6 @@ fn test_wal_different_log_modes() {
                 replication_port: 5556,
                 heartbeat_port: 5557,
             }),
-            log_path,
         };
         
         unsafe {
@@ -537,14 +549,16 @@ fn test_wal_recovery_flow() {
             low_power_max_records: None,
             default_max_records: 1000,
             memory_allocator: &ALLOCATOR,
-            log_path: "/tmp/test_wal.log",
-            log_mode: LogMode::Sync,
-            checkpoint_interval_ms: 60000,
-            log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
+            wal_config: WALConfig {
+                log_path: "/tmp/test_wal.log",
+                log_mode: LogMode::Sync,
+                checkpoint_interval_ms: 60000,
+                log_file_size_limit: 16 * 1024 * 1024,
+                log_prealloc_size: 1 * 1024 * 1024,
+                log_segment_size: 16 * 1024 * 1024,
+                retained_checkpoints: 3,
+            },
             time_series_defaults: TimeSeriesConfig::DEFAULT,
-            log_segment_size: 16 * 1024 * 1024,
-            retained_checkpoints: 3,
             #[cfg(feature = "pubsub")]
             pubsub_config: None,
             #[cfg(feature = "ha")]

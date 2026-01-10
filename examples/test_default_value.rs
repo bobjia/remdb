@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use remdb::{RemDb, config::{DbConfig, LogMode, HAConfig}}; use remdb::ha::{HARole, ReplicationMode};
+use remdb::{RemDb, config::{DbConfig, LogMode, HAConfig, WALConfig}}; use remdb::ha::{HARole, ReplicationMode};
 use remdb::memory::allocator::init_global_allocator;
 use remdb::config::DefaultMemoryAllocator;
 
@@ -16,13 +16,15 @@ static CONFIG: DbConfig = unsafe {
         low_power_max_records: None,
         default_max_records: 10, // 减少默认最大记录数，避免内存不足
         memory_allocator: &mut DEFAULT_ALLOCATOR,
-        log_path: "test_default_value.wal",
-        log_mode: LogMode::Sync,
-        log_prealloc_size: 1 * 1024 * 1024,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_segment_size: 16 * 1024 * 1024,
-        checkpoint_interval_ms: 60000,
-        retained_checkpoints: 3,
+        wal_config: WALConfig {
+            log_path: "test_default_value.wal",
+            log_mode: LogMode::Sync,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            checkpoint_interval_ms: 60000,
+            retained_checkpoints: 3,
+        },
         time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,

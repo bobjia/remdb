@@ -187,9 +187,25 @@ pub struct LogManager {
 impl LogManager {
     /// 创建新的日志管理器
     pub unsafe fn new(config: &crate::config::DbConfig) -> Result<Self> {
+        // 构造完整的日志文件路径：log_path目录 + remdb.wal文件名
+        let log_dir = config.wal_config.log_path;
+        let wal_file_path = format!("{}/remdb.wal", log_dir);
+        
+        // 确保日志目录存在（仅在std环境下）
+        #[cfg(feature = "std")]
+        {
+            use std::path::Path;
+            use std::fs;
+            
+            let log_path = Path::new(log_dir);
+            if !log_path.exists() {
+                fs::create_dir_all(log_path).unwrap_or(());
+            }
+        }
+        
         // 尝试打开日志文件，如果不存在则创建
         let log_handle = crate::platform::file_open(
-            config.log_path,
+            wal_file_path.as_str(),
             crate::platform::FileMode::ReadWrite
         ).map_err(|_| RemDbError::FileIoError)?;
         
@@ -198,7 +214,7 @@ impl LogManager {
         let now_ms = now / 1000;
         
         let mut manager = LogManager {
-            log_path: config.log_path,
+            log_path: config.wal_config.log_path,
             log_handle,
             header: LogHeader {
                 magic: 0x4C4F474D, // 'LOGM'
@@ -213,7 +229,7 @@ impl LogManager {
                 checksum: 0,
             },
             lock: 0,
-            log_mode: config.log_mode,
+            log_mode: config.wal_config.log_mode,
             log_buffer: alloc::vec::Vec::new(), // 默认缓冲区大小1024
             buffer_config: LogBufferConfig {
                 size: 1024,
@@ -221,9 +237,9 @@ impl LogManager {
             },
             last_flush_time: now,
             last_checkpoint_time: now_ms,
-            checkpoint_interval_ms: config.checkpoint_interval_ms,
-            log_file_size_limit: config.log_file_size_limit,
-            log_segment_size: config.log_segment_size,
+            checkpoint_interval_ms: config.wal_config.checkpoint_interval_ms,
+            log_file_size_limit: config.wal_config.log_file_size_limit,
+            log_segment_size: config.wal_config.log_segment_size,
         };
         
         // 预分配缓冲区空间
@@ -262,11 +278,11 @@ impl LogManager {
             ).map_err(|_| RemDbError::FileIoError)?;
             
             // 如果配置了预分配大小，则预分配文件空间
-            if config.log_prealloc_size > 0 {
+            if config.wal_config.log_prealloc_size > 0 {
                 // 定位到预分配大小位置
                 crate::platform::file_seek(
                     log_handle,
-                    config.log_prealloc_size as i64 - 1,
+                    config.wal_config.log_prealloc_size as i64 - 1,
                     crate::platform::SeekWhence::SeekSet
                 ).map_err(|_| RemDbError::FileIoError)?;
                 

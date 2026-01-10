@@ -450,13 +450,15 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 &mut DEFAULT_ALLOCATOR
             },
             // 日志相关配置
-            log_path: "remdb.wal",
-            log_mode: remdb::config::LogMode::Sync,
-            checkpoint_interval_ms: 60000, // 默认60秒
-            log_file_size_limit: 16 * 1024 * 1024, // 默认16MB
-            log_prealloc_size: 1 * 1024 * 1024, // 默认1MB预分配
-            log_segment_size: 16 * 1024 * 1024, // 默认16MB分段
-            retained_checkpoints: 3, // 保留3个检查点
+            wal_config: remdb::config::WALConfig {
+                log_path: "remdb.wal",
+                log_mode: remdb::config::LogMode::Sync,
+                checkpoint_interval_ms: 60000, // 默认60秒
+                log_file_size_limit: 16 * 1024 * 1024, // 默认16MB
+                log_prealloc_size: 1 * 1024 * 1024, // 默认1MB预分配
+                log_segment_size: 16 * 1024 * 1024, // 默认16MB分段
+                retained_checkpoints: 3, // 保留3个检查点
+            },
             // 时序数据默认配置
             time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
             // PubSub配置（可选）
