@@ -102,9 +102,6 @@ impl ReplicationManager {
     
     /// 初始化复制管理器
     pub fn init(&mut self) -> Result<()> {
-        // 初始化pubsub系统
-        self.init_pubsub()?;
-        
         // 设置全局复制管理器实例（用于回调函数访问）
         unsafe {
             // 保存当前管理器的指针到静态变量中

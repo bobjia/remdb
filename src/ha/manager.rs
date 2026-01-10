@@ -6,6 +6,7 @@ use crate::ha::role::RoleManager;
 use crate::ha::replication::ReplicationManager;
 use crate::ha::heartbeat::HeartbeatMonitor;
 use crate::transaction::LogItem;
+use crate::pubsub::{init as pubsub_init, PubSubConfig, UdpMode};
 
 /// HA管理器
 pub struct HAManager {

@@ -173,9 +173,6 @@ impl HeartbeatMonitor {
     
     /// 初始化心跳监视器
     pub fn init(&self) -> Result<()> {
-        // 初始化pubsub系统（如果尚未初始化）
-        self.init_pubsub()?;
-        
         Ok(())
     }
     
