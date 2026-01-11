@@ -47,6 +47,7 @@ static SLAVE_DB_CONFIG: DbConfig = DbConfig {
     pubsub_config: None,
     #[cfg(feature = "ha")]
     ha_config: Some(HAConfig {
+        node_id: 2,
         ha_role: HARole::Slave,
         replication_mode: ReplicationMode::Async,
         heartbeat_interval_ms: 1000,

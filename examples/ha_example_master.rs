@@ -47,6 +47,7 @@ static MASTER_DB_CONFIG: DbConfig = DbConfig {
     pubsub_config: None,
     #[cfg(feature = "ha")]
     ha_config: Some(HAConfig {
+        node_id: 1,
         ha_role: HARole::Master,
         replication_mode: ReplicationMode::Async,
         heartbeat_interval_ms: 1000,
@@ -76,29 +77,7 @@ fn master_example() {
         let db = init_global_db(&MASTER_DB_CONFIG).expect("Failed to initialize database");
         
         // HA管理器由RemDb自动初始化和管理
-        
-        // 开始事务
-        let mut tx_buffer: transaction::Transaction = core::mem::MaybeUninit::uninit().assume_init();
-        
-        let mut log_buffer = [transaction::LogItem {
-            op_type: transaction::LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            data_size: 0,
-            old_data: [0u8; 512],
-            new_data: [0u8; 512],
-            tx_id: 0,
-            timestamp: 0,
-            checksum: 0,
-        }; 10];
-        
-        let _tx = transaction::begin(
-            transaction::TransactionType::ReadWrite,
-            transaction::IsolationLevel::Serializable,
-            &mut tx_buffer,
-            log_buffer.as_mut_ptr(),
-            10
-        ).expect("Failed to begin transaction");
+        println!("[DEBUG] {}:{}: Before transaction begin", file!(), line!());
         
         // 创建测试记录
         let mut record_data = [0u8; 40]; // 计算记录大小：u32(4) + str(32) + u8(1) + bool(1) = 38字节（对齐到8字节为40字节）
@@ -125,6 +104,29 @@ fn master_example() {
         core::ptr::write(record_data.as_mut_ptr().add(36) as *mut u8, age);
         core::ptr::write(record_data.as_mut_ptr().add(37) as *mut bool, active);
         
+        // 开始事务
+        let mut tx_buffer: transaction::Transaction = core::mem::MaybeUninit::uninit().assume_init();
+        
+        let mut log_buffer = [transaction::LogItem {
+            op_type: transaction::LogOperation::Insert,
+            table_id: 0,
+            record_id: 0,
+            data_size: 0,
+            old_data: [0u8; 512],
+            new_data: [0u8; 512],
+            tx_id: 0,
+            timestamp: 0,
+            checksum: 0,
+        }; 10];
+        
+        let _tx = transaction::begin(
+            transaction::TransactionType::ReadWrite,
+            transaction::IsolationLevel::Serializable,
+            &mut tx_buffer,
+            log_buffer.as_mut_ptr(),
+            10
+        ).expect("Failed to begin transaction");
+        
         // 插入记录
         let table_mut = db.get_table_mut(0).expect("Failed to get table");
         let record_id = table_mut.insert(record_data.as_ptr()).expect("Failed to insert record");
@@ -133,7 +135,7 @@ fn master_example() {
         transaction::commit().expect("Failed to commit transaction");
         
         println!("主节点：成功插入一条记录，ID: {}", record_id);
-        println!("主节点：WAL日志已自动复制到从节点");
+        println!("主节点：等待WAL日志被自动复制到从节点");
         
         // 运行一段时间，等待从节点连接并同步数据
         // 同时定期检查HA状态

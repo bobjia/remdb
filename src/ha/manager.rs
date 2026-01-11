@@ -35,10 +35,13 @@ impl HAManager {
         let replication_manager = ReplicationManager::new(ha_config.replication_mode)?;
         
         // 创建心跳监视器
-        let heartbeat_monitor = HeartbeatMonitor::new(
+        let mut heartbeat_monitor = HeartbeatMonitor::new(
             ha_config.heartbeat_interval_ms,
             ha_config.failure_detection_ms
         )?;
+        
+        // 设置节点ID
+        heartbeat_monitor.set_node_id(ha_config.node_id as u64);
         
         Ok(Self {
             config,
@@ -51,45 +54,142 @@ impl HAManager {
     
     /// 初始化HA管理器
     pub fn init(&mut self) -> Result<()> {
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Initializing HA manager", file!(), line!());
+        
         // 统一初始化pubsub系统
-        self.init_pubsub()?;
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Calling init_pubsub()", file!(), line!());
+        match self.init_pubsub() {
+            Ok(_) => {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: HA manager pubsub initialized successfully", file!(), line!());
+            },
+            Err(e) => {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: HA manager pubsub initialization failed: {:?}", file!(), line!(), e);
+                return Err(e);
+            }
+        }
         
         // 初始化角色管理器
-        self.role_manager.init()?;
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Calling role_manager.init()", file!(), line!());
+        match self.role_manager.init() {
+            Ok(_) => {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: HA manager role manager initialized successfully", file!(), line!());
+            },
+            Err(e) => {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: HA manager role manager initialization failed: {:?}", file!(), line!(), e);
+                return Err(e);
+            }
+        }
         
         // 初始化复制管理器
-        self.replication_manager.init()?;
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Calling replication_manager.init()", file!(), line!());
+        match self.replication_manager.init() {
+            Ok(_) => {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: HA manager replication manager initialized successfully", file!(), line!());
+            },
+            Err(e) => {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: HA manager replication manager initialization failed: {:?}", file!(), line!(), e);
+                return Err(e);
+            }
+        }
         
         // 初始化心跳监视器
-        self.heartbeat_monitor.init()?;
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Calling heartbeat_monitor.init()", file!(), line!());
+        match self.heartbeat_monitor.init() {
+            Ok(_) => {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: HA manager heartbeat monitor initialized successfully", file!(), line!());
+            },
+            Err(e) => {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: HA manager heartbeat monitor initialization failed: {:?}", file!(), line!(), e);
+                return Err(e);
+            }
+        }
         
         // 注意：暂时移除设置心跳监视器的节点ID和角色的代码
         // 这里存在指针转换问题，需要重新设计
         // 实际应用中，应该在HeartbeatMonitor创建时就设置好这些参数
         
         // 根据角色执行不同的初始化逻辑
-        match self.role_manager.get_role() {
+        let role = self.role_manager.get_role();
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Current role: {:?}", file!(), line!(), role);
+        
+        match role {
             HARole::Master => {
                 // 主节点初始化逻辑
-                self.init_master()?;
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: Initializing as master node, calling init_master()", file!(), line!());
+                match self.init_master() {
+                    Ok(_) => {
+                        #[cfg(feature = "std")]
+                        println!("[DEBUG] {}:{}: Master node initialized successfully", file!(), line!());
+                    },
+                    Err(e) => {
+                        #[cfg(feature = "std")]
+                        println!("[DEBUG] {}:{}: Master node initialization failed: {:?}", file!(), line!(), e);
+                        return Err(e);
+                    }
+                }
             },
             HARole::Slave => {
                 // 从节点初始化逻辑
-                self.init_slave()?;
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: Initializing as slave node, calling init_slave()", file!(), line!());
+                match self.init_slave() {
+                    Ok(_) => {
+                        #[cfg(feature = "std")]
+                        println!("[DEBUG] {}:{}: Slave node initialized successfully", file!(), line!());
+                    },
+                    Err(e) => {
+                        #[cfg(feature = "std")]
+                        println!("[DEBUG] {}:{}: Slave node initialization failed: {:?}", file!(), line!(), e);
+                        return Err(e);
+                    }
+                }
             },
             HARole::Auto => {
                 // 自动模式初始化逻辑
-                self.init_auto()?;
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: Initializing in auto mode, calling init_auto()", file!(), line!());
+                match self.init_auto() {
+                    Ok(_) => {
+                        #[cfg(feature = "std")]
+                        println!("[DEBUG] {}:{}: Auto mode initialized successfully", file!(), line!());
+                    },
+                    Err(e) => {
+                        #[cfg(feature = "std")]
+                        println!("[DEBUG] {}:{}: Auto mode initialization failed: {:?}", file!(), line!(), e);
+                        return Err(e);
+                    }
+                }
             },
         }
         
         // 在std环境下，启动pubsub接收循环线程
         #[cfg(feature = "std")]
         {
+            #[cfg(feature = "std")]
+            println!("[DEBUG] {}:{}: Starting pubsub receiver thread", file!(), line!());
+            
             // 创建线程，运行pubsub接收循环
-            std::thread::Builder::new()
+            match std::thread::Builder::new()
                 .name("pubsub_receiver".to_string())
                 .spawn(move || {
+                    #[cfg(feature = "std")]
+                    println!("[DEBUG] {}:{}: Pubsub receiver thread started", file!(), line!());
+                    
                     loop {
                         // 获取全局pubsub实例并运行接收循环
                         let pubsub = crate::pubsub::get_global_pubsub();
@@ -100,9 +200,21 @@ impl HAManager {
                             std::thread::sleep(std::time::Duration::from_millis(100));
                         }
                     }
-                })
-                .map_err(|_| HAError::InitFailed)?;
+                }) {
+                Ok(_) => {
+                    #[cfg(feature = "std")]
+                    println!("[DEBUG] {}:{}: Pubsub receiver thread started successfully", file!(), line!());
+                },
+                Err(e) => {
+                    #[cfg(feature = "std")]
+                    println!("[DEBUG] {}:{}: Failed to start pubsub receiver thread: {:?}", file!(), line!(), e);
+                    return Err(HAError::InitFailed);
+                }
+            }
         }
+        
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: HA manager initialized successfully", file!(), line!());
         
         Ok(())
     }
@@ -282,10 +394,10 @@ impl HAManager {
         
         // 创建pubsub配置，使用复制端口5556
         let pubsub_config = PubSubConfig {
-            udp_mode: UdpMode::Unicast,
+            udp_mode: UdpMode::Broadcast,
             multicast_addr: None,
             port: ha_config.replication_port, // 使用复制端口作为统一的pubsub端口
-            max_topics: 8,
+            max_topics: 16, // 至少需要13个主题（10个WAL主题 + 3个核心主题）
             max_subscribers_per_topic: 16,
             buffer_size: 8192,
             enable_nack: true,

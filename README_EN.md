@@ -376,14 +376,7 @@ remdb provides a UDP-based reliable data publish/subscribe mechanism, supporting
 
 | Topic Name | Description | Message Format |
 |-----------|-------------|---------------|
-| wal.insert | WAL insert operation | WAL_LOG_<id>: Operation=INSERT, Table=<table_name>, ID=<record_id>, Data=<data> |
-| wal.update | WAL update operation | WAL_LOG_<id>: Operation=UPDATE, Table=<table_name>, ID=<record_id>, Data=<data> |
-| wal.delete | WAL delete operation | WAL_LOG_<id>: Operation=DELETE, Table=<table_name>, ID=<record_id>, Data=<data> |
-| wal.timeseriesInsert | WAL timeseries insert operation | WAL_LOG_<id>: Operation=TIMESERIES_INSERT, Table=<table_name>, ID=<record_id>, Data=<data> |
-| wal.commit | WAL commit operation | WAL_LOG_<id>: Operation=COMMIT, Table=<table_name>, ID=<record_id>, Data=<data> |
-| wal.abort | WAL abort operation | WAL_LOG_<id>: Operation=ABORT, Table=<table_name>, ID=<record_id>, Data=<data> |
-| wal.checkpoint | WAL checkpoint operation | WAL_LOG_<id>: Operation=CHECKPOINT, Table=<table_name>, ID=<record_id>, Data=<data> |
-| wal.* | All WAL operations (wildcard) | Same as specific WAL operation |
+| wal | All WAL operations | WAL_LOG_<id>: Operation=<operation_type>, Table=<table_name>, ID=<record_id>, Data=<data> |
 | tables | Table creation/deletion events | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> or DELETE:table=<table_name>,id=<table_id> |
 | metrics | Database metrics | JSON-formatted database metrics data |
 | healthstatus | Health status | JSON-formatted health status data |

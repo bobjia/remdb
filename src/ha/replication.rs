@@ -44,15 +44,16 @@ fn handle_slave_ack(topic_id: u16, data: &[u8]) -> bool {
 
 // WAL日志处理回调函数
 fn handle_wal_log_callback(topic_id: u16, data: &[u8]) -> bool {
-    if topic_id != WAL_REPLICATION_TOPIC {
-        return false;
-    }
-    
-    unsafe {
-        if let Some(manager_ptr) = GLOBAL_REPLICATION_MANAGER {
-            let manager = &mut *manager_ptr;
-            manager.handle_wal_log(data);
-            return true;
+    // 只处理WAL_TOPIC的消息
+    if let Some(wal_topic_id) = pubsub::get_topic_id(pubsub::topics::WAL_TOPIC) {
+        if topic_id == wal_topic_id {
+            unsafe {
+                if let Some(manager_ptr) = GLOBAL_REPLICATION_MANAGER {
+                    let manager = &mut *manager_ptr;
+                    manager.handle_wal_log(data);
+                    return true;
+                }
+            }
         }
     }
     
@@ -141,10 +142,24 @@ impl ReplicationManager {
     
     /// 订阅WAL日志
     fn subscribe_wal(&self) -> Result<()> {
-        // 订阅WAL日志主题，使用静态回调函数
-        match pubsub::subscribe(WAL_REPLICATION_TOPIC, handle_wal_log_callback) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(HAError::ReplicationError),
+        // 只订阅WAL_TOPIC
+        match pubsub::get_topic_id(pubsub::topics::WAL_TOPIC) {
+            Some(topic_id) => {
+                match pubsub::subscribe(topic_id, handle_wal_log_callback) {
+                    Ok(_) => {
+                        eprintln!("[Slave] Successfully subscribed to WAL_TOPIC, topic_id: {}", topic_id);
+                        Ok(())
+                    },
+                    Err(e) => {
+                        eprintln!("[Slave] Failed to subscribe to WAL_TOPIC: {:?}", e);
+                        Err(HAError::ReplicationError)
+                    }
+                }
+            },
+            None => {
+                eprintln!("[Slave] Failed to get topic_id for WAL_TOPIC");
+                Err(HAError::ReplicationError)
+            }
         }
     }
     
@@ -408,31 +423,39 @@ impl ReplicationManager {
             );
         }
         
-        // 发布WAL日志
-        match pubsub::publish(WAL_REPLICATION_TOPIC, &log_bytes) {
-            Ok(_) => {
-                eprintln!("[Master] Successfully published WAL log item, index: {}, op_type: {:?}", 
-                         self.last_log_index, log_item.op_type);
-                
-                // 根据复制模式处理确认
-                match self.replication_mode {
-                    ReplicationMode::Sync => {
-                        // 同步模式：等待至少一个从节点确认
-                        eprintln!("[Master] Waiting for slave acknowledgment...");
-                        self.wait_for_slave_ack()?;
-                        eprintln!("[Master] Received acknowledgment from {} slave(s)", self.confirmed_slaves);
+        // 发布WAL日志到WAL_TOPIC
+        match pubsub::get_topic_id(pubsub::topics::WAL_TOPIC) {
+            Some(topic_id) => {
+                match pubsub::publish(topic_id, &log_bytes) {
+                    Ok(_) => {
+                        eprintln!("[Master] Successfully published WAL log item to WAL_TOPIC, index: {}, op_type: {:?}", 
+                                 self.last_log_index, log_item.op_type);
+                        
+                        // 根据复制模式处理确认
+                        match self.replication_mode {
+                            ReplicationMode::Sync => {
+                                // 同步模式：等待至少一个从节点确认
+                                eprintln!("[Master] Waiting for slave acknowledgment...");
+                                self.wait_for_slave_ack()?;
+                                eprintln!("[Master] Received acknowledgment from {} slave(s)", self.confirmed_slaves);
+                            },
+                            ReplicationMode::Async => {
+                                // 异步模式：立即返回，不等待确认
+                                eprintln!("[Master] Using async replication mode, not waiting for acknowledgment");
+                            }
+                        }
+                        Ok(())
                     },
-                    ReplicationMode::Async => {
-                        // 异步模式：立即返回，不等待确认
-                        eprintln!("[Master] Using async replication mode, not waiting for acknowledgment");
-                    }
+                    Err(e) => {
+                        eprintln!("[Master] Failed to publish WAL log item: {:?}", e);
+                        Err(HAError::ReplicationError)
+                    },
                 }
-                Ok(())
             },
-            Err(e) => {
-                eprintln!("[Master] Failed to publish WAL log item: {:?}", e);
+            None => {
+                eprintln!("[Master] Failed to get topic_id for WAL_TOPIC");
                 Err(HAError::ReplicationError)
-            },
+            }
         }
     }
     

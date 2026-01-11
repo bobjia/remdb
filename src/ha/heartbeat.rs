@@ -8,8 +8,8 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use core::time::Duration;
 use core::ptr::NonNull;
 
-// 全局心跳监视器实例（用于回调访问）
-static mut GLOBAL_HEARTBEAT_MONITOR: Option<*const HeartbeatMonitor> = None;
+// 注意：移除全局静态变量，避免线程安全问题
+// 改为使用其他方式处理心跳发送
 
 // 心跳主题ID
 const HEARTBEAT_TOPIC: u16 = 3;
@@ -27,21 +27,35 @@ pub struct HeartbeatPacket {
     crc32: u32,
 }
 
-/// 心跳接收回调函数
+/// 心跳接收回调函数 - 简化实现，不依赖全局静态变量
 fn handle_heartbeat_callback(topic_id: u16, data: &[u8]) -> bool {
     if topic_id != HEARTBEAT_TOPIC {
         return false;
     }
     
-    unsafe {
-        if let Some(monitor_ptr) = GLOBAL_HEARTBEAT_MONITOR {
-            let monitor = &*monitor_ptr;
-            monitor.handle_heartbeat(data);
+    #[cfg(feature = "std")]
+    println!("[DEBUG] {}:{}: Heartbeat callback received data, len: {}", file!(), line!(), data.len());
+    
+    // 解析并处理心跳数据包
+    if let Some(packet) = HeartbeatPacket::from_bytes(data) {
+        // 验证CRC校验值
+        if !packet.verify_crc() {
+            #[cfg(feature = "std")]
+            println!("[DEBUG] {}:{}: Heartbeat CRC check failed", file!(), line!());
             return true;
         }
+        
+        // 安全访问字段，避免未对齐访问
+        let node_id = packet.node_id();
+        let role = packet.role();
+        let timestamp = packet.timestamp();
+        
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Received heartbeat, node_id: {}, role: {:?}, timestamp: {}", 
+                 file!(), line!(), node_id, role, timestamp);
     }
     
-    false
+    true
 }
 
 // 注意：移除了静态指针，改用其他方式处理回调
@@ -194,13 +208,15 @@ impl HeartbeatMonitor {
     
     /// 初始化心跳监视器
     pub fn init(&self) -> Result<()> {
-        // 设置全局实例，用于回调访问
-        unsafe {
-            GLOBAL_HEARTBEAT_MONITOR = Some(self as *const Self);
-        }
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Heartbeat monitor initialized, role: {:?}, node_id: {}", 
+                 file!(), line!(), self.role, self.node_id);
         
         // 初始化pubsub系统
         self.init_pubsub()?;
+        
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Heartbeat monitor pubsub initialized", file!(), line!());
         
         Ok(())
     }
@@ -208,7 +224,13 @@ impl HeartbeatMonitor {
     /// 初始化主节点
     pub fn init_master(&self) -> Result<()> {
         // 主节点：定期发送心跳
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Initializing master node, starting heartbeat sender", file!(), line!());
+        
         self.start_heartbeat_sender()?;
+        
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Master node heartbeat sender started", file!(), line!());
         
         Ok(())
     }
@@ -226,24 +248,10 @@ impl HeartbeatMonitor {
     
     /// 初始化pubsub系统
     fn init_pubsub(&self) -> Result<()> {
-        // pubsub系统可能已经由ReplicationManager初始化
-        // 这里尝试初始化，如果失败则忽略
-        let pubsub_config = PubSubConfig {
-            udp_mode: UdpMode::Unicast,
-            multicast_addr: None,
-            port: 5557, // 使用专门的心跳端口
-            max_topics: 4,
-            max_subscribers_per_topic: 8,
-            buffer_size: 4096,
-            enable_nack: true,
-            retransmit_timeout: core::time::Duration::from_millis(100),
-            max_retransmits: 3,
-            heartbeat_interval: core::time::Duration::from_secs(10),
-            frame_pool_size: 128,
-        };
-        
-        // 尝试初始化pubsub，如果失败则忽略（测试环境可能没有网络）
-        let _ = pubsub::init(pubsub_config);
+        // pubsub系统已经由HA管理器统一初始化，无需再次初始化
+        // 这里只做日志记录
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Heartbeat using existing pubsub system", file!(), line!());
         
         Ok(())
     }
@@ -258,50 +266,49 @@ impl HeartbeatMonitor {
         // 标记为运行中
         self.sender_running.store(true, Ordering::Relaxed);
         
-        // 在std环境下，使用线程实现定时器发送
+        // 获取需要的值
+        let heartbeat_interval = self.heartbeat_interval;
+        let node_id = self.node_id;
+        let role = self.role;
+        
+        // 启动后台线程定期发送心跳
         #[cfg(feature = "std")]
         {
-            // 保存心跳间隔到全局实例中，线程将通过全局实例访问
-            let heartbeat_interval = self.heartbeat_interval;
-            
-            // 创建线程，定期发送心跳
-            std::thread::Builder::new()
-                .name("heartbeat_sender".to_string())
-                .spawn(move || {
-                    loop {
-                        // 检查是否应该停止
-                        let should_run = unsafe {
-                            GLOBAL_HEARTBEAT_MONITOR.as_ref()
-                                .map(|ptr| {
-                                    let monitor = &*(*ptr as *mut HeartbeatMonitor);
-                                    monitor.sender_running.load(Ordering::Relaxed)
-                                })
-                                .unwrap_or(false)
-                        };
-                        
-                        if !should_run {
-                            break;
-                        }
-                        
-                        // 发送心跳
-                        let monitor = unsafe {
-                            GLOBAL_HEARTBEAT_MONITOR.as_ref()
-                                .and_then(|ptr| NonNull::new(*ptr as *mut HeartbeatMonitor))
-                        };
-                        
-                        if let Some(monitor_ptr) = monitor {
-                            let monitor_ref = unsafe { &*monitor_ptr.as_ptr() };
-                            if let Err(e) = monitor_ref.send_heartbeat() {
-                                // 发送失败，记录错误但继续运行
-                                eprintln!("[Heartbeat] Failed to send heartbeat: {:?}", e);
-                            }
-                        }
-                        
-                        // 等待下一次发送
-                        std::thread::sleep(std::time::Duration::from_millis(heartbeat_interval));
+            std::thread::spawn(move || {
+                let interval = std::time::Duration::from_millis(heartbeat_interval);
+                
+                loop {
+                    // 构建心跳数据包
+                    let packet = HeartbeatPacket::new(node_id, role);
+                    
+                    // 复制数据到临时缓冲区，确保publish函数使用完数据之前不会释放内存
+                    let mut buffer = [0u8; core::mem::size_of::<HeartbeatPacket>()];
+                    unsafe {
+                        core::ptr::copy_nonoverlapping(
+                            packet.to_bytes().as_ptr(),
+                            buffer.as_mut_ptr(),
+                            buffer.len()
+                        );
                     }
-                })
-                .map_err(|_| HAError::InitFailed)?;
+                    
+                    // 发布心跳消息
+                    match pubsub::publish(HEARTBEAT_TOPIC, &buffer) {
+                        Ok(_) => {
+                            // 发送成功，记录日志
+                            let timestamp = packet.timestamp();
+                            println!("[DEBUG] src/ha/heartbeat.rs: Heartbeat sent, node_id: {}, role: {:?}, timestamp: {}", 
+                                     node_id, role, timestamp);
+                        },
+                        Err(e) => {
+                            // 发送失败，记录错误但继续运行
+                            println!("[Heartbeat] Failed to send heartbeat: {:?}", e);
+                        },
+                    }
+                    
+                    // 等待心跳间隔
+                    std::thread::sleep(interval);
+                }
+            });
         }
         
         Ok(())
@@ -321,42 +328,13 @@ impl HeartbeatMonitor {
         match pubsub::subscribe(HEARTBEAT_TOPIC, handle_heartbeat_callback) {
             Ok(_) => {
                 #[cfg(feature = "std")]
-                eprintln!("[Heartbeat] Successfully subscribed to heartbeat topic");
+                println!("[DEBUG] {}:{}: Successfully subscribed to heartbeat topic", file!(), line!());
             },
             Err(e) => {
                 #[cfg(feature = "std")]
-                eprintln!("[Heartbeat] Failed to subscribe to heartbeat topic: {:?}", e);
+                println!("[DEBUG] {}:{}: Failed to subscribe to heartbeat topic: {:?}", file!(), line!(), e);
                 return Err(HAError::NetworkError);
             }
-        }
-        
-        // 在std环境下，启动接收循环线程
-        #[cfg(feature = "std")]
-        {
-            // 创建线程，处理pubsub消息
-            std::thread::Builder::new()
-                .name("heartbeat_receiver".to_string())
-                .spawn(move || {
-                    loop {
-                        // 检查是否应该停止
-                        let should_run = unsafe {
-                            GLOBAL_HEARTBEAT_MONITOR.as_ref()
-                                .map(|ptr| {
-                                    let monitor = &*(*ptr as *mut HeartbeatMonitor);
-                                    monitor.receiver_running.load(Ordering::Relaxed)
-                                })
-                                .unwrap_or(false)
-                        };
-                        
-                        if !should_run {
-                            break;
-                        }
-                        
-                        // 短暂休眠，避免CPU占用过高
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
-                })
-                .map_err(|_| HAError::InitFailed)?;
         }
         
         Ok(())
@@ -376,13 +354,27 @@ impl HeartbeatMonitor {
         if let Some(packet) = HeartbeatPacket::from_bytes(data) {
             // 验证CRC校验值
             if !packet.verify_crc() {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: Heartbeat CRC check failed", file!(), line!());
                 return;
             }
+            
+            // 安全访问字段，避免未对齐访问
+            let node_id = packet.node_id();
+            let role = packet.role();
+            let timestamp = packet.timestamp();
+            
+            #[cfg(feature = "std")]
+            println!("[DEBUG] {}:{}: Received heartbeat, node_id: {}, role: {:?}, timestamp: {}", 
+                     file!(), line!(), node_id, role, timestamp);
             
             // 更新最后心跳时间
             let now = crate::platform::get_timestamp_us() / 1000; // 转换为毫秒
             self.last_heartbeat_time.store(now, Ordering::Relaxed);
             self.master_alive.store(true, Ordering::Relaxed);
+            
+            #[cfg(feature = "std")]
+            println!("[DEBUG] {}:{}: Updated master alive status to true", file!(), line!());
         }
     }
     
@@ -414,12 +406,37 @@ impl HeartbeatMonitor {
     /// 发送心跳
     fn send_heartbeat(&self) -> Result<()> {
         // 构建心跳数据包
-        let packet = HeartbeatPacket::new(self.node_id, self.role);
+        let mut packet = HeartbeatPacket::new(self.node_id, self.role);
+        
+        // 安全访问字段，避免未对齐访问
+        let timestamp = packet.timestamp();
+        
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: Sending heartbeat, node_id: {}, role: {:?}, timestamp: {}", 
+                 file!(), line!(), self.node_id, self.role, timestamp);
+        
+        // 复制数据到临时缓冲区，确保publish函数使用完数据之前不会释放内存
+        let mut buffer = [0u8; core::mem::size_of::<HeartbeatPacket>()];
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                packet.to_bytes().as_ptr(),
+                buffer.as_mut_ptr(),
+                buffer.len()
+            );
+        }
         
         // 发布心跳消息
-        match pubsub::publish(HEARTBEAT_TOPIC, packet.to_bytes()) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(HAError::NetworkError),
+        match pubsub::publish(HEARTBEAT_TOPIC, &buffer) {
+            Ok(_) => {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: Heartbeat sent successfully", file!(), line!());
+                Ok(())
+            },
+            Err(e) => {
+                #[cfg(feature = "std")]
+                println!("[DEBUG] {}:{}: Failed to send heartbeat: {:?}", file!(), line!(), e);
+                Err(HAError::NetworkError)
+            },
         }
     }
     

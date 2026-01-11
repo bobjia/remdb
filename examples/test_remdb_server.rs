@@ -33,14 +33,7 @@ unsafe impl Sync for SimpleAllocator {}
 static ALLOCATOR: SimpleAllocator = SimpleAllocator; 
 
 // 主题ID定义 
-const WAL_INSERT_TOPIC_ID: u16 = 1; 
-const WAL_UPDATE_TOPIC_ID: u16 = 2; 
-const WAL_DELETE_TOPIC_ID: u16 = 3; 
-const WAL_TIMESERIES_INSERT_TOPIC_ID: u16 = 4; 
-const WAL_COMMIT_TOPIC_ID: u16 = 5; 
-const WAL_ABORT_TOPIC_ID: u16 = 6; 
-const WAL_CHECKPOINT_TOPIC_ID: u16 = 7; 
-const WAL_ALL_TOPIC_ID: u16 = 8; 
+const WAL_TOPIC_ID: u16 = 1; 
 const TABLES_TOPIC_ID: u16 = 9; 
 const METRICS_TOPIC_ID: u16 = 10; 
 const HEALTH_STATUS_TOPIC_ID: u16 = 11; 
@@ -191,14 +184,7 @@ fn main() {
     pubsub.init().expect("Failed to initialize PubSub"); 
     
     // 注册所有预定义主题 
-    pubsub.register_topic(WAL_INSERT_TOPIC, WAL_INSERT_TOPIC_ID).expect("Failed to register WAL insert topic"); 
-    pubsub.register_topic(WAL_UPDATE_TOPIC, WAL_UPDATE_TOPIC_ID).expect("Failed to register WAL update topic"); 
-    pubsub.register_topic(WAL_DELETE_TOPIC, WAL_DELETE_TOPIC_ID).expect("Failed to register WAL delete topic"); 
-    pubsub.register_topic(WAL_TIMESERIES_INSERT_TOPIC, WAL_TIMESERIES_INSERT_TOPIC_ID).expect("Failed to register WAL timeseries insert topic"); 
-    pubsub.register_topic(WAL_COMMIT_TOPIC, WAL_COMMIT_TOPIC_ID).expect("Failed to register WAL commit topic"); 
-    pubsub.register_topic(WAL_ABORT_TOPIC, WAL_ABORT_TOPIC_ID).expect("Failed to register WAL abort topic"); 
-    pubsub.register_topic(WAL_CHECKPOINT_TOPIC, WAL_CHECKPOINT_TOPIC_ID).expect("Failed to register WAL checkpoint topic"); 
-    pubsub.register_topic(WAL_ALL_TOPIC, WAL_ALL_TOPIC_ID).expect("Failed to register WAL all topic"); 
+    pubsub.register_topic(WAL_TOPIC, WAL_TOPIC_ID).expect("Failed to register WAL topic"); 
     pubsub.register_topic(TABLES_TOPIC, TABLES_TOPIC_ID).expect("Failed to register tables topic"); 
     // pubsub.register_topic(METRICS_TOPIC, METRICS_TOPIC_ID).expect("Failed to register metrics topic"); 
     // pubsub.register_topic(HEALTH_STATUS_TOPIC, HEALTH_STATUS_TOPIC_ID).expect("Failed to register health status topic"); 
@@ -206,14 +192,7 @@ fn main() {
     println!("RemDB Server started successfully!"); 
     println!("Listening on UDP port 5555"); 
     println!("Topics available:"); 
-    println!("- WAL_INSERT (ID: {}) - WAL insert operations", WAL_INSERT_TOPIC_ID); 
-    println!("- WAL_UPDATE (ID: {}) - WAL update operations", WAL_UPDATE_TOPIC_ID); 
-    println!("- WAL_DELETE (ID: {}) - WAL delete operations", WAL_DELETE_TOPIC_ID); 
-    println!("- WAL_TIMESERIES_INSERT (ID: {}) - WAL timeseries insert operations", WAL_TIMESERIES_INSERT_TOPIC_ID); 
-    println!("- WAL_COMMIT (ID: {}) - WAL commit operations", WAL_COMMIT_TOPIC_ID); 
-    println!("- WAL_ABORT (ID: {}) - WAL abort operations", WAL_ABORT_TOPIC_ID); 
-    println!("- WAL_CHECKPOINT (ID: {}) - WAL checkpoint operations", WAL_CHECKPOINT_TOPIC_ID); 
-    println!("- WAL_ALL (ID: {}) - All WAL operations", WAL_ALL_TOPIC_ID); 
+    println!("- WAL (ID: {}) - All WAL operations", WAL_TOPIC_ID); 
     println!("- TABLES (ID: {}) - Table creation/deletion events", TABLES_TOPIC_ID); 
     // println!("- METRICS (ID: {}) - Database metrics", METRICS_TOPIC_ID); 
     // println!("- HEALTH_STATUS (ID: {}) - Health status updates", HEALTH_STATUS_TOPIC_ID); 

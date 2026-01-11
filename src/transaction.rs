@@ -574,19 +574,6 @@ impl LogManager {
     unsafe fn publish_to_pubsub(&self, log_item: &LogItem) -> Result<()> {
         use crate::pubsub::topics::*;
         
-        // Map LogOperation to topic
-        let topic_name = match log_item.op_type {
-            LogOperation::Insert => WAL_INSERT_TOPIC,
-            LogOperation::Delete => WAL_DELETE_TOPIC,
-            LogOperation::Update => WAL_UPDATE_TOPIC,
-            LogOperation::TimeSeriesInsert => WAL_TIMESERIES_INSERT_TOPIC,
-            LogOperation::CreateTable => WAL_CREATE_TABLE_TOPIC,
-            LogOperation::CreateIndex => WAL_CREATE_INDEX_TOPIC,
-            LogOperation::Commit => WAL_COMMIT_TOPIC,
-            LogOperation::Abort => WAL_ABORT_TOPIC,
-            LogOperation::Checkpoint => WAL_CHECKPOINT_TOPIC,
-        };
-        
         // Serialize log_item to bytes
         let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
         core::ptr::write_unaligned(
@@ -594,14 +581,9 @@ impl LogManager {
             *log_item
         );
         
-        // Publish to specific topic
-        if let Some(topic_id) = crate::pubsub::get_topic_id(topic_name) {
+        // Only publish to WAL_TOPIC
+        if let Some(topic_id) = crate::pubsub::get_topic_id(WAL_TOPIC) {
             let _ = crate::pubsub::publish(topic_id, &log_bytes);
-        }
-        
-        // Publish to wildcard topic (wal.*)
-        if let Some(wildcard_id) = crate::pubsub::get_topic_id(WAL_ALL_TOPIC) {
-            let _ = crate::pubsub::publish(wildcard_id, &log_bytes);
         }
         
         Ok(())

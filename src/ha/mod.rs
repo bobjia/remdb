@@ -31,6 +31,8 @@ pub enum ReplicationMode {
 /// HA配置结构体
 #[derive(Copy, Clone, Debug)]
 pub struct HAConfig {
+    /// 节点ID，唯一标识集群中的节点
+    pub node_id: u32,
     /// HA角色
     pub ha_role: HARole,
     /// 复制模式
@@ -100,9 +102,20 @@ pub fn init(config: &'static crate::config::DbConfig) -> Result<()> {
             return Err(HAError::InitFailed);
         }
         
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: ha::init: Creating HAManager instance", file!(), line!());
         let mut ha_manager = manager::HAManager::new(config)?;
+        
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: ha::init: Calling ha_manager.init()", file!(), line!());
         ha_manager.init()?;
+        
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: ha::init: Storing HAManager to global static", file!(), line!());
         HA_MANAGER = Some(ha_manager);
+        
+        #[cfg(feature = "std")]
+        println!("[DEBUG] {}:{}: ha::init: HA initialization completed", file!(), line!());
         
         Ok(())
     }
