@@ -47,7 +47,7 @@ pub enum TransactionStatus {
 
 /// 事务日志操作类型
 #[repr(u8)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum LogOperation {
     /// 插入记录
     Insert = 0,

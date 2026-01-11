@@ -136,7 +136,19 @@ fn master_example() {
         println!("主节点：WAL日志已自动复制到从节点");
         
         // 运行一段时间，等待从节点连接并同步数据
-        std::thread::sleep(std::time::Duration::from_secs(20));
+        // 同时定期检查HA状态
+        for i in 0..20 {
+            // 检查HA状态
+            if let Some(ha_manager) = ha::get_ha_manager() {
+                if let Err(e) = ha_manager.check_status() {
+                    println!("[HA] Master check status error: {:?}", e);
+                }
+            }
+            
+            // 每1秒检查一次
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            println!("[HA] Master running, iteration: {}", i+1);
+        }
         
         // 关闭HA管理器
         ha::shutdown().expect("Failed to shutdown HA manager");

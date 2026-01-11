@@ -51,6 +51,9 @@ impl HAManager {
     
     /// 初始化HA管理器
     pub fn init(&mut self) -> Result<()> {
+        // 统一初始化pubsub系统
+        self.init_pubsub()?;
+        
         // 初始化角色管理器
         self.role_manager.init()?;
         
@@ -78,6 +81,27 @@ impl HAManager {
                 // 自动模式初始化逻辑
                 self.init_auto()?;
             },
+        }
+        
+        // 在std环境下，启动pubsub接收循环线程
+        #[cfg(feature = "std")]
+        {
+            // 创建线程，运行pubsub接收循环
+            std::thread::Builder::new()
+                .name("pubsub_receiver".to_string())
+                .spawn(move || {
+                    loop {
+                        // 获取全局pubsub实例并运行接收循环
+                        let pubsub = crate::pubsub::get_global_pubsub();
+                        if let Some(pubsub) = pubsub {
+                            pubsub.receive_loop();
+                        } else {
+                            // pubsub实例不存在，短暂休眠后重试
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
+                    }
+                })
+                .map_err(|_| HAError::InitFailed)?;
         }
         
         Ok(())
@@ -247,6 +271,43 @@ impl HAManager {
         
         // 初始化从节点组件
         self.init_slave()?;
+        
+        Ok(())
+    }
+    
+    /// 统一初始化pubsub系统
+    fn init_pubsub(&self) -> Result<()> {
+        // 获取HA配置
+        let ha_config = self.config.ha_config.as_ref().ok_or(HAError::InvalidParameter)?;
+        
+        // 创建pubsub配置，使用复制端口5556
+        let pubsub_config = PubSubConfig {
+            udp_mode: UdpMode::Unicast,
+            multicast_addr: None,
+            port: ha_config.replication_port, // 使用复制端口作为统一的pubsub端口
+            max_topics: 8,
+            max_subscribers_per_topic: 16,
+            buffer_size: 8192,
+            enable_nack: true,
+            retransmit_timeout: core::time::Duration::from_millis(100),
+            max_retransmits: 3,
+            heartbeat_interval: core::time::Duration::from_secs(10),
+            frame_pool_size: 256,
+        };
+        
+        // 初始化pubsub
+        match pubsub_init(pubsub_config) {
+            Ok(_) => {},
+            Err(e) => {
+                // 将PubSubError转换为HAError
+                match e {
+                    crate::pubsub::PubSubError::InitFailed => return Err(HAError::InitFailed),
+                    crate::pubsub::PubSubError::NetworkError => return Err(HAError::NetworkError),
+                    crate::pubsub::PubSubError::InvalidParameter => return Err(HAError::InvalidParameter),
+                    _ => return Err(HAError::InitFailed), // 其他错误都视为初始化失败
+                }
+            }
+        }
         
         Ok(())
     }

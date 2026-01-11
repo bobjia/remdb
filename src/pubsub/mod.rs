@@ -482,6 +482,13 @@ pub fn get_topic_name(topic_id: u16) -> Option<&'static str> {
     }
 }
 
+/// 获取全局pubsub实例（用于内部使用）
+pub(crate) fn get_global_pubsub() -> Option<&'static mut PubSub> {
+    unsafe {
+        PUB_SUB_INSTANCE.as_mut()
+    }
+}
+
 /// 停止发布/订阅系统
 pub fn shutdown() -> Result<()> {
     unsafe {

@@ -78,7 +78,19 @@ fn slave_example() {
         // HA管理器由RemDb自动初始化和管理
         
         // 运行一段时间，等待从主节点同步数据
-        std::thread::sleep(std::time::Duration::from_secs(15));
+        // 同时定期检查HA状态
+        for i in 0..15 {
+            // 检查HA状态
+            if let Some(ha_manager) = ha::get_ha_manager() {
+                if let Err(e) = ha_manager.check_status() {
+                    println!("[HA] Slave check status error: {:?}", e);
+                }
+            }
+            
+            // 每1秒检查一次
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            println!("[HA] Slave running, iteration: {}", i+1);
+        }
         
         // 读取数据（应该是从主节点复制过来的）
         let table = db.get_table(0).expect("Failed to get table");

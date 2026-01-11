@@ -125,37 +125,14 @@ impl ReplicationManager {
     /// 初始化从节点
     pub fn init_slave(&self) -> Result<()> {
         // 从节点：订阅WAL日志
-        // 测试环境中pubsub可能未初始化，允许subscribe失败
-        let _ = self.subscribe_wal();
-        
-        Ok(())
-    }
-    
-    /// 初始化pubsub系统
-    fn init_pubsub(&self) -> Result<()> {
-        // 创建pubsub配置
-        let pubsub_config = PubSubConfig {
-            udp_mode: UdpMode::Unicast,
-            multicast_addr: None,
-            port: 5556, // 使用专门的复制端口
-            max_topics: 8,
-            max_subscribers_per_topic: 16,
-            buffer_size: 8192,
-            enable_nack: true,
-            retransmit_timeout: core::time::Duration::from_millis(100),
-            max_retransmits: 3,
-            heartbeat_interval: core::time::Duration::from_secs(10),
-            frame_pool_size: 256,
-        };
-        
-        // 初始化pubsub
-        match pubsub::init(pubsub_config) {
+        match self.subscribe_wal() {
             Ok(_) => {
-                // TODO: 添加日志记录：pubsub初始化成功
+                // 订阅成功
+                eprintln!("[Slave] Successfully subscribed to WAL replication topic");
             },
             Err(e) => {
-                // TODO: 添加日志记录：pubsub初始化失败，错误原因：{e}
-                // 测试环境可能没有网络，允许初始化失败
+                // 订阅失败，记录错误但继续运行（测试环境可能没有网络）
+                eprintln!("[Slave] Failed to subscribe to WAL replication topic: {:?}", e);
             }
         }
         
@@ -173,8 +150,12 @@ impl ReplicationManager {
     
     /// 处理接收到的WAL日志
     fn handle_wal_log(&mut self, data: &[u8]) {
+        eprintln!("[Slave] Received WAL log data, length: {}", data.len());
+        
         // 1. 解析WAL日志
         if data.len() != core::mem::size_of::<LogItem>() {
+            eprintln!("[Slave] Invalid WAL log data length, expected: {}, got: {}", 
+                     core::mem::size_of::<LogItem>(), data.len());
             return; // 数据长度不正确，忽略
         }
         
@@ -183,9 +164,14 @@ impl ReplicationManager {
             log_item = core::ptr::read_unaligned(data.as_ptr() as *const LogItem);
         }
         
+        eprintln!("[Slave] Parsed WAL log item, op_type: {:?}, table_id: {}, record_id: {}", 
+                 log_item.op_type, log_item.table_id, log_item.record_id);
+        
         // 2. 应用WAL日志到本地数据库
         // 获取全局数据库实例
         if let Some(db) = unsafe { crate::get_global_db() } {
+            eprintln!("[Slave] Applying WAL log to database");
+            
             // 根据日志类型执行相应的操作
             unsafe {
                 match log_item.op_type {
@@ -349,16 +335,35 @@ impl ReplicationManager {
                         
                         eprintln!("[Slave] Created index for table: {}, field: {}, type: {:?}", table_name, field_name, index_type);
                     },
-                    _ => {
-                        // 对于其他操作，使用全局TX_MANAGER的LogManager执行恢复
+                    crate::transaction::LogOperation::Insert => {
+                        // 执行插入操作
+                        eprintln!("[Slave] Applying Insert operation, table_id: {}, record_id: {}", 
+                                 log_item.table_id, log_item.record_id);
+                        
+                        // 对于插入操作，使用全局TX_MANAGER的LogManager执行恢复
                         if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager() {
                             // 注意：这里我们直接调用recover方法处理单个日志项
                             // 实际实现中可能需要更高效的方式
                             let _ = log_manager.recover(db);
+                            eprintln!("[Slave] Insert operation recovered via log manager");
+                        }
+                    },
+                    _ => {
+                        // 对于其他操作，使用全局TX_MANAGER的LogManager执行恢复
+                        eprintln!("[Slave] Applying other operation: {:?}, using log manager recover", 
+                                 log_item.op_type);
+                        
+                        if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager() {
+                            // 注意：这里我们直接调用recover方法处理单个日志项
+                            // 实际实现中可能需要更高效的方式
+                            let _ = log_manager.recover(db);
+                            eprintln!("[Slave] Operation recovered via log manager");
                         }
                     }
                 }
             }
+        } else {
+            eprintln!("[Slave] Failed to get global database instance");
         }
         
         // 3. 更新从节点状态
@@ -369,8 +374,12 @@ impl ReplicationManager {
         let current_time = Instant::now();
         self.replication_delay = current_time.elapsed().as_micros() as u64;
         
+        eprintln!("[Slave] Updated slave status, last_log_index: {}, replication_delay: {}μs", 
+                 self.last_log_index, self.replication_delay);
+        
         // 4. 发送确认给主节点
         self.send_slave_ack();
+        eprintln!("[Slave] Sent acknowledgment to master");
     }
     
     /// 发送从节点确认
@@ -402,19 +411,28 @@ impl ReplicationManager {
         // 发布WAL日志
         match pubsub::publish(WAL_REPLICATION_TOPIC, &log_bytes) {
             Ok(_) => {
+                eprintln!("[Master] Successfully published WAL log item, index: {}, op_type: {:?}", 
+                         self.last_log_index, log_item.op_type);
+                
                 // 根据复制模式处理确认
                 match self.replication_mode {
                     ReplicationMode::Sync => {
                         // 同步模式：等待至少一个从节点确认
+                        eprintln!("[Master] Waiting for slave acknowledgment...");
                         self.wait_for_slave_ack()?;
+                        eprintln!("[Master] Received acknowledgment from {} slave(s)", self.confirmed_slaves);
                     },
                     ReplicationMode::Async => {
                         // 异步模式：立即返回，不等待确认
+                        eprintln!("[Master] Using async replication mode, not waiting for acknowledgment");
                     }
                 }
                 Ok(())
             },
-            Err(_) => Err(HAError::ReplicationError),
+            Err(e) => {
+                eprintln!("[Master] Failed to publish WAL log item: {:?}", e);
+                Err(HAError::ReplicationError)
+            },
         }
     }
     

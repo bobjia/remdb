@@ -6,6 +6,10 @@ use crate::pubsub::{PubSubConfig, UdpMode, PubSubError};
 use crate::ha::HARole;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use core::time::Duration;
+use core::ptr::NonNull;
+
+// 全局心跳监视器实例（用于回调访问）
+static mut GLOBAL_HEARTBEAT_MONITOR: Option<*const HeartbeatMonitor> = None;
 
 // 心跳主题ID
 const HEARTBEAT_TOPIC: u16 = 3;
@@ -21,6 +25,23 @@ pub struct HeartbeatPacket {
     role: u8,
     /// CRC校验值
     crc32: u32,
+}
+
+/// 心跳接收回调函数
+fn handle_heartbeat_callback(topic_id: u16, data: &[u8]) -> bool {
+    if topic_id != HEARTBEAT_TOPIC {
+        return false;
+    }
+    
+    unsafe {
+        if let Some(monitor_ptr) = GLOBAL_HEARTBEAT_MONITOR {
+            let monitor = &*monitor_ptr;
+            monitor.handle_heartbeat(data);
+            return true;
+        }
+    }
+    
+    false
 }
 
 // 注意：移除了静态指针，改用其他方式处理回调
@@ -173,6 +194,14 @@ impl HeartbeatMonitor {
     
     /// 初始化心跳监视器
     pub fn init(&self) -> Result<()> {
+        // 设置全局实例，用于回调访问
+        unsafe {
+            GLOBAL_HEARTBEAT_MONITOR = Some(self as *const Self);
+        }
+        
+        // 初始化pubsub系统
+        self.init_pubsub()?;
+        
         Ok(())
     }
     
@@ -229,8 +258,51 @@ impl HeartbeatMonitor {
         // 标记为运行中
         self.sender_running.store(true, Ordering::Relaxed);
         
-        // 注意：暂时简化设计，移除线程相关逻辑
-        // 实际应用中，心跳发送应该由外部定时器或主循环定期调用
+        // 在std环境下，使用线程实现定时器发送
+        #[cfg(feature = "std")]
+        {
+            // 保存心跳间隔到全局实例中，线程将通过全局实例访问
+            let heartbeat_interval = self.heartbeat_interval;
+            
+            // 创建线程，定期发送心跳
+            std::thread::Builder::new()
+                .name("heartbeat_sender".to_string())
+                .spawn(move || {
+                    loop {
+                        // 检查是否应该停止
+                        let should_run = unsafe {
+                            GLOBAL_HEARTBEAT_MONITOR.as_ref()
+                                .map(|ptr| {
+                                    let monitor = &*(*ptr as *mut HeartbeatMonitor);
+                                    monitor.sender_running.load(Ordering::Relaxed)
+                                })
+                                .unwrap_or(false)
+                        };
+                        
+                        if !should_run {
+                            break;
+                        }
+                        
+                        // 发送心跳
+                        let monitor = unsafe {
+                            GLOBAL_HEARTBEAT_MONITOR.as_ref()
+                                .and_then(|ptr| NonNull::new(*ptr as *mut HeartbeatMonitor))
+                        };
+                        
+                        if let Some(monitor_ptr) = monitor {
+                            let monitor_ref = unsafe { &*monitor_ptr.as_ptr() };
+                            if let Err(e) = monitor_ref.send_heartbeat() {
+                                // 发送失败，记录错误但继续运行
+                                eprintln!("[Heartbeat] Failed to send heartbeat: {:?}", e);
+                            }
+                        }
+                        
+                        // 等待下一次发送
+                        std::thread::sleep(std::time::Duration::from_millis(heartbeat_interval));
+                    }
+                })
+                .map_err(|_| HAError::InitFailed)?;
+        }
         
         Ok(())
     }
@@ -245,15 +317,54 @@ impl HeartbeatMonitor {
         // 标记为运行中
         self.receiver_running.store(true, Ordering::Relaxed);
         
-        // 注意：暂时简化设计，不使用pubsub订阅
-        // 实际应用中需要实现心跳接收逻辑
+        // 订阅心跳主题
+        match pubsub::subscribe(HEARTBEAT_TOPIC, handle_heartbeat_callback) {
+            Ok(_) => {
+                #[cfg(feature = "std")]
+                eprintln!("[Heartbeat] Successfully subscribed to heartbeat topic");
+            },
+            Err(e) => {
+                #[cfg(feature = "std")]
+                eprintln!("[Heartbeat] Failed to subscribe to heartbeat topic: {:?}", e);
+                return Err(HAError::NetworkError);
+            }
+        }
+        
+        // 在std环境下，启动接收循环线程
+        #[cfg(feature = "std")]
+        {
+            // 创建线程，处理pubsub消息
+            std::thread::Builder::new()
+                .name("heartbeat_receiver".to_string())
+                .spawn(move || {
+                    loop {
+                        // 检查是否应该停止
+                        let should_run = unsafe {
+                            GLOBAL_HEARTBEAT_MONITOR.as_ref()
+                                .map(|ptr| {
+                                    let monitor = &*(*ptr as *mut HeartbeatMonitor);
+                                    monitor.receiver_running.load(Ordering::Relaxed)
+                                })
+                                .unwrap_or(false)
+                        };
+                        
+                        if !should_run {
+                            break;
+                        }
+                        
+                        // 短暂休眠，避免CPU占用过高
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                })
+                .map_err(|_| HAError::InitFailed)?;
+        }
         
         Ok(())
     }
     
     /// 启动心跳检查
     fn start_heartbeat_check(&self) -> Result<()> {
-        // 注意：暂时简化设计，移除线程相关逻辑
+        // 注意：简化设计，移除线程相关逻辑
         // 实际应用中，心跳检查应该由外部定时器或主循环定期调用
         
         Ok(())
