@@ -337,11 +337,6 @@ pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
     // 创建新的分配器实例
     // 注意：每次调用都重新初始化内存缓冲区，确保每个测试用例都有干净的内存状态
     // 这是安全的，因为测试用例是顺序执行的
-    unsafe {
-        // 清除内存缓冲区，确保每个测试都有干净的内存状态
-        core::ptr::write_bytes(start_ptr, 0, size);
-    }
-    
     let new_allocator = StaticAllocator::new(start_ptr, size)
         .ok_or(crate::types::RemDbError::OutOfMemory)?;
     

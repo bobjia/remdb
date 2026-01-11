@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use core::ffi::c_void;
 use crate::types::{DataType, FieldDef, TableDef, Value};
 use crate::config::DbConfig;
 use crate::transaction::{TransactionType, IsolationLevel};
@@ -122,6 +123,61 @@ pub struct RemDbTableDef {
     pub max_records: usize,
 }
 
+/// C API: HA角色枚举
+#[cfg(feature = "ha")]
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum RemDbHARole {
+    Master = 0,
+    Slave = 1,
+    Auto = 2,
+}
+
+#[cfg(feature = "ha")]
+impl From<RemDbHARole> for crate::ha::HARole {
+    fn from(c_role: RemDbHARole) -> Self {
+        match c_role {
+            RemDbHARole::Master => crate::ha::HARole::Master,
+            RemDbHARole::Slave => crate::ha::HARole::Slave,
+            RemDbHARole::Auto => crate::ha::HARole::Auto,
+        }
+    }
+}
+
+/// C API: 复制模式枚举
+#[cfg(feature = "ha")]
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum RemDbReplicationMode {
+    Async = 0,
+    Sync = 1,
+}
+
+#[cfg(feature = "ha")]
+impl From<RemDbReplicationMode> for crate::ha::ReplicationMode {
+    fn from(c_mode: RemDbReplicationMode) -> Self {
+        match c_mode {
+            RemDbReplicationMode::Async => crate::ha::ReplicationMode::Async,
+            RemDbReplicationMode::Sync => crate::ha::ReplicationMode::Sync,
+        }
+    }
+}
+
+/// C API: HA配置
+#[cfg(feature = "ha")]
+#[repr(C)]
+pub struct RemDbHAConfig {
+    pub ha_role: RemDbHARole,
+    pub replication_mode: RemDbReplicationMode,
+    pub heartbeat_interval_ms: u32,
+    pub failure_detection_ms: u32,
+    pub sync_timeout_ms: u32,
+    pub master_address: *const u8, // 字符串形式的IP地址
+    pub master_port: u16,
+    pub replication_port: u16,
+    pub node_id: u32,
+}
+
 /// C API: 数据库配置
 #[repr(C)]
 pub struct RemDbConfig {
@@ -132,6 +188,7 @@ pub struct RemDbConfig {
     pub total_memory: usize,
     pub low_power_mode_supported: u8,
     pub low_power_max_records: i32,
+    pub ha_config: *const core::ffi::c_void, // 可选的HA配置，使用void*以避免依赖特定特性
 }
 
 /// C API: 数据库句柄类型别名
@@ -198,18 +255,18 @@ impl From<crate::DbMetricsSnapshot> for RemDbMetricsSnapshot {
         RemDbMetricsSnapshot {
             total_memory: rust_snapshot.total_memory,
             used_memory: rust_snapshot.used_memory,
-            read_ops: rust_snapshot.read_ops,
-            write_ops: rust_snapshot.write_ops,
-            delete_ops: rust_snapshot.delete_ops,
-            update_ops: rust_snapshot.update_ops,
-            cache_hits: rust_snapshot.cache_hits,
-            cache_misses: rust_snapshot.cache_misses,
-            index_lookups: rust_snapshot.index_lookups,
-            index_inserts: rust_snapshot.index_inserts,
-            index_deletes: rust_snapshot.index_deletes,
-            transactions: rust_snapshot.transactions,
-            committed_transactions: rust_snapshot.committed_transactions,
-            rolled_back_transactions: rust_snapshot.rolled_back_transactions,
+            read_ops: rust_snapshot.read_ops as u64,
+            write_ops: rust_snapshot.write_ops as u64,
+            delete_ops: rust_snapshot.delete_ops as u64,
+            update_ops: rust_snapshot.update_ops as u64,
+            cache_hits: rust_snapshot.cache_hits as u64,
+            cache_misses: rust_snapshot.cache_misses as u64,
+            index_lookups: rust_snapshot.index_lookups as u64,
+            index_inserts: rust_snapshot.index_inserts as u64,
+            index_deletes: rust_snapshot.index_deletes as u64,
+            transactions: rust_snapshot.transactions as u64,
+            committed_transactions: rust_snapshot.committed_transactions as u64,
+            rolled_back_transactions: rust_snapshot.rolled_back_transactions as u64,
             start_time: 0, // 占位符，实际值需要根据DbMetricsSnapshot结构体调整
         }
     }
@@ -460,6 +517,23 @@ impl From<crate::pubsub::PubSubError> for RemDbError {
     }
 }
 
+/// 从HA错误转换为C API错误
+#[cfg(feature = "ha")]
+impl From<crate::ha::HAError> for RemDbError {
+    fn from(ha_error: crate::ha::HAError) -> Self {
+        match ha_error {
+            crate::ha::HAError::InitFailed => RemDbError::PubSubInitFailed,
+            crate::ha::HAError::NetworkError => RemDbError::PubSubNetworkError,
+            crate::ha::HAError::InvalidParameter => RemDbError::ConfigError,
+            crate::ha::HAError::RoleConflict => RemDbError::UnsupportedOperation,
+            crate::ha::HAError::SyncFailed => RemDbError::UnsupportedOperation,
+            crate::ha::HAError::HeartbeatTimeout => RemDbError::UnsupportedOperation,
+            crate::ha::HAError::ReplicationError => RemDbError::UnsupportedOperation,
+            crate::ha::HAError::UnsupportedOperation => RemDbError::UnsupportedOperation,
+        }
+    }
+}
+
 /// C API: 从C字符串创建Rust字符串
 unsafe fn c_str_to_rust(c_str: *const u8) -> alloc::string::String {
     let mut len = 0;
@@ -536,6 +610,44 @@ pub unsafe extern "C" fn remdb_init_global(
         });
     }
     
+    // 解析HA配置
+    let ha_config = if !c_config.ha_config.is_null() {
+        #[cfg(feature = "ha")]
+        {
+            let c_ha_config = &*(c_config.ha_config as *const RemDbHAConfig);
+            
+            // 解析主节点地址
+            let master_address = if !c_ha_config.master_address.is_null() {
+                Some(c_str_to_rust(c_ha_config.master_address))
+            } else {
+                None
+            };
+            
+            Some(crate::ha::HAConfig {
+                node_id: c_ha_config.node_id,
+                ha_role: c_ha_config.ha_role.into(),
+                replication_mode: c_ha_config.replication_mode.into(),
+                heartbeat_interval_ms: c_ha_config.heartbeat_interval_ms as u64,
+                failure_detection_ms: c_ha_config.failure_detection_ms as u64,
+                sync_timeout_ms: c_ha_config.sync_timeout_ms as u64,
+                master_address: master_address.map(|s| Box::<str>::leak(s.into_boxed_str()) as &'static str),
+                master_port: if c_ha_config.master_port == 0 {
+                    None
+                } else {
+                    Some(c_ha_config.master_port)
+                },
+                replication_port: c_ha_config.replication_port,
+            })
+        }
+        #[cfg(not(feature = "ha"))]
+        {
+            // HA特性未启用，忽略HA配置
+            None
+        }
+    } else {
+        None
+    };
+    
     // 创建Rust配置
     let rust_config = DbConfig {
         tables: rust_tables.leak(),
@@ -558,18 +670,9 @@ pub unsafe extern "C" fn remdb_init_global(
             retained_checkpoints: 2, // 默认保留2个检查点
         },
         time_series_defaults: crate::time_series::TimeSeriesConfig::DEFAULT,
-        // HA相关配置
-        ha_config: Some(crate::ha::HAConfig {
-            ha_role: crate::ha::HARole::Auto,
-            replication_mode: crate::ha::ReplicationMode::Async,
-            heartbeat_interval_ms: 1000, // 默认1秒
-            failure_detection_ms: 5000, // 默认5秒
-            sync_timeout_ms: 1000, // 默认1秒
-            master_address: None,
-            master_port: None,
-            replication_port: 5556,
-            heartbeat_port: 5557,
-        }),
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        ha_config,
     };
     
     // 初始化全局数据库
@@ -1366,5 +1469,80 @@ pub unsafe fn get_time_series_table_mut(
     match &mut db.time_series_tables[table_id] {
         Some(table) => Ok(table),
         None => Err(crate::RemDbError::TableNotFound),
+    }
+}
+
+/// C API: 获取当前HA角色
+#[cfg(feature = "ha")]
+#[no_mangle]
+pub unsafe extern "C" fn remdb_ha_get_role(
+    role: *mut RemDbHARole,
+) -> RemDbError {
+    if role.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    match crate::ha::get_role() {
+        Ok(ha_role) => {
+            *role = match ha_role {
+                crate::ha::HARole::Master => RemDbHARole::Master,
+                crate::ha::HARole::Slave => RemDbHARole::Slave,
+                crate::ha::HARole::Auto => RemDbHARole::Auto,
+            };
+            RemDbError::Success
+        },
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 提升为Master节点
+#[cfg(feature = "ha")]
+#[no_mangle]
+pub unsafe extern "C" fn remdb_ha_promote_to_master() -> RemDbError {
+    match crate::ha::promote_to_master() {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 降级为Slave节点
+#[cfg(feature = "ha")]
+#[no_mangle]
+pub unsafe extern "C" fn remdb_ha_demote_to_slave() -> RemDbError {
+    match crate::ha::demote_to_slave() {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 检查HA状态
+#[cfg(feature = "ha")]
+#[no_mangle]
+pub unsafe extern "C" fn remdb_ha_check_status() -> RemDbError {
+    match crate::ha::check_status() {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 获取复制模式
+#[cfg(feature = "ha")]
+#[no_mangle]
+pub unsafe extern "C" fn remdb_ha_get_replication_mode(
+    mode: *mut RemDbReplicationMode,
+) -> RemDbError {
+    if mode.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    match crate::ha::get_replication_mode() {
+        Ok(replication_mode) => {
+            *mode = match replication_mode {
+                crate::ha::ReplicationMode::Async => RemDbReplicationMode::Async,
+                crate::ha::ReplicationMode::Sync => RemDbReplicationMode::Sync,
+            };
+            RemDbError::Success
+        },
+        Err(e) => e.into(),
     }
 }

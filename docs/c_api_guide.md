@@ -83,9 +83,26 @@ RemDB支持以下数据类型：
 
 * `tables`：表定义数组
 * `tables_count`：表数量
+* `time_series_tables`：时序表定义数组
+* `time_series_tables_count`：时序表数量
 * `total_memory`：总内存大小（字节）
 * `low_power_mode_supported`：是否支持低功耗模式
 * `low_power_max_records`：低功耗模式下的最大记录数
+* `ha_config`：高可用性配置（可选）
+
+#### 3.2.1 HA配置结构体
+
+使用`RemDbHAConfig`结构体配置高可用性：
+
+* `ha_role`：HA角色（Master、Slave或Auto）
+* `replication_mode`：复制模式（异步或同步）
+* `heartbeat_interval_ms`：心跳间隔（毫秒）
+* `failure_detection_ms`：故障检测超时时间（毫秒）
+* `sync_timeout_ms`：同步超时时间（毫秒）
+* `master_address`：主节点地址（字符串形式）
+* `master_port`：主节点端口
+* `replication_port`：复制端口
+* `node_id`：节点ID
 
 ### 3.3 表和字段
 
@@ -105,6 +122,14 @@ RemDB支持以下数据类型：
 * **完整快照**：保存数据库的完整状态
 * **增量快照**：只保存自上次快照以来变化的数据
 * **快照管理**：通过`save_snapshot`、`restore_snapshot`和`save_incremental_snapshot`函数管理快照
+
+### 3.6 高可用性(HA)
+
+* **角色**：支持Master、Slave和Auto三种角色
+* **复制模式**：支持异步和同步两种复制模式
+* **心跳机制**：Master节点发送心跳，Slave节点接收并更新状态
+* **故障检测**：当Slave节点长时间未收到Master心跳时，触发故障检测
+* **节点提升**：支持从Slave节点提升为Master节点
 
 ## 4. API参考
 
@@ -505,6 +530,84 @@ enum RemDbError remdb_table_get_by_name(RemDbHandle handle, const char* name, si
 * `REMDB_SUCCESS`：成功
 * 其他错误码：失败
 
+### 4.7 高可用性(HA) API
+
+#### 4.7.1 `remdb_ha_get_role`
+
+**功能**：获取当前HA角色
+
+**原型**：
+
+```c
+enum RemDbError remdb_ha_get_role(enum RemDbHARole* role);
+```
+
+**参数**：
+* `role`：输出参数，返回当前HA角色
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.7.2 `remdb_ha_promote_to_master`
+
+**功能**：将当前节点提升为Master节点
+
+**原型**：
+
+```c
+enum RemDbError remdb_ha_promote_to_master(void);
+```
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.7.3 `remdb_ha_demote_to_slave`
+
+**功能**：将当前节点降级为Slave节点
+
+**原型**：
+
+```c
+enum RemDbError remdb_ha_demote_to_slave(void);
+```
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.7.4 `remdb_ha_check_status`
+
+**功能**：检查HA状态
+
+**原型**：
+
+```c
+enum RemDbError remdb_ha_check_status(void);
+```
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.7.5 `remdb_ha_get_replication_mode`
+
+**功能**：获取当前复制模式
+
+**原型**：
+
+```c
+enum RemDbError remdb_ha_get_replication_mode(enum RemDbReplicationMode* mode);
+```
+
+**参数**：
+* `mode`：输出参数，返回当前复制模式
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
 ## 5. 使用示例
 
 ### 5.1 基本示例
@@ -654,7 +757,146 @@ int main() {
 }
 ```
 
-### 5.2 事务示例
+### 5.2 HA示例
+
+以下是一个HA使用示例，演示如何初始化带有HA配置的数据库，以及如何使用HA相关的API：
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "remdb.h"
+
+// 定义用户结构体
+typedef struct User {
+    int32_t id;
+    char name[32];
+    int32_t age;
+} User;
+
+int main() {
+    printf("RemDB C API HA Example\n");
+    printf("======================\n\n");
+
+    // 1. 定义字段定义
+    RemDbFieldDef user_fields[] = {
+        { "id", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(User, id) },
+        { "name", REMDB_TYPE_STRING, sizeof(((User*)0)->name), offsetof(User, name) },
+        { "age", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(User, age) }
+    };
+    size_t user_fields_count = sizeof(user_fields) / sizeof(user_fields[0]);
+
+    // 2. 定义表定义
+    RemDbTableDef user_table = {
+        .id = 0,
+        .name = "users",
+        .fields = user_fields,
+        .fields_count = user_fields_count,
+        .primary_key = 0,  // id是主键
+        .secondary_index = -1,  // 没有辅助索引
+        .record_size = sizeof(User),
+        .max_records = 1000
+    };
+
+    // 3. 定义HA配置
+    RemDbHAConfig ha_config = {
+        .ha_role = REMDB_HA_ROLE_AUTO,
+        .replication_mode = REMDB_REPLICATION_MODE_ASYNC,
+        .heartbeat_interval_ms = 1000,
+        .failure_detection_ms = 5000,
+        .sync_timeout_ms = 1000,
+        .master_address = NULL,  // 自动模式下不需要指定主节点地址
+        .master_port = 0,
+        .replication_port = 5556,
+        .heartbeat_port = 5557,
+        .node_id = 1
+    };
+
+    // 4. 定义数据库配置
+    RemDbTableDef tables[] = { user_table };
+    RemDbConfig config = {
+        .tables = tables,
+        .tables_count = sizeof(tables) / sizeof(tables[0]),
+        .time_series_tables = NULL,
+        .time_series_tables_count = 0,
+        .total_memory = 1024 * 1024,  // 1 MB
+        .low_power_mode_supported = 1,
+        .low_power_max_records = 500,
+        .ha_config = &ha_config  // 启用HA配置
+    };
+
+    // 5. 初始化数据库
+    RemDbHandle handle = NULL;
+    enum RemDbError err = remdb_init_global(&config, &handle);
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to initialize database: error code %d\n", err);
+        return 1;
+    }
+    printf("Database initialized successfully!\n\n");
+
+    // 6. 检查当前HA角色
+    RemDbHARole current_role;
+    err = remdb_ha_get_role(&current_role);
+    if (err == REMDB_SUCCESS) {
+        const char* role_str = NULL;
+        switch (current_role) {
+            case REMDB_HA_ROLE_MASTER:
+                role_str = "Master";
+                break;
+            case REMDB_HA_ROLE_SLAVE:
+                role_str = "Slave";
+                break;
+            case REMDB_HA_ROLE_AUTO:
+                role_str = "Auto";
+                break;
+            default:
+                role_str = "Unknown";
+        }
+        printf("Current HA Role: %s\n", role_str);
+    }
+
+    // 7. 检查当前复制模式
+    RemDbReplicationMode current_mode;
+    err = remdb_ha_get_replication_mode(&current_mode);
+    if (err == REMDB_SUCCESS) {
+        const char* mode_str = NULL;
+        switch (current_mode) {
+            case REMDB_REPLICATION_MODE_ASYNC:
+                mode_str = "Async";
+                break;
+            case REMDB_REPLICATION_MODE_SYNC:
+                mode_str = "Sync";
+                break;
+            default:
+                mode_str = "Unknown";
+        }
+        printf("Current Replication Mode: %s\n\n", mode_str);
+    }
+
+    // 8. 插入一条测试记录（只有Master节点可以执行写操作）
+    User user1 = { .id = 1, .name = "Alice", .age = 25 };
+    err = remdb_table_insert(handle, 0, &user1);
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to insert user: error code %d\n", err);
+    } else {
+        printf("Inserted user: %d, %s, %d\n\n", user1.id, user1.name, user1.age);
+    }
+
+    // 9. 检查HA状态
+    printf("Performing HA status check...\n");
+    err = remdb_ha_check_status();
+    if (err == REMDB_SUCCESS) {
+        printf("HA status check passed\n");
+    } else {
+        printf("HA status check failed: error code %d\n", err);
+    }
+
+    printf("\nHA Example completed successfully!\n");
+    return 0;
+}
+```
+
+### 5.3 事务示例
 
 以下是一个事务使用示例，演示如何使用事务来保证数据一致性：
 

@@ -56,7 +56,6 @@ static MASTER_DB_CONFIG: DbConfig = DbConfig {
         master_address: None,
         master_port: None,
         replication_port: 5556,
-        heartbeat_port: 5557,
     }),
 };
 

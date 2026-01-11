@@ -162,6 +162,10 @@ fn test_heartbeat_monitor() {
 fn test_heartbeat_packet_crc() {
     init_test_platform();
     
+    // 打印结构体大小信息
+    println!("Size of HeartbeatPacket: {}", core::mem::size_of::<remdb::ha::heartbeat::HeartbeatPacket>());
+    println!("Expected size without padding: {}", 8 + 8 + 1 + 4); // u64 + u64 + u8 + u32 = 21 bytes
+    
     // 创建心跳数据包
     let packet = remdb::ha::heartbeat::HeartbeatPacket::new(123, HARole::Master);
     
@@ -174,7 +178,7 @@ fn test_heartbeat_packet_crc() {
     
     // 转换为字节数组并解析
     let bytes = packet.to_bytes();
-    let parsed_packet = remdb::ha::heartbeat::HeartbeatPacket::from_bytes(bytes);
+    let parsed_packet = remdb::ha::heartbeat::HeartbeatPacket::from_bytes(&bytes);
     assert!(parsed_packet.is_some());
     
     let parsed = parsed_packet.unwrap();
@@ -238,6 +242,7 @@ fn test_ha_manager_failover() {
         // HA配置 - 从节点
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 2, // 默认节点ID为2
             ha_role: HARole::Slave,
             replication_mode: ReplicationMode::Sync,
             heartbeat_interval_ms: 1000,
@@ -246,7 +251,6 @@ fn test_ha_manager_failover() {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     
@@ -335,6 +339,7 @@ fn test_ha_manager() {
         // HA配置
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
             ha_role: HARole::Master,
             replication_mode: ReplicationMode::Sync,
             heartbeat_interval_ms: 1000,
@@ -343,7 +348,6 @@ fn test_ha_manager() {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     
@@ -396,6 +400,7 @@ fn test_ha_manager_role_switch() {
         // HA配置
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
             ha_role: HARole::Master,
             replication_mode: ReplicationMode::Sync,
             heartbeat_interval_ms: 1000,
@@ -404,7 +409,6 @@ fn test_ha_manager_role_switch() {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     
@@ -477,6 +481,7 @@ fn test_ha_config_validation() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
             ha_role: HARole::Master,
             replication_mode: ReplicationMode::Sync,
             heartbeat_interval_ms: 50, // 心跳间隔太小，小于最小值100ms
@@ -485,7 +490,6 @@ fn test_ha_config_validation() {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     
@@ -515,6 +519,7 @@ fn test_ha_config_validation() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
             ha_role: HARole::Master,
             replication_mode: ReplicationMode::Sync,
             heartbeat_interval_ms: 1000, // 1秒
@@ -523,7 +528,6 @@ fn test_ha_config_validation() {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     

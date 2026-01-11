@@ -35,6 +35,7 @@ fn main() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: Some(config::HAConfig {
+            node_id: 1,
             ha_role: remdb::ha::HARole::Auto,
             replication_mode: remdb::ha::ReplicationMode::Async,
             heartbeat_interval_ms: 1000,
@@ -43,7 +44,6 @@ fn main() {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     

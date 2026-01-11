@@ -18,6 +18,7 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
 - **低功耗模式**：优化内存使用，减少事务日志写入频率
 - **增量快照**：只保存版本号变化的记录，减少快照大小和保存时间
 - **SQL查询支持**：支持标准SQL SELECT语句查询内存数据库的数据
+- **数据库监控**：实时监控数据库指标，包括内存使用、查询性能、事务状态等
 - **基于UDP的高可靠数据订阅与发布**：支持单播、广播和组播模式，提供基于NACK的重传机制
 - **高可用支持**：
   - 主从复制机制，支持一主一从或一主多从拓扑结构
@@ -29,7 +30,13 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 从节点确认机制：从节点接收到WAL日志后发送确认给主节点
   - 复制状态检查：定期检查复制状态，包括从节点数量、延迟等
   - 支持全量和增量同步：从节点可以请求全量同步或从特定日志索引开始的增量同步
-- **时序数据库支持**：专用的时序表实现，优化时间序列数据存储和查询
+- **时序数据库支持**：
+  - 专用的时序表实现，优化时间序列数据存储和查询
+  - 支持多种压缩算法
+  - 支持时间序列数据分区
+  - 支持时间序列数据生命周期管理
+  - 支持时间序列数据索引
+- **C语言接口**：提供C语言API，方便C/C++应用程序使用
 
 ## 技术特点
 
@@ -570,7 +577,7 @@ cargo test
 在no_std环境下检查编译：
 
 ```bash
-$env:RUSTFLAGS = '-C panic=abort'; cargo check --tests --no-default-features
+cargo check --tests --no-default-features
 ```
 
 ### 在baremetal环境下检查编译：
@@ -678,6 +685,8 @@ remdb/
 │   ├── table.rs            # 内存表实现
 │   ├── index.rs            # 索引实现
 │   ├── transaction.rs      # 事务管理
+│   ├── monitor.rs          # 数据库监控模块
+│   ├── c_api.rs            # C语言接口实现
 │   ├── sql/
 │   │   ├── mod.rs           # SQL查询模块
 │   │   ├── query_parser.rs  # SQL查询解析器
@@ -697,13 +706,23 @@ remdb/
 │   │   ├── replication.rs  # 复制功能实现
 │   │   ├── heartbeat.rs    # 心跳检测实现
 │   │   └── role.rs         # 角色管理实现
-│   └── pubsub/
-│       ├── mod.rs          # 发布/订阅模块入口
-│       ├── protocol.rs     # 协议帧定义与解析
-│       ├── udp.rs          # 跨平台UDP套接字封装
-│       ├── subscriber.rs   # 订阅者管理
-│       ├── publisher.rs    # 发布者管理
-│       └── crc32.rs       # CRC32校验实现
+│   ├── pubsub/
+│   │   ├── mod.rs          # 发布/订阅模块入口
+│   │   ├── protocol.rs     # 协议帧定义与解析
+│   │   ├── udp.rs          # 跨平台UDP套接字封装
+│   │   ├── subscriber.rs   # 订阅者管理
+│   │   ├── publisher.rs    # 发布者管理
+│   │   ├── topics.rs       # 预定义主题
+│   │   ├── ttl_ringbuffer.rs # TTL环形缓冲区
+│   │   └── crc32.rs        # CRC32校验实现
+│   └── time_series/
+│       ├── mod.rs          # 时序数据库模块入口
+│       ├── table.rs        # 时序表实现
+│       ├── index.rs        # 时序数据索引
+│       ├── compression.rs  # 压缩算法实现
+│       ├── partition.rs    # 数据分区实现
+│       ├── lifecycle.rs    # 数据生命周期管理
+│       └── config.rs       # 时序数据库配置
 ├── examples/               # 示例代码
 ├── tests/                  # 测试代码
 ├── Cargo.toml              # 项目配置

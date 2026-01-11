@@ -39,6 +39,7 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     pubsub_config: None,
     #[cfg(feature = "ha")]
     ha_config: Some(HAConfig {
+        node_id: 1, // 默认节点ID为1
         ha_role: HARole::Auto,
         replication_mode: ReplicationMode::Async,
         heartbeat_interval_ms: 1000,
@@ -47,7 +48,6 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
         master_address: None,
         master_port: None,
         replication_port: 5556,
-        heartbeat_port: 5557,
     }),
 };
 
@@ -74,6 +74,7 @@ static PERFORMANCE_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     pubsub_config: None,
     #[cfg(feature = "ha")]
     ha_config: Some(HAConfig {
+        node_id: 1, // 默认节点ID为1
         ha_role: HARole::Auto,
         replication_mode: ReplicationMode::Async,
         heartbeat_interval_ms: 1000,
@@ -82,7 +83,6 @@ static PERFORMANCE_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
         master_address: None,
         master_port: None,
         replication_port: 5556,
-        heartbeat_port: 5557,
     }),
 };
 
@@ -109,6 +109,7 @@ static ROLLBACK_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     pubsub_config: None,
     #[cfg(feature = "ha")]
     ha_config: Some(HAConfig {
+        node_id: 1, // 默认节点ID为1
         ha_role: HARole::Auto,
         replication_mode: ReplicationMode::Async,
         heartbeat_interval_ms: 1000,
@@ -117,7 +118,6 @@ static ROLLBACK_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
         master_address: None,
         master_port: None,
         replication_port: 5556,
-        heartbeat_port: 5557,
     }),
 };
 

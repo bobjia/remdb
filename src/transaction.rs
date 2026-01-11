@@ -189,6 +189,9 @@ impl LogManager {
     pub unsafe fn new(config: &crate::config::DbConfig) -> Result<Self> {
         // 构造完整的日志文件路径：log_path目录 + remdb.wal文件名
         let log_dir = config.wal_config.log_path;
+        
+        // 在no_std环境下使用alloc::format宏
+        use alloc::format;
         let wal_file_path = format!("{}/remdb.wal", log_dir);
         
         // 确保日志目录存在（仅在std环境下）

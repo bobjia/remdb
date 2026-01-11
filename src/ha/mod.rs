@@ -49,8 +49,22 @@ pub struct HAConfig {
     pub master_port: Option<u16>,
     /// 复制端口（用于WAL日志复制和数据同步）
     pub replication_port: u16,
-    /// 心跳端口（用于节点间心跳检测）
-    pub heartbeat_port: u16,
+}
+
+impl Default for HAConfig {
+    fn default() -> Self {
+        HAConfig {
+            node_id: 1,
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+        }
+    }
 }
 
 // HA相关错误类型
@@ -136,5 +150,60 @@ pub fn shutdown() -> Result<()> {
             HA_MANAGER = None;
         }
         Ok(())
+    }
+}
+
+/// 获取当前HA角色
+pub fn get_role() -> Result<HARole> {
+    unsafe {
+        if let Some(manager) = &HA_MANAGER {
+            Ok(manager.get_role())
+        } else {
+            Err(HAError::InitFailed)
+        }
+    }
+}
+
+/// 获取当前复制模式
+pub fn get_replication_mode() -> Result<ReplicationMode> {
+    unsafe {
+        if let Some(manager) = &HA_MANAGER {
+            Ok(manager.get_replication_mode())
+        } else {
+            Err(HAError::InitFailed)
+        }
+    }
+}
+
+/// 提升为Master节点
+pub fn promote_to_master() -> Result<()> {
+    unsafe {
+        if let Some(manager) = HA_MANAGER.as_mut() {
+            manager.promote_to_master()
+        } else {
+            Err(HAError::InitFailed)
+        }
+    }
+}
+
+/// 降级为Slave节点
+pub fn demote_to_slave() -> Result<()> {
+    unsafe {
+        if let Some(manager) = HA_MANAGER.as_mut() {
+            manager.demote_to_slave()
+        } else {
+            Err(HAError::InitFailed)
+        }
+    }
+}
+
+/// 检查HA状态
+pub fn check_status() -> Result<()> {
+    unsafe {
+        if let Some(manager) = &HA_MANAGER {
+            manager.check_status()
+        } else {
+            Err(HAError::InitFailed)
+        }
     }
 }

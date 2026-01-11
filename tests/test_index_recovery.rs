@@ -139,6 +139,7 @@ fn test_index_recovery() -> Result<()> {
             pubsub_config: None,
             #[cfg(feature = "ha")]
             ha_config: Some(remdb::config::HAConfig {
+                node_id: 1, // 默认节点ID为1
                 ha_role: remdb::ha::HARole::Master,
                 replication_mode: remdb::ha::ReplicationMode::Async,
                 heartbeat_interval_ms: 1000,
@@ -147,7 +148,6 @@ fn test_index_recovery() -> Result<()> {
                 master_address: None,
                 master_port: None,
                 replication_port: 5556,
-                heartbeat_port: 5557,
             }),
         })
     }?;

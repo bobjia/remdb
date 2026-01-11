@@ -254,6 +254,7 @@ fn test_time_series_batch_performance() {
             pubsub_config: None,
             #[cfg(feature = "ha")]
             ha_config: Some(crate::config::HAConfig {
+                node_id: 1, // 默认节点ID为1
                 ha_role: crate::ha::HARole::Auto,
                 replication_mode: crate::ha::ReplicationMode::Async,
                 heartbeat_interval_ms: 1000,
@@ -262,7 +263,6 @@ fn test_time_series_batch_performance() {
                 master_address: None,
                 master_port: None,
                 replication_port: 5556,
-                heartbeat_port: 5557,
             }),
         };
         let config = &TEST_CONFIG;

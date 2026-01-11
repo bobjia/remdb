@@ -54,9 +54,8 @@ static SLAVE_DB_CONFIG: DbConfig = DbConfig {
         failure_detection_ms: 3000,
         sync_timeout_ms: 2000,
         master_address: Some("127.0.0.1"),
-        master_port: Some(5557),
+        master_port: Some(5556),
         replication_port: 5556,
-        heartbeat_port: 5557,
     }),
 };
 

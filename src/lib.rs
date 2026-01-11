@@ -1978,6 +1978,9 @@ pub fn get_global_db() -> Option<&'static mut RemDb> {
 /// 用于测试场景，确保测试之间的隔离
 pub fn reset_global_db() {
     unsafe {
+        // 关闭HA管理器
+        let _ = crate::ha::shutdown();
+        
         DB_INSTANCE = None;
         // 重置事务管理器状态，包括日志管理器
         crate::transaction::TX_MANAGER.reset();

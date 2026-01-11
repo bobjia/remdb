@@ -62,13 +62,13 @@ fn main() {
         ha_config: Some(HAConfig {
             ha_role: HARole::Auto,
             replication_mode: ReplicationMode::Async,
+            node_id: 1,
             heartbeat_interval_ms: 1000,
             failure_detection_ms: 3000,
             sync_timeout_ms: 2000,
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     

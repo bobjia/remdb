@@ -18,6 +18,7 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **Low Power Mode**: Optimized memory usage with reduced transaction log write frequency
 - **Incremental Snapshot**: Only saves records with changed version numbers, reducing snapshot size and save time
 - **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data
+- **Database Monitoring**: Real-time monitoring of database metrics, including memory usage, query performance, and transaction status
 - **UDP-based Reliable Data Pub/Sub**: Supports unicast, broadcast, and multicast modes with NACK-based retransmission
 - **High Availability Support**:
   - Master-slave replication mechanism supporting one-master-one-slave or one-master-multi-slave topology
@@ -29,7 +30,13 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Slave node acknowledgment mechanism: Slaves send acknowledgment to master after receiving WAL logs
   - Replication status checking: Regularly checks replication status including slave count and latency
   - Support for full and incremental synchronization: Slaves can request full sync or incremental sync from specific log index
-- **Time Series Database Support**: Dedicated time series table implementation optimized for time series data storage and querying
+- **Time Series Database Support**:
+  - Dedicated time series table implementation optimized for time series data storage and querying
+  - Support for multiple compression algorithms
+  - Support for time series data partitioning
+  - Support for time series data lifecycle management
+  - Support for time series data indexing
+- **C Language Interface**: Provides C language API for C/C++ applications
 
 ## Technical Characteristics
 
@@ -678,6 +685,8 @@ remdb/
 │   ├── table.rs            # In-memory table implementation
 │   ├── index.rs            # Index implementation
 │   ├── transaction.rs      # Transaction management
+│   ├── monitor.rs          # Database monitoring module
+│   ├── c_api.rs            # C language interface implementation
 │   ├── sql/
 │   │   ├── mod.rs           # SQL query module
 │   │   ├── query_parser.rs  # SQL query parser
@@ -697,13 +706,23 @@ remdb/
 │   │   ├── replication.rs  # Replication functionality implementation
 │   │   ├── heartbeat.rs    # Heartbeat monitoring implementation
 │   │   └── role.rs         # Role management implementation
-│   └── pubsub/
-│       ├── mod.rs          # Pub/Sub module entry
-│       ├── protocol.rs     # Protocol frame definition and parsing
-│       ├── udp.rs          # Cross-platform UDP socket encapsulation
-│       ├── subscriber.rs   # Subscriber management
-│       ├── publisher.rs    # Publisher management
-│       └── crc32.rs       # CRC32 check implementation
+│   ├── pubsub/
+│   │   ├── mod.rs          # Pub/Sub module entry
+│   │   ├── protocol.rs     # Protocol frame definition and parsing
+│   │   ├── udp.rs          # Cross-platform UDP socket encapsulation
+│   │   ├── subscriber.rs   # Subscriber management
+│   │   ├── publisher.rs    # Publisher management
+│   │   ├── topics.rs       # Predefined topics
+│   │   ├── ttl_ringbuffer.rs # TTL ring buffer
+│   │   └── crc32.rs        # CRC32 check implementation
+│   └── time_series/
+│       ├── mod.rs          # Time series database module entry
+│       ├── table.rs        # Time series table implementation
+│       ├── index.rs        # Time series data indexing
+│       ├── compression.rs  # Compression algorithms implementation
+│       ├── partition.rs    # Data partitioning implementation
+│       ├── lifecycle.rs    # Data lifecycle management
+│       └── config.rs       # Time series database configuration
 ├── examples/               # Example code
 ├── tests/                  # Test code
 ├── Cargo.toml              # Project configuration

@@ -3,3 +3,4 @@ target/*
 *.remd
 *.wal
 wal/*
+*.log

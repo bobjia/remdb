@@ -30,6 +30,7 @@ static CONFIG: DbConfig = unsafe {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
             ha_role: HARole::Auto,
             replication_mode: ReplicationMode::Async,
             heartbeat_interval_ms: 1000,
@@ -38,7 +39,6 @@ static CONFIG: DbConfig = unsafe {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     }
 };

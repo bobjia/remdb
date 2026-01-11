@@ -467,6 +467,7 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             // HA相关配置（可选）
             #[cfg(feature = "ha")]
             ha_config: Some(remdb::ha::HAConfig {
+                node_id: 1, // 默认节点ID为1
                 ha_role: remdb::ha::HARole::Auto,
                 replication_mode: remdb::ha::ReplicationMode::Async,
                 heartbeat_interval_ms: 1000, // 默认1秒
@@ -475,7 +476,6 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 master_address: None,
                 master_port: None,
                 replication_port: 5556,
-                heartbeat_port: 5557,
             }),
         };
     };

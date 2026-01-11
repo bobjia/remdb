@@ -34,9 +34,9 @@ static ALLOCATOR: SimpleAllocator = SimpleAllocator;
 
 // 主题ID定义 
 const WAL_TOPIC_ID: u16 = 1; 
-const TABLES_TOPIC_ID: u16 = 9; 
-const METRICS_TOPIC_ID: u16 = 10; 
-const HEALTH_STATUS_TOPIC_ID: u16 = 11; 
+const TABLES_TOPIC_ID: u16 = 2; 
+const METRICS_TOPIC_ID: u16 = 3; 
+const HEALTH_STATUS_TOPIC_ID: u16 = 4; 
 
 fn main() { 
     // 解析命令行参数 
@@ -137,6 +137,7 @@ fn main() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 1,
             ha_role: role,
             replication_mode: replication_mode,
             heartbeat_interval_ms: 5000, // 5秒
@@ -145,7 +146,6 @@ fn main() {
             master_address: master_ip,
             master_port: master_port,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
         time_series_defaults: TimeSeriesConfig {
             partition_duration_secs: 3600, // 1小时

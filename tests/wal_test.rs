@@ -150,6 +150,7 @@ fn test_wal_log_manager_creation() {
             pubsub_config: None,
             #[cfg(feature = "ha")]
             ha_config: Some(HAConfig {
+                node_id: 1, // 默认节点ID为1
                 ha_role: HARole::Auto,
                 replication_mode: ReplicationMode::Async,
                 heartbeat_interval_ms: 1000,
@@ -158,7 +159,6 @@ fn test_wal_log_manager_creation() {
                 master_address: None,
                 master_port: None,
                 replication_port: 5556,
-                heartbeat_port: 5557,
             }),
     };
     
@@ -202,6 +202,7 @@ fn test_wal_log_write_sync_mode() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
             ha_role: HARole::Auto,
             replication_mode: ReplicationMode::Async,
             heartbeat_interval_ms: 1000,
@@ -210,7 +211,6 @@ fn test_wal_log_write_sync_mode() {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     
@@ -272,6 +272,7 @@ fn test_wal_log_write_async_mode() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
             ha_role: HARole::Auto,
             replication_mode: ReplicationMode::Async,
             heartbeat_interval_ms: 1000,
@@ -280,7 +281,6 @@ fn test_wal_log_write_async_mode() {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     
@@ -349,6 +349,7 @@ fn test_wal_checkpoint_mechanism() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
             ha_role: HARole::Auto,
             replication_mode: ReplicationMode::Async,
             heartbeat_interval_ms: 1000,
@@ -357,7 +358,6 @@ fn test_wal_checkpoint_mechanism() {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     
@@ -427,6 +427,7 @@ fn test_wal_log_preallocation() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
             ha_role: HARole::Auto,
             replication_mode: ReplicationMode::Async,
             heartbeat_interval_ms: 1000,
@@ -435,7 +436,6 @@ fn test_wal_log_preallocation() {
             master_address: None,
             master_port: None,
             replication_port: 5556,
-            heartbeat_port: 5557,
         }),
     };
     
@@ -488,6 +488,7 @@ fn test_wal_different_log_modes() {
             pubsub_config: None,
             #[cfg(feature = "ha")]
             ha_config: Some(HAConfig {
+                node_id: 1, // 默认节点ID为1
                 ha_role: HARole::Auto,
                 replication_mode: ReplicationMode::Async,
                 heartbeat_interval_ms: 1000,
@@ -496,7 +497,6 @@ fn test_wal_different_log_modes() {
                 master_address: None,
                 master_port: None,
                 replication_port: 5556,
-                heartbeat_port: 5557,
             }),
         };
         
@@ -563,6 +563,7 @@ fn test_wal_recovery_flow() {
             pubsub_config: None,
             #[cfg(feature = "ha")]
             ha_config: Some(HAConfig {
+                node_id: 1, // 默认节点ID为1
                 ha_role: HARole::Auto,
                 replication_mode: ReplicationMode::Async,
                 heartbeat_interval_ms: 1000,
@@ -571,7 +572,6 @@ fn test_wal_recovery_flow() {
                 master_address: None,
                 master_port: None,
                 replication_port: 5556,
-                heartbeat_port: 5557,
             }),
         };
     

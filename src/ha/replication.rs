@@ -23,7 +23,11 @@ fn handle_slave_ack(topic_id: u16, data: &[u8]) -> bool {
         return false;
     }
     
-    // 解析确认数据
+    // 解析确认数据 - 检查数据长度
+    if data.len() < 5 {
+        return true;
+    }
+    
     let slave_id = data[0];
     let log_index = u32::from_le_bytes([data[1], data[2], data[3], data[4]]);
     
@@ -48,9 +52,13 @@ fn handle_wal_log_callback(topic_id: u16, data: &[u8]) -> bool {
     if let Some(wal_topic_id) = pubsub::get_topic_id(pubsub::topics::WAL_TOPIC) {
         if topic_id == wal_topic_id {
             unsafe {
+                // 检查全局管理器是否有效
                 if let Some(manager_ptr) = GLOBAL_REPLICATION_MANAGER {
-                    let manager = &mut *manager_ptr;
-                    manager.handle_wal_log(data);
+                    // 检查data长度是否合法
+                    if data.len() >= core::mem::size_of::<LogItem>() {
+                        let manager = &mut *manager_ptr;
+                        manager.handle_wal_log(data);
+                    }
                     return true;
                 }
             }
@@ -293,7 +301,9 @@ impl ReplicationManager {
                                         let string_len = log_item.new_data[offset] as usize;
                                         offset += 1;
                                         let mut string_data = [0u8; 64];
-                                        string_data[..string_len].copy_from_slice(&log_item.new_data[offset..offset+string_len]);
+                                        // 安全检查：确保string_len不超过缓冲区大小
+                                        let copy_len = core::cmp::min(string_len, 64);
+                                        string_data[..copy_len].copy_from_slice(&log_item.new_data[offset..offset+copy_len]);
                                         offset += 64; // 跳过固定64字节字符串空间
                                         unsafe { value.string = string_data; }
                                     },
@@ -509,7 +519,10 @@ impl ReplicationManager {
     
     /// 关闭复制管理器
     pub fn shutdown(&self) -> Result<()> {
-        // 不需要关闭pubsub，因为它可能被其他组件使用
+        // 清除全局复制管理器实例，防止悬空指针
+        unsafe {
+            GLOBAL_REPLICATION_MANAGER = None;
+        }
         Ok(())
     }
     

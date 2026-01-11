@@ -479,8 +479,10 @@ impl PartialEq for TypedValue {
 impl Eq for TypedValue {}
 
 /// 手动实现Hash trait，用于在HashSet中使用
-impl std::hash::Hash for TypedValue {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+use core::hash::{Hash, Hasher};
+
+impl Hash for TypedValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         // 首先哈希类型
         self.value_type.hash(state);
         

@@ -186,6 +186,9 @@ fn test_export_data() {
     
     // 重置全局数据库 - 这会自动触发Drop trait，释放所有表内存
     reset_global_db();
+    
+    // 重置全局内存分配器
+    crate::memory::allocator::reset_global_allocator().unwrap();
 }
 
 #[test]
@@ -237,7 +240,5 @@ fn test_export_empty_table() {
     reset_global_db();
     
     // 重置全局分配器
-    unsafe {
-        crate::memory::allocator::reset_global_allocator().unwrap();
-    }
+    crate::memory::allocator::reset_global_allocator().unwrap();
 }
