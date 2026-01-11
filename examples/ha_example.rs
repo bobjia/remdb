@@ -1,5 +1,7 @@
 // remdbHA 主从复制示例
 
+#![cfg(feature = "ha")]
+
 #[macro_use]
 extern crate remdb;
 

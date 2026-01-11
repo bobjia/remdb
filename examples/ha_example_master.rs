@@ -1,13 +1,14 @@
 // remdbHA 主节点示例
+#![cfg(feature = "ha")]
 
 #[macro_use]
 extern crate remdb;
 
 use core::ptr::NonNull;
 use remdb::*;
-use remdb::ha::{HARole, ReplicationMode, HAConfig};
 use remdb::config::{DbConfig, WALConfig, DefaultMemoryAllocator, LogMode};
 use remdb::time_series::TimeSeriesConfig;
+use remdb::ha::{HARole, ReplicationMode, HAConfig};
 
 // 定义内存缓冲区
 static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];

@@ -1,4 +1,5 @@
 // HA功能测试
+#![cfg(feature = "ha")]
 
 use remdb::*;
 use remdb::config::{LogMode, TimeSeriesConfig, WALConfig}; use remdb::ha::{HARole, ReplicationMode, HAConfig};

@@ -1,4 +1,5 @@
 // remdbHA 从节点示例
+#![cfg(feature = "ha")]
 
 #[macro_use]
 extern crate remdb;

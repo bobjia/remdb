@@ -1,4 +1,5 @@
 // 演示pubsub通配符订阅功能
+#![cfg(feature = "pubsub")]
 
 use remdb::pubsub::{self, PubSubConfig, WILDCARD_TOPIC_ID};
 use std::thread::sleep;

@@ -1,4 +1,5 @@
 // 示例文件，用于测试ttl_ringbuffer模块
+#![cfg(feature = "pubsub")]
 
 use std::time::{Instant, Duration};
 

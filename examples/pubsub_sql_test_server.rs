@@ -1,3 +1,5 @@
+#![cfg(feature = "pubsub")]
+
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -306,3 +308,4 @@ fn main() {
     
     println!("PubSub SQL test server stopped!");
 }
+

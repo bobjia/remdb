@@ -1,4 +1,4 @@
-#![cfg(feature = "std")]
+#![cfg(all(feature = "std", feature = "ha"))]
 
 use remdb::{RemDb, DataType, config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig}, ha::{HARole, ReplicationMode, HAConfig}};
 

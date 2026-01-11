@@ -1,5 +1,5 @@
 // Check struct sizes
-#![cfg(feature = "std")]
+#![cfg(all(feature = "std", feature = "ha"))]
 
 use remdb::ha::heartbeat::HeartbeatPacket;
 use remdb::ha::HARole;

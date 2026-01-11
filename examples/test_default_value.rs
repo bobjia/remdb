@@ -1,3 +1,6 @@
+// 测试默认值功能
+#![cfg(feature = "ha")]
+
 extern crate alloc;
 
 use remdb::{RemDb, config::{DbConfig, LogMode, HAConfig, WALConfig}}; use remdb::ha::{HARole, ReplicationMode};

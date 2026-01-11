@@ -1,4 +1,7 @@
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, HAConfig, TimeSeriesConfig, WALConfig};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig};
+#[cfg(feature = "ha")]
+use remdb::config::HAConfig;
+#[cfg(feature = "ha")]
 use remdb::ha::{HARole, ReplicationMode};
 use remdb::transaction::{LogManager, LogItem, LogOperation};
 use remdb::platform::{Platform, FileMode, FileResult, FileHandle, SeekWhence, init_platform};

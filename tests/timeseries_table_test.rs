@@ -6,7 +6,10 @@ use remdb::types::RemDbError;
 use remdb::time_series::TimeSeriesRecord;
 use remdb::time_series::TimeSeriesConfig;
 use remdb::{RemDb, config};
-use remdb::config::{HAConfig, WALConfig};
+use remdb::config::WALConfig;
+#[cfg(feature = "ha")]
+use remdb::config::HAConfig;
+#[cfg(feature = "ha")]
 use remdb::ha::{HARole, ReplicationMode};
 use std::sync::Mutex;
 

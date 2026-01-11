@@ -1,5 +1,6 @@
 // pubsub_example.rs
 // 发布/订阅功能示例
+#![cfg(feature = "pubsub")]
 
 use std::time::Duration;
 use remdb::pubsub::{PubSub, PubSubConfig, UdpMode};

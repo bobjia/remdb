@@ -1,3 +1,5 @@
+#![cfg(feature = "pubsub")]
+
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
