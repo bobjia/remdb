@@ -35,7 +35,9 @@ fn parse_time_string(time_str: &str) -> Result<i64, ()> {
 /// GROUP BY子句
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupByClause {
-    /// 分组字段列表
+    /// 分组表达式列表
+    pub expressions: Vec<Expression>,
+    /// 分组字段列表（兼容旧版本）
     pub fields: Vec<String>,
 }
 
@@ -1175,12 +1177,18 @@ impl SqlParser {
             self.skip_whitespace();
             self.expect_keyword("BY")?;
             
+            let mut expressions = Vec::new();
             let mut fields = Vec::new();
             
             loop {
                 self.skip_whitespace();
-                let field = self.parse_identifier()?;
-                fields.push(field);
+                let expr = self.parse_expression()?;
+                expressions.push(expr.clone());
+                
+                // 对于简单的字段表达式，同时添加到fields列表中以兼容旧版本
+                if let Expression::Field { name, .. } = expr {
+                    fields.push(name);
+                }
                 
                 self.skip_whitespace();
                 if !self.match_char(',') {
@@ -1188,7 +1196,7 @@ impl SqlParser {
                 }
             }
             
-            Ok(Some(GroupByClause { fields }))
+            Ok(Some(GroupByClause { expressions, fields }))
         } else {
             Ok(None)
         }
@@ -1203,7 +1211,19 @@ impl SqlParser {
             self.expect_keyword("BY")?;
             
             self.skip_whitespace();
-            let field = self.parse_identifier()?;
+            // 解析ORDER BY子句中的字段，可以是标识符或位置索引（数字）
+            let field = if let Some(c) = self.peek_char() {
+                if c.is_ascii_digit() {
+                    // 解析数字作为位置索引
+                    self.parse_number()?.to_string()
+                } else {
+                    // 解析标识符作为字段名
+                    self.parse_identifier()?
+                }
+            } else {
+                // 解析标识符作为字段名
+                self.parse_identifier()?
+            };
             
             self.skip_whitespace();
             let direction = if self.match_keyword("DESC") {

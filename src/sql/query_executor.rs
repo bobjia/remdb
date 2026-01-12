@@ -2674,22 +2674,14 @@ fn process_group_by_query(
     // 创建分组映射：group_key -> Vec<record_values>
     let mut groups = BTreeMap::new();
     
-    // 确定分组字段的索引
-    let group_field_indices: Vec<usize> = group_by.fields.iter()
-        .map(|field| {
-            table.def.fields
-                .iter()
-                .position(|f| f.name == *field)
-                .ok_or(QueryExecutionError::FieldNotFound)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    
     // 将行数据分组
     for record_values in rows_to_process {
-        // 创建分组键
-        let group_key: Vec<TypedValue> = group_field_indices.iter()
-            .map(|&idx| record_values[idx].clone())
-            .collect();
+        // 评估每个分组表达式，生成分组键
+        let mut group_key = Vec::new();
+        for expr in &group_by.expressions {
+            let value = evaluate_expression(table, record_values, expr)?;
+            group_key.push(value);
+        }
         
         // 将记录添加到对应的分组中
         groups.entry(group_key).or_insert_with(Vec::new)
@@ -2705,16 +2697,28 @@ fn process_group_by_query(
         for expr in columns {
             match expr {
                 Expression::Field { name: field_name, .. } => {
-                    // 如果是分组字段，使用分组键中的值
-                    if let Some((idx, _)) = group_by.fields.iter().enumerate()
-                        .find(|(_, group_field)| **group_field == *field_name) {
-                        row_data.push(group_key[idx].clone());
-                    } else {
-                        // 非分组字段，需要聚合
-                        return Err(QueryExecutionError::InvalidCondition);
-                    }
+                    // 对于简单字段，使用第一个记录的值
+                    // 因为GROUP BY查询中，分组字段的值在同一个分组中都是相同的
+                    let field_index = table.def.fields
+                        .iter()
+                        .position(|f| f.name == *field_name)
+                        .ok_or(QueryExecutionError::FieldNotFound)?;
+                    row_data.push(group_rows[0][field_index].clone());
                 },
                 Expression::FunctionCall { name, args, .. } => {
+                    // 处理TIME_BUCKET函数（非聚合函数）
+                    if name.to_uppercase() == "TIME_BUCKET" {
+                        // 计算分组中第一个记录的TIME_BUCKET值
+                        let mut arg_values = Vec::with_capacity(args.len());
+                        for arg in args {
+                            arg_values.push(evaluate_expression(table, &group_rows[0], arg)?);
+                        }
+                        // 执行TIME_BUCKET函数
+                        let result = execute_function_call(name, &arg_values)?;
+                        row_data.push(result);
+                        continue;
+                    }
+                    
                     // 为每个聚合函数准备初始值
                     let mut agg_result = match name.to_uppercase().as_str() {
                         "COUNT" => {
@@ -2760,13 +2764,8 @@ fn process_group_by_query(
                             }
                         },
                         "TIME_BUCKET" => {
-                            // 计算分组中第一个记录的TIME_BUCKET值
-                            // 评估函数参数
-                            let mut arg_values = Vec::with_capacity(args.len());
-                            for arg in args {
-                                arg_values.push(evaluate_expression(table, &group_rows[0], arg)?);
-                            }
-                            execute_time_bucket(&arg_values)?
+                            // TIME_BUCKET函数的处理被移到了前面
+                            unreachable!()
                         },
                         _ => return Err(QueryExecutionError::UnsupportedFunction(name.to_string())),
                     };
@@ -2787,77 +2786,133 @@ fn process_group_by_query(
                                 }
                             },
                             "SUM" => {
-                                unsafe {
-                                    // 将当前值转换为u64并累加
-                                    match arg_values[0].value_type {
-                                        DataType::UInt8 => agg_result.value.u64 += arg_values[0].value.u8 as u64,
-                                        DataType::UInt16 => agg_result.value.u64 += arg_values[0].value.u16 as u64,
-                                        DataType::UInt32 => agg_result.value.u64 += arg_values[0].value.u32 as u64,
-                                        DataType::UInt64 => agg_result.value.u64 += arg_values[0].value.u64,
-                                        DataType::Int8 => agg_result.value.u64 += (arg_values[0].value.i8 as i64).abs() as u64,
-                                        DataType::Int16 => agg_result.value.u64 += (arg_values[0].value.i16 as i64).abs() as u64,
-                                        DataType::Int32 => agg_result.value.u64 += (arg_values[0].value.i32 as i64).abs() as u64,
-                                        DataType::Int64 => agg_result.value.u64 += (arg_values[0].value.i64).abs() as u64,
-                                        DataType::Float32 => agg_result.value.u64 += (arg_values[0].value.float32 as f64).abs() as u64,
-                                        DataType::Float64 => agg_result.value.u64 += arg_values[0].value.float64.abs() as u64,
-                                        _ => return Err(QueryExecutionError::TypeMismatch),
+                                // 如果是第一个元素，初始化agg_result为正确的类型
+                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.u64 == 0 };
+                                if is_first {
+                                    // 直接使用第一个值的类型作为初始类型
+                                    agg_result = arg_values[0].clone();
+                                } else {
+                                    // 确保类型匹配
+                                    if agg_result.value_type != arg_values[0].value_type {
+                                        return Err(QueryExecutionError::TypeMismatch);
+                                    }
+                                    
+                                    // 累加值
+                                    unsafe {
+                                        match agg_result.value_type {
+                                            DataType::UInt8 => agg_result.value.u8 += arg_values[0].value.u8,
+                                            DataType::UInt16 => agg_result.value.u16 += arg_values[0].value.u16,
+                                            DataType::UInt32 => agg_result.value.u32 += arg_values[0].value.u32,
+                                            DataType::UInt64 => agg_result.value.u64 += arg_values[0].value.u64,
+                                            DataType::Int8 => agg_result.value.i8 += arg_values[0].value.i8,
+                                            DataType::Int16 => agg_result.value.i16 += arg_values[0].value.i16,
+                                            DataType::Int32 => agg_result.value.i32 += arg_values[0].value.i32,
+                                            DataType::Int64 => agg_result.value.i64 += arg_values[0].value.i64,
+                                            DataType::Float32 => agg_result.value.float32 += arg_values[0].value.float32,
+                                            DataType::Float64 => agg_result.value.float64 += arg_values[0].value.float64,
+                                            _ => return Err(QueryExecutionError::TypeMismatch),
+                                        }
                                     }
                                 }
                             },
                             "MIN" => {
-                                // 比较并更新最小值
-                                let is_less = unsafe {
-                                    match (agg_result.value_type, arg_values[0].value_type) {
-                                        (DataType::UInt8, DataType::UInt8) => arg_values[0].value.u8 < agg_result.value.u8,
-                                        (DataType::UInt16, DataType::UInt16) => arg_values[0].value.u16 < agg_result.value.u16,
-                                        (DataType::UInt32, DataType::UInt32) => arg_values[0].value.u32 < agg_result.value.u32,
-                                        (DataType::UInt64, DataType::UInt64) => arg_values[0].value.u64 < agg_result.value.u64,
-                                        (DataType::Int8, DataType::Int8) => arg_values[0].value.i8 < agg_result.value.i8,
-                                        (DataType::Int16, DataType::Int16) => arg_values[0].value.i16 < agg_result.value.i16,
-                                        (DataType::Int32, DataType::Int32) => arg_values[0].value.i32 < agg_result.value.i32,
-                                        (DataType::Int64, DataType::Int64) => arg_values[0].value.i64 < agg_result.value.i64,
-                                        _ => return Err(QueryExecutionError::TypeMismatch),
-                                    }
-                                };
-                                if is_less {
+                                // 如果是第一个元素，直接使用它作为初始值
+                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.u64 == 0 };
+                                if is_first {
                                     agg_result = arg_values[0].clone();
+                                } else {
+                                    // 比较并更新最小值
+                                    let is_less = unsafe {
+                                        match (agg_result.value_type, arg_values[0].value_type) {
+                                            (DataType::UInt8, DataType::UInt8) => arg_values[0].value.u8 < agg_result.value.u8,
+                                            (DataType::UInt16, DataType::UInt16) => arg_values[0].value.u16 < agg_result.value.u16,
+                                            (DataType::UInt32, DataType::UInt32) => arg_values[0].value.u32 < agg_result.value.u32,
+                                            (DataType::UInt64, DataType::UInt64) => arg_values[0].value.u64 < agg_result.value.u64,
+                                            (DataType::Int8, DataType::Int8) => arg_values[0].value.i8 < agg_result.value.i8,
+                                            (DataType::Int16, DataType::Int16) => arg_values[0].value.i16 < agg_result.value.i16,
+                                            (DataType::Int32, DataType::Int32) => arg_values[0].value.i32 < agg_result.value.i32,
+                                            (DataType::Int64, DataType::Int64) => arg_values[0].value.i64 < agg_result.value.i64,
+                                            (DataType::Float32, DataType::Float32) => arg_values[0].value.float32 < agg_result.value.float32,
+                                            (DataType::Float64, DataType::Float64) => arg_values[0].value.float64 < agg_result.value.float64,
+                                            _ => return Err(QueryExecutionError::TypeMismatch),
+                                        }
+                                    };
+                                    if is_less {
+                                        agg_result = arg_values[0].clone();
+                                    }
                                 }
                             },
                             "MAX" => {
-                                // 比较并更新最大值
-                                let is_greater = unsafe {
-                                    match (agg_result.value_type, arg_values[0].value_type) {
-                                        (DataType::UInt8, DataType::UInt8) => arg_values[0].value.u8 > agg_result.value.u8,
-                                        (DataType::UInt16, DataType::UInt16) => arg_values[0].value.u16 > agg_result.value.u16,
-                                        (DataType::UInt32, DataType::UInt32) => arg_values[0].value.u32 > agg_result.value.u32,
-                                        (DataType::UInt64, DataType::UInt64) => arg_values[0].value.u64 > agg_result.value.u64,
-                                        (DataType::Int8, DataType::Int8) => arg_values[0].value.i8 > agg_result.value.i8,
-                                        (DataType::Int16, DataType::Int16) => arg_values[0].value.i16 > agg_result.value.i16,
-                                        (DataType::Int32, DataType::Int32) => arg_values[0].value.i32 > agg_result.value.i32,
-                                        (DataType::Int64, DataType::Int64) => arg_values[0].value.i64 > agg_result.value.i64,
-                                        _ => return Err(QueryExecutionError::TypeMismatch),
-                                    }
-                                };
-                                if is_greater {
+                                // 如果是第一个元素，直接使用它作为初始值
+                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.u64 == 0 };
+                                if is_first {
                                     agg_result = arg_values[0].clone();
+                                } else {
+                                    // 比较并更新最大值
+                                    let is_greater = unsafe {
+                                        match (agg_result.value_type, arg_values[0].value_type) {
+                                            (DataType::UInt8, DataType::UInt8) => arg_values[0].value.u8 > agg_result.value.u8,
+                                            (DataType::UInt16, DataType::UInt16) => arg_values[0].value.u16 > agg_result.value.u16,
+                                            (DataType::UInt32, DataType::UInt32) => arg_values[0].value.u32 > agg_result.value.u32,
+                                            (DataType::UInt64, DataType::UInt64) => arg_values[0].value.u64 > agg_result.value.u64,
+                                            (DataType::Int8, DataType::Int8) => arg_values[0].value.i8 > agg_result.value.i8,
+                                            (DataType::Int16, DataType::Int16) => arg_values[0].value.i16 > agg_result.value.i16,
+                                            (DataType::Int32, DataType::Int32) => arg_values[0].value.i32 > agg_result.value.i32,
+                                            (DataType::Int64, DataType::Int64) => arg_values[0].value.i64 > agg_result.value.i64,
+                                            (DataType::Float32, DataType::Float32) => arg_values[0].value.float32 > agg_result.value.float32,
+                                            (DataType::Float64, DataType::Float64) => arg_values[0].value.float64 > agg_result.value.float64,
+                                            _ => return Err(QueryExecutionError::TypeMismatch),
+                                        }
+                                    };
+                                    if is_greater {
+                                        agg_result = arg_values[0].clone();
+                                    }
                                 }
                             },
                             "AVG" => {
-                                // AVG函数需要先计算SUM和COUNT，然后再求平均
-                                // 这里简化处理，只返回SUM
-                                unsafe {
-                                    match arg_values[0].value_type {
-                                        DataType::UInt8 => agg_result.value.u64 += arg_values[0].value.u8 as u64,
-                                        DataType::UInt16 => agg_result.value.u64 += arg_values[0].value.u16 as u64,
-                                        DataType::UInt32 => agg_result.value.u64 += arg_values[0].value.u32 as u64,
-                                        DataType::UInt64 => agg_result.value.u64 += arg_values[0].value.u64,
-                                        DataType::Int8 => agg_result.value.u64 += (arg_values[0].value.i8 as i64).abs() as u64,
-                                        DataType::Int16 => agg_result.value.u64 += (arg_values[0].value.i16 as i64).abs() as u64,
-                                        DataType::Int32 => agg_result.value.u64 += (arg_values[0].value.i32 as i64).abs() as u64,
-                                        DataType::Int64 => agg_result.value.u64 += (arg_values[0].value.i64).abs() as u64,
-                                        DataType::Float32 => agg_result.value.u64 += (arg_values[0].value.float32 as f64).abs() as u64,
-                                        DataType::Float64 => agg_result.value.u64 += arg_values[0].value.float64.abs() as u64,
-                                        _ => return Err(QueryExecutionError::TypeMismatch),
+                                // 如果是第一个元素，初始化agg_result为正确的类型
+                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.u64 == 0 };
+                                if is_first {
+                                    // 将第一个值转换为float64
+                                    let float_val = unsafe {
+                                        match arg_values[0].value_type {
+                                            DataType::UInt8 => arg_values[0].value.u8 as f64,
+                                            DataType::UInt16 => arg_values[0].value.u16 as f64,
+                                            DataType::UInt32 => arg_values[0].value.u32 as f64,
+                                            DataType::UInt64 => arg_values[0].value.u64 as f64,
+                                            DataType::Int8 => arg_values[0].value.i8 as f64,
+                                            DataType::Int16 => arg_values[0].value.i16 as f64,
+                                            DataType::Int32 => arg_values[0].value.i32 as f64,
+                                            DataType::Int64 => arg_values[0].value.i64 as f64,
+                                            DataType::Float32 => arg_values[0].value.float32 as f64,
+                                            DataType::Float64 => arg_values[0].value.float64,
+                                            _ => return Err(QueryExecutionError::TypeMismatch),
+                                        }
+                                    };
+                                    // 为AVG创建一个float64类型的初始值
+                                    agg_result = TypedValue {
+                                        value_type: DataType::Float64,
+                                        value: Value { float64: float_val },
+                                    };
+                                } else {
+                                    // 累加值
+                                    let float_val = unsafe {
+                                        match arg_values[0].value_type {
+                                            DataType::UInt8 => arg_values[0].value.u8 as f64,
+                                            DataType::UInt16 => arg_values[0].value.u16 as f64,
+                                            DataType::UInt32 => arg_values[0].value.u32 as f64,
+                                            DataType::UInt64 => arg_values[0].value.u64 as f64,
+                                            DataType::Int8 => arg_values[0].value.i8 as f64,
+                                            DataType::Int16 => arg_values[0].value.i16 as f64,
+                                            DataType::Int32 => arg_values[0].value.i32 as f64,
+                                            DataType::Int64 => arg_values[0].value.i64 as f64,
+                                            DataType::Float32 => arg_values[0].value.float32 as f64,
+                                            DataType::Float64 => arg_values[0].value.float64,
+                                            _ => return Err(QueryExecutionError::TypeMismatch),
+                                        }
+                                    };
+                                    unsafe {
+                                        agg_result.value.float64 += float_val;
                                     }
                                 }
                             },
@@ -4169,6 +4224,64 @@ fn process_to_epoch(timestamp: &crate::types::db_timestamp) -> Result<f64, Query
 
 /// 对行进行排序
 fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &OrderByClause) -> Result<(), QueryExecutionError> {
+    // 检查ORDER BY子句是否使用位置索引
+    if let Ok(col_index) = order_by.field.parse::<usize>() {
+        // ORDER BY使用位置索引
+        let sort_col_index = col_index - 1; // SQL位置索引从1开始
+        
+        // 确保索引有效
+        if rows.is_empty() { return Ok(()); }
+        if sort_col_index >= rows[0].len() {
+            return Err(QueryExecutionError::FieldNotFound);
+        }
+        
+        // 对行进行排序
+        rows.sort_by(|a, b| {
+            let val_a = &a[sort_col_index];
+            let val_b = &b[sort_col_index];
+            
+            // 根据值的实际类型比较
+            unsafe {
+                let comparison = match (val_a.value_type, val_b.value_type) {
+                    // 无符号整数类型
+                    (DataType::UInt8, DataType::UInt8) => val_a.value.u8.cmp(&val_b.value.u8),
+                    (DataType::UInt16, DataType::UInt16) => val_a.value.u16.cmp(&val_b.value.u16),
+                    (DataType::UInt32, DataType::UInt32) => val_a.value.u32.cmp(&val_b.value.u32),
+                    (DataType::UInt64, DataType::UInt64) => val_a.value.u64.cmp(&val_b.value.u64),
+                    
+                    // 有符号整数类型
+                    (DataType::Int8, DataType::Int8) => val_a.value.i8.cmp(&val_b.value.i8),
+                    (DataType::Int16, DataType::Int16) => val_a.value.i16.cmp(&val_b.value.i16),
+                    (DataType::Int32, DataType::Int32) => val_a.value.i32.cmp(&val_b.value.i32),
+                    (DataType::Int64, DataType::Int64) => val_a.value.i64.cmp(&val_b.value.i64),
+                    
+                    // 浮点数类型
+                    (DataType::Float32, DataType::Float32) => 
+                        val_a.value.float32.partial_cmp(&val_b.value.float32).unwrap_or(core::cmp::Ordering::Equal),
+                    (DataType::Float64, DataType::Float64) => 
+                        val_a.value.float64.partial_cmp(&val_b.value.float64).unwrap_or(core::cmp::Ordering::Equal),
+                    
+                    // 时间戳类型
+                    (DataType::Timestamp, DataType::Timestamp) => 
+                        val_a.value.time.value.cmp(&val_b.value.time.value),
+                    (DataType::TimestampTZ, DataType::TimestampTZ) => 
+                        val_a.value.time.value.cmp(&val_b.value.time.value),
+                    
+                    // 其他类型，默认按升序排列
+                    _ => core::cmp::Ordering::Equal,
+                };
+                
+                // 根据排序方向调整结果
+                match order_by.direction {
+                    crate::sql::OrderDirection::Ascending => comparison,
+                    crate::sql::OrderDirection::Descending => comparison.reverse(),
+                }
+            }
+        });
+        
+        return Ok(());
+    }
+    
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if order_by.field.contains('.') {
         // 提取点号后面的部分作为实际字段名

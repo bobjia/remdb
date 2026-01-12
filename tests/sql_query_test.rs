@@ -1073,3 +1073,275 @@ fn test_sql_aggregate_functions() {
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
 }
+
+#[test]
+#[serial]
+fn test_time_bucket_group_by() {
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 262144];
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+    
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    
+    // 初始化内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(
+            db_memory.as_mut_ptr(),
+            db_memory.len()
+        ).unwrap();
+    }
+    
+    // 初始化数据库
+    let config = &TEST_DB;
+    let db = unsafe {
+        init_global_db(config).unwrap()
+    };
+    
+    // 准备测试数据
+    let test_data = [
+        (1, "Alice", 25, true, 1620000000000),  // 2021-05-03 00:00:00
+        (2, "Bob", 30, true, 1620000360000000),  // 2021-05-03 01:00:00
+        (3, "Charlie", 35, false, 1620000720000000), // 2021-05-03 02:00:00
+        (4, "David", 22, true, 1620001080000000), // 2021-05-03 03:00:00
+        (5, "Eve", 28, false, 1620001440000000), // 2021-05-03 04:00:00
+        (6, "Frank", 40, true, 1620001800000000), // 2021-05-03 05:00:00
+        (7, "Grace", 32, false, 1620002160000000), // 2021-05-03 06:00:00
+    ];
+    
+    // 插入测试数据
+    #[repr(C)]
+    struct TestRecord {
+        id: i32,          // 4字节
+        name: [u8; 32],   // 32字节
+        age: i8,          // 1字节
+        active: u8,       // 1字节（bool在C中通常是1字节）
+        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐（从偏移38到40）
+        created_at: u64,  // 8字节
+    }
+    
+    for (id, name, age, active, created_at) in test_data {
+        let mut record = TestRecord {
+            id,
+            name: [0u8; 32],
+            age,
+            active: if active { 1 } else { 0 }, // 将bool转换为u8
+            _padding: [0u8; 2], // 初始化填充字段为0
+            created_at,
+        };
+        
+        let name_bytes = name.as_bytes();
+        record.name[..name_bytes.len()].copy_from_slice(name_bytes);
+        
+        let insert_id = unsafe {
+            db.get_table_mut(0).unwrap().insert(&record as *const _ as *const u8).unwrap()
+        };
+        assert!(insert_id < config.tables[0].max_records);
+    }
+    
+    // 测试TIME_BUCKET函数
+    println!("=== 测试TIME_BUCKET函数 ===");
+    
+    // 测试1: 基本的TIME_BUCKET查询
+    println!("测试1: 基本的TIME_BUCKET查询");
+    let result = db.sql_query(
+        "SELECT TIME_BUCKET('2h', created_at) 
+         FROM TEST_TABLE"  
+    );
+    assert!(result.is_ok(), "基本TIME_BUCKET查询失败: {:?}", result.err());
+    if let Ok(result_set) = result {
+        println!("查询结果行数: {}", result_set.row_count());
+        assert!(result_set.row_count() > 0, "查询结果应该返回至少一行");
+    }
+    
+    // 测试2: TIME_BUCKET和GROUP BY组合
+    println!("测试2: TIME_BUCKET和GROUP BY组合");
+    let result = db.sql_query(
+        "SELECT TIME_BUCKET('2h', created_at), COUNT(*) 
+         FROM TEST_TABLE 
+         GROUP BY 1"
+    );
+    assert!(result.is_ok(), "TIME_BUCKET GROUP BY查询失败: {:?}", result.err());
+    if let Ok(result_set) = result {
+        println!("查询结果行数: {}", result_set.row_count());
+        assert!(result_set.row_count() > 0, "查询结果应该返回至少一行");
+    }
+    
+    // 测试2: TIME_BUCKET和GROUP BY带WHERE条件
+    println!("测试2: TIME_BUCKET和GROUP BY带WHERE条件");
+    let result = db.sql_query(
+        "SELECT TIME_BUCKET('3h', created_at), COUNT(*), AVG(age) 
+         FROM TEST_TABLE 
+         WHERE active = true 
+         GROUP BY TIME_BUCKET('3h', created_at)"
+    );
+    assert!(result.is_ok(), "带WHERE条件的TIME_BUCKET GROUP BY查询失败: {:?}", result.err());
+    
+    // 测试3: TIME_BUCKET和GROUP BY带ORDER BY
+    println!("测试3: TIME_BUCKET和GROUP BY带ORDER BY");
+    let result = db.sql_query(
+        "SELECT TIME_BUCKET('1h', created_at), COUNT(*), MAX(age), MIN(age) 
+         FROM TEST_TABLE 
+         GROUP BY TIME_BUCKET('1h', created_at) 
+         ORDER BY 1 DESC"
+    );
+    assert!(result.is_ok(), "带ORDER BY的TIME_BUCKET GROUP BY查询失败: {:?}", result.err());
+    
+    // 测试4: 不同时间间隔的TIME_BUCKET和GROUP BY
+    println!("测试4: 不同时间间隔的TIME_BUCKET和GROUP BY");
+    let result = db.sql_query(
+        "SELECT TIME_BUCKET('4h', created_at), COUNT(*) 
+         FROM TEST_TABLE 
+         GROUP BY 1"
+    );
+    assert!(result.is_ok(), "使用不同时间间隔的TIME_BUCKET GROUP BY查询失败: {:?}", result.err());
+    
+    // 测试5: TIME_BUCKET带origin参数和GROUP BY
+    println!("测试5: TIME_BUCKET带origin参数和GROUP BY");
+    let result = db.sql_query(
+        "SELECT TIME_BUCKET('2h', created_at, 1620000000000), COUNT(*) 
+         FROM TEST_TABLE 
+         GROUP BY TIME_BUCKET('2h', created_at, 1620000000000)"
+    );
+    assert!(result.is_ok(), "带origin参数的TIME_BUCKET GROUP BY查询失败: {:?}", result.err());
+    
+    // 测试6: TIME_BUCKET和多列GROUP BY
+    println!("测试6: TIME_BUCKET和多列GROUP BY");
+    let result = db.sql_query(
+        "SELECT TIME_BUCKET('2h', created_at), active, COUNT(*) 
+         FROM TEST_TABLE 
+         GROUP BY TIME_BUCKET('2h', created_at), active"
+    );
+    assert!(result.is_ok(), "多列GROUP BY的TIME_BUCKET查询失败: {:?}", result.err());
+    
+    // 测试7: TIME_BUCKET和GROUP BY带HAVING子句
+    println!("测试7: TIME_BUCKET和GROUP BY带HAVING子句");
+    let result = db.sql_query(
+        "SELECT TIME_BUCKET('2h', created_at), COUNT(*) 
+         FROM TEST_TABLE 
+         GROUP BY TIME_BUCKET('2h', created_at) 
+         HAVING COUNT(*) > 1"
+    );
+    assert!(result.is_ok(), "带HAVING子句的TIME_BUCKET GROUP BY查询失败: {:?}", result.err());
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+}
+
+#[test]
+#[serial]
+fn test_sql_group_by() {
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 262144];
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+    
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    
+    // 初始化内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(
+            db_memory.as_mut_ptr(),
+            db_memory.len()
+        ).unwrap();
+    }
+    
+    // 初始化数据库
+    let config = &TEST_DB;
+    let db = unsafe {
+        init_global_db(config).unwrap()
+    };
+    
+    // 准备测试数据
+    let test_data = [
+        (1, "Alice", 25, true, 1620000000000),
+        (2, "Bob", 30, true, 1620000001000),
+        (3, "Charlie", 35, false, 1620000002000),
+        (4, "David", 22, true, 1620000003000),
+        (5, "Eve", 28, false, 1620000004000),
+        (6, "Frank", 30, false, 1620000005000),
+        (7, "Grace", 25, true, 1620000006000),
+    ];
+    
+    // 插入测试数据
+    #[repr(C)]
+    struct TestRecord {
+        id: i32,          // 4字节
+        name: [u8; 32],   // 32字节
+        age: i8,          // 1字节
+        active: u8,       // 1字节（bool在C中通常是1字节）
+        _padding: [u8; 2], // 2字节填充，确保created_at字段8字节对齐（从偏移38到40）
+        created_at: u64,  // 8字节
+    }
+    
+    for (id, name, age, active, created_at) in test_data {
+        let mut record = TestRecord {
+            id,
+            name: [0u8; 32],
+            age,
+            active: if active { 1 } else { 0 }, // 将bool转换为u8
+            _padding: [0u8; 2], // 初始化填充字段为0
+            created_at,
+        };
+        
+        let name_bytes = name.as_bytes();
+        record.name[..name_bytes.len()].copy_from_slice(name_bytes);
+        
+        let insert_id = unsafe {
+            db.get_table_mut(0).unwrap().insert(&record as *const _ as *const u8).unwrap()
+        };
+        assert!(insert_id < config.tables[0].max_records);
+    }
+    
+    // 测试GROUP BY功能
+    println!("=== 测试GROUP BY功能 ===");
+    
+    // 1. 基本GROUP BY查询
+    println!("测试1: 基本GROUP BY查询");
+    let result = db.sql_query("SELECT active, COUNT(*) FROM TEST_TABLE GROUP BY active").unwrap();
+    assert_eq!(result.column_count(), 2, "基本GROUP BY查询应该返回2列");
+    println!("基本GROUP BY查询结果行数: {}", result.row_count());
+    
+    // 2. 带WHERE条件的GROUP BY查询
+    println!("测试2: 带WHERE条件的GROUP BY查询");
+    let result = db.sql_query("SELECT age, COUNT(*) FROM TEST_TABLE WHERE active = true GROUP BY age").unwrap();
+    assert_eq!(result.column_count(), 2, "带WHERE条件的GROUP BY查询应该返回2列");
+    println!("带WHERE条件的GROUP BY查询结果行数: {}", result.row_count());
+    
+    // 3. 带聚合函数的GROUP BY查询
+    println!("测试3: 带聚合函数的GROUP BY查询");
+    let result = db.sql_query("SELECT active, COUNT(*), SUM(age), AVG(age), MIN(age), MAX(age) FROM TEST_TABLE GROUP BY active").unwrap();
+    assert_eq!(result.column_count(), 6, "带聚合函数的GROUP BY查询应该返回6列");
+    assert_eq!(result.row_count(), 2, "active字段只有两个值，应该返回2行");
+    
+    // 4. 带ORDER BY的GROUP BY查询
+    println!("测试4: 带ORDER BY的GROUP BY查询");
+    let result = db.sql_query("SELECT age, COUNT(*) FROM TEST_TABLE GROUP BY age ORDER BY age DESC").unwrap();
+    assert_eq!(result.column_count(), 2, "带ORDER BY的GROUP BY查询应该返回2列");
+    println!("带ORDER BY的GROUP BY查询结果行数: {}", result.row_count());
+    
+    // 5. 多列GROUP BY查询
+    println!("测试5: 多列GROUP BY查询");
+    let result = db.sql_query("SELECT active, age, COUNT(*) FROM TEST_TABLE GROUP BY active, age").unwrap();
+    assert_eq!(result.column_count(), 3, "多列GROUP BY查询应该返回3列");
+    println!("多列GROUP BY查询结果行数: {}", result.row_count());
+    
+    // 6. GROUP BY与HAVING结合查询
+    println!("测试6: GROUP BY与HAVING结合查询");
+    let result = db.sql_query("SELECT active, COUNT(*) as count FROM TEST_TABLE GROUP BY active HAVING count > 2").unwrap();
+    assert_eq!(result.column_count(), 2, "GROUP BY与HAVING结合查询应该返回2列");
+    println!("GROUP BY与HAVING结合查询结果行数: {}", result.row_count());
+    
+    // 7. 单列GROUP BY查询，仅返回分组列
+    println!("测试7: 单列GROUP BY查询");
+    let result = db.sql_query("SELECT age FROM TEST_TABLE GROUP BY age").unwrap();
+    assert_eq!(result.column_count(), 1, "单列GROUP BY查询应该返回1列");
+    println!("单列GROUP BY查询结果行数: {}", result.row_count());
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+}

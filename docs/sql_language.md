@@ -143,23 +143,43 @@ SELECT u.id, u.name FROM users u ORDER BY u.name DESC;
 
 #### GROUP BY子句
 
-GROUP BY子句用于将结果集按照一个或多个列进行分组，通常与聚合函数（如COUNT、SUM、AVG等）一起使用，对每个分组进行聚合计算。
+GROUP BY子句用于将结果集按照一个或多个列或表达式进行分组，通常与聚合函数（如COUNT、SUM、AVG等）一起使用，对每个分组进行聚合计算。
 
 **语法**：
 ```sql
-GROUP BY column1, column2, ...
+GROUP BY column1, column2, ... | expression1, expression2, ...
 ```
 
 **说明**：
-- 可以按多个列进行分组，列之间用逗号分隔
-- 分组列可以是原始列名或表达式
+- 可以按多个列或表达式进行分组，列之间用逗号分隔
+- 分组可以是原始列名、表达式或函数调用（如TIME_BUCKET）
 - GROUP BY子句通常位于WHERE子句之后，ORDER BY子句之前
+- 可以与HAVING子句结合使用，对分组结果进行过滤
+- 支持ORDER BY子句，可按分组列或聚合结果排序
 
-#### 示例
+**示例**：
 
 ```sql
-SELECT * FROM users;
-SELECT id, name FROM users WHERE age > 18 ORDER BY id DESC LIMIT 10;
+-- 基本GROUP BY
+SELECT sensor_id, COUNT(*) AS reading_count FROM sensor_readings GROUP BY sensor_id;
+
+-- GROUP BY与WHERE条件
+SELECT sensor_id, AVG(temperature) AS avg_temp FROM sensor_readings WHERE temperature > 20 GROUP BY sensor_id;
+
+-- GROUP BY与ORDER BY
+SELECT sensor_id, AVG(temperature) AS avg_temp FROM sensor_readings GROUP BY sensor_id ORDER BY avg_temp DESC;
+
+-- 多列GROUP BY
+SELECT sensor_id, location, AVG(temperature) AS avg_temp FROM sensor_readings GROUP BY sensor_id, location;
+
+-- GROUP BY与多个聚合函数
+SELECT sensor_id, AVG(temperature) AS avg_temp, MIN(temperature) AS min_temp, MAX(temperature) AS max_temp FROM sensor_readings GROUP BY sensor_id;
+
+-- GROUP BY与HAVING子句
+SELECT sensor_id, AVG(temperature) AS avg_temp FROM sensor_readings GROUP BY sensor_id HAVING avg_temp > 23;
+
+-- 单列GROUP BY
+SELECT location, COUNT(*) AS location_count FROM sensor_readings GROUP BY location;
 ```
 
 ### 2.2 INSERT语句
@@ -373,6 +393,67 @@ SELECT COUNT(*) FROM sensor_data WHERE temperature > 25;
 |--------|------|------|----------|------|
 | `TIME_BUCKET` | 将时间戳分组到指定的时间窗口 | `interval` (字符串或数值), `time_field` (TIMESTAMP), `origin` (可选，字符串或数值，默认1970-01-01 00:00:00) | `TIMESTAMP` | `TIME_BUCKET('5m', timestamp)` 或 `TIME_BUCKET('1h', timestamp, '2020-01-01')` |
 
+##### TIME_BUCKET与GROUP BY组合使用
+
+`TIME_BUCKET`函数最常见的用法是与`GROUP BY`子句结合，用于对时序数据进行聚合分析。通过将时间戳分组到固定大小的时间窗口中，可以方便地计算每个窗口内的统计指标。
+
+**语法**：
+```sql
+SELECT TIME_BUCKET(interval, time_field [, origin]) AS time_window,
+       aggregation_function(column) AS alias
+FROM table_name
+[WHERE condition]
+GROUP BY time_window [, other_columns]
+[ORDER BY time_window [ASC | DESC]];
+```
+
+**说明**：
+- `TIME_BUCKET`函数的结果可以直接用于`GROUP BY`子句
+- 可以为`TIME_BUCKET`函数的结果指定别名，使查询更易读
+- 支持与`WHERE`条件结合，过滤数据后再进行时间窗口聚合
+- 支持与多列`GROUP BY`结合，实现更复杂的分组分析
+- 支持与`ORDER BY`子句结合，按时间窗口排序结果
+
+**示例**：
+
+```sql
+-- 按5分钟窗口聚合温度数据
+SELECT TIME_BUCKET('5m', timestamp) AS time_window,
+       AVG(temperature) AS avg_temp,
+       COUNT(*) AS reading_count
+FROM sensor_readings 
+GROUP BY time_window;
+
+-- 按1小时窗口聚合特定传感器数据
+SELECT TIME_BUCKET('1h', timestamp) AS time_window,
+       AVG(temperature) AS avg_temp,
+       AVG(humidity) AS avg_humidity
+FROM sensor_readings 
+WHERE sensor_id = 1
+GROUP BY time_window
+ORDER BY time_window;
+
+-- 使用数值形式的时间间隔（5分钟 = 300000000微秒）
+SELECT TIME_BUCKET(300000000, timestamp) AS time_window,
+       SUM(value) AS sum_value
+FROM metrics 
+GROUP BY time_window;
+
+-- 自定义时间窗口起始点
+SELECT TIME_BUCKET('1h', timestamp, '2024-01-01 00:30:00') AS time_window,
+       MAX(temperature) AS max_temp
+FROM sensor_readings 
+GROUP BY time_window;
+
+-- 多列分组：传感器ID + 时间窗口
+SELECT sensor_id,
+       TIME_BUCKET('15m', timestamp) AS time_window,
+       AVG(temperature) AS avg_temp
+FROM sensor_readings 
+GROUP BY sensor_id, time_window
+ORDER BY sensor_id, time_window;
+```
+
 ##### 时间间隔格式
 
 `TIME_BUCKET` 函数支持多种时间间隔格式：
@@ -541,7 +622,7 @@ SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609
 3. 自增列只能用于整数类型
 4. 索引键最大长度为64字节
 5. WHERE子句目前只支持简单的比较条件，复杂条件支持有限
-6. ORDER BY子句目前只支持单个字段排序
+6. ORDER BY子句支持多个字段排序和位置索引
 7. 时序表必须包含一个TIMESTAMP类型的时间字段和一个数值类型的值字段
 8. 时序表支持的压缩算法：`none`、`delta`、`runlength`、`delta-runlength`、`delta-delta`
 9. 时序表的TTL配置用于自动清理过期数据块，单位支持天、小时、分钟、秒
