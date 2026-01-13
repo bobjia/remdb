@@ -119,7 +119,7 @@ impl ProtocolFrame {
         }
         
         // 解析魔术字
-        let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let magic = u32::from_le_bytes(bytes[0..4].try_into().map_err(|_| PubSubError::InvalidFrameFormat)?);
         if magic != MAGIC_WORD {
             return Err(PubSubError::InvalidFrameFormat);
         }
@@ -134,13 +134,13 @@ impl ProtocolFrame {
         let frame_type = FrameType::from(bytes[5]);
         
         // 解析序列号
-        let seq_num = u32::from_le_bytes(bytes[6..10].try_into().unwrap());
+        let seq_num = u32::from_le_bytes(bytes[6..10].try_into().map_err(|_| PubSubError::InvalidFrameFormat)?);
         
         // 解析主题ID
-        let topic_id = u16::from_le_bytes(bytes[10..12].try_into().unwrap());
+        let topic_id = u16::from_le_bytes(bytes[10..12].try_into().map_err(|_| PubSubError::InvalidFrameFormat)?);
         
         // 解析数据长度
-        let data_len = u16::from_le_bytes(bytes[12..14].try_into().unwrap());
+        let data_len = u16::from_le_bytes(bytes[12..14].try_into().map_err(|_| PubSubError::InvalidFrameFormat)?);
         
         // 检查总帧长度
         if bytes.len() < Self::HEADER_SIZE + data_len as usize {
@@ -148,7 +148,7 @@ impl ProtocolFrame {
         }
         
         // 解析CRC32
-        let crc32 = u32::from_le_bytes(bytes[14..18].try_into().unwrap());
+        let crc32 = u32::from_le_bytes(bytes[14..18].try_into().map_err(|_| PubSubError::InvalidFrameFormat)?);
         
         // 解析载荷数据
         let payload = bytes[18..18 + data_len as usize].to_vec();

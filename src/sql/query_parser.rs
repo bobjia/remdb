@@ -41,15 +41,43 @@ pub struct GroupByClause {
     pub fields: Vec<String>,
 }
 
+/// JOIN类型枚举
+#[derive(Debug, Clone, PartialEq)]
+pub enum JoinType {
+    /// 内连接
+    Inner,
+    /// 左连接
+    Left,
+    /// 右连接
+    Right,
+    /// 全连接
+    Full,
+}
+
+/// JOIN子句
+#[derive(Debug, Clone, PartialEq)]
+pub struct JoinClause {
+    /// JOIN类型
+    pub join_type: JoinType,
+    /// 连接表名
+    pub table_name: String,
+    /// 连接表别名
+    pub table_alias: Option<String>,
+    /// 连接条件
+    pub on_condition: Condition,
+}
+
 /// SQL查询结构
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlQuery {
     /// 查询类型
     pub query_type: QueryType,
-    /// 要查询的表名
+    /// 要查询的主表名
     pub table_name: String,
-    /// 表别名
+    /// 主表别名
     pub table_alias: Option<String>,
+    /// JOIN子句列表
+    pub joins: Vec<JoinClause>,
     /// 要选择的字段列表（支持表达式）
     pub columns: Vec<Expression>,
     /// 是否选择所有字段（*）
@@ -259,6 +287,8 @@ pub enum Value {
     Boolean(bool),
     /// NULL值
     Null,
+    /// 标识符（字段名、表名等）
+    Identifier(String),
 }
 
 /// 查询解析错误
@@ -388,6 +418,7 @@ impl SqlParser {
             query_type: QueryType::Update,
             table_name,
             table_alias: None,
+            joins: Vec::new(),
             columns: Vec::new(),
             select_all: false,
             distinct: false,
@@ -420,6 +451,7 @@ impl SqlParser {
             query_type: QueryType::Describe,
             table_name,
             table_alias: None,
+            joins: Vec::new(),
             columns: Vec::new(),
             select_all: false,
             distinct: false,
@@ -469,6 +501,7 @@ impl SqlParser {
             query_type: QueryType::Insert,
             table_name,
             table_alias: None,
+            joins: Vec::new(),
             columns: Vec::new(),
             select_all: false,
             distinct: false,
@@ -574,6 +607,7 @@ impl SqlParser {
             query_type: QueryType::Delete,
             table_name,
             table_alias: None,
+            joins: Vec::new(),
             columns: Vec::new(),
             select_all: false,
             distinct: false,
@@ -669,6 +703,7 @@ impl SqlParser {
             query_type: QueryType::CreateTable,
             table_name,
             table_alias: None,
+            joins: Vec::new(),
             columns: Vec::new(),
             select_all: false,
             distinct: false,
@@ -725,6 +760,7 @@ impl SqlParser {
             query_type: QueryType::CreateIndex,
             table_name,
             table_alias: None,
+            joins: Vec::new(),
             columns: Vec::new(),
             select_all: false,
             distinct: false,
@@ -781,8 +817,8 @@ impl SqlParser {
         // 解析SELECT子句
         let (columns, select_all, distinct) = self.parse_select_clause()?;
         
-        // 解析FROM子句
-        let (table_name, table_alias) = self.parse_from_clause()?;
+        // 解析FROM子句和JOIN子句
+        let (table_name, table_alias, joins) = self.parse_from_and_join_clauses()?;
         
         // 解析WHERE子句（可选）
         let where_clause = self.parse_where_clause()?;
@@ -800,6 +836,7 @@ impl SqlParser {
             query_type: QueryType::Select,
             table_name,
             table_alias,
+            joins,
             columns,
             select_all,
             distinct,
@@ -1141,19 +1178,108 @@ impl SqlParser {
         }
     }
 
-    /// 解析FROM子句
-    fn parse_from_clause(&mut self) -> Result<(String, Option<String>), QueryParseError> {
+    /// 解析FROM子句和JOIN子句
+    fn parse_from_and_join_clauses(&mut self) -> Result<(String, Option<String>, Vec<JoinClause>), QueryParseError> {
         self.skip_whitespace();
         self.expect_keyword("FROM")?;
         
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
         
-        // 解析表别名
+        // 解析主表别名
         self.skip_whitespace();
         let table_alias = self.parse_alias()?;
         
-        Ok((table_name, table_alias))
+        // 解析JOIN子句
+        let mut joins = Vec::new();
+        
+        loop {
+            self.skip_whitespace();
+            
+            // 检查是否有JOIN关键字
+            let join_type = match self.peek_identifier() {
+                Some(token) => {
+                    let token_upper = token.to_uppercase();
+                    match token_upper.as_str() {
+                        "INNER" => {
+                            self.parse_identifier()?;
+                            self.skip_whitespace();
+                            if !self.match_keyword("JOIN") {
+                                return Err(QueryParseError::InvalidSyntax);
+                            }
+                            JoinType::Inner
+                        },
+                        "LEFT" => {
+                            self.parse_identifier()?;
+                            self.skip_whitespace();
+                            if self.match_keyword("OUTER") {
+                                self.skip_whitespace();
+                            }
+                            if !self.match_keyword("JOIN") {
+                                return Err(QueryParseError::InvalidSyntax);
+                            }
+                            JoinType::Left
+                        },
+                        "RIGHT" => {
+                            self.parse_identifier()?;
+                            self.skip_whitespace();
+                            if self.match_keyword("OUTER") {
+                                self.skip_whitespace();
+                            }
+                            if !self.match_keyword("JOIN") {
+                                return Err(QueryParseError::InvalidSyntax);
+                            }
+                            JoinType::Right
+                        },
+                        "FULL" => {
+                            self.parse_identifier()?;
+                            self.skip_whitespace();
+                            if self.match_keyword("OUTER") {
+                                self.skip_whitespace();
+                            }
+                            if !self.match_keyword("JOIN") {
+                                return Err(QueryParseError::InvalidSyntax);
+                            }
+                            JoinType::Full
+                        },
+                        "JOIN" => {
+                            self.parse_identifier()?;
+                            JoinType::Inner
+                        },
+                        _ => break, // 不是JOIN关键字，退出循环
+                    }
+                },
+                None => break, // 没有更多令牌，退出循环
+            };
+            
+            // 解析连接表名
+            self.skip_whitespace();
+            let join_table_name = self.parse_identifier()?;
+            
+            // 解析连接表别名
+            self.skip_whitespace();
+            let join_table_alias = self.parse_alias()?;
+            
+            // 解析ON关键字
+            self.skip_whitespace();
+            self.expect_keyword("ON")?;
+            
+            // 解析连接条件
+            self.skip_whitespace();
+            let on_condition = self.parse_condition()?;
+            
+            // 创建JOIN子句
+            let join_clause = JoinClause {
+                join_type,
+                table_name: join_table_name,
+                table_alias: join_table_alias,
+                on_condition,
+            };
+            
+            joins.push(join_clause);
+        }
+        
+        Ok((table_name, table_alias, joins))
     }
 
     /// 解析WHERE子句（可选）
@@ -1469,8 +1595,8 @@ impl SqlParser {
                 // 这里返回0作为占位符，实际执行时会处理
                 Ok(Value::Integer(0))
             } else {
-                // 不是AT TIME ZONE表达式，返回标识符作为字符串
-                Ok(Value::String(identifier))
+                // 不是AT TIME ZONE表达式，返回标识符
+                Ok(Value::Identifier(identifier))
             }
         }
     }

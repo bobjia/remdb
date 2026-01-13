@@ -6,7 +6,7 @@ mod query_parser;
 mod query_executor;
 mod result_set;
 
-pub use query_parser::{SqlQuery, QueryParseError, parse_sql_query, WhereClause, Condition, ComparisonCondition, ComparisonOperator, OrderByClause, OrderDirection, QueryType, Value};
+pub use query_parser::{SqlQuery, QueryParseError, parse_sql_query, WhereClause, Condition, ComparisonCondition, ComparisonOperator, OrderByClause, OrderDirection, QueryType, Value, JoinType, JoinClause};
 pub use query_executor::{execute_query, QueryExecutionError};
 pub use result_set::{ResultSet, ResultRow, ResultRowIter};
 

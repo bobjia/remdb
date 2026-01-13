@@ -8,13 +8,31 @@ pub use crate::ha::HAConfig;
 pub struct DefaultMemoryAllocator;
 
 impl MemoryAllocator for DefaultMemoryAllocator {
-    fn allocate(&self, _size: usize) -> Option<core::ptr::NonNull<u8>> {
-        // 默认实现，返回None表示分配失败
-        None
+    fn allocate(&self, size: usize) -> Option<core::ptr::NonNull<u8>> {
+        // 实际分配内存
+        #[cfg(feature = "std")] {
+            let mut vec = vec![0u8; size];
+            let ptr = vec.as_mut_ptr();
+            // 释放vec对内存的所有权，但不释放内存本身
+            std::mem::forget(vec);
+            Some(unsafe { core::ptr::NonNull::new_unchecked(ptr) })
+        }
+        #[cfg(not(feature = "std"))] {
+            // 非std环境下返回None
+            None
+        }
     }
     
-    fn deallocate(&self, _ptr: core::ptr::NonNull<u8>, _size: usize) {
-        // 默认实现，不做任何操作
+    fn deallocate(&self, ptr: core::ptr::NonNull<u8>, size: usize) {
+        // 释放内存
+        #[cfg(feature = "std")] {
+            unsafe {
+                let slice = core::slice::from_raw_parts_mut(ptr.as_ptr(), size);
+                let vec = Vec::from_raw_parts(slice.as_mut_ptr(), 0, size);
+                drop(vec);
+            }
+        }
+        // 非std环境下不做任何操作
     }
 }
 

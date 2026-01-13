@@ -393,6 +393,14 @@ SELECT COUNT(*) FROM sensor_data WHERE temperature > 25;
 |--------|------|------|----------|------|
 | `TIME_BUCKET` | 将时间戳分组到指定的时间窗口 | `interval` (字符串或数值), `time_field` (TIMESTAMP), `origin` (可选，字符串或数值，默认1970-01-01 00:00:00) | `TIMESTAMP` | `TIME_BUCKET('5m', timestamp)` 或 `TIME_BUCKET('1h', timestamp, '2020-01-01')` |
 
+##### 时间转换函数
+
+| 函数名 | 描述 | 参数 | 返回类型 | 示例 |
+|--------|------|------|----------|------|
+| `TO_ISO8601` | 将时间戳转换为ISO8601格式字符串 | `time_field` (TIMESTAMP) | `TEXT` | `TO_ISO8601(timestamp)` |
+| `TO_CHAR` | 将时间戳按照指定格式转换为字符串 | `time_field` (TIMESTAMP), `format` (TEXT) | `TEXT` | `TO_CHAR(timestamp, 'YYYY-MM-DD HH24:MI:SS')` |
+| `TO_EPOCH` | 将时间戳转换为UNIX时间戳（秒） | `time_field` (TIMESTAMP) | `REAL` | `TO_EPOCH(timestamp)` |
+
 ##### TIME_BUCKET与GROUP BY组合使用
 
 `TIME_BUCKET`函数最常见的用法是与`GROUP BY`子句结合，用于对时序数据进行聚合分析。通过将时间戳分组到固定大小的时间窗口中，可以方便地计算每个窗口内的统计指标。
@@ -579,7 +587,30 @@ SELECT * FROM sensor_data ORDER BY timestamp DESC LIMIT 100;
 SELECT * FROM sensor_data WHERE sensor_id = 1 ORDER BY timestamp DESC LIMIT 50;
 ```
 
-### 4.4 时间辅助功能
+### 4.4 时间转换函数示例
+
+```sql
+-- 将时间戳转换为ISO8601格式
+SELECT TO_ISO8601(timestamp) AS iso_time FROM sensor_data;
+
+-- 将时间戳转换为指定格式字符串
+SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS date FROM sensor_data;
+SELECT TO_CHAR(timestamp, 'HH24:MI:SS') AS time FROM sensor_data;
+SELECT TO_CHAR(timestamp, 'YYYY-MM-DD HH24:MI:SS') AS datetime FROM sensor_data;
+
+-- 将时间戳转换为UNIX时间戳（秒）
+SELECT TO_EPOCH(timestamp) AS epoch_seconds FROM sensor_data;
+
+-- 结合时间转换函数和其他函数
+SELECT 
+    sensor_id,
+    AVG(temperature) AS avg_temp,
+    TO_CHAR(timestamp, 'YYYY-MM-DD') AS date
+FROM sensor_data
+GROUP BY sensor_id, date;
+```
+
+### 4.5 时间辅助功能
 
 RemDB内部提供了丰富的时间辅助函数：
 
@@ -895,6 +926,7 @@ RemDB提供了轻量级的SQL支持，适合嵌入式系统和边缘计算场景
    - 字符串函数：CONCAT、SUBSTRING、UPPER、LOWER
    - 数学函数：ABS、SQRT、POWER、SIN、COS、LOG、EXP、ROUND、CEIL、FLOOR、MOD
    - 时间窗口函数：TIME_BUCKET，支持多种时间间隔格式
+   - 时间转换函数：TO_ISO8601、TO_CHAR、TO_EPOCH
 5. **高效的查询执行**：优化的查询执行器，支持表达式求值和函数调用
 
 ## 适用场景

@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 
 use crate::{TableDef,RemDb, MemoryTable, Value, RemDbError, types::{DataType, TypedValue}, IndexType, MAX_STRING_LEN, DdlExecutor, TimeSeriesTable};
 use crate::sql::{SqlQuery, ResultSet, Condition, ComparisonCondition, ComparisonOperator, OrderByClause};
-use crate::sql::query_parser::{BetweenCondition, Expression, BinaryOperator, GroupByClause};
+use crate::sql::query_parser::{BetweenCondition, Expression, BinaryOperator, GroupByClause, JoinType};
 
 /// 解析数据类型字符串，提取基本类型和精度
 /// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6)
@@ -217,11 +217,19 @@ fn process_aggregate_query(
                         });
                         var_stddev_states.push((0.0, 0.0, 0));
                     },
-                    "SUM" | "AVG" => {
-                        // 初始化SUM/AVG为0
+                    "SUM" => {
+                        // 初始化SUM为0，类型为UInt64
                         aggregate_values.push(TypedValue {
                             value_type: DataType::UInt64,
                             value: Value { u64: 0 },
+                        });
+                        var_stddev_states.push((0.0, 0.0, 0));
+                    },
+                    "AVG" => {
+                        // 初始化AVG的sum为0，类型为Float64
+                        aggregate_values.push(TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value { float64: 0.0 },
                         });
                         var_stddev_states.push((0.0, 0.0, 0));
                     },
@@ -296,16 +304,20 @@ fn process_aggregate_query(
                         unsafe {
                             // SUM函数累加值
                             match current_value.value_type {
-                                DataType::UInt8 => aggregate_values[i].value.u64 += current_value.value.u8 as u64,
-                                DataType::UInt16 => aggregate_values[i].value.u64 += current_value.value.u16 as u64,
-                                DataType::UInt32 => aggregate_values[i].value.u64 += current_value.value.u32 as u64,
-                                DataType::UInt64 => aggregate_values[i].value.u64 += current_value.value.u64,
-                                DataType::Int8 => aggregate_values[i].value.u64 += (current_value.value.i8 as i64).abs() as u64,
-                                DataType::Int16 => aggregate_values[i].value.u64 += (current_value.value.i16 as i64).abs() as u64,
-                                DataType::Int32 => aggregate_values[i].value.u64 += (current_value.value.i32 as i64).abs() as u64,
-                                DataType::Int64 => aggregate_values[i].value.u64 += (current_value.value.i64).abs() as u64,
+                                DataType::UInt8 => aggregate_values[i].value.float64 += current_value.value.u8 as f64,
+                                DataType::UInt16 => aggregate_values[i].value.float64 += current_value.value.u16 as f64,
+                                DataType::UInt32 => aggregate_values[i].value.float64 += current_value.value.u32 as f64,
+                                DataType::UInt64 => aggregate_values[i].value.float64 += current_value.value.u64 as f64,
+                                DataType::Int8 => aggregate_values[i].value.float64 += current_value.value.i8 as f64,
+                                DataType::Int16 => aggregate_values[i].value.float64 += current_value.value.i16 as f64,
+                                DataType::Int32 => aggregate_values[i].value.float64 += current_value.value.i32 as f64,
+                                DataType::Int64 => aggregate_values[i].value.float64 += current_value.value.i64 as f64,
                                 _ => return Err(QueryExecutionError::TypeMismatch),
                             }
+                            
+                            // 更新计数
+                            let (_, _, count) = &mut var_stddev_states[i];
+                            *count += 1;
                         }
                     },
                     "MIN" => {
@@ -367,16 +379,16 @@ fn process_aggregate_query(
                         // 这里简化处理，只返回总和
                         unsafe {
                             match current_value.value_type {
-                                DataType::UInt8 => aggregate_values[i].value.u64 += current_value.value.u8 as u64,
-                                DataType::UInt16 => aggregate_values[i].value.u64 += current_value.value.u16 as u64,
-                                DataType::UInt32 => aggregate_values[i].value.u64 += current_value.value.u32 as u64,
-                                DataType::UInt64 => aggregate_values[i].value.u64 += current_value.value.u64,
-                                DataType::Int8 => aggregate_values[i].value.u64 += (current_value.value.i8 as i64).abs() as u64,
-                                DataType::Int16 => aggregate_values[i].value.u64 += (current_value.value.i16 as i64).abs() as u64,
-                                DataType::Int32 => aggregate_values[i].value.u64 += (current_value.value.i32 as i64).abs() as u64,
-                                DataType::Int64 => aggregate_values[i].value.u64 += (current_value.value.i64).abs() as u64,
-                                DataType::Float32 => aggregate_values[i].value.u64 += (current_value.value.float32 as f64).abs() as u64,
-                                DataType::Float64 => aggregate_values[i].value.u64 += current_value.value.float64.abs() as u64,
+                                DataType::UInt8 => aggregate_values[i].value.float64 += current_value.value.u8 as f64,
+                                DataType::UInt16 => aggregate_values[i].value.float64 += current_value.value.u16 as f64,
+                                DataType::UInt32 => aggregate_values[i].value.float64 += current_value.value.u32 as f64,
+                                DataType::UInt64 => aggregate_values[i].value.float64 += current_value.value.u64 as f64,
+                                DataType::Int8 => aggregate_values[i].value.float64 += current_value.value.i8 as f64,
+                                DataType::Int16 => aggregate_values[i].value.float64 += current_value.value.i16 as f64,
+                                DataType::Int32 => aggregate_values[i].value.float64 += current_value.value.i32 as f64,
+                                DataType::Int64 => aggregate_values[i].value.float64 += current_value.value.i64 as f64,
+                                DataType::Float32 => aggregate_values[i].value.float64 += current_value.value.float32 as f64,
+                                DataType::Float64 => aggregate_values[i].value.float64 += current_value.value.float64,
                                 _ => return Err(QueryExecutionError::TypeMismatch),
                             }
                         }
@@ -479,6 +491,20 @@ fn process_aggregate_query(
                         };
                     }
                 },
+                "AVG" => {
+                    let (_, _, count) = var_stddev_states[i];
+                    if count > 0 {
+                        // 计算平均值：总和 / 计数
+                        unsafe {
+                            let sum = aggregate_values[i].value.float64;
+                            let avg = sum / count as f64;
+                            aggregate_values[i] = TypedValue {
+                                value_type: DataType::Float64,
+                                value: Value { float64: avg },
+                            };
+                        }
+                    }
+                },
                 "STDDEV_SAMP" => {
                     let (sum, sum_of_squares, count) = var_stddev_states[i];
                     if count > 1 {
@@ -571,6 +597,13 @@ fn evaluate_expression_for_aggregate(
                 },
                 SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
                 SqlValue::Null => (DataType::Int64, Value { i64: 0 }),
+                SqlValue::Identifier(s) => {
+                    // 标识符作为字符串处理
+                    let mut buf = [0; MAX_STRING_LEN];
+                    let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                    buf[..len].copy_from_slice(s.as_bytes());
+                    (DataType::String, Value { string: buf })
+                },
             };
             
             Ok(TypedValue {
@@ -591,6 +624,13 @@ fn evaluate_expression_for_aggregate(
 
 /// 执行SELECT查询
 fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 检查是否有JOIN子句
+    if !query.joins.is_empty() {
+        // 有JOIN子句，执行连接查询
+        return execute_select_join_query(db, query);
+    }
+    
+    // 没有JOIN子句，执行简单查询
     // 1. 查找要查询的表
     let table = find_table_by_name(db, &query.table_name)?;
     
@@ -765,6 +805,705 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     Ok(result_set)
 }
 
+/// 辅助函数：添加连接行到结果集
+fn add_joined_row(
+    result_set: &mut ResultSet,
+    columns: &[Expression],
+    main_table: &MemoryTable,
+    main_record_values: &[TypedValue],
+    join_table: &MemoryTable,
+    join_record_values: &[TypedValue]
+) -> Result<(), QueryExecutionError> {
+    // 计算所有列表达式的值
+    let mut row_data = Vec::with_capacity(columns.len());
+    for expr in columns {
+        // 支持跨表字段引用
+        match expr {
+            Expression::Field { name, .. } => {
+                // 处理带表名/别名的字段
+                let (table_name_part, field_name_part) = if name.contains('.') {
+                    let parts: Vec<&str> = name.split('.').collect();
+                    (Some(parts[0]), parts[1])
+                } else {
+                    (None, name.as_str())
+                };
+                
+                // 尝试从主表获取字段
+                if let Some(field_index) = main_table.def.fields
+                    .iter()
+                    .position(|f| f.name == field_name_part) {
+                    row_data.push(main_record_values[field_index].clone());
+                } 
+                // 尝试从连接表获取字段
+                else if let Some(field_index) = join_table.def.fields
+                    .iter()
+                    .position(|f| f.name == field_name_part) {
+                    row_data.push(join_record_values[field_index].clone());
+                } else {
+                    // 字段不存在，添加默认值
+                    let default_value = TypedValue {
+                        value_type: DataType::Int64,
+                        value: Value { i64: 0 },
+                    };
+                    row_data.push(default_value);
+                }
+            },
+            _ => {
+                // 其他表达式类型，添加默认值
+                let default_value = TypedValue {
+                    value_type: DataType::Int64,
+                    value: Value { i64: 0 },
+                };
+                row_data.push(default_value);
+            },
+        }
+    }
+    
+    // 添加到结果集
+    result_set.add_row(row_data);
+    Ok(())
+}
+
+/// 辅助函数：从条件中获取字段值
+fn get_field_value_from_condition<'a>(
+    field: &'a str, 
+    query: &'a SqlQuery,
+    main_table: &'a MemoryTable, main_record_values: &'a [TypedValue],
+    join_table: &'a MemoryTable, join_record_values: &'a [TypedValue]
+) -> (&'a MemoryTable, &'a TypedValue) {
+    // 处理带表名/别名的字段
+    let (table_name_part, field_name_part) = if field.contains('.') {
+        let parts: Vec<&str> = field.split('.').collect();
+        (Some(parts[0]), parts[1])
+    } else {
+        (None, field)
+    };
+    
+    // 根据表名确定从哪个记录中获取字段值
+    if let Some(table_name) = table_name_part {
+        if table_name == query.table_name || 
+           Some(table_name) == query.table_alias.as_deref() {
+            // 从主表获取
+            let field_index = main_table.def.fields
+                .iter()
+                .position(|f| f.name == field_name_part)
+                .unwrap();
+            (&main_table, &main_record_values[field_index])
+        } else {
+            // 从连接表获取
+            let field_index = join_table.def.fields
+                .iter()
+                .position(|f| f.name == field_name_part)
+                .unwrap();
+            (&join_table, &join_record_values[field_index])
+        }
+    } else {
+        // 没有指定表名，尝试从主表查找，找不到再从连接表查找
+        if let Some(field_index) = main_table.def.fields
+            .iter()
+            .position(|f| f.name == field_name_part) {
+            (&main_table, &main_record_values[field_index])
+        } else if let Some(field_index) = join_table.def.fields
+            .iter()
+            .position(|f| f.name == field_name_part) {
+            (&join_table, &join_record_values[field_index])
+        } else {
+            panic!("Field not found: {}", field_name_part);
+        }
+    }
+}
+
+/// 辅助函数：比较两个字段值
+fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
+    // 确保类型相同
+    if left.value_type != right.value_type {
+        return false;
+    }
+    
+    unsafe {
+        match left.value_type {
+            DataType::Int8 => left.value.i8 == right.value.i8,
+            DataType::Int16 => left.value.i16 == right.value.i16,
+            DataType::Int32 => left.value.i32 == right.value.i32,
+            DataType::Int64 => left.value.i64 == right.value.i64,
+            DataType::UInt8 => left.value.u8 == right.value.u8,
+            DataType::UInt16 => left.value.u16 == right.value.u16,
+            DataType::UInt32 => left.value.u32 == right.value.u32,
+            DataType::UInt64 => left.value.u64 == right.value.u64,
+            DataType::Float32 => {
+                (left.value.float32 - right.value.float32).abs() < f32::EPSILON
+            },
+            DataType::Float64 => {
+                (left.value.float64 - right.value.float64).abs() < f64::EPSILON
+            },
+            DataType::Bool => left.value.bool == right.value.bool,
+            DataType::String => {
+                let left_str = core::str::from_utf8(&left.value.string)
+                    .unwrap()
+                    .trim_end_matches(char::from(0));
+                let right_str = core::str::from_utf8(&right.value.string)
+                    .unwrap()
+                    .trim_end_matches(char::from(0));
+                left_str == right_str
+            },
+            DataType::Timestamp => left.value.time == right.value.time,
+            DataType::TimestampTZ => left.value.time == right.value.time,
+            DataType::Interval => left.value.interval == right.value.interval,
+        }
+    }
+}
+
+/// 执行连接查询（带JOIN子句）
+fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 1. 查找主表
+    let main_table = find_table_by_name(db, &query.table_name)?;
+    
+    // 2. 确定要返回的列表达式
+    let columns = if query.select_all {
+        // 返回主表所有列（作为Field表达式）
+        let mut fields = main_table.def.fields
+            .iter()
+            .map(|field| Expression::Field {
+                name: field.name.to_string(),
+                alias: None,
+            })
+            .collect::<Vec<_>>();
+        
+        // TODO: 添加所有连接表的列
+        fields
+    } else {
+        // 返回指定列表达式
+        // TODO: 验证跨表列引用
+        query.columns.clone()
+    };
+    
+    // 3. 生成结果集的列名
+    let result_columns = columns.iter()
+        .map(|expr| {
+            match expr {
+                Expression::Field { name, alias } => {
+                    alias.clone().unwrap_or_else(|| name.clone())
+                },
+                Expression::FunctionCall { alias, name, .. } => {
+                    alias.clone().unwrap_or_else(|| name.clone())
+                },
+                Expression::Constant { alias, .. } => {
+                    alias.clone().unwrap_or_else(|| "constant".to_string())
+                },
+                Expression::BinaryOp { alias, .. } => {
+                    alias.clone().unwrap_or_else(|| "binary_op".to_string())
+                },
+            }
+        })
+        .collect();
+    
+    // 4. 创建结果集
+    let mut result_set = ResultSet::new(result_columns);
+    
+    // 5. 执行表连接操作
+    // 目前仅支持内连接
+    // TODO: 支持左连接、右连接和全连接
+    
+    // 6. 遍历主表中的所有记录
+    unsafe {
+        let iterate_result = main_table.iterate(|main_id, main_record_ptr| {
+            // 从主表记录中提取所有字段值
+            let mut main_record_values = Vec::with_capacity(main_table.def.fields.len());
+            for field in main_table.def.fields.iter() {
+                if let Ok(typed_value) = get_field_value(main_table, main_record_ptr, &field.name) {
+                    main_record_values.push(typed_value);
+                } else {
+                    continue; // 跳过错误记录
+                }
+            }
+            
+            // 7. 对于每个主表记录，遍历所有连接表
+            for join_clause in &query.joins {
+                // 查找连接表
+                let join_table = find_table_by_name(db, &join_clause.table_name).unwrap();
+                
+                // 标记是否有匹配的连接记录
+                let mut has_matching_join = false;
+                
+                // 遍历连接表中的所有记录
+                join_table.iterate(|join_id, join_record_ptr| {
+                    // 从连接表记录中提取所有字段值
+                    let mut join_record_values = Vec::with_capacity(join_table.def.fields.len());
+                    for field in join_table.def.fields.iter() {
+                        if let Ok(typed_value) = get_field_value(join_table, join_record_ptr, &field.name) {
+                            join_record_values.push(typed_value);
+                        } else {
+                            return true; // 跳过错误记录，继续遍历
+                        }
+                    }
+                    
+                    // 8. 评估连接条件
+                    let join_condition = &join_clause.on_condition;
+                    let mut condition_matches = true;
+                    
+                    // 处理连接条件
+                    if let Condition::Comparison(ComparisonCondition { field: left_field, operator, value: right_value }) = join_condition {
+                        // 处理带表名/别名的字段
+                        let (table_name_part, field_name_part) = if left_field.contains('.') {
+                            let parts: Vec<&str> = left_field.split('.').collect();
+                            (Some(parts[0]), parts[1])
+                        } else {
+                            (None, left_field.as_str())
+                        };
+                        
+                        // 根据表名确定从哪个记录中获取字段值
+                        let (table, record_values) = if let Some(table_name) = table_name_part {
+                            if table_name == query.table_name || 
+                               Some(table_name) == query.table_alias.as_deref() {
+                                (&main_table, &main_record_values)
+                            } else {
+                                (&join_table, &join_record_values)
+                            }
+                        } else {
+                            // 没有指定表名，尝试从主表查找，找不到再从连接表查找
+                            if main_table.def.fields.iter().any(|f| f.name == field_name_part) {
+                                (&main_table, &main_record_values)
+                            } else if join_table.def.fields.iter().any(|f| f.name == field_name_part) {
+                                (&join_table, &join_record_values)
+                            } else {
+                                return true; // 字段不存在，跳过
+                            }
+                        };
+                        
+                        // 查找字段索引
+                        let field_index = table.def.fields
+                            .iter()
+                            .position(|f| f.name == field_name_part)
+                            .unwrap();
+                        
+                        // 获取字段值
+                        let field_value = &record_values[field_index];
+                        
+                        // 比较条件，目前仅支持相等比较
+                        if *operator == ComparisonOperator::Equal {
+                            // 简单的相等比较，支持更多基本类型
+                            condition_matches = unsafe {
+                                // 使用完整的命名空间来区分SQL解析的Value和数据库存储的Value
+                                match (&field_value.value_type, &right_value) {
+                                    (DataType::Int8, crate::sql::Value::Integer(v)) => {
+                                        field_value.value.i8 == *v as i8
+                                    },
+                                    (DataType::Int16, crate::sql::Value::Integer(v)) => {
+                                        field_value.value.i16 == *v as i16
+                                    },
+                                    (DataType::Int32, crate::sql::Value::Integer(v)) => {
+                                        field_value.value.i32 == *v as i32
+                                    },
+                                    (DataType::Int64, crate::sql::Value::Integer(v)) => {
+                                        field_value.value.i64 == *v
+                                    },
+                                    (DataType::UInt8, crate::sql::Value::Integer(v)) => {
+                                        field_value.value.u8 == *v as u8
+                                    },
+                                    (DataType::UInt16, crate::sql::Value::Integer(v)) => {
+                                        field_value.value.u16 == *v as u16
+                                    },
+                                    (DataType::UInt32, crate::sql::Value::Integer(v)) => {
+                                        field_value.value.u32 == *v as u32
+                                    },
+                                    (DataType::UInt64, crate::sql::Value::Integer(v)) => {
+                                        field_value.value.u64 == *v as u64
+                                    },
+                                    (DataType::String, crate::sql::Value::String(v)) => {
+                                        let field_str = core::str::from_utf8(&field_value.value.string)
+                                            .unwrap()
+                                            .trim_end_matches(char::from(0));
+                                        field_str == v
+                                    },
+                                    (DataType::Bool, crate::sql::Value::Boolean(v)) => {
+                                        field_value.value.bool == *v
+                                    },
+                                    (DataType::Float32, crate::sql::Value::Float(v)) => {
+                                        (field_value.value.float32 - *v as f32).abs() < f32::EPSILON
+                                    },
+                                    (DataType::Float64, crate::sql::Value::Float(v)) => {
+                                        (field_value.value.float64 - *v).abs() < f64::EPSILON
+                                    },
+                                    // 支持字段引用比较
+                                    (_, crate::sql::Value::Identifier(right_field)) => {
+                                        // 右值是字段引用，处理字段到字段的比较
+                                        // 处理带表名/别名的右字段
+                                        let (right_table_name_part, right_field_name_part) = if right_field.contains('.') {
+                                            let parts: Vec<&str> = right_field.split('.').collect();
+                                            (Some(parts[0]), parts[1])
+                                        } else {
+                                            (None, right_field.as_str())
+                                        };
+                                        
+                                        // 根据表名确定从哪个记录中获取右字段值
+                                        let (right_table, right_record_values) = if let Some(table_name) = right_table_name_part {
+                                            if table_name == query.table_name || 
+                                               Some(table_name) == query.table_alias.as_deref() {
+                                                (&main_table, &main_record_values)
+                                            } else {
+                                                (&join_table, &join_record_values)
+                                            }
+                                        } else {
+                                            // 没有指定表名，尝试从主表查找，找不到再从连接表查找
+                                            if main_table.def.fields.iter().any(|f| f.name == right_field_name_part) {
+                                                (&main_table, &main_record_values)
+                                            } else if join_table.def.fields.iter().any(|f| f.name == right_field_name_part) {
+                                                (&join_table, &join_record_values)
+                                            } else {
+                                                return true; // 字段不存在，跳过
+                                            }
+                                        };
+                                        
+                                        // 查找右字段索引
+                                        let right_field_index = right_table.def.fields
+                                            .iter()
+                                            .position(|f| f.name == right_field_name_part)
+                                            .unwrap();
+                                        
+                                        // 获取右字段值
+                                        let right_field_value = &right_record_values[right_field_index];
+                                        
+                                        // 使用compare_values函数比较两个字段值
+                                        compare_values(field_value, right_field_value)
+                                    },
+                                    _ => false, // 不支持的类型比较
+                                }
+                            };
+                        } else {
+                            condition_matches = false; // 只支持相等条件
+                        }
+                    }
+                    
+                    // 9. 根据连接类型和条件匹配情况，合并记录并添加到结果集
+                    if condition_matches {
+                        // 合并主表和连接表的记录值
+                        let mut combined_values = main_record_values.clone();
+                        combined_values.extend(join_record_values.clone());
+                        
+                        // 计算所有列表达式的值
+                        let mut row_data = Vec::with_capacity(columns.len());
+                        for expr in &columns {
+                            // 支持跨表字段引用
+                            match expr {
+                                Expression::Field { name, .. } => {
+                                    // 处理带表名/别名的字段
+                                    let (table_name_part, field_name_part) = if name.contains('.') {
+                                        let parts: Vec<&str> = name.split('.').collect();
+                                        (Some(parts[0]), parts[1])
+                                    } else {
+                                        (None, name.as_str())
+                                    };
+                                    
+                                    // 尝试从主表获取字段
+                                    if let Some(field_index) = main_table.def.fields
+                                        .iter()
+                                        .position(|f| f.name == field_name_part) {
+                                        row_data.push(main_record_values[field_index].clone());
+                                    } 
+                                    // 尝试从连接表获取字段
+                                    else if let Some(field_index) = join_table.def.fields
+                                        .iter()
+                                        .position(|f| f.name == field_name_part) {
+                                        row_data.push(join_record_values[field_index].clone());
+                                    } else {
+                                        // 字段不存在，添加默认值
+                                        let default_value = TypedValue {
+                                            value_type: DataType::Int64,
+                                            value: Value { i64: 0 },
+                                        };
+                                        row_data.push(default_value);
+                                    }
+                                },
+                                _ => {
+                                    // 其他表达式类型，添加默认值
+                                    let default_value = TypedValue {
+                                        value_type: DataType::Int64,
+                                        value: Value { i64: 0 },
+                                    };
+                                    row_data.push(default_value);
+                                },
+                            }
+                        }
+                        
+                        // 添加到结果集
+                        result_set.add_row(row_data);
+                        has_matching_join = true;
+                    }
+                    
+                    true // 继续遍历连接表
+                }).unwrap();
+                
+                // 左连接和全连接处理：如果没有匹配的连接记录，仍然需要添加主表记录
+                if (join_clause.join_type == JoinType::Left || join_clause.join_type == JoinType::Full) && !has_matching_join {
+                    // 创建连接表的默认值记录
+                    let mut join_default_values = Vec::with_capacity(join_table.def.fields.len());
+                    for field in join_table.def.fields.iter() {
+                        // 根据字段类型创建默认值
+                        let default_value = match field.data_type {
+                            DataType::Int8 => TypedValue { value_type: DataType::Int8, value: Value { i8: 0 } },
+                            DataType::Int16 => TypedValue { value_type: DataType::Int16, value: Value { i16: 0 } },
+                            DataType::Int32 => TypedValue { value_type: DataType::Int32, value: Value { i32: 0 } },
+                            DataType::Int64 => TypedValue { value_type: DataType::Int64, value: Value { i64: 0 } },
+                            DataType::UInt8 => TypedValue { value_type: DataType::UInt8, value: Value { u8: 0 } },
+                            DataType::UInt16 => TypedValue { value_type: DataType::UInt16, value: Value { u16: 0 } },
+                            DataType::UInt32 => TypedValue { value_type: DataType::UInt32, value: Value { u32: 0 } },
+                            DataType::UInt64 => TypedValue { value_type: DataType::UInt64, value: Value { u64: 0 } },
+                            DataType::Float32 => TypedValue { value_type: DataType::Float32, value: Value { float32: 0.0 } },
+                            DataType::Float64 => TypedValue { value_type: DataType::Float64, value: Value { float64: 0.0 } },
+                            DataType::Bool => TypedValue { value_type: DataType::Bool, value: Value { bool: false } },
+                            DataType::String => {
+                                let mut buf = [0; MAX_STRING_LEN];
+                                TypedValue { value_type: DataType::String, value: Value { string: buf } }
+                            },
+                            DataType::Timestamp => TypedValue { value_type: DataType::Timestamp, value: Value { u64: 0 } },
+                            DataType::TimestampTZ => TypedValue { value_type: DataType::TimestampTZ, value: Value { u64: 0 } },
+                            DataType::Interval => TypedValue { value_type: DataType::Interval, value: Value { i64: 0 } },
+                        };
+                        join_default_values.push(default_value);
+                    }
+                    
+                    // 添加左连接的默认记录
+                    add_joined_row(&mut result_set, &columns, &main_table, &main_record_values, &join_table, &join_default_values).unwrap();
+                }
+            }
+            
+            true // 继续遍历主表
+        });
+        iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
+    }
+    
+    // 处理 RIGHT JOIN 和 FULL JOIN：遍历连接表，添加没有匹配主表的记录
+    for join_clause in &query.joins {
+        if join_clause.join_type == JoinType::Right || join_clause.join_type == JoinType::Full {
+            // 查找连接表
+            let join_table = find_table_by_name(db, &join_clause.table_name)?;
+            
+            unsafe {
+                // 遍历连接表中的所有记录
+                let iterate_result = join_table.iterate(|join_id, join_record_ptr| {
+                    // 从连接表记录中提取所有字段值
+                    let mut join_record_values = Vec::with_capacity(join_table.def.fields.len());
+                    for field in join_table.def.fields.iter() {
+                        if let Ok(typed_value) = get_field_value(join_table, join_record_ptr, &field.name) {
+                            join_record_values.push(typed_value);
+                        } else {
+                            return true; // 跳过错误记录，继续遍历
+                        }
+                    }
+                    
+                    // 标记是否有匹配的主表记录
+                    let mut has_matching_main = false;
+                    
+                    // 遍历主表中的所有记录
+                    main_table.iterate(|main_id, main_record_ptr| {
+                        // 从主表记录中提取所有字段值
+                        let mut main_record_values = Vec::with_capacity(main_table.def.fields.len());
+                        for field in main_table.def.fields.iter() {
+                            if let Ok(typed_value) = get_field_value(main_table, main_record_ptr, &field.name) {
+                                main_record_values.push(typed_value);
+                            } else {
+                                return true; // 跳过错误记录，继续遍历
+                            }
+                        }
+                        
+                        // 评估连接条件
+                        let join_condition = &join_clause.on_condition;
+                        let mut condition_matches = true;
+                        
+                        // 处理连接条件
+                        if let Condition::Comparison(ComparisonCondition { field: left_field, operator, value: right_value }) = join_condition {
+                            // 处理带表名/别名的字段
+                            let (table_name_part, field_name_part) = if left_field.contains('.') {
+                                let parts: Vec<&str> = left_field.split('.').collect();
+                                (Some(parts[0]), parts[1])
+                            } else {
+                                (None, left_field.as_str())
+                            };
+                            
+                            // 根据表名确定从哪个记录中获取字段值
+                            let (table, record_values) = if let Some(table_name) = table_name_part {
+                                if table_name == query.table_name || 
+                                   Some(table_name) == query.table_alias.as_deref() {
+                                    (&main_table, &main_record_values)
+                                } else {
+                                    (&join_table, &join_record_values)
+                                }
+                            } else {
+                                // 没有指定表名，尝试从主表查找，找不到再从连接表查找
+                                if main_table.def.fields.iter().any(|f| f.name == field_name_part) {
+                                    (&main_table, &main_record_values)
+                                } else if join_table.def.fields.iter().any(|f| f.name == field_name_part) {
+                                    (&join_table, &join_record_values)
+                                } else {
+                                    return true; // 字段不存在，跳过
+                                }
+                            };
+                            
+                            // 查找字段索引
+                            let field_index = table.def.fields
+                                .iter()
+                                .position(|f| f.name == field_name_part)
+                                .unwrap();
+                            
+                            // 获取字段值
+                            let field_value = &record_values[field_index];
+                            
+                            // 比较条件，目前仅支持相等比较
+                            if *operator == ComparisonOperator::Equal {
+                                // 简单的相等比较，支持更多基本类型
+                                condition_matches = unsafe {
+                                    // 使用完整的命名空间来区分SQL解析的Value和数据库存储的Value
+                                    match (&field_value.value_type, &right_value) {
+                                        (DataType::Int8, crate::sql::Value::Integer(v)) => {
+                                            field_value.value.i8 == *v as i8
+                                        },
+                                        (DataType::Int16, crate::sql::Value::Integer(v)) => {
+                                            field_value.value.i16 == *v as i16
+                                        },
+                                        (DataType::Int32, crate::sql::Value::Integer(v)) => {
+                                            field_value.value.i32 == *v as i32
+                                        },
+                                        (DataType::Int64, crate::sql::Value::Integer(v)) => {
+                                            field_value.value.i64 == *v
+                                        },
+                                        (DataType::UInt8, crate::sql::Value::Integer(v)) => {
+                                            field_value.value.u8 == *v as u8
+                                        },
+                                        (DataType::UInt16, crate::sql::Value::Integer(v)) => {
+                                            field_value.value.u16 == *v as u16
+                                        },
+                                        (DataType::UInt32, crate::sql::Value::Integer(v)) => {
+                                            field_value.value.u32 == *v as u32
+                                        },
+                                        (DataType::UInt64, crate::sql::Value::Integer(v)) => {
+                                            field_value.value.u64 == *v as u64
+                                        },
+                                        (DataType::String, crate::sql::Value::String(v)) => {
+                                            let field_str = core::str::from_utf8(&field_value.value.string)
+                                                .unwrap()
+                                                .trim_end_matches(char::from(0));
+                                            field_str == v
+                                        },
+                                        (DataType::Bool, crate::sql::Value::Boolean(v)) => {
+                                            field_value.value.bool == *v
+                                        },
+                                        (DataType::Float32, crate::sql::Value::Float(v)) => {
+                                            (field_value.value.float32 - *v as f32).abs() < f32::EPSILON
+                                        },
+                                        (DataType::Float64, crate::sql::Value::Float(v)) => {
+                                            (field_value.value.float64 - *v).abs() < f64::EPSILON
+                                        },
+                                        _ => false, // 不支持的类型比较
+                                    }
+                                };
+                            } else {
+                                condition_matches = false; // 只支持相等条件
+                            }
+                        }
+                        
+                        if condition_matches {
+                            has_matching_main = true;
+                            return false; // 找到匹配，停止遍历主表
+                        }
+                        
+                        true // 继续遍历主表
+                    }).unwrap();
+                    
+                    // 如果没有匹配的主表记录，添加右连接或全连接的默认记录
+                    if !has_matching_main {
+                        // 创建主表的默认值记录
+                        let mut main_default_values = Vec::with_capacity(main_table.def.fields.len());
+                        for field in main_table.def.fields.iter() {
+                            // 根据字段类型创建默认值
+                            let default_value = match field.data_type {
+                                DataType::Int8 => TypedValue { value_type: DataType::Int8, value: Value { i8: 0 } },
+                                DataType::Int16 => TypedValue { value_type: DataType::Int16, value: Value { i16: 0 } },
+                                DataType::Int32 => TypedValue { value_type: DataType::Int32, value: Value { i32: 0 } },
+                                DataType::Int64 => TypedValue { value_type: DataType::Int64, value: Value { i64: 0 } },
+                                DataType::UInt8 => TypedValue { value_type: DataType::UInt8, value: Value { u8: 0 } },
+                                DataType::UInt16 => TypedValue { value_type: DataType::UInt16, value: Value { u16: 0 } },
+                                DataType::UInt32 => TypedValue { value_type: DataType::UInt32, value: Value { u32: 0 } },
+                                DataType::UInt64 => TypedValue { value_type: DataType::UInt64, value: Value { u64: 0 } },
+                                DataType::Float32 => TypedValue { value_type: DataType::Float32, value: Value { float32: 0.0 } },
+                                DataType::Float64 => TypedValue { value_type: DataType::Float64, value: Value { float64: 0.0 } },
+                                DataType::Bool => TypedValue { value_type: DataType::Bool, value: Value { bool: false } },
+                                DataType::String => {
+                                    let mut buf = [0; MAX_STRING_LEN];
+                                    TypedValue { value_type: DataType::String, value: Value { string: buf } }
+                                },
+                                DataType::Timestamp => TypedValue { value_type: DataType::Timestamp, value: Value { u64: 0 } },
+                                DataType::TimestampTZ => TypedValue { value_type: DataType::TimestampTZ, value: Value { u64: 0 } },
+                                DataType::Interval => TypedValue { value_type: DataType::Interval, value: Value { i64: 0 } },
+                            };
+                            main_default_values.push(default_value);
+                        }
+                        
+                        // 计算所有列表达式的值
+                        let mut row_data = Vec::with_capacity(columns.len());
+                        for expr in &columns {
+                            // 支持跨表字段引用
+                            match expr {
+                                Expression::Field { name, .. } => {
+                                    // 处理带表名/别名的字段
+                                    let (table_name_part, field_name_part) = if name.contains('.') {
+                                        let parts: Vec<&str> = name.split('.').collect();
+                                        (Some(parts[0]), parts[1])
+                                    } else {
+                                        (None, name.as_str())
+                                    };
+                                    
+                                    // 尝试从主表获取字段
+                                    if let Some(field_index) = main_table.def.fields
+                                        .iter()
+                                        .position(|f| f.name == field_name_part) {
+                                        row_data.push(main_default_values[field_index].clone());
+                                    } 
+                                    // 尝试从连接表获取字段
+                                    else if let Some(field_index) = join_table.def.fields
+                                        .iter()
+                                        .position(|f| f.name == field_name_part) {
+                                        row_data.push(join_record_values[field_index].clone());
+                                    } else {
+                                        // 字段不存在，添加默认值
+                                        let default_value = TypedValue {
+                                            value_type: DataType::Int64,
+                                            value: Value { i64: 0 },
+                                        };
+                                        row_data.push(default_value);
+                                    }
+                                },
+                                _ => {
+                                    // 其他表达式类型，添加默认值
+                                    let default_value = TypedValue {
+                                        value_type: DataType::Int64,
+                                        value: Value { i64: 0 },
+                                    };
+                                    row_data.push(default_value);
+                                },
+                            }
+                        }
+                        
+                        // 添加到结果集
+                        result_set.add_row(row_data);
+                    }
+                    
+                    true // 继续遍历连接表
+                });
+                iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
+            }
+        }
+    }
+    
+    // 10. 应用LIMIT限制
+    if let Some(limit) = query.limit {
+        if result_set.rows.len() > limit {
+            result_set.rows.truncate(limit);
+        }
+    }
+    
+    Ok(result_set)
+}
+
 /// 评估表达式值
 fn evaluate_expression(
         table: &MemoryTable,
@@ -822,6 +1561,13 @@ fn evaluate_expression(
                     },
                     SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
                     SqlValue::Null => (DataType::Int64, Value { i64: 0 }),
+                    SqlValue::Identifier(s) => {
+                        // 标识符作为字符串处理
+                        let mut buf = [0; MAX_STRING_LEN];
+                        let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                        buf[..len].copy_from_slice(s.as_bytes());
+                        (DataType::String, Value { string: buf })
+                    },
                 };
                 
                 Ok(TypedValue {
@@ -2554,6 +3300,31 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Interval => Value { interval: crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision, 0) },
                         }
                     },
+                    crate::sql::Value::Identifier(s) => {
+                        // 标识符作为字符串处理
+                        match data_type {
+                            DataType::UInt8 => Value { u8: s.parse().unwrap_or(0) },
+                            DataType::UInt16 => Value { u16: s.parse().unwrap_or(0) },
+                            DataType::UInt32 => Value { u32: s.parse().unwrap_or(0) },
+                            DataType::UInt64 => Value { u64: s.parse().unwrap_or(0) },
+                            DataType::Int8 => Value { i8: s.parse().unwrap_or(0) },
+                            DataType::Int16 => Value { i16: s.parse().unwrap_or(0) },
+                            DataType::Int32 => Value { i32: s.parse().unwrap_or(0) },
+                            DataType::Int64 => Value { i64: s.parse().unwrap_or(0) },
+                            DataType::Bool => Value { bool: s.parse().unwrap_or(false) },
+                            DataType::Float32 => Value { float32: s.parse().unwrap_or(0.0) },
+                            DataType::Float64 => Value { float64: s.parse().unwrap_or(0.0) },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
+                            DataType::String => {
+                                let mut buf = [0; MAX_STRING_LEN];
+                                let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                                buf[..len].copy_from_slice(s.as_bytes());
+                                Value { string: buf }
+                            },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision, 0) },
+                        }
+                    },
                     crate::sql::Value::Null => {
                         // 对于NULL默认值，根据数据类型生成适当的默认值
                         match data_type {
@@ -2735,8 +3506,8 @@ fn process_group_by_query(
                         },
                         "AVG" => {
                             TypedValue {
-                                value_type: DataType::UInt64,
-                                value: Value { u64: 0 },
+                                value_type: DataType::Float64,
+                                value: Value { float64: 0.0 },
                             }
                         },
                         "MIN" => {
@@ -3909,8 +4680,8 @@ unsafe fn evaluate_between(table: &MemoryTable, record_ptr: *const u8, between: 
     match get_field_value(table, record_ptr, &between.field) {
         Ok(field_value) => {
             // BETWEEN条件：field_value >= min_value AND field_value <= max_value
-            let is_greater_or_equal = compare_values(&field_value.value, field_type, &ComparisonOperator::GreaterThanOrEqual, &between.min_value);
-            let is_less_or_equal = compare_values(&field_value.value, field_type, &ComparisonOperator::LessThanOrEqual, &between.max_value);
+            let is_greater_or_equal = compare_field_with_condition(&field_value.value, field_type, &ComparisonOperator::GreaterThanOrEqual, &between.min_value);
+            let is_less_or_equal = compare_field_with_condition(&field_value.value, field_type, &ComparisonOperator::LessThanOrEqual, &between.max_value);
             is_greater_or_equal && is_less_or_equal
         },
         Err(_) => false,
@@ -3942,14 +4713,14 @@ unsafe fn evaluate_comparison(table: &MemoryTable, record_ptr: *const u8, comp: 
     match get_field_value(table, record_ptr, &comp.field) {
         Ok(field_value) => {
             // 比较字段值和条件值，传入字段类型
-            compare_values(&field_value.value, field_type, &comp.operator, &comp.value)
+            compare_field_with_condition(&field_value.value, field_type, &comp.operator, &comp.value)
         },
         Err(_) => false,
     }
 }
 
-/// 比较两个值 - 修复了类型不匹配的bug
-fn compare_values(field_value: &Value, field_type: DataType, operator: &ComparisonOperator, condition_value: &crate::sql::Value) -> bool {
+/// 比较字段值与条件值 - 修复了类型不匹配的bug
+fn compare_field_with_condition(field_value: &Value, field_type: DataType, operator: &ComparisonOperator, condition_value: &crate::sql::Value) -> bool {
     // 根据字段类型从Value union中读取正确的字段值，然后与条件值进行比较
     match field_type {
         // 无符号整数类型

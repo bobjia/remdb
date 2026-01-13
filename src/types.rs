@@ -129,7 +129,7 @@ impl Default for DataType {
 
 /// 时间间隔结构体
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct db_interval {
     /// 微秒数
     pub value: i64,
@@ -168,7 +168,7 @@ impl db_interval {
 
 /// 时间戳结构体，根据设计方案实现
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct db_timestamp {
     /// 自2000-01-01的微秒数
     pub value: i64,

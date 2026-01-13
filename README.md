@@ -17,7 +17,7 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
 - **编译时配置**：使用宏实现表和数据库的编译时配置，优化性能
 - **低功耗模式**：优化内存使用，减少事务日志写入频率
 - **增量快照**：只保存版本号变化的记录，减少快照大小和保存时间
-- **SQL查询支持**：支持标准SQL SELECT语句查询内存数据库的数据
+- **SQL查询支持**：支持标准SQL SELECT语句查询内存数据库的数据，包括聚合函数、数学函数和时间转换函数
 - **数据库监控**：实时监控数据库指标，包括内存使用、查询性能、事务状态等
 - **基于UDP的高可靠数据订阅与发布**：支持单播、广播和组播模式，提供基于NACK的重传机制
 - **高可用支持**：
@@ -433,7 +433,7 @@ pubsub.unsubscribe(subscription_id).expect("Failed to unsubscribe");
 
 ## SQL查询示例
 
-remdb支持标准SQL SELECT语句查询内存数据库的数据：
+remdb支持标准SQL SELECT语句查询内存数据库的数据，包括各种聚合函数、数学函数和时间转换函数：
 
 ```rust
 // 执行SQL查询获取所有用户
@@ -452,6 +452,18 @@ for row in result {
     println!("ID: {}, Name: {}, Age: {}, Active: {}", 
              row.get(0), row.get(1), row.get(2), row.get(3));
 }
+
+// 使用时间转换函数
+let result = db.sql_query("SELECT id, name, TO_ISO8601(created_at) AS iso_created FROM users").unwrap();
+
+// 使用TO_CHAR函数格式化时间
+let result = db.sql_query("SELECT id, name, TO_CHAR(created_at, 'YYYY-MM-DD HH24:MI:SS') AS formatted_date FROM users").unwrap();
+
+// 使用TO_EPOCH函数获取Unix时间戳
+let result = db.sql_query("SELECT id, name, TO_EPOCH(created_at) AS unix_time FROM users").unwrap();
+
+// 结合聚合函数和时间函数
+let result = db.sql_query("SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS date, AVG(value) AS avg_value FROM sensor_data GROUP BY date").unwrap();
 ```
 
 ## 时序数据库

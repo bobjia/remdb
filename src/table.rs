@@ -939,19 +939,19 @@ impl MemoryTable {
     /// 
     /// # 返回值
     /// - `Result<()>`: 迭代操作的结果，成功返回`Ok(())`，失败返回错误信息
-    /// 
-    /// # 示例
     /// ```
-    /// // 假设已创建表table
-    /// unsafe {
-    ///     table.iterate(|id, record_ptr| {
-    ///         // 直接访问记录数据，无需拷贝
-    ///         let value = *(record_ptr.add(field_offset) as *const u32);
-    ///         println!("Record {}: {}", id, value);
-    ///         // 继续迭代
-    ///         true
-    ///     }).unwrap();
-    /// }
+    /// // 示例：如何使用iterate方法遍历记录
+    /// // 注意：此示例仅展示用法，实际使用时需要先创建MemoryTable实例
+    /// 
+    /// // unsafe {
+    /// //     // 使用iterate方法遍历记录
+    /// //     table.iterate(|id, record_ptr| {
+    /// //         // 直接访问记录数据
+    /// //         let id_value = *(record_ptr as *const u32); // 第一个字段是id，偏移量为0
+    /// //         let value_value = *(record_ptr.add(4) as *const u32); // 第二个字段是value，偏移量为4
+    /// //         true // 继续迭代
+    /// //     }).unwrap();
+    /// // }
     /// ```
     pub unsafe fn iterate<F>(&self, mut f: F) -> Result<()>
     where F: FnMut(usize, *const u8) -> bool {
@@ -999,12 +999,19 @@ impl MemoryTable {
     /// 
     /// # 示例
     /// ```
-    /// // 假设已创建表table，record_id为有效记录ID
-    /// unsafe {
-    ///     let record_ptr = table.get_record_ptr(record_id);
-    ///     // 直接访问记录数据，无需拷贝
-    ///     let value = *(record_ptr.add(field_offset) as *const u32);
-    /// }
+    /// // 示例：如何使用get_record_ptr方法获取记录指针
+    /// // 注意：此示例仅展示用法，实际使用时需要先创建MemoryTable实例
+    /// 
+    /// // unsafe {
+    /// //     let record_id = 0; // 示例记录ID
+    /// //     let field_offset = 4; // 示例字段偏移量（第二个字段，偏移量为4）
+    /// //     
+    /// //     // 使用get_record_ptr方法获取记录指针
+    /// //     let record_ptr = table.get_record_ptr(record_id);
+    /// //     // 直接访问记录数据，无需拷贝
+    /// //     let value = *(record_ptr.add(field_offset) as *const u32);
+    /// //     println!("Record {} value: {}", record_id, value);
+    /// // }
     /// ```
     pub unsafe fn get_record_ptr(&self, index: usize) -> *const u8 {
         // 安全检查：确保索引在有效范围内
@@ -1032,12 +1039,24 @@ impl MemoryTable {
     /// 
     /// # 示例
     /// ```
-    /// // 假设已创建表table，record_id为有效记录ID
-    /// unsafe {
-    ///     let record_ptr = table.get_record_ptr_mut(record_id);
-    ///     // 直接修改记录数据，无需拷贝
-    ///     *(record_ptr.add(field_offset) as *mut u32) = new_value;
-    /// }
+    /// // 示例：如何使用get_record_ptr_mut方法获取记录可变指针
+    /// // 注意：此示例仅展示用法，实际使用时需要先创建MemoryTable实例
+    /// 
+    /// // unsafe {
+    /// //     let record_id = 0; // 示例记录ID
+    /// //     let field_offset = 4; // 示例字段偏移量（第二个字段，偏移量为4）
+    /// //     let new_value = 100u32; // 要设置的新值
+    /// //     
+    /// //     // 使用get_record_ptr_mut方法获取记录指针
+    /// //     let record_ptr = table.get_record_ptr_mut(record_id);
+    /// //     // 直接修改记录数据，无需拷贝
+    /// //     *(record_ptr.add(field_offset) as *mut u32) = new_value;
+    /// //     
+    /// //     // 验证修改结果
+    /// //     let updated_ptr = table.get_record_ptr(record_id);
+    /// //     let updated_value = *(updated_ptr.add(field_offset) as *const u32);
+    /// //     assert_eq!(updated_value, new_value);
+    /// // }
     /// ```
     pub unsafe fn get_record_ptr_mut(&mut self, index: usize) -> *mut u8 {
         // 安全检查：确保索引在有效范围内
