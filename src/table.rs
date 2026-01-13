@@ -976,7 +976,7 @@ impl MemoryTable {
     /// - 返回的指针在表被销毁或内存重分配前有效
     pub unsafe fn get_status_ptr(&self, index: usize) -> *mut RecordHeader {
         // 安全检查：确保索引在有效范围内
-        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})");
+        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})", index, self.def.max_records);
         self.status_array.as_ptr().add(index)
     }
     
@@ -1008,7 +1008,7 @@ impl MemoryTable {
     /// ```
     pub unsafe fn get_record_ptr(&self, index: usize) -> *const u8 {
         // 安全检查：确保索引在有效范围内
-        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})");
+        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})", index, self.def.max_records);
         self.data_start.as_ptr().add(index * self.record_size)
     }
     
@@ -1041,7 +1041,7 @@ impl MemoryTable {
     /// ```
     pub unsafe fn get_record_ptr_mut(&mut self, index: usize) -> *mut u8 {
         // 安全检查：确保索引在有效范围内
-        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})");
+        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})", index, self.def.max_records);
         self.data_start.as_ptr().add(index * self.record_size) as *mut u8
     }
     
