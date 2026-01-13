@@ -913,7 +913,46 @@ impl MemoryTable {
         self.low_power_mode
     }
     
-    /// 遍历记录
+    /// 遍历记录（零拷贝迭代）
+    /// 
+    /// # 功能说明
+    /// 遍历表中所有已使用的记录，通过回调函数直接提供指向表内存的指针，实现零拷贝访问
+    /// 
+    /// # 安全说明
+    /// - 此方法提供原始指针给回调函数，调用者需要确保指针使用的安全性
+    /// - 回调函数中获取的指针在迭代过程中有效
+    /// - 并发访问时需要考虑线程安全
+    /// - 请勿在回调函数外部长时间持有返回的指针
+    /// - 迭代过程中修改表结构可能导致未定义行为
+    /// 
+    /// # 使用场景
+    /// - 全表扫描或范围查询
+    /// - 批量数据处理
+    /// - 数据导出或备份
+    /// - 高性能数据分析
+    /// 
+    /// # 参数
+    /// - `f`: 回调函数，接收记录ID和记录数据指针，返回bool值指示是否继续迭代
+    ///   - `id`: 记录在表中的唯一标识符
+    ///   - `record_ptr`: 指向记录数据的原始指针
+    ///   - 返回值: `true` 继续迭代，`false` 停止迭代
+    /// 
+    /// # 返回值
+    /// - `Result<()>`: 迭代操作的结果，成功返回`Ok(())`，失败返回错误信息
+    /// 
+    /// # 示例
+    /// ```
+    /// // 假设已创建表table
+    /// unsafe {
+    ///     table.iterate(|id, record_ptr| {
+    ///         // 直接访问记录数据，无需拷贝
+    ///         let value = *(record_ptr.add(field_offset) as *const u32);
+    ///         println!("Record {}: {}", id, value);
+    ///         // 继续迭代
+    ///         true
+    ///     }).unwrap();
+    /// }
+    /// ```
     pub unsafe fn iterate<F>(&self, mut f: F) -> Result<()>
     where F: FnMut(usize, *const u8) -> bool {
         for i in 0..self.def.max_records {
@@ -930,17 +969,79 @@ impl MemoryTable {
     }
     
     /// 获取记录状态指针
+    /// 
+    /// # 安全说明
+    /// - 此方法返回原始指针，调用者需要确保指针使用的安全性
+    /// - 索引必须在有效范围内（0 <= index < max_records）
+    /// - 返回的指针在表被销毁或内存重分配前有效
     pub unsafe fn get_status_ptr(&self, index: usize) -> *mut RecordHeader {
+        // 安全检查：确保索引在有效范围内
+        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})");
         self.status_array.as_ptr().add(index)
     }
     
-    /// 获取记录数据指针
+    /// 获取记录数据指针（零拷贝访问）
+    /// 
+    /// # 功能说明
+    /// 直接返回指向表内存中记录数据的原始指针，实现零拷贝访问
+    /// 
+    /// # 安全说明
+    /// - 此方法返回原始指针，调用者需要确保指针使用的安全性
+    /// - 索引必须在有效范围内（0 <= index < max_records）
+    /// - 返回的指针在表被销毁或内存重分配前有效
+    /// - 并发访问时需要考虑线程安全
+    /// - 请勿在事务外部长时间持有此指针
+    /// 
+    /// # 使用场景
+    /// - 需要极致性能的批量数据处理
+    /// - 频繁访问同一条记录的多个字段
+    /// - 与外部系统集成，需要直接内存访问
+    /// 
+    /// # 示例
+    /// ```
+    /// // 假设已创建表table，record_id为有效记录ID
+    /// unsafe {
+    ///     let record_ptr = table.get_record_ptr(record_id);
+    ///     // 直接访问记录数据，无需拷贝
+    ///     let value = *(record_ptr.add(field_offset) as *const u32);
+    /// }
+    /// ```
     pub unsafe fn get_record_ptr(&self, index: usize) -> *const u8 {
+        // 安全检查：确保索引在有效范围内
+        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})");
         self.data_start.as_ptr().add(index * self.record_size)
     }
     
-    /// 获取记录数据可变指针
+    /// 获取记录数据可变指针（零拷贝访问）
+    /// 
+    /// # 功能说明
+    /// 直接返回指向表内存中记录数据的可变原始指针，实现零拷贝访问和修改
+    /// 
+    /// # 安全说明
+    /// - 此方法返回原始可变指针，调用者需要确保指针使用的安全性
+    /// - 索引必须在有效范围内（0 <= index < max_records）
+    /// - 返回的指针在表被销毁或内存重分配前有效
+    /// - 并发访问时需要考虑线程安全
+    /// - 请勿在事务外部长时间持有此指针
+    /// - 修改数据时请确保遵循ACID原则
+    /// 
+    /// # 使用场景
+    /// - 需要原地修改记录数据
+    /// - 批量更新多条记录
+    /// - 高性能数据处理
+    /// 
+    /// # 示例
+    /// ```
+    /// // 假设已创建表table，record_id为有效记录ID
+    /// unsafe {
+    ///     let record_ptr = table.get_record_ptr_mut(record_id);
+    ///     // 直接修改记录数据，无需拷贝
+    ///     *(record_ptr.add(field_offset) as *mut u32) = new_value;
+    /// }
+    /// ```
     pub unsafe fn get_record_ptr_mut(&mut self, index: usize) -> *mut u8 {
+        // 安全检查：确保索引在有效范围内
+        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})");
         self.data_start.as_ptr().add(index * self.record_size) as *mut u8
     }
     
