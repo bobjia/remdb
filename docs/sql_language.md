@@ -37,6 +37,7 @@ RemDB支持以下SQL数据类型：
 ```sql
 SELECT [DISTINCT] [column1 [AS] alias1, column2 [AS] alias2, ... | *]
 FROM table_name [AS] table_alias
+[JOIN table_name2 [AS] table_alias2 ON condition]
 [WHERE condition]
 [GROUP BY column1, column2, ...]
 [ORDER BY column [ASC | DESC]]
@@ -180,6 +181,92 @@ SELECT sensor_id, AVG(temperature) AS avg_temp FROM sensor_readings GROUP BY sen
 
 -- 单列GROUP BY
 SELECT location, COUNT(*) AS location_count FROM sensor_readings GROUP BY location;
+```
+
+#### JOIN子句
+
+RemDB支持多种JOIN操作，用于将两个或多个表中的行根据相关列的值组合起来。
+
+**语法**：
+```sql
+SELECT columns
+FROM table1
+[INNER] JOIN table2 ON join_condition
+[WHERE condition]
+[ORDER BY columns]
+[LIMIT number];
+
+-- 或使用其他JOIN类型
+SELECT columns
+FROM table1
+LEFT [OUTER] JOIN table2 ON join_condition
+WHERE condition;
+
+SELECT columns
+FROM table1
+RIGHT [OUTER] JOIN table2 ON join_condition
+WHERE condition;
+
+SELECT columns
+FROM table1
+FULL [OUTER] JOIN table2 ON join_condition
+WHERE condition;
+```
+
+**支持的JOIN类型**：
+
+| JOIN类型 | 描述 |
+|---------|------|
+| `INNER JOIN` | 只返回两个表中匹配的行 |
+| `LEFT JOIN` | 返回左表的所有行和右表中匹配的行，右表没有匹配时返回NULL |
+| `RIGHT JOIN` | 返回右表的所有行和左表中匹配的行，左表没有匹配时返回NULL |
+| `FULL JOIN` | 返回左表和右表的所有行，没有匹配时返回NULL |
+
+**说明**：
+- `ON join_condition`：指定JOIN条件，通常是两个表之间的列匹配关系
+- JOIN操作可以用于连接两个或多个表
+- 可以与WHERE、ORDER BY和LIMIT子句结合使用
+- 支持使用表别名简化查询
+
+**示例**：
+
+```sql
+-- INNER JOIN：查询用户及其订单
+SELECT users.id, users.name, orders.product, orders.amount
+FROM users
+INNER JOIN orders ON users.id = orders.user_id;
+
+-- LEFT JOIN：查询所有用户及其订单，没有订单的用户也会显示
+SELECT users.id, users.name, orders.product, orders.amount
+FROM users
+LEFT JOIN orders ON users.id = orders.user_id;
+
+-- RIGHT JOIN：查询所有订单及其对应的用户，没有用户的订单也会显示
+SELECT users.id, users.name, orders.product, orders.amount
+FROM users
+RIGHT JOIN orders ON users.id = orders.user_id;
+
+-- FULL JOIN：查询所有用户和所有订单，没有匹配的地方显示NULL
+SELECT users.id, users.name, orders.product, orders.amount
+FROM users
+FULL JOIN orders ON users.id = orders.user_id;
+
+-- 带有WHERE条件的JOIN
+SELECT users.id, users.name, orders.product, orders.amount
+FROM users
+INNER JOIN orders ON users.id = orders.user_id
+WHERE orders.amount > 100;
+
+-- 带有ORDER BY的JOIN
+SELECT users.id, users.name, orders.product, orders.amount
+FROM users
+INNER JOIN orders ON users.id = orders.user_id
+ORDER BY orders.amount DESC;
+
+-- 使用表别名的JOIN
+SELECT u.id, u.name, o.product, o.amount
+FROM users u
+INNER JOIN orders o ON u.id = o.user_id;
 ```
 
 ### 2.2 INSERT语句
@@ -661,7 +748,6 @@ SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609
 
 ## 7. 不支持的SQL特性
 
-- JOIN操作
 - 子查询
 
 - DROP TABLE和ALTER TABLE

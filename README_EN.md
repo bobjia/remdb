@@ -17,7 +17,7 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **Compile-time Configuration**: Table and database configuration via macros for performance optimization
 - **Low Power Mode**: Optimized memory usage with reduced transaction log write frequency
 - **Incremental Snapshot**: Only saves records with changed version numbers, reducing snapshot size and save time
-- **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data, including aggregate functions, mathematical functions, and time conversion functions
+- **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data, including aggregate functions, mathematical functions, time conversion functions, and JOIN operations
 - **Database Monitoring**: Real-time monitoring of database metrics, including memory usage, query performance, and transaction status
 - **UDP-based Reliable Data Pub/Sub**: Supports unicast, broadcast, and multicast modes with NACK-based retransmission
 - **High Availability Support**:
