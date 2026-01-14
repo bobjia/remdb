@@ -54,10 +54,15 @@ fn handle_wal_log_callback(topic_id: u16, data: &[u8]) -> bool {
             unsafe {
                 // 检查全局管理器是否有效
                 if let Some(manager_ptr) = GLOBAL_REPLICATION_MANAGER {
-                    // 检查data长度是否合法
-                    if data.len() >= core::mem::size_of::<LogItem>() {
-                        let manager = &mut *manager_ptr;
-                        manager.handle_wal_log(data);
+                    // 解析协议帧
+                    if let Ok(frame) = pubsub::protocol::ProtocolFrame::from_bytes(data) {
+                        // 提取实际的日志数据
+                        let log_data = frame.payload();
+                        // 检查数据长度是否合法
+                        if log_data.len() >= core::mem::size_of::<LogItem>() {
+                            let manager = &mut *manager_ptr;
+                            manager.handle_wal_log(log_data);
+                        }
                     }
                     return true;
                 }
@@ -175,16 +180,17 @@ impl ReplicationManager {
     fn handle_wal_log(&mut self, data: &[u8]) {
         eprintln!("[Slave] Received WAL log data, length: {}", data.len());
         
-        // 1. 解析WAL日志
-        if data.len() != core::mem::size_of::<LogItem>() {
-            eprintln!("[Slave] Invalid WAL log data length, expected: {}, got: {}", 
-                     core::mem::size_of::<LogItem>(), data.len());
-            return; // 数据长度不正确，忽略
-        }
-        
+        // 1. 解析WAL日志 - 先检查数据长度
         let log_item: LogItem;
         unsafe {
-            log_item = core::ptr::read_unaligned(data.as_ptr() as *const LogItem);
+            // 安全检查：确保data长度足够
+            if data.len() >= core::mem::size_of::<LogItem>() {
+                log_item = core::ptr::read_unaligned(data.as_ptr() as *const LogItem);
+            } else {
+                eprintln!("[Slave] Invalid WAL log data length, expected: {}, got: {}", 
+                         core::mem::size_of::<LogItem>(), data.len());
+                return; // 数据长度不正确，忽略
+            }
         }
         
         eprintln!("[Slave] Parsed WAL log item, op_type: {:?}, table_id: {}, record_id: {}", 

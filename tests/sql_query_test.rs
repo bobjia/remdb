@@ -144,7 +144,7 @@ remdb::database!(
 #[serial]
 fn test_sql_query() {
     // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 262144];
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -320,6 +320,9 @@ fn test_sql_query() {
     
     // 测试合法INSERT
     let result = db.sql_query("INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (1, 'TestUser', 30, true, 1620000000000)");
+    if let Err(e) = &result {
+        println!("INSERT错误: {:?}", e);
+    }
     assert!(result.is_ok(), "合法INSERT应该成功");
     
     // 测试重复主键INSERT，应该返回DuplicateKey（通过ConstraintsConflicts映射）
@@ -405,7 +408,7 @@ fn test_sql_query() {
 #[serial]
 fn test_sql_join() {
     // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 262144];
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -550,7 +553,7 @@ fn test_sql_distinct() {
     println!("=== 测试SQL DISTINCT语句 ===");
     
     // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 262144];
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -634,7 +637,7 @@ fn test_sql_distinct() {
 #[serial]
 fn test_sql_aliases() {
     // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 262144];
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -690,7 +693,7 @@ fn test_sql_aliases() {
 #[serial]
 fn test_sql_functions() {
     // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 262144];
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -781,7 +784,7 @@ fn test_sql_functions() {
 #[serial]
 fn test_sql_statistical_functions() {
     // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 262144];
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -848,7 +851,7 @@ fn test_sql_statistical_functions() {
 #[serial]
 fn test_sql_aggregate_functions() {
     // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 262144];
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -917,7 +920,7 @@ fn test_sql_aggregate_functions() {
 #[serial]
 fn test_sql_group_by() {
     // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 262144];
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();

@@ -782,6 +782,7 @@ pub enum RecordStatus {
 
 /// 锁类型
 #[repr(u8)]
+#[derive(Copy, Clone)]
 pub enum LockType {
     /// 无锁
     None = 0,
@@ -793,6 +794,7 @@ pub enum LockType {
 
 /// 记录头
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct RecordHeader {
     /// 记录状态
     pub status: RecordStatus,
@@ -804,6 +806,12 @@ pub struct RecordHeader {
     pub lock_owner: u32,
     /// 锁计数器（用于共享锁）
     pub lock_count: u8,
+    /// 创建事务ID（用于MVCC）
+    pub create_tx_id: u32,
+    /// 删除事务ID（用于MVCC，0表示未删除）
+    pub delete_tx_id: u32,
+    /// 下一个版本的指针（用于MVCC版本链）
+    pub next_version_ptr: usize,
 }
 
 impl RecordHeader {

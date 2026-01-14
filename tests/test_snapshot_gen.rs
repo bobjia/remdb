@@ -289,12 +289,15 @@ fn test_snapshot_gen() -> Result<()> {
                 version: 0,
                 lock_type: LockType::None,
                 lock_owner: 0,
-                lock_count: 0
+                lock_count: 0,
+                create_tx_id: 0,
+                delete_tx_id: 0,
+                next_version_ptr: 0
             });
         }
         
         // 使用init_global_db初始化数据库
-        let mut db = remdb::init_global_db(&TEST_DB_CONFIG)?;
+        let db = remdb::init_global_db(&TEST_DB_CONFIG)?;
         
         // 插入测试数据
         for i in 0..5 {

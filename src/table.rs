@@ -174,8 +174,21 @@ impl MemoryTable {
                 let status_ptr = self.status_array.as_ptr().add(slot_id);
                 let status = &*status_ptr;
                 
-                // 只检查已使用的记录
+                // 只检查已使用且可见的记录（考虑MVCC）
                 if status.status == RecordStatus::Used {
+                    // 获取当前事务ID
+                    let current_tx_id = crate::transaction::TX_MANAGER.tx_id_counter;
+                    
+                    // 检查记录是否可见
+                    let is_visible = crate::transaction::TX_MANAGER.is_visible(
+                        status.create_tx_id,
+                        status.delete_tx_id,
+                        current_tx_id
+                    );
+                    
+                    if !is_visible {
+                        continue;
+                    }
                     // 获取记录数据指针
                     let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
                     
@@ -290,8 +303,21 @@ impl MemoryTable {
                 let status_ptr = self.status_array.as_ptr().add(slot_id);
                 let status = &*status_ptr;
                 
-                // 只检查已使用的记录
+                // 只检查已使用且可见的记录（考虑MVCC）
                 if status.status == RecordStatus::Used {
+                    // 获取当前事务ID
+                    let current_tx_id = crate::transaction::TX_MANAGER.tx_id_counter;
+                    
+                    // 检查记录是否可见
+                    let is_visible = crate::transaction::TX_MANAGER.is_visible(
+                        status.create_tx_id,
+                        status.delete_tx_id,
+                        current_tx_id
+                    );
+                    
+                    if !is_visible {
+                        continue;
+                    }
                     // 获取记录数据指针
                     let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
                     

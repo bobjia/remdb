@@ -45,6 +45,8 @@ pub struct DbMetrics {
     pub committed_transactions: AtomicU32,
     /// 已回滚事务数
     pub rolled_back_transactions: AtomicU32,
+    /// 垃圾回收操作计数
+    pub gc_ops: AtomicU32,
 }
 
 /// 数据库监控指标快照
@@ -78,6 +80,8 @@ pub struct DbMetricsSnapshot {
     pub committed_transactions: u32,
     /// 已回滚事务数
     pub rolled_back_transactions: u32,
+    /// 垃圾回收操作计数
+    pub gc_ops: u32,
     /// 缓存命中率（百分比）
     pub cache_hit_rate: f64,
 }
@@ -113,6 +117,7 @@ impl DbMetrics {
             transactions: AtomicU32::new(0),
             committed_transactions: AtomicU32::new(0),
             rolled_back_transactions: AtomicU32::new(0),
+            gc_ops: AtomicU32::new(0),
         }
     }
 
@@ -142,6 +147,7 @@ impl DbMetrics {
             transactions: self.transactions.load(Ordering::Relaxed),
             committed_transactions: self.committed_transactions.load(Ordering::Relaxed),
             rolled_back_transactions: self.rolled_back_transactions.load(Ordering::Relaxed),
+            gc_ops: self.gc_ops.load(Ordering::Relaxed),
             cache_hit_rate,
         }
     }
@@ -161,6 +167,7 @@ impl DbMetrics {
         self.transactions.store(0, Ordering::Relaxed);
         self.committed_transactions.store(0, Ordering::Relaxed);
         self.rolled_back_transactions.store(0, Ordering::Relaxed);
+        self.gc_ops.store(0, Ordering::Relaxed);
     }
 
     /// 增加读取操作计数
@@ -221,6 +228,11 @@ impl DbMetrics {
     /// 增加已回滚事务计数
     pub fn inc_rolled_back_transactions(&self) {
         self.rolled_back_transactions.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// 增加垃圾回收操作计数
+    pub fn inc_gc_ops(&self) {
+        self.gc_ops.fetch_add(1, Ordering::Relaxed);
     }
 
     /// 更新已使用内存

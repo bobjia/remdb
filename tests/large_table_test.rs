@@ -6,7 +6,7 @@ use remdb::config::{DbConfig, WALConfig};
 use std::time::Instant;
 use rand::random;
 
-// 定义一个用于性能测试的大表，max_records设置为500,000
+// 定义一个用于性能测试的大表，max_records设置为100,000（测试插入80,000条，占80%容量）
 static LARGE_TABLE_DEF: TableDef = TableDef {
     id: 0,
     name: "large_table",
@@ -49,7 +49,7 @@ static LARGE_TABLE_DEF: TableDef = TableDef {
     secondary_index: None,
     secondary_index_type: IndexType::SortedArray,
     record_size: 4 + 4 + 32, // 40字节记录
-    max_records: 500000,
+    max_records: 100000,
 };
 
 // 简单的测试平台实现

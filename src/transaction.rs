@@ -811,6 +811,9 @@ impl LogManager {
                             
                             (*status_ptr).status = crate::types::RecordStatus::Used;
                             (*status_ptr).version += 1;
+                            (*status_ptr).create_tx_id = log_item.tx_id;
+                            (*status_ptr).delete_tx_id = 0;
+                            (*status_ptr).next_version_ptr = 0;
                             table.inc_record_count();
                         }
                     },
@@ -824,18 +827,10 @@ impl LogManager {
                         // 检查记录是否存在
                         let status_ptr = table.get_status_ptr(log_item.record_id as usize);
                         if (*status_ptr).status == crate::types::RecordStatus::Used {
-                            // 记录存在，执行删除
-                            (*status_ptr).status = crate::types::RecordStatus::Free;
+                            // MVCC：标记删除，设置delete_tx_id
+                            (*status_ptr).delete_tx_id = log_item.tx_id;
                             (*status_ptr).version += 1;
-                            
-                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                            crate::platform::memset(record_ptr, 0, log_item.data_size as usize);
-                            
-                            // 将空闲槽压回栈中
-                            *table.free_slots.as_ptr().add(table.free_slot_count) = log_item.record_id as usize;
-                            table.free_slot_count += 1;
-                            
-                            table.record_count -= 1;
+                            // 不直接删除记录，保留供垃圾回收处理
                         }
                     },
                     LogOperation::Update => {
@@ -857,6 +852,7 @@ impl LogManager {
                             );
                             
                             (*status_ptr).version += 1;
+                            (*status_ptr).create_tx_id = log_item.tx_id;
                         }
                     },
                     LogOperation::TimeSeriesInsert => {
@@ -1075,12 +1071,25 @@ impl Drop for LogManager {
     }
 }
 
+/// 活跃事务快照
+#[derive(Copy, Clone)]
+pub struct ActiveSnapshot {
+    /// 事务ID
+    pub tx_id: u32,
+    /// 快照版本号
+    pub snapshot_version: u32,
+}
+
 /// 事务管理器
 pub struct TransactionManager {
     /// 当前事务
     current_tx: Option<NonNull<Transaction>>,
     /// 事务ID计数器
-    tx_id_counter: u32,
+    pub tx_id_counter: u32,
+    /// 全局快照版本号
+    pub snapshot_version: u32,
+    /// 活跃事务快照列表
+    active_snapshots: alloc::vec::Vec<ActiveSnapshot>,
     /// 自旋锁
     lock: u32,
     /// 日志管理器
@@ -1095,6 +1104,8 @@ impl TransactionManager {
         TransactionManager {
             current_tx: None,
             tx_id_counter: 0,
+            snapshot_version: 0,
+            active_snapshots: alloc::vec::Vec::new(),
             lock: 0,
             log_manager: None,
             low_power_mode: false,
@@ -1164,6 +1175,9 @@ impl TransactionManager {
         let tx_id = self.tx_id_counter;
         self.tx_id_counter += 1;
         
+        // 生成快照版本号
+        let snapshot_version = self.snapshot_version;
+        
         // 检查外部缓冲区是否有效
         if !tx_buffer.is_null() && !log_buffer.is_null() && max_log_items > 0 {
             // 测试环境：使用外部提供的缓冲区初始化事务对象
@@ -1182,12 +1196,24 @@ impl TransactionManager {
             // 保存当前事务引用
             self.current_tx = Some(NonNull::new_unchecked(tx_buffer));
             
+            // 添加事务快照到活跃快照列表
+            self.active_snapshots.push(ActiveSnapshot {
+                tx_id,
+                snapshot_version,
+            });
+            
             Ok(NonNull::new_unchecked(tx_buffer))
         } else {
             // JDBC服务器环境：只跟踪事务状态，不使用外部缓冲区
             // 创建一个简单的事务结构，使用内部状态管理
             // 注意：这种模式下不支持复杂的事务操作，只用于状态跟踪
             self.current_tx = Some(NonNull::dangling());
+            
+            // 添加事务快照到活跃快照列表
+            self.active_snapshots.push(ActiveSnapshot {
+                tx_id,
+                snapshot_version,
+            });
             
             Ok(NonNull::dangling())
         }
@@ -1210,7 +1236,7 @@ impl TransactionManager {
         // 检查是否是悬垂指针（用于JDBC服务器）
         let is_dangling = tx_ptr.as_ptr() == NonNull::dangling().as_ptr();
         
-        if !is_dangling {
+        let tx_id = if !is_dangling {
             // 测试环境：更新事务状态
             let tx = &mut *tx_ptr.as_ptr();
             
@@ -1245,7 +1271,18 @@ impl TransactionManager {
             }
             
             tx.status = TransactionStatus::Committed;
-        }
+            tx.id
+        } else {
+            // JDBC服务器环境：获取事务ID（这里假设悬垂指针也关联了一个有效的事务ID）
+            // 注意：实际实现中可能需要更复杂的逻辑来跟踪悬垂指针的事务ID
+            self.tx_id_counter - 1
+        };
+        
+        // 移除事务快照从活跃快照列表
+        self.active_snapshots.retain(|snapshot| snapshot.tx_id != tx_id);
+        
+        // 增加全局快照版本号
+        self.snapshot_version += 1;
         
         Ok(())
     }
@@ -1415,6 +1452,18 @@ impl TransactionManager {
             tx.status = TransactionStatus::RolledBack;
         }
         
+        // 获取事务ID
+        let tx_id = if !is_dangling {
+            let tx = &mut *tx_ptr.as_ptr();
+            tx.id
+        } else {
+            // JDBC服务器环境：获取事务ID
+            self.tx_id_counter - 1
+        };
+        
+        // 移除事务快照从活跃快照列表
+        self.active_snapshots.retain(|snapshot| snapshot.tx_id != tx_id);
+        
         Ok(())
     }
     
@@ -1428,10 +1477,46 @@ impl TransactionManager {
         self.current_tx.is_some()
     }
     
+    /// 可见性判断：检查记录版本是否对当前事务可见
+    pub fn is_visible(&self, create_tx_id: u32, delete_tx_id: u32, tx_id: u32) -> bool {
+        // 可见性规则：
+        // 1. 记录创建事务ID <= 当前事务ID，且记录删除事务ID > 当前事务ID或为0
+        // 2. 记录创建事务已提交，且记录删除事务未提交或不存在
+        create_tx_id <= tx_id && (delete_tx_id == 0 || delete_tx_id > tx_id)
+    }
+    
+    /// 获取活跃事务中最小的事务ID
+    pub fn get_min_active_tx_id(&self) -> u32 {
+        if self.active_snapshots.is_empty() {
+            self.tx_id_counter
+        } else {
+            self.active_snapshots.iter().map(|s| s.tx_id).min().unwrap_or(self.tx_id_counter)
+        }
+    }
+    
+    /// 垃圾回收检查：判断记录版本是否可以被回收
+    pub fn can_recycle(&self, create_tx_id: u32, delete_tx_id: u32) -> bool {
+        // 回收规则：
+        // 1. 记录创建事务ID < 最小活跃事务ID
+        // 2. 记录删除事务ID < 最小活跃事务ID（如果有删除事务）
+        let min_active_tx_id = self.get_min_active_tx_id();
+        create_tx_id < min_active_tx_id && (delete_tx_id == 0 || delete_tx_id < min_active_tx_id)
+    }
+    
+    /// 检测写入冲突：检查记录是否被其他事务修改
+    pub fn detect_write_conflict(&self, create_tx_id: u32, current_tx_id: u32) -> bool {
+        // 冲突规则：
+        // 1. 记录创建事务ID > 当前事务ID
+        // 2. 表示该记录已被更晚开始的事务修改
+        create_tx_id > current_tx_id
+    }
+    
     /// 重置事务管理器
     pub unsafe fn reset(&mut self) {
         self.current_tx = None;
         self.tx_id_counter = 0;
+        self.snapshot_version = 0;
+        self.active_snapshots.clear();
     }
 }
 
