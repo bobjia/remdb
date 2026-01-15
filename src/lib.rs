@@ -905,7 +905,7 @@ impl DdlExecutor for RemDb {
             // 直接使用LogManager写入日志，而不是通过TransactionManager
             if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
                 // 序列化表定义信息
-                let mut log_data = [0u8; 512];
+                let mut log_data = [0u8; 1024];
                 // 写入表名
                 let name_bytes = table_name_static.as_bytes();
                 let name_len = core::cmp::min(name_bytes.len(), 64);
@@ -919,18 +919,35 @@ impl DdlExecutor for RemDb {
                 // 写入字段定义信息
                 let mut offset = 67;
                 for (i, field) in table_def.fields.iter().enumerate() {
+                    // 检查缓冲区是否有足够空间写入基础字段信息
+                    // 基础信息：1字节长度 + 32字节名字 + 1字节类型 + 1字节约束 + 1字节默认值标志 = 36字节
+                    if offset + 36 > log_data.len() {
+                        break;
+                    }
+                    
                     // 写入字段名
                     let field_name = field.name;
                     let field_name_bytes = field_name.as_bytes();
                     let field_name_len = core::cmp::min(field_name_bytes.len(), 32);
+                    
+                    // 安全写入字段名长度
                     log_data[offset] = field_name_len as u8;
                     offset += 1;
-                    log_data[offset..offset+field_name_len].copy_from_slice(&field_name_bytes[..field_name_len]);
+                    
+                    // 安全复制字段名
+                    let copy_end = core::cmp::min(offset + field_name_len, log_data.len());
+                    let actual_copy_len = copy_end - offset;
+                    log_data[offset..copy_end].copy_from_slice(&field_name_bytes[..actual_copy_len]);
                     offset += 32; // 固定32字节字段名空间
                     
-                    // 写入数据类型
-                    log_data[offset] = field.data_type as u8;
-                    offset += 1;
+                    // 检查数据类型写入边界
+                    if offset < log_data.len() {
+                        // 写入数据类型
+                        log_data[offset] = field.data_type as u8;
+                        offset += 1;
+                    } else {
+                        break;
+                    }
                     
                     // 写入字段约束
                     let mut constraints = 0u8;
@@ -948,84 +965,95 @@ impl DdlExecutor for RemDb {
                     
                     // 写入默认值（如果有）
                     if let Some(default_value) = field.default_value {
-                        // 根据数据类型写入默认值
+                        // 根据数据类型写入默认值，添加完善的边界检查
                         match field.data_type {
-                            crate::types::DataType::Bool => {
-                                let b = default_value.bool;
-                                log_data[offset] = b as u8;
-                                offset += 1;
-                            },
-                            crate::types::DataType::Int8 => {
-                                let i = default_value.i8;
-                                log_data[offset] = i as u8;
-                                offset += 1;
-                            },
+                            // 1字节类型
+                            crate::types::DataType::Bool | 
+                            crate::types::DataType::Int8 | 
                             crate::types::DataType::UInt8 => {
-                                let u = default_value.u8;
-                                log_data[offset] = u;
-                                offset += 1;
+                                if offset + 1 <= log_data.len() {
+                                    match field.data_type {
+                                        crate::types::DataType::Bool => {
+                                            log_data[offset] = default_value.bool as u8;
+                                        },
+                                        crate::types::DataType::Int8 => {
+                                            log_data[offset] = default_value.i8 as u8;
+                                        },
+                                        _ => {
+                                            log_data[offset] = default_value.u8;
+                                        },
+                                    }
+                                    offset += 1;
+                                }
                             },
-                            crate::types::DataType::Int16 => {
-                                let i = default_value.i16;
-                                log_data[offset..offset+2].copy_from_slice(&i.to_le_bytes());
-                                offset += 2;
-                            },
+                            // 2字节类型
+                            crate::types::DataType::Int16 | 
                             crate::types::DataType::UInt16 => {
-                                let u = default_value.u16;
-                                log_data[offset..offset+2].copy_from_slice(&u.to_le_bytes());
-                                offset += 2;
+                                if offset + 2 <= log_data.len() {
+                                    let bytes = match field.data_type {
+                                        crate::types::DataType::Int16 => default_value.i16.to_le_bytes(),
+                                        _ => default_value.u16.to_le_bytes(),
+                                    };
+                                    log_data[offset..offset+2].copy_from_slice(&bytes);
+                                    offset += 2;
+                                }
                             },
-                            crate::types::DataType::Int32 => {
-                                let i = default_value.i32;
-                                log_data[offset..offset+4].copy_from_slice(&i.to_le_bytes());
-                                offset += 4;
-                            },
-                            crate::types::DataType::UInt32 => {
-                                let u = default_value.u32;
-                                log_data[offset..offset+4].copy_from_slice(&u.to_le_bytes());
-                                offset += 4;
-                            },
-                            crate::types::DataType::Int64 => {
-                                let i = default_value.i64;
-                                log_data[offset..offset+8].copy_from_slice(&i.to_le_bytes());
-                                offset += 8;
-                            },
-                            crate::types::DataType::UInt64 => {
-                                let u = default_value.u64;
-                                log_data[offset..offset+8].copy_from_slice(&u.to_le_bytes());
-                                offset += 8;
-                            },
+                            // 4字节类型
+                            crate::types::DataType::Int32 | 
+                            crate::types::DataType::UInt32 | 
                             crate::types::DataType::Float32 => {
-                                let f = default_value.float32;
-                                log_data[offset..offset+4].copy_from_slice(&f.to_le_bytes());
-                                offset += 4;
+                                if offset + 4 <= log_data.len() {
+                                    let bytes = match field.data_type {
+                                        crate::types::DataType::Int32 => default_value.i32.to_le_bytes(),
+                                        crate::types::DataType::UInt32 => default_value.u32.to_le_bytes(),
+                                        _ => default_value.float32.to_le_bytes(),
+                                    };
+                                    log_data[offset..offset+4].copy_from_slice(&bytes);
+                                    offset += 4;
+                                }
                             },
-                            crate::types::DataType::Float64 => {
-                                let f = default_value.float64;
-                                log_data[offset..offset+8].copy_from_slice(&f.to_le_bytes());
-                                offset += 8;
+                            // 8字节类型
+                            crate::types::DataType::Int64 | 
+                            crate::types::DataType::UInt64 | 
+                            crate::types::DataType::Float64 | 
+                            crate::types::DataType::Timestamp | 
+                            crate::types::DataType::TimestampTZ => {
+                                if offset + 8 <= log_data.len() {
+                                    let bytes = match field.data_type {
+                                        crate::types::DataType::Int64 => default_value.i64.to_le_bytes(),
+                                        crate::types::DataType::UInt64 => default_value.u64.to_le_bytes(),
+                                        crate::types::DataType::Float64 => default_value.float64.to_le_bytes(),
+                                        _ => default_value.time.value.to_le_bytes(),
+                                    };
+                                    log_data[offset..offset+8].copy_from_slice(&bytes);
+                                    offset += 8;
+                                }
                             },
+                            // 字符串类型：1字节长度 + 64字节内容
                             crate::types::DataType::String => {
-                                let s = default_value.string;
-                                let string_len = core::cmp::min(s.iter().position(|&c| c == 0).unwrap_or(64), 64);
-                                log_data[offset] = string_len as u8;
-                                offset += 1;
-                                log_data[offset..offset+string_len].copy_from_slice(&s[..string_len]);
-                                offset += 64; // 固定64字节字符串空间
+                                if offset + 65 <= log_data.len() {
+                                    let s = default_value.string;
+                                    let string_len = core::cmp::min(s.iter().position(|&c| c == 0).unwrap_or(64), 64);
+                                    log_data[offset] = string_len as u8;
+                                    offset += 1;
+                                    
+                                    // 安全复制字符串内容
+                                    let str_end = core::cmp::min(offset + string_len, log_data.len());
+                                    let actual_str_len = str_end - offset;
+                                    log_data[offset..str_end].copy_from_slice(&s[..actual_str_len]);
+                                    offset += 64; // 固定64字节字符串空间
+                                }
                             },
-                            crate::types::DataType::Timestamp | crate::types::DataType::TimestampTZ => {
-                                let t = default_value.time;
-                                log_data[offset..offset+8].copy_from_slice(&t.value.to_le_bytes());
-                                offset += 8;
-                            },
+                            // 区间类型：8字节值 + 1字节精度 + 1字节标志 = 10字节
                             crate::types::DataType::Interval => {
-                                let interval = default_value.interval;
-                                log_data[offset..offset+8].copy_from_slice(&interval.value.to_le_bytes());
-                                offset += 8;
-                                log_data[offset] = interval.precision;
-                                offset += 1;
-                                log_data[offset] = interval.flags;
-                                offset += 1;
+                                if offset + 10 <= log_data.len() {
+                                    log_data[offset..offset+8].copy_from_slice(&default_value.interval.value.to_le_bytes());
+                                    offset += 8;
+                                    log_data[offset] = default_value.interval.precision;
+                                    offset += 1;
+                                    log_data[offset] = default_value.interval.flags;
+                                    offset += 1;
+                                }
                             },
                         }
                     }
