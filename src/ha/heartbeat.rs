@@ -347,8 +347,8 @@ impl HeartbeatMonitor {
                         Ok(_) => {
                             // 发送成功，记录日志
                             let timestamp = packet.timestamp();
-                            println!("[DEBUG] src/ha/heartbeat.rs: Heartbeat sent, node_id: {}, role: {:?}, timestamp: {}", 
-                                     node_id, role, timestamp);
+                            // println!("[DEBUG] src/ha/heartbeat.rs: Heartbeat sent, node_id: {}, role: {:?}, timestamp: {}", 
+                            //          node_id, role, timestamp);
                         },
                         Err(e) => {
                             // 发送失败，记录错误但继续运行
