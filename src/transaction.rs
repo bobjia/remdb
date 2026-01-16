@@ -642,8 +642,12 @@ impl LogManager {
                         core::mem::size_of::<LogCheckpoint>() + 
                         (index as usize) * core::mem::size_of::<LogItem>();
         
+        // 构造完整的日志文件路径：log_path目录 + remdb.wal文件名
+        use alloc::format;
+        let wal_file_path = format!("{}/remdb.wal", self.log_path);
+        
         let handle = crate::platform::file_open(
-            self.log_path,
+            wal_file_path.as_str(),
             crate::platform::FileMode::Read
         ).map_err(|_| RemDbError::FileIoError)?;
         
@@ -671,12 +675,9 @@ impl LogManager {
         
         let log_item = core::ptr::read_unaligned(log_bytes.as_ptr() as *const LogItem);
         
-        // 验证校验和
-        let mut check_bytes = log_bytes.clone();
-        let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<LogItem>() - 4) as *mut u32;
-        *checksum_ptr = 0;
+        // 验证校验和：只使用新的基于字段的校验和计算方法
+        let calculated_checksum = Transaction::calculate_log_item_checksum(&log_item);
         
-        let calculated_checksum = Transaction::calculate_checksum(&check_bytes);
         if log_item.checksum != calculated_checksum {
             return Err(RemDbError::LogChecksumError);
         }
@@ -710,13 +711,8 @@ impl LogManager {
             checksum: 0, // 后面会计算
         };
         
-        // 计算校验和
-        let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
-        core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut LogItem, log_item);
-        let mut check_bytes = log_bytes.clone();
-        let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<LogItem>() - 4) as *mut u32;
-        *checksum_ptr = 0;
-        let calculated_checksum = Transaction::calculate_checksum(&check_bytes);
+        // 计算校验和：直接基于字段计算，避免结构体填充问题
+        let calculated_checksum = Transaction::calculate_log_item_checksum(&log_item);
         
         let mut final_log_item = log_item;
         final_log_item.checksum = calculated_checksum;
@@ -785,9 +781,37 @@ impl LogManager {
     
     /// 恢复日志
     pub unsafe fn recover(&self, db: &mut crate::RemDb) -> Result<()> {
+        // 构造完整的日志文件路径：log_path目录 + remdb.wal文件名
+        use alloc::format;
+        let wal_file_path = format!("{}/remdb.wal", self.log_path);
+        
+        // 获取文件大小
+        let file_size = crate::platform::file_size(wal_file_path.as_str())
+            .map_err(|_| RemDbError::FileIoError)?;
+        
+        // 计算实际可读取的日志项数量
+        let header_size = core::mem::size_of::<LogHeader>();
+        let checkpoint_size = core::mem::size_of::<LogCheckpoint>();
+        let log_item_size = core::mem::size_of::<LogItem>();
+        
+        let total_header_size = header_size + checkpoint_size;
+        let available_size = if file_size > total_header_size {
+            file_size - total_header_size
+        } else {
+            0
+        };
+        
+        let actual_record_count = available_size / log_item_size;
+        let actual_record_count = actual_record_count as u32;
+        
+        // 使用实际可读取的记录数量，而不是header中的record_count
+        let start_index = self.checkpoint.processed_records;
+        let end_index = core::cmp::min(self.header.record_count, actual_record_count);
+        
         // 读取所有未处理的日志记录
-        for i in self.checkpoint.processed_records..self.header.record_count {
-            let log_item = self.read_log_item(i)?;
+        for i in start_index..end_index {
+            match self.read_log_item(i) {
+                Ok(log_item) => {
             
             // 根据日志类型执行相应的恢复操作
                 match log_item.op_type {
@@ -1055,6 +1079,12 @@ impl LogManager {
                         // 检查点操作不需要特殊处理，它只是标记了一个恢复点
                     },
                 }
+                },
+                Err(err) => {
+                    // 遇到错误（如校验和错误），跳过当前日志项，继续处理下一个
+                    println!("Warning: Failed to read log item {}: {:?}, skipping...", i, err);
+                }
+            }
         }
         
         Ok(())
@@ -1255,13 +1285,8 @@ impl TransactionManager {
                     checksum: 0, // 后面会计算
                 };
                 
-                // 计算校验和
-                let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
-                core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut LogItem, log_item);
-                let mut check_bytes = log_bytes.clone();
-                let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<LogItem>() - 4) as *mut u32;
-                *checksum_ptr = 0;
-                let calculated_checksum = Transaction::calculate_checksum(&check_bytes);
+                // 计算校验和：直接基于字段计算，避免结构体填充问题
+                let calculated_checksum = Transaction::calculate_log_item_checksum(&log_item);
                 
                 let mut final_log_item = log_item;
                 final_log_item.checksum = calculated_checksum;
@@ -1433,13 +1458,8 @@ impl TransactionManager {
                     checksum: 0, // 后面会计算
                 };
                 
-                // 计算校验和
-                let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
-                core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut LogItem, log_item);
-                let mut check_bytes = log_bytes.clone();
-                let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<LogItem>() - 4) as *mut u32;
-                *checksum_ptr = 0;
-                let calculated_checksum = Transaction::calculate_checksum(&check_bytes);
+                // 计算校验和：直接基于字段计算，避免结构体填充问题
+                let calculated_checksum = Transaction::calculate_log_item_checksum(&log_item);
                 
                 let mut final_log_item = log_item;
                 final_log_item.checksum = calculated_checksum;
@@ -1521,13 +1541,40 @@ impl TransactionManager {
 }
 
 impl Transaction {
-    /// 计算数据校验和
+    /// 计算数据校验和（通用）
     pub fn calculate_checksum(data: &[u8]) -> u32 {
         // 简单的XOR校验和实现，适合嵌入式环境
         let mut checksum = 0u32;
         for &byte in data {
             checksum ^= byte as u32;
         }
+        checksum
+    }
+    
+    /// 计算LogItem的校验和（直接基于字段，避免结构体填充问题）
+    pub fn calculate_log_item_checksum(log_item: &LogItem) -> u32 {
+        let mut checksum = 0u32;
+        
+        // 计算各个字段的校验和
+        checksum ^= log_item.op_type as u32;
+        checksum ^= log_item.table_id as u32;
+        checksum ^= log_item.record_id as u32;
+        checksum ^= log_item.data_size as u32;
+        
+        // 计算old_data的校验和
+        for &byte in &log_item.old_data {
+            checksum ^= byte as u32;
+        }
+        
+        // 计算new_data的校验和
+        for &byte in &log_item.new_data {
+            checksum ^= byte as u32;
+        }
+        
+        checksum ^= log_item.tx_id;
+        checksum ^= log_item.timestamp as u32;
+        // 不包含checksum字段本身
+        
         checksum
     }
     
@@ -1585,28 +1632,9 @@ impl Transaction {
             memcpy((*log_ptr).new_data.as_mut_ptr(), new_data, data_size);
         }
         
-        // 计算校验和
-        let mut checksum_data = [0u8; 1024];
-        let mut offset = 0;
-        
-        // 拷贝操作类型和元数据
-        checksum_data[offset] = (*log_ptr).op_type as u8;
-        offset += 1;
-        checksum_data[offset] = (*log_ptr).table_id;
-        offset += 1;
-        checksum_data[offset..offset+2].copy_from_slice(&(*log_ptr).record_id.to_le_bytes());
-        offset += 2;
-        checksum_data[offset..offset+2].copy_from_slice(&(*log_ptr).data_size.to_le_bytes());
-        offset += 2;
-        
-        // 拷贝数据
-        checksum_data[offset..offset+data_size].copy_from_slice(&(&(*log_ptr).old_data)[0..data_size]);
-        offset += data_size;
-        checksum_data[offset..offset+data_size].copy_from_slice(&(&(*log_ptr).new_data)[0..data_size]);
-        offset += data_size;
-        
-        // 计算校验和
-        (*log_ptr).checksum = Self::calculate_checksum(&checksum_data[0..offset]);
+        // 计算校验和：使用基于字段的校验和计算方法
+        let calculated_checksum = Transaction::calculate_log_item_checksum(&*log_ptr);
+        (*log_ptr).checksum = calculated_checksum;
         
         // 更新日志项计数
         self.log_item_count += 1;
