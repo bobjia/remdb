@@ -360,6 +360,11 @@ impl RemDb {
     pub unsafe fn rollback_transaction(&mut self) -> Result<()> {
         crate::transaction::TX_MANAGER.rollback(self)
     }
+
+    /// 刷新WAL日志到磁盘
+    pub unsafe fn flush_logs(&mut self) -> Result<()> {
+        crate::transaction::TX_MANAGER.flush_logs()
+    }
     
     /// 初始化数据库
     pub fn init(&mut self) -> Result<()> {
@@ -905,7 +910,7 @@ impl DdlExecutor for RemDb {
             // 直接使用LogManager写入日志，而不是通过TransactionManager
             if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
                 // 序列化表定义信息
-                let mut log_data = [0u8; 1024];
+                let mut log_data = [0u8; 512];
                 // 写入表名
                 let name_bytes = table_name_static.as_bytes();
                 let name_len = core::cmp::min(name_bytes.len(), 64);
@@ -1112,9 +1117,9 @@ impl DdlExecutor for RemDb {
             .ok_or(RemDbError::FieldNotFound)?;
         
         // 3. 检查是否已存在索引
-        if self.secondary_indices[table_id].is_some() {
-            return Err(RemDbError::ConfigError);
-        }
+    if self.secondary_indices[table_id].is_some() {
+        return Err(RemDbError::TwoMoreIndexNotSupported);
+    }
         
         // 4. 创建新的表定义，包含索引信息
         let mut new_fields = Vec::new();
@@ -1455,7 +1460,7 @@ impl RemDb {
         // 为了简化实现，我们直接执行批量写入，不尝试创建事务
         
         // 检查是否有活跃事务
-        let has_active_tx = unsafe { crate::transaction::has_active_tx() };
+        let has_active_tx = crate::transaction::has_active_tx();
         
         // 如果没有活跃事务，我们使用一个简化的事务管理方式
         // 直接执行写入操作，确保原子性

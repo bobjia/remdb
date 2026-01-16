@@ -844,6 +844,8 @@ pub enum RemDbError {
     TransactionError,
     /// 配置错误
     ConfigError,
+    /// 不支持多个索引
+    TwoMoreIndexNotSupported,
     /// 操作不支持
     UnsupportedOperation,
     /// 文件I/O错误
@@ -885,6 +887,7 @@ impl fmt::Display for RemDbError {
             RemDbError::NotNullViolation => write!(f, "NOT NULL constraint violation"),
             RemDbError::TransactionError => write!(f, "Transaction error"),
             RemDbError::ConfigError => write!(f, "Config error"),
+            RemDbError::TwoMoreIndexNotSupported => write!(f, "Two more index not supported"),
             RemDbError::UnsupportedOperation => write!(f, "Unsupported operation"),
             RemDbError::FileIoError => write!(f, "File I/O error"),
             RemDbError::SnapshotFormatError => write!(f, "Snapshot format error"),
