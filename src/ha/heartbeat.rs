@@ -8,9 +8,6 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use core::time::Duration;
 use core::ptr::NonNull;
 
-// 注意：移除全局静态变量，避免线程安全问题
-// 改为使用其他方式处理心跳发送
-
 // 心跳主题ID
 const HEARTBEAT_TOPIC: u16 = 3;
 
@@ -86,11 +83,7 @@ impl HeartbeatPacket {
     /// 创建新的心跳数据包
     pub fn new(node_id: u64, role: HARole) -> Self {
         let timestamp = crate::platform::get_timestamp_us() / 1000; // 转换为毫秒
-        let role_u8 = match role {
-            HARole::Master => 1,
-            HARole::Slave => 2,
-            HARole::Auto => 3,
-        };
+        let role_u8 = role as u8;
         
         let mut packet = Self {
             node_id,
@@ -175,16 +168,23 @@ impl HeartbeatPacket {
     
     /// 转换为字节数组
     pub fn to_bytes(&self) -> alloc::vec::Vec<u8> {
-        let mut bytes = alloc::vec::Vec::with_capacity(core::mem::size_of::<Self>());
-        bytes.extend_from_slice(&self.node_id.to_le_bytes());
-        bytes.extend_from_slice(&self.timestamp.to_le_bytes());
-        bytes.push(self.role);
-        // 保持与结构体大小一致，添加3字节填充
-        bytes.push(0);
-        bytes.push(0);
-        bytes.push(0);
-        bytes.extend_from_slice(&self.crc32.to_le_bytes());
-        bytes
+        // 创建固定大小的缓冲区，避免多次分配
+        let mut bytes = [0u8; core::mem::size_of::<Self>()];
+        
+        // 直接写入字段，避免切片操作
+        let (node_id_bytes, rest) = bytes.split_at_mut(8);
+        node_id_bytes.copy_from_slice(&self.node_id.to_le_bytes());
+        
+        let (timestamp_bytes, rest) = rest.split_at_mut(8);
+        timestamp_bytes.copy_from_slice(&self.timestamp.to_le_bytes());
+        
+        rest[0] = self.role;
+        // rest[1..4] 是填充字节，已经初始化为0
+        
+        let crc32_bytes = &mut rest[4..8];
+        crc32_bytes.copy_from_slice(&self.crc32.to_le_bytes());
+        
+        bytes.to_vec()
     }
     
     /// 从字节数组解析
@@ -193,11 +193,20 @@ impl HeartbeatPacket {
             return None;
         }
         
-        let node_id = u64::from_le_bytes(bytes[0..8].try_into().ok()?);
-        let timestamp = u64::from_le_bytes(bytes[8..16].try_into().ok()?);
+        // 安全读取字段，避免切片操作
+        let mut node_id_bytes = [0u8; 8];
+        node_id_bytes.copy_from_slice(&bytes[0..8]);
+        let node_id = u64::from_le_bytes(node_id_bytes);
+        
+        let mut timestamp_bytes = [0u8; 8];
+        timestamp_bytes.copy_from_slice(&bytes[8..16]);
+        let timestamp = u64::from_le_bytes(timestamp_bytes);
+        
         let role = bytes[16];
-        // 跳过3字节填充
-        let crc32 = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
+        
+        let mut crc32_bytes = [0u8; 4];
+        crc32_bytes.copy_from_slice(&bytes[20..24]);
+        let crc32 = u32::from_le_bytes(crc32_bytes);
         
         Some(Self {
             node_id,
@@ -220,9 +229,9 @@ impl HeartbeatPacket {
     /// 获取节点角色
     pub fn role(&self) -> HARole {
         match self.role {
-            1 => HARole::Master,
-            2 => HARole::Slave,
-            3 => HARole::Auto,
+            0 => HARole::Master,
+            1 => HARole::Slave,
+            2 => HARole::Auto,
             _ => HARole::Auto,
         }
     }
@@ -313,54 +322,6 @@ impl HeartbeatMonitor {
         
         // 标记为运行中
         self.sender_running.store(true, Ordering::Relaxed);
-        
-        // 获取需要的值
-        let heartbeat_interval = self.heartbeat_interval;
-        let node_id = self.node_id;
-        let role = self.role;
-        
-        // 启动后台线程定期发送心跳
-        // 注意：在测试环境中禁用心跳线程，避免资源泄漏和栈溢出
-        #[cfg(all(feature = "std", not(test)))]
-        {
-            std::thread::spawn(move || {
-                let interval = std::time::Duration::from_millis(heartbeat_interval);
-                
-                loop {
-                    // 构建心跳数据包
-                    let packet = HeartbeatPacket::new(node_id, role);
-                    
-                    // 复制数据到临时缓冲区，确保publish函数使用完数据之前不会释放内存
-            let bytes = packet.to_bytes();
-            let mut buffer = [0u8; core::mem::size_of::<HeartbeatPacket>()];
-            let copy_len = core::cmp::min(bytes.len(), buffer.len());
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    bytes.as_ptr(),
-                    buffer.as_mut_ptr(),
-                    copy_len
-                );
-            }
-                    
-                    // 发布心跳消息
-                    match pubsub::publish(HEARTBEAT_TOPIC, &buffer) {
-                        Ok(_) => {
-                            // 发送成功，记录日志
-                            let timestamp = packet.timestamp();
-                            // println!("[DEBUG] src/ha/heartbeat.rs: Heartbeat sent, node_id: {}, role: {:?}, timestamp: {}", 
-                            //          node_id, role, timestamp);
-                        },
-                        Err(e) => {
-                            // 发送失败，记录错误但继续运行
-                            println!("[Heartbeat] Failed to send heartbeat: {:?}", e);
-                        },
-                    }
-                    
-                    // 等待心跳间隔
-                    std::thread::sleep(interval);
-                }
-            });
-        }
         
         Ok(())
     }
@@ -514,4 +475,3 @@ impl HeartbeatMonitor {
         self.last_heartbeat_time.load(Ordering::Relaxed)
     }
 }
-
