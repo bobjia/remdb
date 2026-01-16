@@ -1077,13 +1077,8 @@ impl DdlExecutor for RemDb {
                     checksum: 0,
                 };
                 
-                // 计算校验和
-                let mut log_bytes = [0u8; core::mem::size_of::<crate::transaction::LogItem>()];
-                core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut crate::transaction::LogItem, log_item);
-                let mut check_bytes = log_bytes.clone();
-                let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<crate::transaction::LogItem>() - 4) as *mut u32;
-                *checksum_ptr = 0;
-                let calculated_checksum = crate::transaction::Transaction::calculate_checksum(&check_bytes);
+                // 计算校验和：使用基于字段的校验和计算方法
+                let calculated_checksum = crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
                 
                 let mut final_log_item = log_item;
                 final_log_item.checksum = calculated_checksum;
@@ -1205,13 +1200,8 @@ impl DdlExecutor for RemDb {
                     checksum: 0,
                 };
                 
-                // 计算校验和
-                let mut log_bytes = [0u8; core::mem::size_of::<crate::transaction::LogItem>()];
-                core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut crate::transaction::LogItem, log_item);
-                let mut check_bytes = log_bytes.clone();
-                let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<crate::transaction::LogItem>() - 4) as *mut u32;
-                *checksum_ptr = 0;
-                let calculated_checksum = crate::transaction::Transaction::calculate_checksum(&check_bytes);
+                // 计算校验和：使用基于字段的校验和计算方法
+                let calculated_checksum = crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
                 
                 let mut final_log_item = log_item;
                 final_log_item.checksum = calculated_checksum;
