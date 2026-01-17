@@ -57,6 +57,7 @@ panic = "unwind"         # 开发模式也使用unwind，以便调试
 
 [profile.test]
 panic = "unwind"         # 测试模式使用unwind，以便生成测试回溯
+test-threads = 1
 
 [build-dependencies]
 cc = "1.0"

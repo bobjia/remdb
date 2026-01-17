@@ -493,10 +493,15 @@ pub(crate) fn get_global_pubsub() -> Option<&'static mut PubSub> {
 /// 停止发布/订阅系统
 pub fn shutdown() -> Result<()> {
     unsafe {
-        // Clear the global instance first to prevent race conditions
-        if let Some(mut pubsub) = PUB_SUB_INSTANCE.take() {
-            // Then shutdown the instance
+        // Only shutdown if we have an instance
+        if PUB_SUB_INSTANCE.is_some() {
+            // First get a mutable reference to the instance
+            let pubsub = PUB_SUB_INSTANCE.as_mut().unwrap();
+            // Call shutdown on the instance
             let result = pubsub.shutdown();
+            // Always clear the instance after shutdown, regardless of result
+            // This prevents the instance from being used again after shutdown
+            PUB_SUB_INSTANCE = None;
             result
         } else {
             // If instance is already None, return Ok to avoid errors in tests
