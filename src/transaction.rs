@@ -1224,13 +1224,15 @@ impl LogManager {
                                         },
                                         crate::types::DataType::String => {
                                             // 确保有足够空间读取字符串长度
-                                            if offset + 2 <= new_data_len {
-                                                let str_len = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
-                                                offset += 2;
+                                            if offset + 1 <= new_data_len {
+                                                let str_len = log_item.new_data[offset] as usize; // 1字节长度
+                                                offset += 1;
                                                 
                                                 // 创建字符串默认值
                                                 let mut str_val = [0u8; crate::types::MAX_STRING_LEN];
-                                                let str_data_size = str_len as usize;
+                                                
+                                                // 字符串内容固定64字节
+                                                let str_data_size = 64;
                                                 
                                                 // 只读取实际需要的字符串数据，不超过剩余空间
                                                 let actual_data_size = if offset + str_data_size <= new_data_len {
@@ -1247,12 +1249,13 @@ impl LogManager {
                                                         str_val[i] = log_item.new_data[offset + i];
                                                     }
                                                 }
-                                                offset += actual_data_size;
+                                                offset += str_data_size; // 固定64字节字符串空间
                                                 
                                                 crate::types::Value { string: str_val }
                                             } else {
                                                 // 空间不足，跳过字符串长度
-                                                offset += 2;
+                                                offset += 1;
+                                                offset += 64; // 跳过固定64字节字符串空间
                                                 crate::types::Value { string: [0u8; crate::types::MAX_STRING_LEN] }
                                             }
                                         },
@@ -1311,13 +1314,18 @@ impl LogManager {
                         }
                         
                         // 从日志中解析record_size和max_records，但确保不超出边界
-                        let record_size = if offset + 1 < log_item.new_data.len() {
+                        let mut record_size = if offset + 1 < log_item.new_data.len() {
                             u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset + 1]]) as usize
                         } else {
                             // 超出边界，使用默认值
                             0
                         };
                         offset += 2;
+                        
+                        // 如果record_size为0，根据字段大小重新计算
+                        if record_size == 0 {
+                            record_size = fields.iter().fold(0, |acc, field| acc + field.size);
+                        }
                         
                         let mut max_records = if offset + 3 < log_item.new_data.len() {
                             u32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset + 1], log_item.new_data[offset + 2], log_item.new_data[offset + 3]]) as usize
