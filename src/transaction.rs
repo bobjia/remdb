@@ -871,10 +871,22 @@ impl LogManager {
                         // 检查记录是否存在
                         let status_ptr = table.get_status_ptr(log_item.record_id as usize);
                         if (*status_ptr).status == crate::types::RecordStatus::Used {
-                            // MVCC：标记删除，设置delete_tx_id
-                            (*status_ptr).delete_tx_id = log_item.tx_id;
+                            // 与实际delete方法保持一致：直接标记为Free
+                            (*status_ptr).status = crate::types::RecordStatus::Free;
                             (*status_ptr).version += 1;
-                            // 不直接删除记录，保留供垃圾回收处理
+                            
+                            // 清空记录数据
+                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                            crate::platform::memset(record_ptr, 0, table.record_size);
+                            
+                            // 将空闲槽压回栈中，确保不超过数组大小
+                            if table.free_slot_count < table.def.max_records {
+                                *table.free_slots.as_ptr().add(table.free_slot_count) = log_item.record_id as usize;
+                                table.free_slot_count += 1;
+                            }
+                            
+                            // 更新记录计数
+                            table.record_count -= 1;
                         }
                     },
                     LogOperation::Update => {

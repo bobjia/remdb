@@ -4380,16 +4380,41 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
             set_field_value(table_mut, &mut record_data, field.offset, field.data_type, field.size, new_value)?;
         }
         
-        // 获取记录指针并写入更新后的数据
-        let record_ptr = unsafe { table_mut.get_record_ptr_mut(id) };
+        // 记录日志（如果有活跃事务）
         unsafe {
+            if crate::transaction::has_active_tx() {
+                // 保存旧数据
+                let mut old_data = alloc::vec![0; record_size];
+                let old_record_ptr = table_mut.get_record_ptr_mut(id);
+                core::ptr::copy_nonoverlapping(old_record_ptr, old_data.as_mut_ptr(), record_size);
+                
+                // 保存新数据
+                let mut new_data = alloc::vec![0; record_size];
+                core::ptr::copy_nonoverlapping(record_data.as_ptr(), new_data.as_mut_ptr(), record_size);
+                
+                // 检查当前事务是否有效，避免访问悬空指针
+                if let Some(mut tx) = crate::transaction::get_current_tx() {
+                    // 直接使用事务添加日志项，不检查is_active()和is_read_only()
+                    tx.as_mut().add_log_item(
+                        crate::transaction::LogOperation::Update,
+                        table_mut.def.id,
+                        id as u16,
+                        old_data.as_ptr(),
+                        new_data.as_ptr(),
+                        record_size
+                    ).unwrap_or(());
+                }
+            }
+            
+            // 获取记录指针并写入更新后的数据
+            let record_ptr = table_mut.get_record_ptr_mut(id);
             core::ptr::copy_nonoverlapping(record_data.as_ptr(), record_ptr, record_size);
+            
+            // 更新记录版本号
+            let status_ptr = table_mut.get_status_ptr(id);
+            let status = &mut *status_ptr;
+            status.version += 1;
         }
-        
-        // 更新记录版本号
-        let status_ptr = unsafe { table_mut.get_status_ptr(id) };
-        let status = unsafe { &mut *status_ptr };
-        status.version += 1;
         
         affected_rows += 1;
     }
