@@ -177,10 +177,10 @@ impl MemoryTable {
                 // 只检查已使用且可见的记录（考虑MVCC）
                 if status.status == RecordStatus::Used {
                     // 获取当前事务ID
-                    let current_tx_id = crate::transaction::TX_MANAGER.tx_id_counter;
+                    let current_tx_id = crate::transaction::tx_id_counter();
                     
                     // 检查记录是否可见
-                    let is_visible = crate::transaction::TX_MANAGER.is_visible(
+                    let is_visible = crate::transaction::is_visible(
                         status.create_tx_id,
                         status.delete_tx_id,
                         current_tx_id
@@ -306,10 +306,10 @@ impl MemoryTable {
                 // 只检查已使用且可见的记录（考虑MVCC）
                 if status.status == RecordStatus::Used {
                     // 获取当前事务ID
-                    let current_tx_id = crate::transaction::TX_MANAGER.tx_id_counter;
+                    let current_tx_id = crate::transaction::tx_id_counter();
                     
                     // 检查记录是否可见
-                    let is_visible = crate::transaction::TX_MANAGER.is_visible(
+                    let is_visible = crate::transaction::is_visible(
                         status.create_tx_id,
                         status.delete_tx_id,
                         current_tx_id
@@ -525,18 +525,20 @@ impl MemoryTable {
             memcpy(new_data.as_mut_ptr(), record_data, self.record_size);
             
             // 检查当前事务是否有效，避免访问悬空指针
-            if let Some(mut tx) = crate::transaction::get_current_tx() {
-                // 直接使用事务添加日志项，不检查is_active()和is_read_only()
-                // 这是因为在JDBC环境下事务对象可能是悬空指针，但add_log_item内部会处理
-                unsafe {
-                    tx.as_mut().add_log_item(
+            unsafe {
+                if let Some(mut tx) = crate::transaction::get_current_tx() {
+                    // 直接使用事务添加日志项，不检查is_active()和is_read_only()
+                    // 这是因为在JDBC环境下事务对象可能是悬空指针，但begin_log_item内部会处理
+                    let tx_id = tx.as_mut().id;
+                    tx.as_mut().begin_log_item(
+                        tx_id,
                         crate::transaction::LogOperation::Insert,
                         self.def.id,
                         slot_id as u16,
-                        core::ptr::null(),
-                        new_data.as_ptr(),
-                        self.record_size
-                    ).unwrap_or(());
+                        self.record_size as u16,
+                        None,
+                        Some(&new_data)
+                    );
                 }
             }
         }
@@ -650,15 +652,19 @@ impl MemoryTable {
             // 检查当前事务是否有效，避免访问悬空指针
             if let Some(mut tx) = crate::transaction::get_current_tx() {
                 // 直接使用事务添加日志项，不检查is_active()和is_read_only()
-                // 这是因为在JDBC环境下事务对象可能是悬空指针，但add_log_item内部会处理
-                tx.as_mut().add_log_item(
-                    crate::transaction::LogOperation::Update,
-                    self.def.id,
-                    id as u16,
-                    old_data.as_ptr(),
-                    new_data.as_ptr(),
-                    self.record_size
-                ).unwrap_or(());
+                // 这是因为在JDBC环境下事务对象可能是悬空指针，但begin_log_item内部会处理
+                unsafe {
+                    let tx_id = tx.as_mut().id;
+                    tx.as_mut().begin_log_item(
+                        tx_id,
+                        crate::transaction::LogOperation::Update,
+                        self.def.id,
+                        id as u16,
+                        self.record_size as u16,
+                        Some(&old_data),
+                        Some(&new_data)
+                    );
+                }
             }
         }
         
@@ -700,15 +706,19 @@ impl MemoryTable {
             // 检查当前事务是否有效，避免访问悬空指针
             if let Some(mut tx) = crate::transaction::get_current_tx() {
                 // 直接使用事务添加日志项，不检查is_active()和is_read_only()
-                // 这是因为在JDBC环境下事务对象可能是悬空指针，但add_log_item内部会处理
-                tx.as_mut().add_log_item(
-                    crate::transaction::LogOperation::Delete,
-                    self.def.id,
-                    id as u16,
-                    old_data.as_ptr(),
-                    core::ptr::null(),
-                    self.record_size
-                ).unwrap_or(());
+                // 这是因为在JDBC环境下事务对象可能是悬空指针，但begin_log_item内部会处理
+                unsafe {
+                    let tx_id = tx.as_mut().id;
+                    tx.as_mut().begin_log_item(
+                        tx_id,
+                        crate::transaction::LogOperation::Delete,
+                        self.def.id,
+                        id as u16,
+                        self.record_size as u16,
+                        Some(&old_data),
+                        None
+                    );
+                }
             }
         }
         
@@ -1224,14 +1234,15 @@ impl MemoryTable {
                     memcpy(new_data.as_mut_ptr(), src_ptr, self.record_size);
                     
                     // 添加日志项
-                    tx_mut.add_log_item(
+                    tx_mut.begin_log_item(
+                        tx_mut.id,
                         crate::transaction::LogOperation::Insert,
                         self.def.id,
                         slot_id as u16,
-                        core::ptr::null(),
-                        new_data.as_ptr(),
-                        self.record_size
-                    )?;
+                        self.record_size as u16,
+                        None,
+                        Some(&new_data)
+                    ); // begin_log_item返回Option<&mut LogItem>，这里不需要处理返回值
                 }
             }
             
@@ -1330,14 +1341,15 @@ impl MemoryTable {
                     memcpy(new_data.as_mut_ptr(), src_ptr, self.record_size);
                     
                     // 添加日志项（使用TimeSeriesInsert操作类型）
-                    tx_mut.add_log_item(
+                    tx_mut.begin_log_item(
+                        tx_mut.id,
                         crate::transaction::LogOperation::TimeSeriesInsert,
                         self.def.id,
                         slot_id as u16,
-                        core::ptr::null(),
-                        new_data.as_ptr(),
-                        self.record_size
-                    )?;
+                        self.record_size as u16,
+                        None,
+                        Some(&new_data)
+                    ); // begin_log_item返回Option<&mut LogItem>，这里不需要处理返回值
                 }
             }
             

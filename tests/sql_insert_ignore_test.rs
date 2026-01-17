@@ -138,6 +138,9 @@ fn test_insert_ignore_functionality() {
     // 使用静态内存缓冲区，确保它不会在函数返回时被释放
     static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152];
     
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    
     // 初始化内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
@@ -148,9 +151,6 @@ fn test_insert_ignore_functionality() {
     
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
-    
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化数据库
     let config = &TEST_DB_CONFIG;

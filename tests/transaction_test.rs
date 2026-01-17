@@ -198,7 +198,7 @@ fn test_transaction_begin_commit() {
         
         // 重置全局数据库实例和事务管理器
         remdb::reset_global_db();
-        TX_MANAGER.reset();
+        crate::transaction::init_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -296,7 +296,7 @@ fn test_mvcc_snapshot_isolation() {
         ).unwrap();
         
         // 重置事务管理器
-        TX_MANAGER.reset();
+        crate::transaction::init_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -493,7 +493,7 @@ fn test_mvcc_version_chain() {
         ).unwrap();
         
         // 重置事务管理器
-        TX_MANAGER.reset();
+        crate::transaction::init_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -617,7 +617,7 @@ fn test_mvcc_gc() {
         ).unwrap();
         
         // 重置事务管理器
-        TX_MANAGER.reset();
+        crate::transaction::init_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -739,7 +739,7 @@ fn test_mvcc_visibility() {
         ).unwrap();
         
         // 重置事务管理器
-        TX_MANAGER.reset();
+        crate::transaction::init_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -883,7 +883,7 @@ fn test_transaction_rollback() {
         ).unwrap();
         
         // 重置事务管理器
-        TX_MANAGER.reset();
+        crate::transaction::init_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -981,7 +981,7 @@ fn test_transaction_update_rollback() {
         ).unwrap();
         
         // 重置事务管理器
-        TX_MANAGER.reset();
+        crate::transaction::init_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -1103,7 +1103,7 @@ fn test_transaction_delete_rollback() {
         ).unwrap();
         
         // 重置事务管理器
-        TX_MANAGER.reset();
+        crate::transaction::init_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;

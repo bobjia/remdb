@@ -100,6 +100,10 @@ static EMPTY_TABLES: &[crate::types::TableDef] = &[];
 // 初始化测试平台
 fn init_test_platform() {
     crate::platform::init_platform(&TEST_PLATFORM);
+    // 重置事务管理器
+    crate::transaction::init_tx_manager();
+    // 确保pubsub系统已关闭
+    let _ = crate::pubsub::shutdown();
 }
 
 // 测试角色管理器

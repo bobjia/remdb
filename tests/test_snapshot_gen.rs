@@ -274,7 +274,7 @@ fn test_snapshot_gen() -> Result<()> {
         ).unwrap();
         
         // 重置事务管理器
-        transaction::TX_MANAGER.reset();
+        crate::transaction::init_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;

@@ -38,9 +38,7 @@ remdb::database!(
 #[serial]
 fn test_export_ddl() {
     // 重置事务管理器状态，避免测试之间的状态污染
-    unsafe {
-        crate::transaction::TX_MANAGER.clear_log_manager();
-    }
+    crate::transaction::reset_log_manager();
     
     // 在测试开始前，删除可能存在的日志文件，避免影响后续测试
     use std::fs::remove_file;
@@ -91,9 +89,7 @@ fn test_export_ddl() {
 #[serial]
 fn test_export_data() {
     // 重置事务管理器状态，避免测试之间的状态污染
-    unsafe {
-        crate::transaction::TX_MANAGER.clear_log_manager();
-    }
+    crate::transaction::reset_log_manager();
     
     // 在测试开始前，删除可能存在的日志文件，避免影响后续测试
     use std::fs::remove_file;
@@ -195,9 +191,7 @@ fn test_export_data() {
 #[serial]
 fn test_export_empty_table() {
     // 重置事务管理器状态，避免测试之间的状态污染
-    unsafe {
-        crate::transaction::TX_MANAGER.clear_log_manager();
-    }
+    crate::transaction::reset_log_manager();
     
     // 在测试开始前，删除可能存在的日志文件，避免影响后续测试
     use std::fs::remove_file;

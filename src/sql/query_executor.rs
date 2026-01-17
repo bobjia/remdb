@@ -4154,7 +4154,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                             // 如果是自动创建的事务，需要回滚
                             if !has_active_tx {
                                 unsafe {
-                                    crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                                    crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
                                 }
                             }
                             return Err(QueryExecutionError::ConstraintsConflicts);
@@ -4164,7 +4164,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                         // 如果是自动创建的事务，需要回滚
                         if !has_active_tx {
                             unsafe {
-                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                                crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
                             }
                         }
                         return Err(QueryExecutionError::ConstraintsConflicts);
@@ -4173,7 +4173,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                         // 如果是自动创建的事务，需要回滚
                         if !has_active_tx {
                             unsafe {
-                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                                crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
                             }
                         }
                         return Err(QueryExecutionError::OutOfMemory);
@@ -4182,7 +4182,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                         // 如果是自动创建的事务，需要回滚
                         if !has_active_tx {
                             unsafe {
-                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                                crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
                             }
                         }
                         return Err(QueryExecutionError::InternalError);
@@ -4395,14 +4395,16 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                 // 检查当前事务是否有效，避免访问悬空指针
                 if let Some(mut tx) = crate::transaction::get_current_tx() {
                     // 直接使用事务添加日志项，不检查is_active()和is_read_only()
-                    tx.as_mut().add_log_item(
+                    let tx_id = tx.as_mut().id;
+                    tx.as_mut().begin_log_item(
+                        tx_id,
                         crate::transaction::LogOperation::Update,
                         table_mut.def.id,
                         id as u16,
-                        old_data.as_ptr(),
-                        new_data.as_ptr(),
-                        record_size
-                    ).unwrap_or(());
+                        record_size as u16,
+                        Some(&old_data),
+                        Some(&new_data)
+                    );
                 }
             }
             

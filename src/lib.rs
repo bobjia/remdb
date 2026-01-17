@@ -348,22 +348,23 @@ impl RemDb {
         log_buffer: *mut transaction::LogItem,
         max_log_items: usize
     ) -> Result<NonNull<transaction::Transaction>> {
-        crate::transaction::TX_MANAGER.begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items)
+        crate::transaction::begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items)
     }
     
     /// 提交事务
     pub unsafe fn commit_transaction(&mut self) -> Result<()> {
-        crate::transaction::TX_MANAGER.commit()
+        crate::transaction::commit()
     }
     
     /// 回滚事务
     pub unsafe fn rollback_transaction(&mut self) -> Result<()> {
-        crate::transaction::TX_MANAGER.rollback(self)
+        crate::transaction::rollback()
     }
 
     /// 刷新WAL日志到磁盘
     pub unsafe fn flush_logs(&mut self) -> Result<()> {
-        crate::transaction::TX_MANAGER.flush_logs()
+        let tx_manager = crate::transaction::get_tx_manager();
+        tx_manager.flush_logs()
     }
     
     /// 初始化数据库
@@ -918,7 +919,8 @@ impl DdlExecutor for RemDb {
         // 记录CREATE_TABLE日志到WAL
         unsafe {
             // 直接使用LogManager写入日志，而不是通过TransactionManager
-            if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
+            let tx_manager = crate::transaction::get_tx_manager();
+            if let Some(log_manager) = tx_manager.get_log_manager_mut() {
                 // 序列化表定义信息
                 let mut log_data = [0u8; 512];
                 // 写入表名
@@ -1183,7 +1185,8 @@ impl DdlExecutor for RemDb {
         // 记录CREATE_INDEX日志到WAL
         unsafe {
             // 直接使用LogManager写入日志，而不是通过TransactionManager
-            if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
+            let tx_manager = crate::transaction::get_tx_manager();
+            if let Some(log_manager) = tx_manager.get_log_manager_mut() {
                 // 序列化索引创建信息
                 let mut log_data = [0u8; 512];
                 // 写入表名
@@ -2019,9 +2022,10 @@ pub fn reset_global_db() {
         
         DB_INSTANCE = None;
         // 重置事务管理器状态，包括日志管理器
-        crate::transaction::TX_MANAGER.reset();
+        let tx_manager = crate::transaction::get_tx_manager();
+        tx_manager.reset();
         // 清除日志管理器，确保测试之间的完全隔离
-        crate::transaction::TX_MANAGER.clear_log_manager();
+        tx_manager.clear_log_manager();
     }
 }
 
