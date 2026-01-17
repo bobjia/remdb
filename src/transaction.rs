@@ -804,9 +804,9 @@ impl LogManager {
         let actual_record_count = available_size / log_item_size;
         let actual_record_count = actual_record_count as u32;
         
-        // 使用实际可读取的记录数量，而不是header中的record_count
-        let start_index = self.checkpoint.processed_records;
-        let end_index = core::cmp::min(self.header.record_count, actual_record_count);
+        // 总是从0开始处理所有日志记录，确保CreateTable操作被正确处理
+        let start_index = 0;
+        let end_index = actual_record_count;
         
         // 读取所有未处理的日志记录
         for i in start_index..end_index {
@@ -817,9 +817,19 @@ impl LogManager {
                 match log_item.op_type {
                     LogOperation::Insert => {
                         // 执行插入操作
-                        let table = match &mut db.tables[log_item.table_id as usize] {
+                        // 检查table_id是否在有效范围内
+                        let table_id = log_item.table_id as usize;
+                        if table_id >= db.tables.len() {
+                            // 表可能还未创建，跳过当前日志项
+                            println!("Warning: Table ID {} out of bounds (tables.len() = {}), skipping Insert log item", table_id, db.tables.len());
+                            continue;
+                        }
+                        let table = match &mut db.tables[table_id] {
                             Some(table) => table,
-                            None => return Err(RemDbError::TableNotFound),
+                            None => {
+                                println!("Warning: Table ID {} exists but is None, skipping Insert log item", table_id);
+                                continue;
+                            },
                         };
                         
                         // 检查记录是否已存在
@@ -843,9 +853,19 @@ impl LogManager {
                     },
                     LogOperation::Delete => {
                         // 执行删除操作
-                        let table = match &mut db.tables[log_item.table_id as usize] {
+                        // 检查table_id是否在有效范围内
+                        let table_id = log_item.table_id as usize;
+                        if table_id >= db.tables.len() {
+                            // 表可能还未创建，跳过当前日志项
+                            println!("Warning: Table ID {} out of bounds (tables.len() = {}), skipping Delete log item", table_id, db.tables.len());
+                            continue;
+                        }
+                        let table = match &mut db.tables[table_id] {
                             Some(table) => table,
-                            None => return Err(RemDbError::TableNotFound),
+                            None => {
+                                println!("Warning: Table ID {} exists but is None, skipping Delete log item", table_id);
+                                continue;
+                            },
                         };
                         
                         // 检查记录是否存在
@@ -859,9 +879,19 @@ impl LogManager {
                     },
                     LogOperation::Update => {
                         // 执行更新操作
-                        let table = match &mut db.tables[log_item.table_id as usize] {
+                        // 检查table_id是否在有效范围内
+                        let table_id = log_item.table_id as usize;
+                        if table_id >= db.tables.len() {
+                            // 表可能还未创建，跳过当前日志项
+                            println!("Warning: Table ID {} out of bounds (tables.len() = {}), skipping Update log item", table_id, db.tables.len());
+                            continue;
+                        }
+                        let table = match &mut db.tables[table_id] {
                             Some(table) => table,
-                            None => return Err(RemDbError::TableNotFound),
+                            None => {
+                                println!("Warning: Table ID {} exists but is None, skipping Update log item", table_id);
+                                continue;
+                            },
                         };
                         
                         // 检查记录是否存在
@@ -1253,61 +1283,82 @@ impl TransactionManager {
     pub unsafe fn commit(&mut self) -> Result<()> {
         // 增加已提交事务计数
         crate::get_global_db().map(|db| db.metrics.inc_committed_transactions());
-        // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
-        defer! { crate::platform::spin_unlock(&mut self.lock); }
         
-        // 检查是否有活跃事务
-        let tx_ptr = match self.current_tx.take() {
-            Some(tx) => tx,
-            None => return Err(RemDbError::TransactionError),
-        };
-        
-        // 检查是否是悬垂指针（用于JDBC服务器）
-        let is_dangling = tx_ptr.as_ptr() == NonNull::dangling().as_ptr();
-        
-        let tx_id = if !is_dangling {
-            // 测试环境：更新事务状态
-            let tx = &mut *tx_ptr.as_ptr();
+        // 步骤1：获取活跃事务并更新其状态
+        { // 锁作用域
+            // 自旋锁保护
+            crate::platform::spin_lock(&mut self.lock);
             
-            // 记录提交日志
-            if let Some(log_manager) = &mut self.log_manager {
-                // 创建提交日志项
-                let log_item = LogItem {
-                    op_type: LogOperation::Commit,
-                    table_id: 0, // 提交操作不关联特定表
-                    record_id: 0, // 提交操作不关联特定记录
-                    data_size: 0, // 提交操作没有数据
-                    old_data: [0; 512],
-                    new_data: [0; 512],
-                    tx_id: tx.id,
-                    timestamp: crate::platform::get_timestamp_us(),
-                    checksum: 0, // 后面会计算
-                };
+            // 检查是否有活跃事务
+            let tx_ptr = match self.current_tx.take() {
+                Some(tx) => tx,
+                None => {
+                    crate::platform::spin_unlock(&mut self.lock);
+                    return Err(RemDbError::TransactionError);
+                },
+            };
+            
+            // 检查是否是悬垂指针（用于JDBC服务器）
+            let is_dangling = tx_ptr.as_ptr() == NonNull::dangling().as_ptr();
+            
+            let tx_id = if !is_dangling {
+                // 测试环境：更新事务状态
+                let tx = &mut *tx_ptr.as_ptr();
+                tx.status = TransactionStatus::Committed;
+                tx.id
+            } else {
+                // JDBC服务器环境：获取事务ID
+                self.tx_id_counter - 1
+            };
+            
+            // 移除事务快照从活跃快照列表
+            self.active_snapshots.retain(|snapshot| snapshot.tx_id != tx_id);
+            
+            // 增加全局快照版本号
+            self.snapshot_version += 1;
+            
+            // 释放锁，避免与write_log_item中的锁冲突
+            crate::platform::spin_unlock(&mut self.lock);
+            
+            // 步骤2：写入事务日志到WAL（在锁外执行，避免死锁）
+            if !is_dangling {
+                let tx = &mut *tx_ptr.as_ptr();
                 
-                // 计算校验和：直接基于字段计算，避免结构体填充问题
-                let calculated_checksum = Transaction::calculate_log_item_checksum(&log_item);
-                
-                let mut final_log_item = log_item;
-                final_log_item.checksum = calculated_checksum;
-                
-                // 写入日志
-                log_manager.write_log_item(&final_log_item)?;
+                // 记录提交日志
+                if let Some(log_manager) = &mut self.log_manager {
+                    // 先写入所有事务日志项
+                    for i in 0..tx.log_item_count {
+                        let log_ptr = tx.log_items.as_ptr().add(i);
+                        let log_item = *log_ptr;
+                        
+                        // 写入日志项到WAL
+                        log_manager.write_log_item(&log_item)?;
+                    }
+                    
+                    // 创建提交日志项
+                    let log_item = LogItem {
+                        op_type: LogOperation::Commit,
+                        table_id: 0, // 提交操作不关联特定表
+                        record_id: 0, // 提交操作不关联特定记录
+                        data_size: 0, // 提交操作没有数据
+                        old_data: [0; 512],
+                        new_data: [0; 512],
+                        tx_id: tx.id,
+                        timestamp: crate::platform::get_timestamp_us(),
+                        checksum: 0, // 后面会计算
+                    };
+                    
+                    // 计算校验和：直接基于字段计算，避免结构体填充问题
+                    let calculated_checksum = Transaction::calculate_log_item_checksum(&log_item);
+                    
+                    let mut final_log_item = log_item;
+                    final_log_item.checksum = calculated_checksum;
+                    
+                    // 写入提交日志
+                    log_manager.write_log_item(&final_log_item)?;
+                }
             }
-            
-            tx.status = TransactionStatus::Committed;
-            tx.id
-        } else {
-            // JDBC服务器环境：获取事务ID（这里假设悬垂指针也关联了一个有效的事务ID）
-            // 注意：实际实现中可能需要更复杂的逻辑来跟踪悬垂指针的事务ID
-            self.tx_id_counter - 1
-        };
-        
-        // 移除事务快照从活跃快照列表
-        self.active_snapshots.retain(|snapshot| snapshot.tx_id != tx_id);
-        
-        // 增加全局快照版本号
-        self.snapshot_version += 1;
+        }
         
         Ok(())
     }

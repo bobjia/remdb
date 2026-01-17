@@ -3986,7 +3986,25 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         }
     }
     
-    // 4. 执行插入操作
+    // 4. 检查是否有活跃事务，如果没有则创建一个
+    let has_active_tx = crate::transaction::has_active_tx();
+    let mut tx_buffer = [0u8; core::mem::size_of::<crate::transaction::Transaction>()];
+    let mut log_buffer = [0u8; core::mem::size_of::<crate::transaction::LogItem>() * 10];
+    
+    if !has_active_tx {
+        // 没有活跃事务，开始一个新事务
+        unsafe {
+            crate::transaction::begin(
+                crate::transaction::TransactionType::ReadWrite,
+                crate::transaction::IsolationLevel::ReadCommitted,
+                tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
+                log_buffer.as_mut_ptr() as *mut crate::transaction::LogItem,
+                10
+            ).map_err(|_| QueryExecutionError::InternalError)?;
+        }
+    }
+    
+    // 5. 执行插入操作
     let mut affected_rows = 0;
     
     for values in &query.values {
@@ -4133,16 +4151,40 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                             // 忽略重复键，继续处理下一条记录
                             continue;
                         } else {
+                            // 如果是自动创建的事务，需要回滚
+                            if !has_active_tx {
+                                unsafe {
+                                    crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                                }
+                            }
                             return Err(QueryExecutionError::ConstraintsConflicts);
                         }
                     },
                     RemDbError::InvalidRecordSize | RemDbError::TypeMismatch => {
+                        // 如果是自动创建的事务，需要回滚
+                        if !has_active_tx {
+                            unsafe {
+                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                            }
+                        }
                         return Err(QueryExecutionError::ConstraintsConflicts);
                     },
                     RemDbError::OutOfMemory => {
+                        // 如果是自动创建的事务，需要回滚
+                        if !has_active_tx {
+                            unsafe {
+                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                            }
+                        }
                         return Err(QueryExecutionError::OutOfMemory);
                     },
                     _ => {
+                        // 如果是自动创建的事务，需要回滚
+                        if !has_active_tx {
+                            unsafe {
+                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                            }
+                        }
                         return Err(QueryExecutionError::InternalError);
                     },
                 }
@@ -4159,6 +4201,13 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         value: crate::Value { u64: affected_rows as u64 },
     }];
     result_set.add_row(row_data);
+    
+    // 如果是自动创建的事务，提交它
+    if !has_active_tx {
+        unsafe {
+            crate::transaction::commit().map_err(|_| QueryExecutionError::InternalError)?;
+        }
+    }
     
     Ok(result_set)
 }
@@ -4180,7 +4229,25 @@ fn execute_delete_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     // 2. 获取表引用（用于遍历）
     let table_ref = db.tables[table_id].as_ref().ok_or(QueryExecutionError::TableNotFound)?;
     
-    // 3. 遍历表中的所有记录，收集要删除的记录ID
+    // 3. 检查是否有活跃事务，如果没有则创建一个
+    let has_active_tx = crate::transaction::has_active_tx();
+    let mut tx_buffer = [0u8; core::mem::size_of::<crate::transaction::Transaction>()];
+    let mut log_buffer = [0u8; core::mem::size_of::<crate::transaction::LogItem>() * 10];
+    
+    if !has_active_tx {
+        // 没有活跃事务，开始一个新事务
+        unsafe {
+            crate::transaction::begin(
+                crate::transaction::TransactionType::ReadWrite,
+                crate::transaction::IsolationLevel::ReadCommitted,
+                tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
+                log_buffer.as_mut_ptr() as *mut crate::transaction::LogItem,
+                10
+            ).map_err(|_| QueryExecutionError::InternalError)?;
+        }
+    }
+    
+    // 4. 遍历表中的所有记录，收集要删除的记录ID
     let mut to_delete = Vec::new();
     
     unsafe {
@@ -4223,6 +4290,13 @@ fn execute_delete_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     }];
     result_set.add_row(row_data);
     
+    // 如果是自动创建的事务，提交它
+    if !has_active_tx {
+        unsafe {
+            crate::transaction::commit().map_err(|_| QueryExecutionError::InternalError)?;
+        }
+    }
+    
     Ok(result_set)
 }
 
@@ -4244,7 +4318,25 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     let table_ref = db.tables[table_id].as_ref().ok_or(QueryExecutionError::TableNotFound)?;
     let record_size = table_ref.record_size;
     
-    // 3. 遍历表中的所有记录，收集要更新的记录ID和它们的当前数据
+    // 3. 检查是否有活跃事务，如果没有则创建一个
+    let has_active_tx = crate::transaction::has_active_tx();
+    let mut tx_buffer = [0u8; core::mem::size_of::<crate::transaction::Transaction>()];
+    let mut log_buffer = [0u8; core::mem::size_of::<crate::transaction::LogItem>() * 10];
+    
+    if !has_active_tx {
+        // 没有活跃事务，开始一个新事务
+        unsafe {
+            crate::transaction::begin(
+                crate::transaction::TransactionType::ReadWrite,
+                crate::transaction::IsolationLevel::ReadCommitted,
+                tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
+                log_buffer.as_mut_ptr() as *mut crate::transaction::LogItem,
+                10
+            ).map_err(|_| QueryExecutionError::InternalError)?;
+        }
+    }
+    
+    // 4. 遍历表中的所有记录，收集要更新的记录ID和它们的当前数据
     let mut to_update = Vec::new();
     
     unsafe {
@@ -4311,6 +4403,13 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         value: crate::Value { u64: affected_rows as u64 },
     }];
     result_set.add_row(row_data);
+    
+    // 如果是自动创建的事务，提交它
+    if !has_active_tx {
+        unsafe {
+            crate::transaction::commit().map_err(|_| QueryExecutionError::InternalError)?;
+        }
+    }
     
     Ok(result_set)
 }

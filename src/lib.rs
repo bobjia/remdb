@@ -786,6 +786,16 @@ impl DdlExecutor for RemDb {
             }
         }
         
+        // 3. 检查表格是否已存在
+        for table_opt in &self.tables {
+            if let Some(table) = table_opt {
+                if table.def.name == name {
+                    // 表格已存在，直接返回成功
+                    return Ok(());
+                }
+            }
+        }
+        
         // 3. 计算字段大小和偏移量
         let mut field_defs = Vec::new();
         let mut offset = 0;
@@ -1085,6 +1095,8 @@ impl DdlExecutor for RemDb {
                 
                 // 写入日志
                 let _ = log_manager.write_log_item(&final_log_item);
+                // 立即刷新缓冲区，确保CreateTable日志被持久化
+                let _ = log_manager.flush_buffer();
             }
         }
         
