@@ -1050,13 +1050,13 @@ impl LogManager {
                         let table_name_str = core::str::from_utf8(&log_item.new_data[1..1+name_len]).unwrap_or("unknown");
                         let table_name = Box::leak(table_name_str.to_string().into_boxed_str());
                         
-                        // 从日志中解析字段数量
+                        // 从日志中解析字段数量（表名结束后的第一个字节：1字节长度 + 64字节表名 = 65字节）
                         let field_count = log_item.new_data[65] as usize;
                         
-                        // 从日志中解析主键索引
+                        // 从日志中解析主键索引（字段数量后的下一个字节，偏移65+1=66）
                         let primary_key = log_item.new_data[66] as usize;
                         
-                        // 解析字段定义
+                        // 解析字段定义（主键索引后的下一个字节，偏移66+1=67）
                         let mut offset = 67;
                         let mut fields = alloc::vec::Vec::with_capacity(field_count);
                         let new_data_len = log_item.new_data.len();
@@ -1080,7 +1080,7 @@ impl LogManager {
                             let max_name_len = core::cmp::min(field_name_len, 31); // 最大31字节，因为第一个字节是长度
                             let field_name_str = core::str::from_utf8(&log_item.new_data[offset+1..offset+1+max_name_len]).unwrap_or("unknown");
                             let field_name = Box::leak(field_name_str.to_string().into_boxed_str());
-                            offset += 33; // 固定33字节字段名空间（1字节长度 + 32字节内容）
+                            offset += 33; // 固定33字节字段名空间（1字节长度 + 32字节内容），与创建表时的逻辑保持一致
                             
                             // 检查offset是否超出边界
                             if offset + 3 >= new_data_len {
@@ -1104,60 +1104,175 @@ impl LogManager {
                             let has_default = log_item.new_data[offset] != 0;
                             offset += 1;
                             
-                            // 跳过默认值（暂时不支持）
-                            if has_default {
-                                // 确保offset不超过数组边界
-                                let max_offset = log_item.new_data.len() - 1;
+                            // 解析默认值
+                            let default_value = if has_default {
+                                // 保存当前offset，用于解析默认值
+                                let default_offset = offset;
                                 
-                                // 根据数据类型跳过不同大小，但确保不超出边界
-                                match data_type {
-                                    crate::types::DataType::Bool => {
-                                        if offset < max_offset {
-                                            offset += 1;
-                                        }
-                                    },
-                                    crate::types::DataType::Int8 | crate::types::DataType::UInt8 => {
-                                        if offset < max_offset {
-                                            offset += 1;
-                                        }
-                                    },
-                                    crate::types::DataType::Int16 | crate::types::DataType::UInt16 => {
-                                        if offset + 1 < max_offset {
-                                            offset += 2;
-                                        }
-                                    },
-                                    crate::types::DataType::Int32 | crate::types::DataType::UInt32 | crate::types::DataType::Float32 => {
-                                        if offset + 3 < max_offset {
-                                            offset += 4;
-                                        }
-                                    },
-                                    crate::types::DataType::Int64 | crate::types::DataType::UInt64 | crate::types::DataType::Float64 => {
-                                        if offset + 7 < max_offset {
-                                            offset += 8;
-                                        }
-                                    },
-                                    crate::types::DataType::String => {
-                                        // 确保有足够空间读取字符串长度
-                                        if offset + 1 < max_offset {
-                                            let str_len = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
-                                            // 确保不会超出数组边界
-                                            let str_data_size = str_len as usize;
-                                            if offset + 2 + str_data_size < max_offset {
-                                                offset += 2 + str_data_size;
+                                // 根据数据类型解析默认值
+                                let value = unsafe {
+                                    match data_type {
+                                        crate::types::DataType::Bool => {
+                                            if offset + 1 <= new_data_len {
+                                                let val = log_item.new_data[offset] != 0;
+                                                offset += 1;
+                                                crate::types::Value { bool: val }
                                             } else {
-                                                // 空间不足，跳过剩余部分
-                                                offset = max_offset;
+                                                offset += 1;
+                                                crate::types::Value { bool: false }
                                             }
-                                        }
-                                    },
-                                    _ => {
-                                        // 默认跳过8字节，但确保不超出边界
-                                        if offset + 7 < max_offset {
-                                            offset += 8;
-                                        }
-                                    },
-                                }
-                            }
+                                        },
+                                        crate::types::DataType::Int8 => {
+                                            if offset + 1 <= new_data_len {
+                                                let val = log_item.new_data[offset] as i8;
+                                                offset += 1;
+                                                crate::types::Value { i8: val }
+                                            } else {
+                                                offset += 1;
+                                                crate::types::Value { i8: 0 }
+                                            }
+                                        },
+                                        crate::types::DataType::UInt8 => {
+                                            if offset + 1 <= new_data_len {
+                                                let val = log_item.new_data[offset];
+                                                offset += 1;
+                                                crate::types::Value { u8: val }
+                                            } else {
+                                                offset += 1;
+                                                crate::types::Value { u8: 0 }
+                                            }
+                                        },
+                                        crate::types::DataType::Int16 => {
+                                            if offset + 2 <= new_data_len {
+                                                let val = i16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
+                                                offset += 2;
+                                                crate::types::Value { i16: val }
+                                            } else {
+                                                offset += 2;
+                                                crate::types::Value { i16: 0 }
+                                            }
+                                        },
+                                        crate::types::DataType::UInt16 => {
+                                            if offset + 2 <= new_data_len {
+                                                let val = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
+                                                offset += 2;
+                                                crate::types::Value { u16: val }
+                                            } else {
+                                                offset += 2;
+                                                crate::types::Value { u16: 0 }
+                                            }
+                                        },
+                                        crate::types::DataType::Int32 => {
+                                            if offset + 4 <= new_data_len {
+                                                let val = i32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
+                                                offset += 4;
+                                                crate::types::Value { i32: val }
+                                            } else {
+                                                offset += 4;
+                                                crate::types::Value { i32: 0 }
+                                            }
+                                        },
+                                        crate::types::DataType::UInt32 => {
+                                            if offset + 4 <= new_data_len {
+                                                let val = u32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
+                                                offset += 4;
+                                                crate::types::Value { u32: val }
+                                            } else {
+                                                offset += 4;
+                                                crate::types::Value { u32: 0 }
+                                            }
+                                        },
+                                        crate::types::DataType::Float32 => {
+                                            if offset + 4 <= new_data_len {
+                                                let val = f32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
+                                                offset += 4;
+                                                crate::types::Value { float32: val }
+                                            } else {
+                                                offset += 4;
+                                                crate::types::Value { float32: 0.0 }
+                                            }
+                                        },
+                                        crate::types::DataType::Int64 => {
+                                            if offset + 8 <= new_data_len {
+                                                let val = i64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
+                                                offset += 8;
+                                                crate::types::Value { i64: val }
+                                            } else {
+                                                offset += 8;
+                                                crate::types::Value { i64: 0 }
+                                            }
+                                        },
+                                        crate::types::DataType::UInt64 => {
+                                            if offset + 8 <= new_data_len {
+                                                let val = u64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
+                                                offset += 8;
+                                                crate::types::Value { u64: val }
+                                            } else {
+                                                offset += 8;
+                                                crate::types::Value { u64: 0 }
+                                            }
+                                        },
+                                        crate::types::DataType::Float64 => {
+                                            if offset + 8 <= new_data_len {
+                                                let val = f64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
+                                                offset += 8;
+                                                crate::types::Value { float64: val }
+                                            } else {
+                                                offset += 8;
+                                                crate::types::Value { float64: 0.0 }
+                                            }
+                                        },
+                                        crate::types::DataType::String => {
+                                            // 确保有足够空间读取字符串长度
+                                            if offset + 2 <= new_data_len {
+                                                let str_len = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
+                                                offset += 2;
+                                                
+                                                // 创建字符串默认值
+                                                let mut str_val = [0u8; crate::types::MAX_STRING_LEN];
+                                                let str_data_size = str_len as usize;
+                                                
+                                                // 只读取实际需要的字符串数据，不超过剩余空间
+                                                let actual_data_size = if offset + str_data_size <= new_data_len {
+                                                    str_data_size
+                                                } else {
+                                                    // 空间不足，只读取可用的数据
+                                                    let remaining = new_data_len - offset;
+                                                    remaining
+                                                };
+                                                
+                                                // 复制字符串数据
+                                                for i in 0..actual_data_size {
+                                                    if i < str_val.len() {
+                                                        str_val[i] = log_item.new_data[offset + i];
+                                                    }
+                                                }
+                                                offset += actual_data_size;
+                                                
+                                                crate::types::Value { string: str_val }
+                                            } else {
+                                                // 空间不足，跳过字符串长度
+                                                offset += 2;
+                                                crate::types::Value { string: [0u8; crate::types::MAX_STRING_LEN] }
+                                            }
+                                        },
+                                        _ => {
+                                            // 默认跳过8字节，但确保不超出边界
+                                            if offset + 7 < new_data_len {
+                                                offset += 8;
+                                            } else {
+                                                // 空间不足，只跳过可用的数据
+                                                offset = new_data_len;
+                                            }
+                                            crate::types::Value { u64: 0 }
+                                        },
+                                    }
+                                };
+                                Some(value)
+                            } else {
+                                // 没有默认值
+                                None
+                            };
                             
                             // 计算字段大小：根据数据类型计算，而不是从日志中读取
                             let field_size = match data_type {
@@ -1189,7 +1304,7 @@ impl LogManager {
                                 not_null: not_null_flag,
                                 unique: unique_flag,
                                 auto_increment: auto_increment_flag,
-                                default_value: None, // 暂时不支持默认值
+                                default_value: default_value, // 使用解析出的默认值
                             };
                             
                             fields.push(field_def);
