@@ -1056,15 +1056,6 @@ impl LogManager {
                         // 从日志中解析主键索引
                         let primary_key = log_item.new_data[66] as usize;
                         
-                        // 从日志中解析辅助索引信息
-                        let secondary_index = if log_item.new_data[67] > 0 {
-                            Some(log_item.new_data[67] as usize)
-                        } else {
-                            None
-                        };
-                        let index_type_byte = log_item.new_data[68];
-                        let index_type = crate::types::IndexType::from(index_type_byte);
-                        
                         // 解析字段定义
                         let mut offset = 67;
                         let mut fields = alloc::vec::Vec::with_capacity(field_count);
@@ -1089,7 +1080,7 @@ impl LogManager {
                             let max_name_len = core::cmp::min(field_name_len, 31); // 最大31字节，因为第一个字节是长度
                             let field_name_str = core::str::from_utf8(&log_item.new_data[offset+1..offset+1+max_name_len]).unwrap_or("unknown");
                             let field_name = Box::leak(field_name_str.to_string().into_boxed_str());
-                            offset += 32; // 固定32字节字段名空间
+                            offset += 33; // 固定33字节字段名空间（1字节长度 + 32字节内容）
                             
                             // 检查offset是否超出边界
                             if offset + 3 >= new_data_len {
@@ -1245,8 +1236,8 @@ impl LogManager {
                             name: table_name,
                             fields: field_defs_static,
                             primary_key: primary_key,
-                            secondary_index: secondary_index,
-                            secondary_index_type: index_type,
+                            secondary_index: None,
+                            secondary_index_type: crate::types::IndexType::SortedArray,
                             record_size: record_size,
                             max_records: max_records,
                         };
