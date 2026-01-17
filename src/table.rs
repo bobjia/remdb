@@ -52,6 +52,11 @@ impl Drop for MemoryTable {
 impl MemoryTable {
     /// 创建新的内存表
     pub fn new(def: alloc::sync::Arc<TableDef>) -> Result<Self> {
+        // 确保max_records至少为1，避免创建无法使用的表
+        if def.max_records == 0 {
+            return Err(RemDbError::ConfigError);
+        }
+        
         // 计算所需内存大小
         let data_size = def.record_size * def.max_records;
         let status_size = core::mem::size_of::<RecordHeader>() * def.max_records;

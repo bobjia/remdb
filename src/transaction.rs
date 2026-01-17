@@ -790,29 +790,110 @@ impl LogManager {
         let file_size = crate::platform::file_size(wal_file_path.as_str())
             .map_err(|_| RemDbError::FileIoError)?;
         
-        // 计算实际可读取的日志项数量
-        let header_size = core::mem::size_of::<LogHeader>();
-        let checkpoint_size = core::mem::size_of::<LogCheckpoint>();
-        let log_item_size = core::mem::size_of::<LogItem>();
-        
-        let total_header_size = header_size + checkpoint_size;
-        let available_size = if file_size > total_header_size {
-            file_size - total_header_size
-        } else {
-            0
-        };
-        
-        let actual_record_count = available_size / log_item_size;
-        let actual_record_count = actual_record_count as u32;
-        
-        // 总是从0开始处理所有日志记录，确保CreateTable操作被正确处理
+        // 使用header.record_count来确定实际的日志记录数，避免处理预分配的无效数据
         let start_index = 0;
-        let end_index = actual_record_count;
+        let end_index = self.header.record_count;
         
         // 读取所有未处理的日志记录
         for i in start_index..end_index {
-            match self.read_log_item(i) {
-                Ok(log_item) => {
+            // 直接从文件中读取日志项，绕过header.record_count检查
+            let log_offset = core::mem::size_of::<LogHeader>() + 
+                            core::mem::size_of::<LogCheckpoint>() + 
+                            (i as usize) * core::mem::size_of::<LogItem>();
+            
+            // 构造完整的日志文件路径：log_path目录 + remdb.wal文件名
+            use alloc::format;
+            let wal_file_path = format!("{}/remdb.wal", self.log_path);
+            
+            let handle = match crate::platform::file_open(
+                wal_file_path.as_str(),
+                crate::platform::FileMode::Read
+            ) {
+                Ok(handle) => handle,
+                Err(_) => {
+                    println!("Warning: Failed to open log file for reading log item {}, skipping...", i);
+                    continue;
+                }
+            };
+            
+            // 使用defer!宏确保文件句柄关闭
+            let mut should_close = true;
+            // 手动管理文件句柄关闭，不使用defer!宏
+            // let _defer = defer! {
+            //     if should_close {
+            //         let _ = crate::platform::file_close(handle);
+            //     }
+            // };
+            
+            // 定位到日志项位置
+            if let Err(_) = crate::platform::file_seek(
+                handle,
+                log_offset as i64,
+                crate::platform::SeekWhence::SeekSet
+            ) {
+                println!("Warning: Failed to seek to log item {} offset {}, skipping...", i, log_offset);
+                let _ = crate::platform::file_close(handle);
+                continue;
+            }
+            
+            // 读取日志项
+            let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
+            let read = match crate::platform::file_read(
+                handle,
+                log_bytes.as_mut_ptr(),
+                log_bytes.len()
+            ) {
+                Ok(read) => read,
+                Err(_) => {
+                    println!("Warning: Failed to read log item {}, skipping...", i);
+                    let _ = crate::platform::file_close(handle);
+                    continue;
+                }
+            };
+            
+            if read != log_bytes.len() {
+                println!("Warning: Failed to read complete log item {} (read {} bytes, expected {}), skipping...", i, read, log_bytes.len());
+                let _ = crate::platform::file_close(handle);
+                continue;
+            }
+            
+            // 将字节数组转换为LogItem
+            let log_item = core::ptr::read_unaligned(log_bytes.as_ptr() as *const LogItem);
+            
+            // Check if this is a valid log item by verifying multiple indicators
+            // Zero-initialized LogItems will have all fields = 0, including checksum = 0
+            // Insert is op_type = 0, so we need additional checks to avoid false positives
+            
+            // 1. Check checksum
+            let calculated_checksum = Transaction::calculate_log_item_checksum(&log_item);
+            if log_item.checksum != calculated_checksum {
+                // Invalid checksum, skip
+                continue;
+            }
+            
+            // 2. Check if this is likely a zero-initialized LogItem
+            // A valid log item should have either:
+            // - Non-zero tx_id/timestamp, OR
+            // - Non-zero data_size with data, OR
+            // - CreateTable/CreateIndex operation
+            let is_zero_initialized = log_item.tx_id == 0 && 
+                                     log_item.timestamp == 0 && 
+                                     log_item.data_size == 0 && 
+                                     !matches!(log_item.op_type, LogOperation::CreateTable | LogOperation::CreateIndex | LogOperation::Checkpoint | LogOperation::Commit | LogOperation::Abort);
+            
+            if is_zero_initialized {
+                // This is likely zero-initialized memory, skip
+                continue;
+            }
+            
+            // 3. Check for valid op_type
+            if !matches!(log_item.op_type, LogOperation::Insert | LogOperation::Delete | LogOperation::Update | LogOperation::CreateTable | LogOperation::TimeSeriesInsert | LogOperation::Commit | LogOperation::Abort | LogOperation::Checkpoint | LogOperation::CreateIndex) {
+                // Invalid operation type, skip
+                continue;
+            }
+            
+            should_close = false;
+            let _ = crate::platform::file_close(handle);
             
             // 根据日志类型执行相应的恢复操作
                 match log_item.op_type {
@@ -963,37 +1044,271 @@ impl LogManager {
                             continue;
                         }
                         
-                        // 表不存在，需要从WAL恢复CreateTable操作
-                        // 从日志中解析表定义
-                        let mut table_def = core::mem::MaybeUninit::<crate::TableDef>::uninit();
-                        unsafe {
-                            crate::platform::memcpy(
-                                table_def.as_mut_ptr() as *mut u8,
-                                log_item.new_data.as_ptr(),
-                                core::mem::size_of::<crate::TableDef>()
-                            );
-                        };
-                        let mut table_def = unsafe { table_def.assume_init() };
+                        // 正确解析CreateTable日志项，参考ha/replication.rs中的实现
+                        // 从日志中解析表名
+                        let name_len = log_item.new_data[0] as usize;
+                        let table_name_str = core::str::from_utf8(&log_item.new_data[1..1+name_len]).unwrap_or("unknown");
+                        let table_name = Box::leak(table_name_str.to_string().into_boxed_str());
                         
-                        // 创建新表
-                        println!("Creating table from WAL for table_id {} (table name: {})", log_item.table_id, table_def.name);
-                        let table = match crate::table::MemoryTable::new(alloc::sync::Arc::new(table_def)) {
-                            Ok(table) => table,
-                            Err(err) => {
-                                println!("Warning: Failed to create table from WAL: {:?}, skipping CreateTable operation for table_id {}", err, log_item.table_id);
-                                continue;
-                            }
-                        };
+                        // 从日志中解析字段数量
+                        let field_count = log_item.new_data[65] as usize;
                         
-                        // 确保表数组有足够的空间
-                        while db.tables.len() <= table_id {
-                            db.tables.push(None);
-                            db.primary_indices.push(None);
-                            db.secondary_indices.push(None);
+                        // 从日志中解析主键索引
+                        let primary_key = log_item.new_data[66] as usize;
+                        
+                        // 从日志中解析辅助索引信息
+                        let secondary_index = if log_item.new_data[67] > 0 {
+                            Some(log_item.new_data[67] as usize)
+                        } else {
+                            None
+                        };
+                        let index_type_byte = log_item.new_data[68];
+                        let index_type = crate::types::IndexType::from(index_type_byte);
+                        
+                        // 解析字段定义
+                        let mut offset = 67;
+                        let mut fields = alloc::vec::Vec::with_capacity(field_count);
+                        let new_data_len = log_item.new_data.len();
+                        
+                        // 确保offset初始值不超出边界
+                        if offset >= new_data_len {
+                            println!("Warning: Invalid initial offset for CreateTable log item, skipping...");
+                            continue;
                         }
                         
-                        // 插入新创建的表
-                        db.tables[table_id] = Some(table);
+                        for _ in 0..field_count {
+                            // 检查offset是否超出边界，如果超出则停止解析
+                            if offset + 32 >= new_data_len {
+                                println!("Warning: Offset out of bounds while parsing field name, skipping remaining fields...");
+                                break;
+                            }
+                            
+                            // 解析字段名
+                            let field_name_len = log_item.new_data[offset] as usize;
+                            // 确保字段名不超出边界
+                            let max_name_len = core::cmp::min(field_name_len, 31); // 最大31字节，因为第一个字节是长度
+                            let field_name_str = core::str::from_utf8(&log_item.new_data[offset+1..offset+1+max_name_len]).unwrap_or("unknown");
+                            let field_name = Box::leak(field_name_str.to_string().into_boxed_str());
+                            offset += 32; // 固定32字节字段名空间
+                            
+                            // 检查offset是否超出边界
+                            if offset + 3 >= new_data_len {
+                                println!("Warning: Offset out of bounds while parsing field type/constraints, skipping field...");
+                                continue;
+                            }
+                            
+                            // 解析数据类型
+                            let data_type = crate::types::DataType::from(log_item.new_data[offset]);
+                            offset += 1;
+                            
+                            // 解析字段约束
+                            let constraints = log_item.new_data[offset];
+                            offset += 1;
+                            let primary_key_flag = (constraints & 0b0001) != 0;
+                            let not_null_flag = (constraints & 0b0010) != 0;
+                            let unique_flag = (constraints & 0b0100) != 0;
+                            let auto_increment_flag = (constraints & 0b1000) != 0;
+                            
+                            // 解析默认值存在标志
+                            let has_default = log_item.new_data[offset] != 0;
+                            offset += 1;
+                            
+                            // 跳过默认值（暂时不支持）
+                            if has_default {
+                                // 确保offset不超过数组边界
+                                let max_offset = log_item.new_data.len() - 1;
+                                
+                                // 根据数据类型跳过不同大小，但确保不超出边界
+                                match data_type {
+                                    crate::types::DataType::Bool => {
+                                        if offset < max_offset {
+                                            offset += 1;
+                                        }
+                                    },
+                                    crate::types::DataType::Int8 | crate::types::DataType::UInt8 => {
+                                        if offset < max_offset {
+                                            offset += 1;
+                                        }
+                                    },
+                                    crate::types::DataType::Int16 | crate::types::DataType::UInt16 => {
+                                        if offset + 1 < max_offset {
+                                            offset += 2;
+                                        }
+                                    },
+                                    crate::types::DataType::Int32 | crate::types::DataType::UInt32 | crate::types::DataType::Float32 => {
+                                        if offset + 3 < max_offset {
+                                            offset += 4;
+                                        }
+                                    },
+                                    crate::types::DataType::Int64 | crate::types::DataType::UInt64 | crate::types::DataType::Float64 => {
+                                        if offset + 7 < max_offset {
+                                            offset += 8;
+                                        }
+                                    },
+                                    crate::types::DataType::String => {
+                                        // 确保有足够空间读取字符串长度
+                                        if offset + 1 < max_offset {
+                                            let str_len = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
+                                            // 确保不会超出数组边界
+                                            let str_data_size = str_len as usize;
+                                            if offset + 2 + str_data_size < max_offset {
+                                                offset += 2 + str_data_size;
+                                            } else {
+                                                // 空间不足，跳过剩余部分
+                                                offset = max_offset;
+                                            }
+                                        }
+                                    },
+                                    _ => {
+                                        // 默认跳过8字节，但确保不超出边界
+                                        if offset + 7 < max_offset {
+                                            offset += 8;
+                                        }
+                                    },
+                                }
+                            }
+                            
+                            // 计算字段大小：根据数据类型计算，而不是从日志中读取
+                            let field_size = match data_type {
+                                crate::types::DataType::Bool |
+                                crate::types::DataType::Int8 |
+                                crate::types::DataType::UInt8 => 1,
+                                crate::types::DataType::Int16 |
+                                crate::types::DataType::UInt16 => 2,
+                                crate::types::DataType::Int32 |
+                                crate::types::DataType::UInt32 |
+                                crate::types::DataType::Float32 => 4,
+                                crate::types::DataType::Int64 |
+                                crate::types::DataType::UInt64 |
+                                crate::types::DataType::Float64 |
+                                crate::types::DataType::Timestamp |
+                                crate::types::DataType::TimestampTZ => 8,
+                                crate::types::DataType::String => 64, // 默认64字节字符串
+                                crate::types::DataType::Interval => 10, // 8字节值 + 1字节精度 + 1字节标志
+                                _ => 8, // 默认8字节
+                            };
+                            
+                            // 创建字段定义
+                            let field_def = crate::types::FieldDef {
+                                name: field_name,
+                                data_type,
+                                size: field_size,
+                                offset: 0, // 偏移量会在表创建时计算
+                                primary_key: primary_key_flag,
+                                not_null: not_null_flag,
+                                unique: unique_flag,
+                                auto_increment: auto_increment_flag,
+                                default_value: None, // 暂时不支持默认值
+                            };
+                            
+                            fields.push(field_def);
+                        }
+                        
+                        // 从日志中解析record_size和max_records，但确保不超出边界
+                        let record_size = if offset + 1 < log_item.new_data.len() {
+                            u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset + 1]]) as usize
+                        } else {
+                            // 超出边界，使用默认值
+                            0
+                        };
+                        offset += 2;
+                        
+                        let mut max_records = if offset + 3 < log_item.new_data.len() {
+                            u32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset + 1], log_item.new_data[offset + 2], log_item.new_data[offset + 3]]) as usize
+                        } else {
+                            // 超出边界，使用默认值
+                            100000
+                        };
+                        offset += 4;
+                        
+                        // 确保max_records至少为1，避免创建无法使用的表
+                        if max_records == 0 {
+                            max_records = 100000; // 使用默认值
+                        }
+                        
+                        // 创建表定义
+                        println!("Creating table from WAL for table_id {} (table name: {})", log_item.table_id, table_name);
+                        
+                        // 计算字段偏移量
+                        let mut offset = 0;
+                        for field in &mut fields {
+                            field.offset = offset;
+                            offset += field.size;
+                        }
+                        
+                        // 将字段定义转换为静态切片
+                        let field_defs_static = Box::leak(Box::new(fields));
+                        
+                        // 创建表定义
+                        let table_def = crate::types::TableDef {
+                            id: log_item.table_id,
+                            name: table_name,
+                            fields: field_defs_static,
+                            primary_key: primary_key,
+                            secondary_index: secondary_index,
+                            secondary_index_type: index_type,
+                            record_size: record_size,
+                            max_records: max_records,
+                        };
+                        
+                        // 直接实现从TableDef创建表的逻辑
+                        unsafe {
+                            // 检查表格是否已存在
+                            let table_exists = db.tables.len() > table_def.id as usize && db.tables[table_def.id as usize].is_some();
+                            if table_exists {
+                                println!("Skipping CreateTable operation for table_id {} (table already exists)", log_item.table_id);
+                                continue;
+                            }
+                            
+                            // 确保tables向量有足够的容量
+                            if table_def.id as usize >= db.tables.len() {
+                                let new_capacity = core::cmp::max(db.tables.len() * 2, table_def.id as usize + 1);
+                                db.tables.resize_with(new_capacity, || None);
+                                db.primary_indices.resize_with(new_capacity, || None);
+                                db.secondary_indices.resize_with(new_capacity, || None);
+                            }
+                            
+                            // 创建内存表
+                            let table_def_arc = alloc::sync::Arc::new(table_def);
+                            match crate::table::MemoryTable::new(table_def_arc.clone()) {
+                                Ok(table) => {
+                                    // 添加到表向量
+                                    db.tables[table_def.id as usize] = Some(table);
+                                    
+                                    // 创建主键索引
+                                    let hash_table_size = (table_def.max_records * 2).next_power_of_two();
+                                    let index_memory_size = crate::index::PrimaryIndex::calculate_memory_size(&table_def, hash_table_size, table_def.max_records);
+                                    
+                                    match crate::memory::allocator::alloc(index_memory_size) {
+                                        Ok(index_memory) => {
+                                            let hash_table_start = index_memory.as_ptr() as *mut Option<core::ptr::NonNull<crate::index::PrimaryIndexItem>>;
+                                            let items_start = (index_memory.as_ptr() as usize + hash_table_size * core::mem::size_of::<Option<core::ptr::NonNull<crate::index::PrimaryIndexItem>>>()) as *mut crate::index::PrimaryIndexItem;
+                                            
+                                            let primary_index = crate::index::PrimaryIndex::new(
+                                                table_def_arc.clone(),
+                                                hash_table_start,
+                                                items_start,
+                                                hash_table_size,
+                                                table_def.max_records
+                                            );
+                                            db.primary_indices[table_def.id as usize] = Some(primary_index);
+                                            
+                                            // 初始化辅助索引位置
+                                            db.secondary_indices[table_def.id as usize] = None;
+                                        },
+                                        Err(err) => {
+                                            println!("Warning: Failed to allocate memory for primary index: {:?}, skipping CreateTable operation for table_id {}", err, log_item.table_id);
+                                            db.tables[table_def.id as usize] = None;
+                                            continue;
+                                        }
+                                    }
+                                },
+                                Err(err) => {
+                                    println!("Warning: Failed to create MemoryTable: {:?}, skipping CreateTable operation for table_id {}", err, log_item.table_id);
+                                    continue;
+                                }
+                            }
+                        }
                     },
                     LogOperation::CreateIndex => {
                         // 执行创建索引操作
@@ -1021,12 +1336,6 @@ impl LogManager {
                         // 检查点操作不需要特殊处理，它只是标记了一个恢复点
                     },
                 }
-                },
-                Err(err) => {
-                    // 遇到错误（如校验和错误），跳过当前日志项，继续处理下一个
-                    println!("Warning: Failed to read log item {}: {:?}, skipping...", i, err);
-                }
-            }
         }
         
         Ok(())
