@@ -35,6 +35,253 @@ pub struct MemoryTable {
     pub max_pk: u64,
 }
 
+/// 记录只读引用（零拷贝视图）
+///
+/// # 生命周期与稳定性
+/// - 记录地址在此引用生命周期内保持稳定
+/// - 不允许在外部直接修改内部内存
+/// - 并发删除/覆盖可能导致引用失效，请在事务或安全借用范围内使用
+#[derive(Copy, Clone)]
+pub struct RecordRef<'a> {
+    table: &'a MemoryTable,
+    id: usize,
+    record_ptr: *const u8,
+}
+
+impl<'a> RecordRef<'a> {
+    /// 记录ID
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    /// 表定义
+    pub fn table_def(&self) -> &'a TableDef {
+        self.table.def.as_ref()
+    }
+
+
+    fn field_def(&self, col: usize) -> Result<&'a crate::types::FieldDef> {
+        self.table
+            .def
+            .fields
+            .get(col)
+            .ok_or(RemDbError::FieldNotFound)
+    }
+
+    fn field_ptr(&self, field: &crate::types::FieldDef) -> *const u8 {
+        unsafe { self.record_ptr.add(field.offset) }
+    }
+
+    /// 按列索引读取u8
+    pub fn get_u8(&self, col: usize) -> Result<u8> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::UInt8 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const u8) })
+    }
+
+    /// 按列索引读取u16
+    pub fn get_u16(&self, col: usize) -> Result<u16> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::UInt16 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const u16) })
+    }
+
+    /// 按列索引读取u32
+    pub fn get_u32(&self, col: usize) -> Result<u32> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::UInt32 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const u32) })
+    }
+
+    /// 按列索引读取u64
+    pub fn get_u64(&self, col: usize) -> Result<u64> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::UInt64 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const u64) })
+    }
+
+    /// 按列索引读取i8
+    pub fn get_i8(&self, col: usize) -> Result<i8> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::Int8 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const i8) })
+    }
+
+    /// 按列索引读取i16
+    pub fn get_i16(&self, col: usize) -> Result<i16> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::Int16 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const i16) })
+    }
+
+    /// 按列索引读取i32
+    pub fn get_i32(&self, col: usize) -> Result<i32> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::Int32 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const i32) })
+    }
+
+    /// 按列索引读取i64
+    pub fn get_i64(&self, col: usize) -> Result<i64> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::Int64 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const i64) })
+    }
+
+    /// 按列索引读取f32
+    pub fn get_f32(&self, col: usize) -> Result<f32> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::Float32 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const f32) })
+    }
+
+    /// 按列索引读取f64
+    pub fn get_f64(&self, col: usize) -> Result<f64> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::Float64 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const f64) })
+    }
+
+    /// 按列索引读取bool
+    pub fn get_bool(&self, col: usize) -> Result<bool> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::Bool {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const u8) != 0 })
+    }
+
+    /// 按列索引读取时间戳
+    pub fn get_timestamp(&self, col: usize) -> Result<crate::types::db_timestamp> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::Timestamp && field.data_type != DataType::TimestampTZ {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const crate::types::db_timestamp) })
+    }
+
+    /// 按列索引读取时间间隔
+    pub fn get_interval(&self, col: usize) -> Result<crate::types::db_interval> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::Interval {
+            return Err(RemDbError::TypeMismatch);
+        }
+        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const crate::types::db_interval) })
+    }
+
+    /// 按列索引读取字符串（零拷贝）
+    pub fn get_str(&self, col: usize) -> Result<&'a str> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::String {
+            return Err(RemDbError::TypeMismatch);
+        }
+        let bytes = unsafe { core::slice::from_raw_parts(self.field_ptr(field), field.size) };
+        let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+        core::str::from_utf8(&bytes[..end]).map_err(|_| RemDbError::TypeMismatch)
+    }
+
+    /// 按列索引读取原始字节切片（零拷贝）
+    pub fn get_bytes(&self, col: usize) -> Result<&'a [u8]> {
+        let field = self.field_def(col)?;
+        Ok(unsafe { core::slice::from_raw_parts(self.field_ptr(field), field.size) })
+    }
+}
+
+/// 记录游标（全表扫描）
+pub struct RecordCursor<'a> {
+    table: &'a MemoryTable,
+    next_id: usize,
+}
+
+impl<'a> RecordCursor<'a> {
+    fn new(table: &'a MemoryTable) -> Self {
+        Self { table, next_id: 0 }
+    }
+}
+
+impl<'a> Iterator for RecordCursor<'a> {
+    type Item = RecordRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.next_id < self.table.def.max_records {
+            let current = self.next_id;
+            self.next_id += 1;
+            unsafe {
+                let status_ptr = self.table.status_array.as_ptr().add(current);
+                if (*status_ptr).status == RecordStatus::Used {
+                    let record_ptr = self.table.get_record_ptr(current);
+                    return Some(RecordRef {
+                        table: self.table,
+                        id: current,
+                        record_ptr,
+                    });
+                }
+            }
+        }
+        None
+    }
+}
+
+/// 记录ID游标（基于索引结果）
+pub struct RecordIdCursor<'a> {
+    table: &'a MemoryTable,
+    ids: Vec<usize>,
+    pos: usize,
+}
+
+impl<'a> RecordIdCursor<'a> {
+    fn new(table: &'a MemoryTable, ids: Vec<usize>) -> Self {
+        Self { table, ids, pos: 0 }
+    }
+}
+
+impl<'a> Iterator for RecordIdCursor<'a> {
+    type Item = RecordRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.pos < self.ids.len() {
+            let id = self.ids[self.pos];
+            self.pos += 1;
+            if id >= self.table.def.max_records {
+                continue;
+            }
+            unsafe {
+                let status_ptr = self.table.status_array.as_ptr().add(id);
+                if (*status_ptr).status == RecordStatus::Used {
+                    let record_ptr = self.table.get_record_ptr(id);
+                    return Some(RecordRef {
+                        table: self.table,
+                        id,
+                        record_ptr,
+                    });
+                }
+            }
+        }
+        None
+    }
+}
+
+
 // 添加Drop trait实现，用于释放动态分配的内存
 impl Drop for MemoryTable {
     fn drop(&mut self) {
@@ -770,8 +1017,41 @@ impl MemoryTable {
         
         Ok(())
     }
+
+    /// 根据ID获取记录引用（零拷贝）
+    pub fn get_by_id_ref(&self, id: usize) -> Option<RecordRef<'_>> {
+        // 增加读取操作计数
+        crate::get_global_db().map(|db| db.metrics.inc_read_ops());
+        if id >= self.def.max_records {
+            return None;
+        }
+        unsafe {
+            let status_ptr = self.status_array.as_ptr().add(id);
+            if (*status_ptr).status != RecordStatus::Used {
+                return None;
+            }
+            let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
+            Some(RecordRef {
+                table: self,
+                id,
+                record_ptr,
+            })
+        }
+    }
+
+    /// 扫描游标（零拷贝）
+    pub fn scan_ref(&self) -> RecordCursor<'_> {
+        RecordCursor::new(self)
+    }
+
+    /// 基于记录ID列表的游标（零拷贝）
+    pub fn scan_ids_ref(&self, ids: Vec<usize>) -> RecordIdCursor<'_> {
+        RecordIdCursor::new(self, ids)
+    }
     
     /// 发布表数据变更到pubsub
+
+
     #[cfg(feature = "pubsub")]
     unsafe fn publish_to_pubsub(&self, id: usize, record_data: *const u8, is_insert: bool) {
         let table_name = self.def.name;

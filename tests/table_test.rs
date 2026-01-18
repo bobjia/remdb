@@ -2,8 +2,10 @@ extern crate alloc;
 use remdb::table::*;
 use remdb::types::*;
 use remdb::platform::*;
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use std::sync::Mutex;
+
 
 // 全局互斥锁，确保测试串行执行
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
@@ -661,5 +663,84 @@ fn test_not_null_constraint() {
         let record_id4 = table2.insert(valid_record.as_ptr()).unwrap();
         assert_eq!(record_id4, 0);
         assert_eq!(table2.record_count(), 1);
+    }
+}
+
+#[test]
+fn test_table_record_ref_and_scan_ref() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+
+    unsafe {
+        // 使用静态内存缓冲区初始化全局分配器
+        remdb::memory::allocator::init_global_allocator(
+            DB_MEMORY.as_mut_ptr(),
+            DB_MEMORY.len()
+        ).unwrap();
+
+        // 重置全局数据库实例，确保测试之间的隔离
+        remdb::reset_global_db();
+
+        let fields: &'static [FieldDef] = Box::leak(vec![
+            FieldDef {
+                name: "id",
+                data_type: DataType::UInt32,
+                size: 4,
+                offset: 0,
+                primary_key: true,
+                not_null: true,
+                unique: true,
+                auto_increment: true,
+                default_value: None,
+            },
+            FieldDef {
+                name: "name",
+                data_type: DataType::String,
+                size: 8,
+                offset: 4,
+                primary_key: false,
+                not_null: false,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+            },
+        ].into_boxed_slice());
+
+        let table_def = TableDef {
+            id: 3,
+            name: "ref_table",
+            fields,
+            primary_key: 0,
+            secondary_index: None,
+            secondary_index_type: IndexType::SortedArray,
+            record_size: 12,
+            max_records: 10,
+        };
+
+        let table_def = Arc::new(table_def);
+        let mut table = MemoryTable::new(table_def).unwrap();
+
+        let mut record1 = [0u8; 12];
+        let id1: u32 = 1;
+        core::ptr::copy_nonoverlapping(&id1 as *const u32 as *const u8, record1.as_mut_ptr(), 4);
+        let name1 = b"alice";
+        core::ptr::copy_nonoverlapping(name1.as_ptr(), record1.as_mut_ptr().add(4), name1.len());
+        table.insert(record1.as_ptr()).unwrap();
+
+        let mut record2 = [0u8; 12];
+        let id2: u32 = 2;
+        core::ptr::copy_nonoverlapping(&id2 as *const u32 as *const u8, record2.as_mut_ptr(), 4);
+        let name2 = b"bob";
+        core::ptr::copy_nonoverlapping(name2.as_ptr(), record2.as_mut_ptr().add(4), name2.len());
+        table.insert(record2.as_ptr()).unwrap();
+
+        let record_ref = table.get_by_id_ref(0).expect("record not found");
+        assert_eq!(record_ref.get_u32(0).unwrap(), 1);
+        assert_eq!(record_ref.get_str(1).unwrap(), "alice");
+
+        let count = table.scan_ref().count();
+        assert_eq!(count, 2);
     }
 }
