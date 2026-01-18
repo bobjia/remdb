@@ -764,6 +764,27 @@ impl RemDb {
                 
                 current_status.status = crate::types::RecordStatus::Used;
                 current_status.version += 1;
+                
+                // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
+                let record_ptr = unsafe { table.get_record_ptr_mut(i) };
+                let primary_key_field = &table.def.fields[table.def.primary_key];
+                let new_pk = unsafe {
+                    let key_ptr = record_ptr.add(primary_key_field.offset);
+                    match primary_key_field.data_type {
+                        crate::types::DataType::UInt8 => *(key_ptr as *const u8) as u64,
+                        crate::types::DataType::UInt16 => core::ptr::read_unaligned(key_ptr as *const u16) as u64,
+                        crate::types::DataType::UInt32 => core::ptr::read_unaligned(key_ptr as *const u32) as u64,
+                        crate::types::DataType::UInt64 => core::ptr::read_unaligned(key_ptr as *const u64),
+                        crate::types::DataType::Int8 => *(key_ptr as *const i8) as u64,
+                        crate::types::DataType::Int16 => core::ptr::read_unaligned(key_ptr as *const i16) as u64,
+                        crate::types::DataType::Int32 => core::ptr::read_unaligned(key_ptr as *const i32) as u64,
+                        crate::types::DataType::Int64 => core::ptr::read_unaligned(key_ptr as *const i64) as u64,
+                        _ => 0,
+                    }
+                };
+                if new_pk > table.max_pk {
+                    table.max_pk = new_pk;
+                }
             }
         }
         

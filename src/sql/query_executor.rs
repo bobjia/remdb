@@ -4042,12 +4042,71 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                 // 使用表中已维护的最大主键值
                 let max_pk = table.max_pk;
                 
-                // 生成新的主键值，防止溢出
-                let new_pk = if max_pk == u64::MAX {
-                    // 如果max_pk已经是最大值，重置为1
-                    1
-                } else {
-                    max_pk + 1
+                // 生成新的主键值，考虑目标数据类型的最大值，防止溢出
+                let new_pk = match field.data_type {
+                    DataType::UInt8 => {
+                        if max_pk >= u8::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::UInt16 => {
+                        if max_pk >= u16::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::UInt32 => {
+                        if max_pk >= u32::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::UInt64 => {
+                        if max_pk >= u64::MAX {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::Int8 => {
+                        if max_pk >= i8::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::Int16 => {
+                        if max_pk >= i16::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::Int32 => {
+                        if max_pk >= i32::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::Int64 => {
+                        if max_pk >= i64::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    _ => {
+                        if max_pk == u64::MAX {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    }
                 };
                 
                 // 更新表的最大主键值
@@ -4069,44 +4128,16 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                             core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u64, new_pk);
                         },
                         DataType::Int8 => {
-                            // 确保new_pk不超过i8的最大值
-                            let new_pk_i8 = if new_pk <= i8::MAX as u64 {
-                                new_pk as i8
-                            } else {
-                                // 如果超出范围，重置为1
-                                1
-                            };
-                            record_data[field.offset] = new_pk_i8 as u8;
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i8, new_pk as i8);
                         },
                         DataType::Int16 => {
-                            // 确保new_pk不超过i16的最大值
-                            let new_pk_i16 = if new_pk <= i16::MAX as u64 {
-                                new_pk as i16
-                            } else {
-                                // 如果超出范围，重置为1
-                                1
-                            };
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i16, new_pk_i16);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i16, new_pk as i16);
                         },
                         DataType::Int32 => {
-                            // 确保new_pk不超过i32的最大值
-                            let new_pk_i32 = if new_pk <= i32::MAX as u64 {
-                                new_pk as i32
-                            } else {
-                                // 如果超出范围，重置为1
-                                1
-                            };
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i32, new_pk_i32);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i32, new_pk as i32);
                         },
                         DataType::Int64 => {
-                            // 确保new_pk不超过i64的最大值
-                            let new_pk_i64 = if new_pk <= i64::MAX as u64 {
-                                new_pk as i64
-                            } else {
-                                // 如果超出范围，重置为1
-                                1
-                            };
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i64, new_pk_i64);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i64, new_pk as i64);
                         },
                         _ => {}
                     }

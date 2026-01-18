@@ -1450,19 +1450,43 @@ impl LogManager {
                     let status_ptr = table.get_status_ptr(log_item.record_id as usize);
                     if (*status_ptr).status != crate::types::RecordStatus::Used {
                         // 记录不存在，执行插入
-                        let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                        crate::platform::memcpy(
-                            record_ptr,
-                            log_item.new_data.as_ptr(),
-                            log_item.data_size as usize
-                        );
-                        
-                        (*status_ptr).status = crate::types::RecordStatus::Used;
-                        (*status_ptr).version += 1;
-                        (*status_ptr).create_tx_id = log_item.tx_id;
-                        (*status_ptr).delete_tx_id = 0;
-                        (*status_ptr).next_version_ptr = 0;
-                        table.inc_record_count();
+                    let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                    crate::platform::memcpy(
+                        record_ptr,
+                        log_item.new_data.as_ptr(),
+                        log_item.data_size as usize
+                    );
+                    
+                    (*status_ptr).status = crate::types::RecordStatus::Used;
+                    (*status_ptr).version += 1;
+                    (*status_ptr).create_tx_id = log_item.tx_id;
+                    (*status_ptr).delete_tx_id = 0;
+                    (*status_ptr).next_version_ptr = 0;
+                    table.inc_record_count();
+                    
+                    // 从空闲槽栈中移除该槽位，确保不重复使用
+                    if table.free_slot_count > 0 {
+                        // 查找并移除该槽位
+                        let mut found = false;
+                        let mut i = 0;
+                        while i < table.free_slot_count {
+                            if *table.free_slots.as_ptr().add(i) == log_item.record_id as usize {
+                                // 找到，将最后一个元素移动到当前位置
+                                *table.free_slots.as_ptr().add(i) = *table.free_slots.as_ptr().add(table.free_slot_count - 1);
+                                table.free_slot_count -= 1;
+                                found = true;
+                                break;
+                            }
+                            i += 1;
+                        }
+                        if !found {
+                            // 如果没有找到，说明可能已经被移除，或者初始状态不对，直接减少free_slot_count
+                            // 但确保不小于0
+                            if table.free_slot_count > 0 {
+                                table.free_slot_count -= 1;
+                            }
+                        }
+                    }
                         
                         // 更新主键索引
                         if let Some(primary_index) = &mut db.primary_indices[table_id] {
