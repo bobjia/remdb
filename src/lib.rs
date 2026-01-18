@@ -23,7 +23,7 @@ pub mod time_series;
 pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType, MAX_STRING_LEN};
 pub use table::MemoryTable;
 pub use index::{PrimaryIndex, SecondaryIndex, BTreeIndex, TTreeIndex, IndexStats, AnySecondaryIndex, PrimaryIndexItem};
-pub use transaction::{Transaction, TransactionType, TransactionManager};
+pub use transaction::{Transaction, TransactionType};
 pub use monitor::{DbMetrics, DbMetricsSnapshot, HealthStatus, HealthCheckResult};
 pub use time_series::{TimeSeriesTable, TimeSeriesTableDef, TimeSeriesRecord, TimeSeriesConfig, TimeSeriesIndex, CompressionType};
 
