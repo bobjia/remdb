@@ -120,7 +120,111 @@ int main() {
                result_buffer[i].tags[1]);
     }
     
-    printf("C API time series example completed successfully\n");
+    // 导出DDL
+    printf("\nExporting DDL...\n");
+    error = remdb_export_ddl(handle, "timeseries_ddl.sql");
+    if (error != REMDB_SUCCESS) {
+        printf("Failed to export DDL: %d\n", error);
+    } else {
+        printf("DDL exported successfully to 'timeseries_ddl.sql'\n");
+    }
+    
+    // 导出数据
+    printf("Exporting data...\n");
+    error = remdb_export_data(handle, "timeseries_data.sql");
+    if (error != REMDB_SUCCESS) {
+        printf("Failed to export data: %d\n", error);
+    } else {
+        printf("Data exported successfully to 'timeseries_data.sql'\n");
+    }
+    
+    // SQL查询时序表
+    printf("\nSQL Query Example...\n");
+    RemDbResultSet* result_set = NULL;
+    error = remdb_sql_query(handle, "SELECT id, timestamp, value, tag1, tag2 FROM sensor_data WHERE tag1 = 100", &result_set);
+    if (error != REMDB_SUCCESS) {
+        printf("Failed to execute SQL query: %d\n", error);
+    } else {
+        printf("SQL query executed successfully!\n");
+        printf("Query results: %zu rows\n", result_set->rows_count);
+        printf("Columns: %zu\n", result_set->columns_count);
+        
+        // 打印列名
+        printf("Column names: ");
+        for (size_t i = 0; i < result_set->columns_count; i++) {
+            const char* column_name = *(result_set->columns + i);
+            printf("%s", column_name);
+            if (i < result_set->columns_count - 1) {
+                printf(", ");
+            }
+        }
+        printf("\n\n");
+        
+        // 打印行数据
+        for (size_t i = 0; i < result_set->rows_count; i++) {
+            const RemDbResultRow* row = &result_set->rows[i];
+            printf("Row %zu: ", i + 1);
+            
+            for (size_t j = 0; j < row->values_count; j++) {
+                const RemDbTypedValue* value = &row->values[j];
+                
+                // 根据数据类型打印值
+                switch (value->data_type) {
+                    case REMDB_TYPE_UINT64:
+                        printf("%llu", value->value.u64);
+                        break;
+                    case REMDB_TYPE_TIMESTAMP:
+                        printf("%llu", value->value.u64);
+                        break;
+                    case REMDB_TYPE_FLOAT64:
+                        printf("%.2f", value->value.float64);
+                        break;
+                    case REMDB_TYPE_UINT32:
+                        printf("%u", value->value.u32);
+                        break;
+                    default:
+                        printf("<unsupported type>");
+                        break;
+                }
+                
+                if (j < row->values_count - 1) {
+                    printf(", ");
+                }
+            }
+            printf("\n");
+        }
+        
+        // 释放结果集
+        error = remdb_free_result_set(result_set);
+        if (error != REMDB_SUCCESS) {
+            printf("Failed to free result set: %d\n", error);
+        } else {
+            printf("\nResult set freed successfully\n");
+        }
+    }
+    
+    // 执行查询示例
+    printf("\nExecute Query Example...\n");
+    
+    // 定义要查询的列
+    const char* columns[] = {"id", "timestamp", "value"};
+    size_t columns_count = sizeof(columns) / sizeof(columns[0]);
+    
+    // 执行查询
+    error = remdb_execute_query(handle, "sensor_data", columns, columns_count, "tag2 > 200", 5, &result_set);
+    if (error != REMDB_SUCCESS) {
+        printf("Failed to execute query: %d\n", error);
+    } else {
+        printf("Query executed successfully! %zu rows returned\n", result_set->rows_count);
+        
+        // 释放结果集
+        error = remdb_free_result_set(result_set);
+        if (error != REMDB_SUCCESS) {
+            printf("Failed to free result set: %d\n", error);
+        }
+    }
+    
+    printf("\nC API time series example completed successfully\n");
     
     return 0;
 }

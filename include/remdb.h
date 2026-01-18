@@ -47,45 +47,6 @@ enum RemDbCompressionType {
 };
 
 /**
- * @brief Time series record
- */
-typedef struct RemDbTimeSeriesRecord {
-    uint64_t timestamp;
-    double value;
-    uint8_t tag_count;
-    uint64_t tags[8];
-} RemDbTimeSeriesRecord;
-
-/**
- * @brief Time series configuration
- */
-typedef struct RemDbTimeSeriesConfig {
-    uint64_t partition_duration_secs;
-    uint64_t retention_period_secs;
-    enum RemDbCompressionType compression;
-    size_t max_partitions;
-} RemDbTimeSeriesConfig;
-
-/**
- * @brief Time series table definition
- */
-typedef struct RemDbTimeSeriesTableDef {
-    uint8_t id;
-    const char* name;
-    const RemDbFieldDef* fields;
-    size_t fields_count;
-    size_t primary_key;
-    int32_t secondary_index;
-    size_t record_size;
-    size_t max_records;
-    size_t time_field;
-    size_t value_field;
-    const size_t* tag_fields;
-    size_t tag_fields_count;
-    RemDbTimeSeriesConfig config;
-} RemDbTimeSeriesTableDef;
-
-/**
  * @brief Maximum string length supported by RemDB
  */
 #define REMDB_MAX_STRING_LEN 64
@@ -128,6 +89,71 @@ typedef struct RemDbTableDef {
     size_t record_size;
     size_t max_records;
 } RemDbTableDef;
+
+/**
+ * @brief Typed value for SQL result set
+ */
+typedef struct RemDbTypedValue {
+    enum RemDbDataType data_type;
+    RemDbValue value;
+} RemDbTypedValue;
+
+/**
+ * @brief Result row for SQL result set
+ */
+typedef struct RemDbResultRow {
+    const RemDbTypedValue* values;
+    size_t values_count;
+} RemDbResultRow;
+
+/**
+ * @brief Result set for SQL query
+ */
+typedef struct RemDbResultSet {
+    const char** columns;
+    size_t columns_count;
+    const RemDbResultRow* rows;
+    size_t rows_count;
+} RemDbResultSet;
+
+/**
+ * @brief Time series record
+ */
+typedef struct RemDbTimeSeriesRecord {
+    uint64_t timestamp;
+    double value;
+    uint8_t tag_count;
+    uint64_t tags[8];
+} RemDbTimeSeriesRecord;
+
+/**
+ * @brief Time series configuration
+ */
+typedef struct RemDbTimeSeriesConfig {
+    uint64_t partition_duration_secs;
+    uint64_t retention_period_secs;
+    enum RemDbCompressionType compression;
+    size_t max_partitions;
+} RemDbTimeSeriesConfig;
+
+/**
+ * @brief Time series table definition
+ */
+typedef struct RemDbTimeSeriesTableDef {
+    uint8_t id;
+    const char* name;
+    const RemDbFieldDef* fields;
+    size_t fields_count;
+    size_t primary_key;
+    int32_t secondary_index;
+    size_t record_size;
+    size_t max_records;
+    size_t time_field;
+    size_t value_field;
+    const size_t* tag_fields;
+    size_t tag_fields_count;
+    RemDbTimeSeriesConfig config;
+} RemDbTimeSeriesTableDef;
 
 /**
  * @brief Database configuration
@@ -485,6 +511,118 @@ enum RemDbError remdb_time_series_query(RemDbHandle handle, size_t table_id, uin
  * @return Error code
  */
 enum RemDbError remdb_time_series_table_get_by_name(RemDbHandle handle, const char* name, size_t* table_id);
+
+/* =========================================== */
+/*              SQL Query Operations           */
+/* =========================================== */
+
+/**
+ * @brief Execute SQL query
+ *
+ * @param handle Database handle
+ * @param sql SQL query string
+ * @param result_set Output parameter for result set
+ * @return Error code
+ */
+enum RemDbError remdb_sql_query(RemDbHandle handle, const char* sql, RemDbResultSet** result_set);
+
+/**
+ * @brief Execute query operation
+ *
+ * @param handle Database handle
+ * @param table_name Table name
+ * @param columns Column names to query
+ * @param columns_count Number of columns
+ * @param where_clause WHERE clause (optional)
+ * @param limit Result limit (-1 for no limit)
+ * @param result_set Output parameter for result set
+ * @return Error code
+ */
+enum RemDbError remdb_execute_query(RemDbHandle handle, const char* table_name, const char** columns, size_t columns_count, const char* where_clause, int32_t limit, RemDbResultSet** result_set);
+
+/**
+ * @brief Free result set memory
+ *
+ * @param result_set Result set to free
+ * @return Error code
+ */
+enum RemDbError remdb_free_result_set(RemDbResultSet* result_set);
+
+/* =========================================== */
+/*              Data Manipulation Operations   */
+/* =========================================== */
+
+/**
+ * @brief Create table
+ *
+ * @param handle Database handle
+ * @param table_name Table name
+ * @param fields Field definitions
+ * @param fields_count Number of fields
+ * @param primary_key Primary key field index (-1 for no primary key)
+ * @return Error code
+ */
+enum RemDbError remdb_create_table(RemDbHandle handle, const char* table_name, const RemDbFieldDef* fields, size_t fields_count, int32_t primary_key);
+
+/**
+ * @brief Batch insert records
+ *
+ * @param handle Database handle
+ * @param table_name Table name
+ * @param column_names Column names
+ * @param column_names_count Number of column names
+ * @param records Records to insert
+ * @param records_count Number of records
+ * @param values_per_record Number of values per record
+ * @param affected_rows Output parameter for number of affected rows
+ * @return Error code
+ */
+enum RemDbError remdb_batch_insert_record(RemDbHandle handle, const char* table_name, const char** column_names, size_t column_names_count, const char*** records, size_t records_count, size_t values_per_record, size_t* affected_rows);
+
+/**
+ * @brief Update records
+ *
+ * @param handle Database handle
+ * @param table_name Table name
+ * @param set_clause SET clause
+ * @param where_clause WHERE clause (optional)
+ * @param affected_rows Output parameter for number of affected rows
+ * @return Error code
+ */
+enum RemDbError remdb_update_record(RemDbHandle handle, const char* table_name, const char* set_clause, const char* where_clause, size_t* affected_rows);
+
+/**
+ * @brief Delete records
+ *
+ * @param handle Database handle
+ * @param table_name Table name
+ * @param where_clause WHERE clause (optional)
+ * @param affected_rows Output parameter for number of affected rows
+ * @return Error code
+ */
+enum RemDbError remdb_delete_record(RemDbHandle handle, const char* table_name, const char* where_clause, size_t* affected_rows);
+
+/* =========================================== */
+/*              Export Operations              */
+/* =========================================== */
+
+/**
+ * @brief Export DDL to file
+ *
+ * @param handle Database handle
+ * @param path File path
+ * @return Error code
+ */
+enum RemDbError remdb_export_ddl(RemDbHandle handle, const char* path);
+
+/**
+ * @brief Export data to file
+ *
+ * @param handle Database handle
+ * @param path File path
+ * @return Error code
+ */
+enum RemDbError remdb_export_data(RemDbHandle handle, const char* path);
 
 #ifdef __cplusplus
 }

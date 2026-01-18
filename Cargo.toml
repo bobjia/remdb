@@ -18,7 +18,7 @@ repository = "https://github.com/bobjia/remdb"
 [lib]
 name = "remdb"
 path = "src/lib.rs"
-crate-type = ["staticlib", "rlib"]
+crate-type = ["staticlib", "rlib", "cdylib"]
 
 
 

@@ -308,6 +308,56 @@ impl From<crate::HealthCheckResult> for RemDbHealthCheckResult {
     }
 }
 
+/// C API: 类型化值
+#[repr(C)]
+pub struct RemDbTypedValue {
+    pub data_type: RemDbDataType,
+    pub value: RemDbValue,
+}
+
+impl From<crate::types::TypedValue> for RemDbTypedValue {
+    fn from(rust_value: crate::types::TypedValue) -> Self {
+        unsafe {
+            RemDbTypedValue {
+                data_type: match rust_value.value_type {
+                    crate::DataType::UInt8 => RemDbDataType::UInt8,
+                    crate::DataType::UInt16 => RemDbDataType::UInt16,
+                    crate::DataType::UInt32 => RemDbDataType::UInt32,
+                    crate::DataType::UInt64 => RemDbDataType::UInt64,
+                    crate::DataType::Int8 => RemDbDataType::UInt8, // 映射为无符号类型
+                    crate::DataType::Int16 => RemDbDataType::UInt16, // 映射为无符号类型
+                    crate::DataType::Int32 => RemDbDataType::UInt32, // 映射为无符号类型
+                    crate::DataType::Int64 => RemDbDataType::UInt64, // 映射为无符号类型
+                    crate::DataType::Float32 => RemDbDataType::Float32,
+                    crate::DataType::Float64 => RemDbDataType::Float64,
+                    crate::DataType::Bool => RemDbDataType::Bool,
+                    crate::DataType::Timestamp => RemDbDataType::Timestamp,
+                    crate::DataType::TimestampTZ => RemDbDataType::Timestamp, // 映射为Timestamp
+                    crate::DataType::String => RemDbDataType::String,
+                    crate::DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
+                },
+                value: rust_value.value.into(),
+            }
+        }
+    }
+}
+
+/// C API: 结果行
+#[repr(C)]
+pub struct RemDbResultRow {
+    pub values: *const RemDbTypedValue,
+    pub values_count: usize,
+}
+
+/// C API: 结果集
+#[repr(C)]
+pub struct RemDbResultSet {
+    pub columns: *const *const u8,
+    pub columns_count: usize,
+    pub rows: *const RemDbResultRow,
+    pub rows_count: usize,
+}
+
 /// C API: UDP模式枚举
 #[repr(u8)]
 #[derive(Copy, Clone)]
@@ -497,6 +547,7 @@ impl From<crate::RemDbError> for RemDbError {
             crate::RemDbError::InvalidSqlQuery => RemDbError::UnsupportedOperation,
             crate::RemDbError::InternalError => RemDbError::UnsupportedOperation,
             crate::RemDbError::NoRecordsToOverwrite => RemDbError::RecordNotFound,
+            crate::RemDbError::TwoMoreIndexNotSupported => RemDbError::ConfigError, // 映射为ConfigError
         }
     }
 }
@@ -1469,6 +1520,510 @@ pub unsafe fn get_time_series_table_mut(
     match &mut db.time_series_tables[table_id] {
         Some(table) => Ok(table),
         None => Err(crate::RemDbError::TableNotFound),
+    }
+}
+
+/// C API: 将Rust结果集转换为C结果集
+/// 注意：返回的结果集需要通过remdb_free_result_set释放内存
+#[no_mangle]
+pub unsafe extern "C" fn remdb_sql_query(
+    handle: RemDbHandle,
+    sql: *const u8,
+    result_set: *mut *mut RemDbResultSet,
+) -> RemDbError {
+    if handle.is_null() || sql.is_null() || result_set.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &mut *handle;
+    let rust_sql = c_str_to_rust(sql);
+    
+    match db.sql_query(&rust_sql) {
+        Ok(rust_result_set) => {
+            // 分配内存存储结果集
+            let c_result_set = alloc::alloc::alloc(alloc::alloc::Layout::new::<RemDbResultSet>()) as *mut RemDbResultSet;
+            if c_result_set.is_null() {
+                return RemDbError::OutOfMemory;
+            }
+            
+            // 分配内存存储列名
+            let columns = alloc::alloc::alloc(alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).unwrap()) as *mut *const u8;
+            if columns.is_null() {
+                alloc::alloc::dealloc(c_result_set as *mut u8, alloc::alloc::Layout::new::<RemDbResultSet>());
+                return RemDbError::OutOfMemory;
+            }
+            
+            // 转换列名
+            for (i, column) in rust_result_set.columns.iter().enumerate() {
+                let column_str = alloc::alloc::alloc(alloc::alloc::Layout::array::<u8>(column.len() + 1).unwrap()) as *mut u8;
+                if column_str.is_null() {
+                    // 释放已分配的内存
+                    for j in 0..i {
+                        let col = *columns.offset(j as isize);
+                        alloc::alloc::dealloc(col as *mut u8, alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap());
+                    }
+                    alloc::alloc::dealloc(columns as *mut u8, alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).unwrap());
+                    alloc::alloc::dealloc(c_result_set as *mut u8, alloc::alloc::Layout::new::<RemDbResultSet>());
+                    return RemDbError::OutOfMemory;
+                }
+                
+                // 复制列名字符串
+                core::ptr::copy_nonoverlapping(column.as_ptr(), column_str, column.len());
+                *column_str.offset(column.len() as isize) = 0; // 添加终止符
+                *columns.offset(i as isize) = column_str as *const u8;
+            }
+            
+            // 分配内存存储行
+            let rows = alloc::alloc::alloc(alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len()).unwrap()) as *mut RemDbResultRow;
+            if rows.is_null() {
+                // 释放已分配的内存
+                for i in 0..rust_result_set.columns.len() {
+                    let col = *columns.offset(i as isize);
+                    alloc::alloc::dealloc(col as *mut u8, alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap());
+                }
+                alloc::alloc::dealloc(columns as *mut u8, alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).unwrap());
+                alloc::alloc::dealloc(c_result_set as *mut u8, alloc::alloc::Layout::new::<RemDbResultSet>());
+                return RemDbError::OutOfMemory;
+            }
+            
+            // 转换行数据
+            for (i, row) in rust_result_set.rows.iter().enumerate() {
+                // 分配内存存储值
+                let values = alloc::alloc::alloc(alloc::alloc::Layout::array::<RemDbTypedValue>(row.values.len()).unwrap()) as *mut RemDbTypedValue;
+                if values.is_null() {
+                    // 释放已分配的内存
+                    for j in 0..i {
+                        let r = &*rows.offset(j as isize);
+                        alloc::alloc::dealloc(r.values as *mut u8, alloc::alloc::Layout::array::<RemDbTypedValue>(r.values_count).unwrap());
+                    }
+                    alloc::alloc::dealloc(rows as *mut u8, alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len()).unwrap());
+                    for j in 0..rust_result_set.columns.len() {
+                        let col = *columns.offset(j as isize);
+                        alloc::alloc::dealloc(col as *mut u8, alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap());
+                    }
+                    alloc::alloc::dealloc(columns as *mut u8, alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).unwrap());
+                    alloc::alloc::dealloc(c_result_set as *mut u8, alloc::alloc::Layout::new::<RemDbResultSet>());
+                    return RemDbError::OutOfMemory;
+                }
+                
+                // 转换值
+                for (j, value) in row.values.iter().enumerate() {
+                    *values.offset(j as isize) = value.clone().into();
+                }
+                
+                // 设置行数据
+                let row_ptr = rows.offset(i as isize);
+                (*row_ptr).values = values;
+                (*row_ptr).values_count = row.values.len();
+            }
+            
+            // 设置结果集数据
+            (*c_result_set).columns = columns;
+            (*c_result_set).columns_count = rust_result_set.columns.len();
+            (*c_result_set).rows = rows;
+            (*c_result_set).rows_count = rust_result_set.rows.len();
+            
+            *result_set = c_result_set;
+            RemDbError::Success
+        },
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 释放结果集内存
+#[no_mangle]
+pub unsafe extern "C" fn remdb_free_result_set(
+    result_set: *mut RemDbResultSet,
+) -> RemDbError {
+    if result_set.is_null() {
+        return RemDbError::Success;
+    }
+    
+    let rs = &mut *result_set;
+    
+    // 释放列名
+    for i in 0..rs.columns_count {
+        let col = *rs.columns.offset(i as isize);
+        if !col.is_null() {
+            alloc::alloc::dealloc(col as *mut u8, alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap());
+        }
+    }
+    alloc::alloc::dealloc(rs.columns as *mut u8, alloc::alloc::Layout::array::<*const u8>(rs.columns_count).unwrap());
+    
+    // 释放行数据
+    for i in 0..rs.rows_count {
+        let row = &*rs.rows.offset(i as isize);
+        if !row.values.is_null() {
+            alloc::alloc::dealloc(row.values as *mut u8, alloc::alloc::Layout::array::<RemDbTypedValue>(row.values_count).unwrap());
+        }
+    }
+    alloc::alloc::dealloc(rs.rows as *mut u8, alloc::alloc::Layout::array::<RemDbResultRow>(rs.rows_count).unwrap());
+    
+    // 释放结果集本身
+    alloc::alloc::dealloc(result_set as *mut u8, alloc::alloc::Layout::new::<RemDbResultSet>());
+    
+    RemDbError::Success
+}
+
+/// C API: 执行查询操作
+#[no_mangle]
+pub unsafe extern "C" fn remdb_execute_query(
+    handle: RemDbHandle,
+    table_name: *const u8,
+    columns: *const *const u8,
+    columns_count: usize,
+    where_clause: *const u8,
+    limit: i32,
+    result_set: *mut *mut RemDbResultSet,
+) -> RemDbError {
+    if handle.is_null() || table_name.is_null() || result_set.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &mut *handle;
+    let rust_table_name = c_str_to_rust(table_name);
+    
+    // 转换列名
+    let mut rust_columns = Vec::with_capacity(columns_count);
+    for i in 0..columns_count {
+        let col = *columns.offset(i as isize);
+        if !col.is_null() {
+            rust_columns.push(c_str_to_rust(col));
+        }
+    }
+    
+    // 转换where子句
+    let rust_where_clause = if !where_clause.is_null() {
+        Some(c_str_to_rust(where_clause))
+    } else {
+        None
+    };
+    
+    // 转换limit
+    let rust_limit = if limit > 0 {
+        Some(limit as usize)
+    } else {
+        None
+    };
+    
+    match db.execute_query(
+        &rust_table_name,
+        &rust_columns.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
+        rust_where_clause.as_deref(),
+        rust_limit,
+    ) {
+        Ok(rust_result_set) => {
+            // 分配内存存储结果集
+            let c_result_set = alloc::alloc::alloc(alloc::alloc::Layout::new::<RemDbResultSet>()) as *mut RemDbResultSet;
+            if c_result_set.is_null() {
+                return RemDbError::OutOfMemory;
+            }
+            
+            // 分配内存存储列名
+            let columns_ptr = alloc::alloc::alloc(alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).unwrap()) as *mut *const u8;
+            if columns_ptr.is_null() {
+                alloc::alloc::dealloc(c_result_set as *mut u8, alloc::alloc::Layout::new::<RemDbResultSet>());
+                return RemDbError::OutOfMemory;
+            }
+            
+            // 转换列名
+            for (i, column) in rust_result_set.columns.iter().enumerate() {
+                let column_str = alloc::alloc::alloc(alloc::alloc::Layout::array::<u8>(column.len() + 1).unwrap()) as *mut u8;
+                if column_str.is_null() {
+                    // 释放已分配的内存
+                    for j in 0..i {
+                        let col = *columns_ptr.offset(j as isize);
+                        alloc::alloc::dealloc(col as *mut u8, alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap());
+                    }
+                    alloc::alloc::dealloc(columns_ptr as *mut u8, alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).unwrap());
+                    alloc::alloc::dealloc(c_result_set as *mut u8, alloc::alloc::Layout::new::<RemDbResultSet>());
+                    return RemDbError::OutOfMemory;
+                }
+                
+                // 复制列名字符串
+                core::ptr::copy_nonoverlapping(column.as_ptr(), column_str, column.len());
+                *column_str.offset(column.len() as isize) = 0; // 添加终止符
+                *columns_ptr.offset(i as isize) = column_str as *const u8;
+            }
+            
+            // 分配内存存储行
+            let rows_ptr = alloc::alloc::alloc(alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len()).unwrap()) as *mut RemDbResultRow;
+            if rows_ptr.is_null() {
+                // 释放已分配的内存
+                for i in 0..rust_result_set.columns.len() {
+                    let col = *columns_ptr.offset(i as isize);
+                    alloc::alloc::dealloc(col as *mut u8, alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap());
+                }
+                alloc::alloc::dealloc(columns_ptr as *mut u8, alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).unwrap());
+                alloc::alloc::dealloc(c_result_set as *mut u8, alloc::alloc::Layout::new::<RemDbResultSet>());
+                return RemDbError::OutOfMemory;
+            }
+            
+            // 转换行数据
+            for (i, row) in rust_result_set.rows.iter().enumerate() {
+                // 分配内存存储值
+                let values_ptr = alloc::alloc::alloc(alloc::alloc::Layout::array::<RemDbTypedValue>(row.values.len()).unwrap()) as *mut RemDbTypedValue;
+                if values_ptr.is_null() {
+                    // 释放已分配的内存
+                    for j in 0..i {
+                        let r = &*rows_ptr.offset(j as isize);
+                        if !r.values.is_null() {
+                            alloc::alloc::dealloc(r.values as *mut u8, alloc::alloc::Layout::array::<RemDbTypedValue>(r.values_count).unwrap());
+                        }
+                    }
+                    alloc::alloc::dealloc(rows_ptr as *mut u8, alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len()).unwrap());
+                    for j in 0..rust_result_set.columns.len() {
+                        let col = *columns_ptr.offset(j as isize);
+                        alloc::alloc::dealloc(col as *mut u8, alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap());
+                    }
+                    alloc::alloc::dealloc(columns_ptr as *mut u8, alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).unwrap());
+                    alloc::alloc::dealloc(c_result_set as *mut u8, alloc::alloc::Layout::new::<RemDbResultSet>());
+                    return RemDbError::OutOfMemory;
+                }
+                
+                // 转换值
+                for (j, value) in row.values.iter().enumerate() {
+                    *values_ptr.offset(j as isize) = value.clone().into();
+                }
+                
+                // 设置行数据
+                let row_ptr = rows_ptr.offset(i as isize);
+                (*row_ptr).values = values_ptr;
+                (*row_ptr).values_count = row.values.len();
+            }
+            
+            // 设置结果集数据
+            (*c_result_set).columns = columns_ptr;
+            (*c_result_set).columns_count = rust_result_set.columns.len();
+            (*c_result_set).rows = rows_ptr;
+            (*c_result_set).rows_count = rust_result_set.rows.len();
+            
+            *result_set = c_result_set;
+            RemDbError::Success
+        },
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 创建表
+#[no_mangle]
+pub unsafe extern "C" fn remdb_create_table(
+    handle: RemDbHandle,
+    table_name: *const u8,
+    fields: *const RemDbFieldDef,
+    fields_count: usize,
+    primary_key: i32,
+) -> RemDbError {
+    if handle.is_null() || table_name.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &mut *handle;
+    let rust_table_name = c_str_to_rust(table_name);
+    
+    // 转换字段定义
+    let mut field_name_strings = Vec::with_capacity(fields_count);
+    let mut rust_fields = Vec::with_capacity(fields_count);
+    
+    for i in 0..fields_count {
+        let c_field = &*fields.offset(i as isize);
+        let field_name = c_str_to_rust(c_field.name);
+        field_name_strings.push(field_name);
+    }
+    
+    // 现在创建字段定义向量
+    for (i, field_name) in field_name_strings.iter().enumerate() {
+        let c_field = &*fields.offset(i as isize);
+        rust_fields.push((
+            field_name.as_str(),
+            c_field.data_type.into(),
+            None, // 不支持默认值
+        ));
+    }
+    
+    // 转换主键索引
+    let rust_primary_key = if primary_key >= 0 {
+        Some(primary_key as usize)
+    } else {
+        None
+    };
+    
+    match db.create_table(&rust_table_name, &rust_fields, rust_primary_key) {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 批量插入记录
+#[no_mangle]
+pub unsafe extern "C" fn remdb_batch_insert_record(
+    handle: RemDbHandle,
+    table_name: *const u8,
+    column_names: *const *const u8,
+    column_names_count: usize,
+    records: *const *const *const u8,
+    records_count: usize,
+    values_per_record: usize,
+    affected_rows: *mut usize,
+) -> RemDbError {
+    if handle.is_null() || table_name.is_null() || records.is_null() || affected_rows.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &mut *handle;
+    let rust_table_name = c_str_to_rust(table_name);
+    
+    // 转换列名
+    let mut col_name_vec = Vec::with_capacity(column_names_count);
+    for i in 0..column_names_count {
+        let col = *column_names.offset(i as isize);
+        if !col.is_null() {
+            let col_str = c_str_to_rust(col);
+            col_name_vec.push(col_str);
+        }
+    }
+    
+    // 转换列名向量为&str切片
+    let col_names: Vec<&str> = col_name_vec.iter().map(|s| s.as_str()).collect();
+    
+    // 转换并插入每条记录
+    let mut total_inserted = 0;
+    
+    for i in 0..records_count {
+        let record = *records.offset(i as isize);
+        
+        // 转换单条记录的字段值
+        let mut field_value_vec = Vec::with_capacity(values_per_record);
+        for j in 0..values_per_record {
+            let value = *record.offset(j as isize);
+            if !value.is_null() {
+                let val_str = c_str_to_rust(value);
+                field_value_vec.push(val_str);
+            } else {
+                field_value_vec.push("" .to_string());
+            }
+        }
+        
+        // 转换字段值向量为&str切片
+        let field_values: Vec<&str> = field_value_vec.iter().map(|s| s.as_str()).collect();
+        
+        // 单条插入记录
+        let record_slice = [field_values.as_slice()];
+        match db.batch_insert_record(&rust_table_name, &col_names, &record_slice) {
+            Ok(inserted) => {
+                total_inserted += inserted;
+            },
+            Err(e) => {
+                return e.into();
+            },
+        }
+    }
+    
+    *affected_rows = total_inserted;
+    RemDbError::Success
+}
+
+/// C API: 更新记录
+#[no_mangle]
+pub unsafe extern "C" fn remdb_update_record(
+    handle: RemDbHandle,
+    table_name: *const u8,
+    set_clause: *const u8,
+    where_clause: *const u8,
+    affected_rows: *mut usize,
+) -> RemDbError {
+    if handle.is_null() || table_name.is_null() || set_clause.is_null() || affected_rows.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &mut *handle;
+    let rust_table_name = c_str_to_rust(table_name);
+    let rust_set_clause = c_str_to_rust(set_clause);
+    
+    // 转换where子句
+    let where_clause_str = if !where_clause.is_null() {
+        Some(c_str_to_rust(where_clause))
+    } else {
+        None
+    };
+    let rust_where_clause = where_clause_str.as_deref();
+    
+    match db.update_record(&rust_table_name, &rust_set_clause, rust_where_clause) {
+        Ok(updated) => {
+            *affected_rows = updated;
+            RemDbError::Success
+        },
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 删除记录
+#[no_mangle]
+pub unsafe extern "C" fn remdb_delete_record(
+    handle: RemDbHandle,
+    table_name: *const u8,
+    where_clause: *const u8,
+    affected_rows: *mut usize,
+) -> RemDbError {
+    if handle.is_null() || table_name.is_null() || affected_rows.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &mut *handle;
+    let rust_table_name = c_str_to_rust(table_name);
+    
+    // 转换where子句
+    let where_clause_str = if !where_clause.is_null() {
+        Some(c_str_to_rust(where_clause))
+    } else {
+        None
+    };
+    let rust_where_clause = where_clause_str.as_deref();
+    
+    match db.delete_record(&rust_table_name, rust_where_clause) {
+        Ok(deleted) => {
+            *affected_rows = deleted;
+            RemDbError::Success
+        },
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 导出DDL
+#[no_mangle]
+pub unsafe extern "C" fn remdb_export_ddl(
+    handle: RemDbHandle,
+    path: *const u8,
+) -> RemDbError {
+    if handle.is_null() || path.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &*handle;
+    let rust_path = c_str_to_rust(path);
+    
+    match db.export_ddl(&rust_path) {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 导出数据
+#[no_mangle]
+pub unsafe extern "C" fn remdb_export_data(
+    handle: RemDbHandle,
+    path: *const u8,
+) -> RemDbError {
+    if handle.is_null() || path.is_null() {
+        return RemDbError::ConfigError;
+    }
+    
+    let db = &*handle;
+    let rust_path = c_str_to_rust(path);
+    
+    match db.export_data(&rust_path) {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
     }
 }
 

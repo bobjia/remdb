@@ -123,6 +123,13 @@ RemDB支持以下数据类型：
 * **增量快照**：只保存自上次快照以来变化的数据
 * **快照管理**：通过`save_snapshot`、`restore_snapshot`和`save_incremental_snapshot`函数管理快照
 
+### 3.6 SQL结果集
+
+* **类型化值（TypedValue）**：包含数据类型和对应的值，用于表示结果集中的单个字段值
+* **结果行（ResultRow）**：包含多个类型化值，用于表示结果集中的一行数据
+* **结果集（ResultSet）**：包含列名和多行数据，用于表示SQL查询的结果
+* **结果集管理**：通过`remdb_sql_query`、`remdb_execute_query`执行查询获取结果集，通过`remdb_free_result_set`释放结果集内存
+
 ### 3.6 高可用性(HA)
 
 * **角色**：支持Master、Slave和Auto三种角色
@@ -530,9 +537,365 @@ enum RemDbError remdb_table_get_by_name(RemDbHandle handle, const char* name, si
 * `REMDB_SUCCESS`：成功
 * 其他错误码：失败
 
-### 4.7 高可用性(HA) API
+### 4.7 SQL查询
 
-#### 4.7.1 `remdb_ha_get_role`
+#### 4.7.1 `remdb_sql_query`
+
+**功能**：执行SQL查询，返回结果集
+
+**原型**：
+
+```c
+enum RemDbError remdb_sql_query(RemDbHandle handle, const char* sql, RemDbResultSet** result_set);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `sql`：SQL查询语句
+* `result_set`：输出参数，返回查询结果集
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+**注意**：返回的结果集需要通过`remdb_free_result_set`释放内存
+
+#### 4.7.2 `remdb_execute_query`
+
+**功能**：执行查询操作，返回结果集
+
+**原型**：
+
+```c
+enum RemDbError remdb_execute_query(RemDbHandle handle, const char* table_name, const char** columns, size_t columns_count, const char* where_clause, int32_t limit, RemDbResultSet** result_set);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `table_name`：表名
+* `columns`：要查询的列名数组
+* `columns_count`：列名数量
+* `where_clause`：WHERE子句（可选）
+* `limit`：结果限制数量（-1表示无限制）
+* `result_set`：输出参数，返回查询结果集
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+**注意**：返回的结果集需要通过`remdb_free_result_set`释放内存
+
+#### 4.7.3 `remdb_free_result_set`
+
+**功能**：释放结果集内存
+
+**原型**：
+
+```c
+enum RemDbError remdb_free_result_set(RemDbResultSet* result_set);
+```
+
+**参数**：
+* `result_set`：要释放的结果集
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+### 4.8 数据操作
+
+#### 4.8.1 `remdb_create_table`
+
+**功能**：创建表
+
+**原型**：
+
+```c
+enum RemDbError remdb_create_table(RemDbHandle handle, const char* table_name, const RemDbFieldDef* fields, size_t fields_count, int32_t primary_key);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `table_name`：表名
+* `fields`：字段定义数组
+* `fields_count`：字段数量
+* `primary_key`：主键字段索引（-1表示无主键）
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.8.2 `remdb_batch_insert_record`
+
+**功能**：批量插入记录
+
+**原型**：
+
+```c
+enum RemDbError remdb_batch_insert_record(RemDbHandle handle, const char* table_name, const char** column_names, size_t column_names_count, const char*** records, size_t records_count, size_t values_per_record, size_t* affected_rows);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `table_name`：表名
+* `column_names`：列名数组
+* `column_names_count`：列名数量
+* `records`：记录数组，每个记录是一个值数组
+* `records_count`：记录数量
+* `values_per_record`：每条记录的值数量
+* `affected_rows`：输出参数，返回插入的记录数
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.8.3 `remdb_update_record`
+
+**功能**：更新记录
+
+**原型**：
+
+```c
+enum RemDbError remdb_update_record(RemDbHandle handle, const char* table_name, const char* set_clause, const char* where_clause, size_t* affected_rows);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `table_name`：表名
+* `set_clause`：SET子句
+* `where_clause`：WHERE子句（可选）
+* `affected_rows`：输出参数，返回更新的记录数
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.8.4 `remdb_delete_record`
+
+**功能**：删除记录
+
+**原型**：
+
+```c
+enum RemDbError remdb_delete_record(RemDbHandle handle, const char* table_name, const char* where_clause, size_t* affected_rows);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `table_name`：表名
+* `where_clause`：WHERE子句（可选）
+* `affected_rows`：输出参数，返回删除的记录数
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.8.5 `remdb_export_ddl`
+
+**功能**：导出DDL文件
+
+**原型**：
+
+```c
+enum RemDbError remdb_export_ddl(RemDbHandle handle, const char* path);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `path`：DDL文件路径
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.8.6 `remdb_export_data`
+
+**功能**：导出数据
+
+**原型**：
+
+```c
+enum RemDbError remdb_export_data(RemDbHandle handle, const char* path);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `path`：数据文件路径
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+### 4.8 时序表API
+
+#### 4.8.1 `remdb_time_series_batch_write`
+
+**功能**：批量写入时序数据
+
+**原型**：
+
+```c
+enum RemDbError remdb_time_series_batch_write(RemDbHandle handle, size_t table_id, const RemDbTimeSeriesRecord* records, size_t count, size_t* written);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `table_id`：时序表ID
+* `records`：时序数据记录数组
+* `count`：记录数量
+* `written`：输出参数，返回实际写入的记录数
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.8.2 `remdb_time_series_query`
+
+**功能**：根据时间范围查询时序数据
+
+**原型**：
+
+```c
+enum RemDbError remdb_time_series_query(RemDbHandle handle, size_t table_id, u64 start_time, u64 end_time, RemDbTimeSeriesRecord* buffer, size_t buffer_size, size_t* result_count);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `table_id`：时序表ID
+* `start_time`：开始时间戳（毫秒）
+* `end_time`：结束时间戳（毫秒）
+* `buffer`：输出缓冲区，用于存储查询结果
+* `buffer_size`：缓冲区大小（记录数）
+* `result_count`：输出参数，返回实际查询到的记录数
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.8.3 `remdb_time_series_table_get_by_name`
+
+**功能**：通过名称获取时序表
+
+**原型**：
+
+```c
+enum RemDbError remdb_time_series_table_get_by_name(RemDbHandle handle, const char* name, size_t* table_id);
+```
+
+**参数**：
+* `handle`：数据库句柄
+* `name`：时序表名
+* `table_id`：输出参数，返回时序表ID
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+### 4.9 发布/订阅API
+
+#### 4.9.1 `remdb_pubsub_init`
+
+**功能**：初始化发布/订阅系统
+
+**原型**：
+
+```c
+enum RemDbError remdb_pubsub_init(const RemDbPubSubConfig* config);
+```
+
+**参数**：
+* `config`：发布/订阅配置
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.9.2 `remdb_pubsub_subscribe`
+
+**功能**：订阅主题
+
+**原型**：
+
+```c
+enum RemDbError remdb_pubsub_subscribe(u16 topic_id, RemDbPubSubCallback callback, size_t* subscription_id);
+```
+
+**参数**：
+* `topic_id`：主题ID
+* `callback`：订阅回调函数，当收到消息时调用
+* `subscription_id`：输出参数，返回订阅ID
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.9.3 `remdb_pubsub_unsubscribe`
+
+**功能**：取消订阅
+
+**原型**：
+
+```c
+enum RemDbError remdb_pubsub_unsubscribe(size_t subscription_id);
+```
+
+**参数**：
+* `subscription_id`：订阅ID
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.9.4 `remdb_pubsub_publish`
+
+**功能**：发布数据
+
+**原型**：
+
+```c
+enum RemDbError remdb_pubsub_publish(u16 topic_id, const u8* data, size_t data_len);
+```
+
+**参数**：
+* `topic_id`：主题ID
+* `data`：要发布的数据
+* `data_len`：数据长度
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.9.5 `remdb_pubsub_start_receiver`
+
+**功能**：启动接收线程
+
+**原型**：
+
+```c
+enum RemDbError remdb_pubsub_start_receiver(void);
+```
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+#### 4.9.6 `remdb_pubsub_shutdown`
+
+**功能**：停止发布/订阅系统
+
+**原型**：
+
+```c
+enum RemDbError remdb_pubsub_shutdown(void);
+```
+
+**返回值**：
+* `REMDB_SUCCESS`：成功
+* 其他错误码：失败
+
+### 4.10 高可用性(HA) API
+
+#### 4.10.1 `remdb_ha_get_role`
 
 **功能**：获取当前HA角色
 
@@ -549,7 +912,7 @@ enum RemDbError remdb_ha_get_role(enum RemDbHARole* role);
 * `REMDB_SUCCESS`：成功
 * 其他错误码：失败
 
-#### 4.7.2 `remdb_ha_promote_to_master`
+#### 4.10.2 `remdb_ha_promote_to_master`
 
 **功能**：将当前节点提升为Master节点
 
@@ -563,7 +926,7 @@ enum RemDbError remdb_ha_promote_to_master(void);
 * `REMDB_SUCCESS`：成功
 * 其他错误码：失败
 
-#### 4.7.3 `remdb_ha_demote_to_slave`
+#### 4.10.3 `remdb_ha_demote_to_slave`
 
 **功能**：将当前节点降级为Slave节点
 
@@ -577,7 +940,7 @@ enum RemDbError remdb_ha_demote_to_slave(void);
 * `REMDB_SUCCESS`：成功
 * 其他错误码：失败
 
-#### 4.7.4 `remdb_ha_check_status`
+#### 4.10.4 `remdb_ha_check_status`
 
 **功能**：检查HA状态
 
@@ -591,7 +954,7 @@ enum RemDbError remdb_ha_check_status(void);
 * `REMDB_SUCCESS`：成功
 * 其他错误码：失败
 
-#### 4.7.5 `remdb_ha_get_replication_mode`
+#### 4.10.5 `remdb_ha_get_replication_mode`
 
 **功能**：获取当前复制模式
 
@@ -976,6 +1339,204 @@ if (err != REMDB_SUCCESS) {
 record_count = 0;
 err = remdb_table_get_record_count(handle, 0, &record_count);
 printf("Record count after restoration: %zu\n", record_count);
+```
+
+### 5.4 SQL查询示例
+
+以下是一个SQL查询使用示例，演示如何执行SQL查询和处理结果集：
+
+```c
+// 执行SQL查询
+printf("Executing SQL query...\n");
+RemDbResultSet* result_set = NULL;
+err = remdb_sql_query(handle, "SELECT id, name, age FROM users WHERE age > 25", &result_set);
+if (err != REMDB_SUCCESS) {
+    printf("Failed to execute SQL query: error code %d\n", err);
+    return 1;
+}
+printf("SQL query executed successfully!\n");
+
+// 处理结果集
+printf("Query results: %zu rows\n", result_set->rows_count);
+printf("Columns: %zu\n", result_set->columns_count);
+
+// 打印列名
+printf("Column names: ");
+for (size_t i = 0; i < result_set->columns_count; i++) {
+    const char* column_name = result_set->columns[i];
+    printf("%s", column_name);
+    if (i < result_set->columns_count - 1) {
+        printf(", ");
+    }
+}
+printf("\n\n");
+
+// 打印行数据
+for (size_t i = 0; i < result_set->rows_count; i++) {
+    const RemDbResultRow* row = &result_set->rows[i];
+    printf("Row %zu: ", i + 1);
+    
+    for (size_t j = 0; j < row->values_count; j++) {
+        const RemDbTypedValue* value = &row->values[j];
+        
+        // 根据数据类型打印值
+        switch (value->data_type) {
+            case REMDB_TYPE_INT32:
+                printf("%d", value->value.int32);
+                break;
+            case REMDB_TYPE_STRING:
+                printf("%s", value->value.string);
+                break;
+            default:
+                printf("<unsupported type>");
+                break;
+        }
+        
+        if (j < row->values_count - 1) {
+            printf(", ");
+        }
+    }
+    printf("\n");
+}
+
+// 释放结果集
+printf("\nFreeing result set...\n");
+err = remdb_free_result_set(result_set);
+if (err != REMDB_SUCCESS) {
+    printf("Failed to free result set: error code %d\n", err);
+    return 1;
+}
+printf("Result set freed successfully!\n");
+
+// 使用remdb_execute_query执行查询
+printf("\nExecuting query with remdb_execute_query...\n");
+const char* columns[] = { "id", "name" };
+size_t columns_count = sizeof(columns) / sizeof(columns[0]);
+result_set = NULL;
+err = remdb_execute_query(handle, "users", columns, columns_count, "age < 30", 10, &result_set);
+if (err != REMDB_SUCCESS) {
+    printf("Failed to execute query: error code %d\n", err);
+    return 1;
+}
+
+printf("Query executed successfully! %zu rows returned\n", result_set->rows_count);
+
+// 释放结果集
+err = remdb_free_result_set(result_set);
+if (err != REMDB_SUCCESS) {
+    printf("Failed to free result set: error code %d\n", err);
+    return 1;
+}
+```
+
+### 5.5 批量操作示例
+
+以下是一个批量操作使用示例，演示如何使用批量插入、更新和删除等API：
+
+```c
+// 批量插入记录
+printf("\nBatch inserting records...\n");
+const char* column_names[] = { "id", "name", "age" };
+size_t column_names_count = sizeof(column_names) / sizeof(column_names[0]);
+
+// 准备批量插入数据
+const char* record1[] = { "6", "Frank", "32" };
+const char* record2[] = { "7", "Grace", "29" };
+const char* record3[] = { "8", "Henry", "35" };
+const char* record4[] = { "9", "Ivy", "27" };
+const char* record5[] = { "10", "Jack", "31" };
+const char*** records = (const char***)malloc(5 * sizeof(const char**));
+records[0] = (const char**)record1;
+records[1] = (const char**)record2;
+records[2] = (const char**)record3;
+records[3] = (const char**)record4;
+records[4] = (const char**)record5;
+
+size_t affected_rows = 0;
+err = remdb_batch_insert_record(handle, "users", column_names, column_names_count, records, 5, 3, &affected_rows);
+if (err != REMDB_SUCCESS) {
+    printf("Failed to batch insert records: error code %d\n", err);
+    free(records);
+    return 1;
+}
+printf("Batch inserted %zu records successfully!\n", affected_rows);
+free(records);
+
+// 更新记录
+printf("\nUpdating records...\n");
+affected_rows = 0;
+err = remdb_update_record(handle, "users", "age = age + 1", "age > 30", &affected_rows);
+if (err != REMDB_SUCCESS) {
+    printf("Failed to update records: error code %d\n", err);
+    return 1;
+}
+printf("Updated %zu records successfully!\n", affected_rows);
+
+// 查询更新后的结果
+printf("\nQuerying updated records...\n");
+RemDbResultSet* result_set = NULL;
+err = remdb_sql_query(handle, "SELECT id, name, age FROM users WHERE age > 30", &result_set);
+if (err != REMDB_SUCCESS) {
+    printf("Failed to execute SQL query: error code %d\n", err);
+    return 1;
+}
+
+printf("Updated query results: %zu rows\n", result_set->rows_count);
+for (size_t i = 0; i < result_set->rows_count; i++) {
+    const RemDbResultRow* row = &result_set->rows[i];
+    printf("Row %zu: ", i + 1);
+    
+    for (size_t j = 0; j < row->values_count; j++) {
+        const RemDbTypedValue* value = &row->values[j];
+        
+        switch (value->data_type) {
+            case REMDB_TYPE_INT32:
+                printf("%d", value->value.int32);
+                break;
+            case REMDB_TYPE_STRING:
+                printf("%s", value->value.string);
+                break;
+            default:
+                printf("<unsupported type>");
+                break;
+        }
+        
+        if (j < row->values_count - 1) {
+            printf(", ");
+        }
+    }
+    printf("\n");
+}
+
+remdb_free_result_set(result_set);
+
+// 删除记录
+printf("\nDeleting records...\n");
+affected_rows = 0;
+err = remdb_delete_record(handle, "users", "age > 35", &affected_rows);
+if (err != REMDB_SUCCESS) {
+    printf("Failed to delete records: error code %d\n", err);
+    return 1;
+}
+printf("Deleted %zu records successfully!\n", affected_rows);
+
+// 导出DDL
+printf("\nExporting DDL...\n");
+err = remdb_export_ddl(handle, "exported_ddl.sql");
+if (err != REMDB_SUCCESS) {
+    printf("Failed to export DDL: error code %d\n", err);
+    return 1;
+}
+printf("DDL exported successfully!\n");
+
+// 导出数据
+printf("\nExporting data...\n");
+err = remdb_export_data(handle, "exported_data.sql");
+if (err != REMDB_SUCCESS) {
+    printf("Failed to export data: error code %d\n", err);
+    return 1;
+}
+printf("Data exported successfully!\n");
 ```
 
 ## 6. 最佳实践

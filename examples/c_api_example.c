@@ -307,6 +307,160 @@ int main() {
     }
     printf("\n");
 
+    // Step 15: SQL Query Example
+    printf("SQL Query Example...\n");
+    
+    // Execute SQL query
+    RemDbResultSet* result_set = NULL;
+    err = remdb_sql_query(handle, "SELECT id, name, age FROM users WHERE age > 25", &result_set);
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to execute SQL query: error code %d\n", err);
+    } else {
+        printf("SQL query executed successfully!\n");
+        printf("Query results: %zu rows\n", result_set->rows_count);
+        printf("Columns: %zu\n", result_set->columns_count);
+        
+        // Print column names
+        printf("Column names: ");
+        for (size_t i = 0; i < result_set->columns_count; i++) {
+            const char* column_name = *(result_set->columns + i);
+            printf("%s", column_name);
+            if (i < result_set->columns_count - 1) {
+                printf(", ");
+            }
+        }
+        printf("\n\n");
+        
+        // Print rows
+        for (size_t i = 0; i < result_set->rows_count; i++) {
+            const RemDbResultRow* row = &result_set->rows[i];
+            printf("Row %zu: ", i + 1);
+            
+            for (size_t j = 0; j < row->values_count; j++) {
+                const RemDbTypedValue* value = &row->values[j];
+                
+                // Print value based on data type
+                switch (value->data_type) {
+                    case REMDB_TYPE_UINT32:
+                        printf("%u", value->value.u32);
+                        break;
+                    case REMDB_TYPE_STRING:
+                        printf("%s", (const char*)value->value.string);
+                        break;
+                    default:
+                        printf("<unsupported type>");
+                        break;
+                }
+                
+                if (j < row->values_count - 1) {
+                    printf(", ");
+                }
+            }
+            printf("\n");
+        }
+        
+        // Free result set
+        err = remdb_free_result_set(result_set);
+        if (err != REMDB_SUCCESS) {
+            printf("Failed to free result set: error code %d\n", err);
+        } else {
+            printf("\nResult set freed successfully\n");
+        }
+    }
+    printf("\n");
+    
+    // Step 16: Execute Query Example
+    printf("Execute Query Example...\n");
+    
+    // Define columns to query
+    const char* columns[] = {"id", "name"};
+    size_t columns_count = sizeof(columns) / sizeof(columns[0]);
+    
+    // Execute query
+    err = remdb_execute_query(handle, "users", columns, columns_count, "age < 30", 10, &result_set);
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to execute query: error code %d\n", err);
+    } else {
+        printf("Query executed successfully! %zu rows returned\n", result_set->rows_count);
+        
+        // Free result set
+        err = remdb_free_result_set(result_set);
+        if (err != REMDB_SUCCESS) {
+            printf("Failed to free result set: error code %d\n", err);
+        }
+    }
+    printf("\n");
+    
+    // Step 17: Batch Insert Example
+    printf("Batch Insert Example...\n");
+    
+    // Define column names for batch insert
+    const char* batch_columns[] = {"id", "name", "age"};
+    size_t batch_columns_count = sizeof(batch_columns) / sizeof(batch_columns[0]);
+    
+    // Prepare batch data
+    const char* record1[] = {"5", "Eve", "29"};
+    const char* record2[] = {"6", "Frank", "32"};
+    const char* record3[] = {"7", "Grace", "27"};
+    const char*** records = (const char***)malloc(3 * sizeof(const char**));
+    records[0] = (const char**)record1;
+    records[1] = (const char**)record2;
+    records[2] = (const char**)record3;
+    
+    size_t affected_rows = 0;
+    err = remdb_batch_insert_record(handle, "users", batch_columns, batch_columns_count, records, 3, 3, &affected_rows);
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to batch insert records: error code %d\n", err);
+    } else {
+        printf("Batch inserted %zu records successfully!\n", affected_rows);
+    }
+    free(records);
+    printf("\n");
+    
+    // Step 18: Update Record Example
+    printf("Update Record Example...\n");
+    
+    err = remdb_update_record(handle, "users", "age = age + 1", "age > 30", &affected_rows);
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to update records: error code %d\n", err);
+    } else {
+        printf("Updated %zu records successfully!\n", affected_rows);
+    }
+    printf("\n");
+    
+    // Step 19: Delete Record Example
+    printf("Delete Record Example...\n");
+    
+    err = remdb_delete_record(handle, "users", "age < 28", &affected_rows);
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to delete records: error code %d\n", err);
+    } else {
+        printf("Deleted %zu records successfully!\n", affected_rows);
+    }
+    printf("\n");
+    
+    // Step 20: Export DDL Example
+    printf("Export DDL Example...\n");
+    
+    err = remdb_export_ddl(handle, "exported_ddl.sql");
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to export DDL: error code %d\n", err);
+    } else {
+        printf("DDL exported successfully to 'exported_ddl.sql'\n");
+    }
+    printf("\n");
+    
+    // Step 21: Export Data Example
+    printf("Export Data Example...\n");
+    
+    err = remdb_export_data(handle, "exported_data.sql");
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to export data: error code %d\n", err);
+    } else {
+        printf("Data exported successfully to 'exported_data.sql'\n");
+    }
+    printf("\n");
+    
     printf("RemDB C API Example completed successfully!\n");
     printf("========================================\n");
 
