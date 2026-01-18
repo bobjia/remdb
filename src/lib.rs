@@ -21,7 +21,8 @@ pub mod time_series;
 
 // 导出核心类型
 pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType, MAX_STRING_LEN};
-pub use table::MemoryTable;
+pub use table::{MemoryTable, RecordRef, RecordCursor, RecordIdCursor};
+
 pub use index::{PrimaryIndex, SecondaryIndex, BTreeIndex, TTreeIndex, IndexStats, AnySecondaryIndex, PrimaryIndexItem};
 pub use transaction::{Transaction, TransactionType};
 pub use monitor::{DbMetrics, DbMetricsSnapshot, HealthStatus, HealthCheckResult};
@@ -171,8 +172,57 @@ impl RemDb {
             None => Err(RemDbError::RecordNotFound),
         }
     }
+
+    /// 根据ID获取记录引用（零拷贝）
+    pub fn get_by_id_ref(&self, table_id: usize, id: usize) -> Result<Option<RecordRef<'_>>> {
+        let table = self.get_table(table_id)?;
+        Ok(table.get_by_id_ref(id))
+    }
+
+    /// 扫描游标（零拷贝）
+    pub fn scan_ref(&self, table_id: usize) -> Result<RecordCursor<'_>> {
+        let table = self.get_table(table_id)?;
+        Ok(table.scan_ref())
+    }
+
+    /// 辅助索引范围查询（零拷贝）
+    pub fn get_by_index_ref(
+        &mut self,
+        table_id: usize,
+        start_key: *const u8,
+        start_key_size: usize,
+        end_key: *const u8,
+        end_key_size: usize
+    ) -> Result<RecordIdCursor<'_>> {
+        let max_records = {
+            let table = self.get_table(table_id)?;
+            table.def.max_records
+        };
+
+        let mut ids_u16 = vec![0u16; max_records];
+
+        let count = {
+            let index = self.get_secondary_index_mut(table_id)?;
+            unsafe {
+                index.find_range_all(
+                    start_key,
+                    start_key_size,
+                    end_key,
+                    end_key_size,
+                    ids_u16.as_mut_ptr(),
+                    ids_u16.len()
+                )?
+            }
+        };
+
+        let table = self.get_table(table_id)?;
+        let ids = ids_u16[..count].iter().map(|id| *id as usize).collect::<Vec<usize>>();
+        Ok(table.scan_ids_ref(ids))
+
+    }
     
     /// 获取表（可变）
+
     pub fn get_table_mut(&mut self, table_id: usize) -> Result<&mut MemoryTable> {
         if table_id >= self.tables.len() {
             return Err(RemDbError::RecordNotFound);
