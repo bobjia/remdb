@@ -4042,8 +4042,72 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                 // 使用表中已维护的最大主键值
                 let max_pk = table.max_pk;
                 
-                // 生成新的主键值
-                let new_pk = max_pk + 1;
+                // 生成新的主键值，考虑目标数据类型的最大值，防止溢出
+                let new_pk = match field.data_type {
+                    DataType::UInt8 => {
+                        if max_pk >= u8::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::UInt16 => {
+                        if max_pk >= u16::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::UInt32 => {
+                        if max_pk >= u32::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::UInt64 => {
+                        if max_pk >= u64::MAX {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::Int8 => {
+                        if max_pk >= i8::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::Int16 => {
+                        if max_pk >= i16::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::Int32 => {
+                        if max_pk >= i32::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    DataType::Int64 => {
+                        if max_pk >= i64::MAX as u64 {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    },
+                    _ => {
+                        if max_pk == u64::MAX {
+                            1
+                        } else {
+                            max_pk + 1
+                        }
+                    }
+                };
                 
                 // 更新表的最大主键值
                 table.max_pk = new_pk;
@@ -4064,7 +4128,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                             core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u64, new_pk);
                         },
                         DataType::Int8 => {
-                            record_data[field.offset] = new_pk as i8 as u8;
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i8, new_pk as i8);
                         },
                         DataType::Int16 => {
                             core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i16, new_pk as i16);
@@ -4154,7 +4218,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                             // 如果是自动创建的事务，需要回滚
                             if !has_active_tx {
                                 unsafe {
-                                    crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                                    crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
                                 }
                             }
                             return Err(QueryExecutionError::ConstraintsConflicts);
@@ -4164,7 +4228,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                         // 如果是自动创建的事务，需要回滚
                         if !has_active_tx {
                             unsafe {
-                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                                crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
                             }
                         }
                         return Err(QueryExecutionError::ConstraintsConflicts);
@@ -4173,7 +4237,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                         // 如果是自动创建的事务，需要回滚
                         if !has_active_tx {
                             unsafe {
-                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                                crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
                             }
                         }
                         return Err(QueryExecutionError::OutOfMemory);
@@ -4182,7 +4246,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                         // 如果是自动创建的事务，需要回滚
                         if !has_active_tx {
                             unsafe {
-                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
+                                crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
                             }
                         }
                         return Err(QueryExecutionError::InternalError);
@@ -4395,14 +4459,16 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                 // 检查当前事务是否有效，避免访问悬空指针
                 if let Some(mut tx) = crate::transaction::get_current_tx() {
                     // 直接使用事务添加日志项，不检查is_active()和is_read_only()
-                    tx.as_mut().add_log_item(
+                    let tx_id = tx.as_mut().id;
+                    tx.as_mut().begin_log_item(
+                        tx_id,
                         crate::transaction::LogOperation::Update,
                         table_mut.def.id,
                         id as u16,
-                        old_data.as_ptr(),
-                        new_data.as_ptr(),
-                        record_size
-                    ).unwrap_or(());
+                        record_size as u16,
+                        Some(&old_data),
+                        Some(&new_data)
+                    );
                 }
             }
             

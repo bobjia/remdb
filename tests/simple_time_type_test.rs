@@ -5,6 +5,91 @@ extern crate alloc;
 use remdb::{RemDb, config};
 use remdb::config::WALConfig;
 
+/// 定义测试平台
+struct TestPlatform;
+
+impl remdb::platform::Platform for TestPlatform {
+    fn get_timestamp(&self) -> u64 {
+        1609459200000 // 2021-01-01 00:00:00 UTC in milliseconds
+    }
+    
+    fn get_timestamp_us(&self) -> u64 {
+        1609459200000000 // 2021-01-01 00:00:00 UTC in microseconds
+    }
+    
+    fn spin_lock(&self, _lock: &mut u32) {
+        // 简单实现，不做实际锁定
+    }
+    
+    fn spin_unlock(&self, _lock: &mut u32) {
+        // 简单实现，不做实际解锁
+    }
+    
+    fn memcpy(&self, dst: *mut u8, src: *const u8, size: usize) {
+        // 使用标准库的内存拷贝
+        unsafe {
+            std::ptr::copy(src, dst, size);
+        }
+    }
+    
+    fn memset(&self, ptr: *mut u8, value: u8, size: usize) {
+        // 使用标准库的内存设置
+        unsafe {
+            std::ptr::write_bytes(ptr, value, size);
+        }
+    }
+    
+    fn compiler_barrier(&self) {
+        // 不执行任何操作
+    }
+    
+    fn full_memory_barrier(&self) {
+        // 不执行任何操作
+    }
+    
+    fn delay_ms(&self, _ms: u32) {
+        // 不执行任何操作
+    }
+    
+    fn delay_us(&self, _us: u32) {
+        // 不执行任何操作
+    }
+    
+    fn file_open(&self, _path: &str, _mode: remdb::platform::FileMode) -> std::result::Result<*const u8, ()> {
+        Ok(std::ptr::null())
+    }
+    
+    fn file_close(&self, _handle: *const u8) -> std::result::Result<(), ()> {
+        Ok(())
+    }
+    
+    fn file_write(&self, _handle: *const u8, _data: *const u8, _size: usize) -> std::result::Result<usize, ()> {
+        Ok(0)
+    }
+    
+    fn file_read(&self, _handle: *const u8, _data: *mut u8, _size: usize) -> std::result::Result<usize, ()> {
+        Ok(0)
+    }
+    
+    fn file_seek(&self, _handle: *const u8, _offset: i64, _whence: remdb::platform::SeekWhence) -> std::result::Result<u64, ()> {
+        Ok(0)
+    }
+    
+    fn file_remove(&self, _path: &str) -> std::result::Result<(), ()> {
+        Ok(())
+    }
+    
+    fn file_size(&self, _path: &str) -> std::result::Result<usize, ()> {
+        Ok(0)
+    }
+    
+    fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+        0
+    }
+}
+
+static TEST_PLATFORM: TestPlatform = TestPlatform;
+
 /// 创建测试用的DbConfig
 static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     tables: &[],
@@ -44,6 +129,9 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
 fn test_create_table_with_time_types() {
     // 使用静态内存缓冲区，确保它不会在函数返回时被释放
     static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    
+    // 初始化测试平台
+    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化内存分配器
     unsafe {

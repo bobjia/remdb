@@ -2,16 +2,111 @@
 
 extern crate alloc;
 
+use remdb::{RemDb, config};
+use remdb::config::WALConfig;
 use remdb::types::RemDbError;
 use remdb::time_series::TimeSeriesRecord;
 use remdb::time_series::TimeSeriesConfig;
-use remdb::{RemDb, config};
-use remdb::config::WALConfig;
 #[cfg(feature = "ha")]
 use remdb::config::HAConfig;
 #[cfg(feature = "ha")]
 use remdb::ha::{HARole, ReplicationMode};
 use std::sync::Mutex;
+
+// 简单的测试平台实现
+struct TestPlatform;
+
+impl remdb::platform::Platform for TestPlatform {
+    fn get_timestamp(&self) -> u64 {
+        0
+    }
+    
+    fn get_timestamp_us(&self) -> u64 {
+        0
+    }
+    
+    fn spin_lock(&self, lock: &mut u32) {
+        // 简单的自旋锁实现
+        unsafe {
+            while core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
+                .compare_exchange(0, 1, 
+                                 core::sync::atomic::Ordering::Acquire,
+                                 core::sync::atomic::Ordering::Relaxed)
+                .is_err() {
+                core::hint::spin_loop();
+            }
+        }
+    }
+    
+    fn spin_unlock(&self, lock: &mut u32) {
+        unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
+                .store(0, core::sync::atomic::Ordering::Release);
+        }
+    }
+    
+    fn compiler_barrier(&self) {
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    }
+    
+    fn full_memory_barrier(&self) {
+        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+    }
+    
+    fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
+        unsafe {
+            core::ptr::copy_nonoverlapping(src, dest, size);
+        }
+    }
+    
+    fn memset(&self, dest: *mut u8, value: u8, size: usize) {
+        unsafe {
+            core::ptr::write_bytes(dest, value, size);
+        }
+    }
+    
+    fn delay_ms(&self, _ms: u32) {
+        // 空实现
+    }
+    
+    fn delay_us(&self, _us: u32) {
+        // 空实现
+    }
+    
+    fn file_open(&self, _path: &str, _mode: remdb::platform::FileMode) -> remdb::platform::FileResult<remdb::platform::FileHandle> {
+        Ok(std::ptr::null())
+    }
+    
+    fn file_close(&self, _handle: remdb::platform::FileHandle) -> remdb::platform::FileResult<()> {
+        Ok(())
+    }
+    
+    fn file_write(&self, _handle: remdb::platform::FileHandle, _buffer: *const u8, _size: usize) -> remdb::platform::FileResult<usize> {
+        Ok(0)
+    }
+    
+    fn file_read(&self, _handle: remdb::platform::FileHandle, _buffer: *mut u8, _size: usize) -> remdb::platform::FileResult<usize> {
+        Ok(0)
+    }
+    
+    fn file_seek(&self, _handle: remdb::platform::FileHandle, _offset: i64, _whence: remdb::platform::SeekWhence) -> remdb::platform::FileResult<u64> {
+        Ok(0)
+    }
+    
+    fn file_remove(&self, _path: &str) -> remdb::platform::FileResult<()> {
+        Ok(())
+    }
+    
+    fn file_size(&self, _path: &str) -> remdb::platform::FileResult<usize> {
+        Ok(0)
+    }
+    
+    fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+        0
+    }
+}
+
+static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 // 全局互斥锁，确保测试串行执行
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
@@ -128,6 +223,9 @@ static ROLLBACK_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
 fn test_write_timeseries_batch_acid() {
     let _guard = TEST_MUTEX.lock().unwrap();
     
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    
     // 初始化全局内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
@@ -212,6 +310,9 @@ fn test_write_timeseries_batch_acid() {
 fn test_write_timeseries_batch_performance() {
     let _guard = TEST_MUTEX.lock().unwrap();
     
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    
     // 初始化全局内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
@@ -283,6 +384,9 @@ fn test_write_timeseries_batch_performance() {
 fn test_write_timeseries_batch_rollback() {
     let _guard = TEST_MUTEX.lock().unwrap();
     
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    
     // 初始化全局内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(
@@ -333,6 +437,9 @@ fn test_write_timeseries_batch_rollback() {
 #[test]
 fn test_time_type_support() {
     let _guard = TEST_MUTEX.lock().unwrap();
+    
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化全局内存分配器
     unsafe {
@@ -410,6 +517,9 @@ fn test_time_type_support() {
 #[test]
 fn test_time_arithmetic() {
     let _guard = TEST_MUTEX.lock().unwrap();
+    
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化全局内存分配器
     unsafe {
@@ -497,6 +607,9 @@ fn test_time_arithmetic() {
 #[test]
 fn test_time_precision_support() {
     let _guard = TEST_MUTEX.lock().unwrap();
+    
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化全局内存分配器
     unsafe {

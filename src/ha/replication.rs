@@ -353,7 +353,8 @@ impl ReplicationManager {
                                  log_item.table_id, log_item.record_id);
                         
                         // 对于插入操作，使用全局TX_MANAGER的LogManager执行恢复
-                        if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager() {
+                        let tx_manager = crate::transaction::get_tx_manager();
+                        if let Some(log_manager) = tx_manager.get_log_manager() {
                             // 注意：这里我们直接调用recover方法处理单个日志项
                             // 实际实现中可能需要更高效的方式
                             let _ = log_manager.recover(db);
@@ -365,7 +366,8 @@ impl ReplicationManager {
                         eprintln!("[Slave] Applying other operation: {:?}, using log manager recover", 
                                  log_item.op_type);
                         
-                        if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager() {
+                        let tx_manager = crate::transaction::get_tx_manager();
+                        if let Some(log_manager) = tx_manager.get_log_manager() {
                             // 注意：这里我们直接调用recover方法处理单个日志项
                             // 实际实现中可能需要更高效的方式
                             let _ = log_manager.recover(db);

@@ -23,7 +23,7 @@ pub mod time_series;
 pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType, MAX_STRING_LEN};
 pub use table::MemoryTable;
 pub use index::{PrimaryIndex, SecondaryIndex, BTreeIndex, TTreeIndex, IndexStats, AnySecondaryIndex, PrimaryIndexItem};
-pub use transaction::{Transaction, TransactionType, TransactionManager};
+pub use transaction::{Transaction, TransactionType};
 pub use monitor::{DbMetrics, DbMetricsSnapshot, HealthStatus, HealthCheckResult};
 pub use time_series::{TimeSeriesTable, TimeSeriesTableDef, TimeSeriesRecord, TimeSeriesConfig, TimeSeriesIndex, CompressionType};
 
@@ -277,6 +277,37 @@ impl RemDb {
         // 更新状态
         self.low_power_mode = true;
         
+        // 记录EnterLowPowerMode日志到WAL
+        unsafe {
+            // 直接使用LogManager写入日志，而不是通过TransactionManager
+            let tx_manager = crate::transaction::get_tx_manager();
+            if let Some(log_manager) = tx_manager.get_log_manager_mut() {
+                // 创建日志项
+                let log_item = crate::transaction::LogItem {
+                    op_type: crate::transaction::LogOperation::EnterLowPowerMode,
+                    table_id: 0, // 低功耗模式是全局操作，不需要特定表ID
+                    record_id: 0,
+                    data_size: 0,
+                    old_data: [0; 512],
+                    new_data: [0; 512],
+                    tx_id: 0,
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0,
+                };
+                
+                // 计算校验和
+                let calculated_checksum = crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
+                
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+                
+                // 写入日志
+                let _ = log_manager.write_log_item(&final_log_item);
+                // 立即刷新缓冲区，确保日志被持久化
+                let _ = log_manager.flush_buffer();
+            }
+        }
+        
         Ok(())
     }
     
@@ -336,6 +367,37 @@ impl RemDb {
         // 更新状态
         self.low_power_mode = false;
         
+        // 记录ExitLowPowerMode日志到WAL
+        unsafe {
+            // 直接使用LogManager写入日志，而不是通过TransactionManager
+            let tx_manager = crate::transaction::get_tx_manager();
+            if let Some(log_manager) = tx_manager.get_log_manager_mut() {
+                // 创建日志项
+                let log_item = crate::transaction::LogItem {
+                    op_type: crate::transaction::LogOperation::ExitLowPowerMode,
+                    table_id: 0, // 低功耗模式是全局操作，不需要特定表ID
+                    record_id: 0,
+                    data_size: 0,
+                    old_data: [0; 512],
+                    new_data: [0; 512],
+                    tx_id: 0,
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0,
+                };
+                
+                // 计算校验和
+                let calculated_checksum = crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
+                
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+                
+                // 写入日志
+                let _ = log_manager.write_log_item(&final_log_item);
+                // 立即刷新缓冲区，确保日志被持久化
+                let _ = log_manager.flush_buffer();
+            }
+        }
+        
         Ok(())
     }
     
@@ -348,22 +410,23 @@ impl RemDb {
         log_buffer: *mut transaction::LogItem,
         max_log_items: usize
     ) -> Result<NonNull<transaction::Transaction>> {
-        crate::transaction::TX_MANAGER.begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items)
+        crate::transaction::begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items)
     }
     
     /// 提交事务
     pub unsafe fn commit_transaction(&mut self) -> Result<()> {
-        crate::transaction::TX_MANAGER.commit()
+        crate::transaction::commit()
     }
     
     /// 回滚事务
     pub unsafe fn rollback_transaction(&mut self) -> Result<()> {
-        crate::transaction::TX_MANAGER.rollback(self)
+        crate::transaction::rollback()
     }
 
     /// 刷新WAL日志到磁盘
     pub unsafe fn flush_logs(&mut self) -> Result<()> {
-        crate::transaction::TX_MANAGER.flush_logs()
+        let tx_manager = crate::transaction::get_tx_manager();
+        tx_manager.flush_logs()
     }
     
     /// 初始化数据库
@@ -701,6 +764,27 @@ impl RemDb {
                 
                 current_status.status = crate::types::RecordStatus::Used;
                 current_status.version += 1;
+                
+                // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
+                let record_ptr = unsafe { table.get_record_ptr_mut(i) };
+                let primary_key_field = &table.def.fields[table.def.primary_key];
+                let new_pk = unsafe {
+                    let key_ptr = record_ptr.add(primary_key_field.offset);
+                    match primary_key_field.data_type {
+                        crate::types::DataType::UInt8 => *(key_ptr as *const u8) as u64,
+                        crate::types::DataType::UInt16 => core::ptr::read_unaligned(key_ptr as *const u16) as u64,
+                        crate::types::DataType::UInt32 => core::ptr::read_unaligned(key_ptr as *const u32) as u64,
+                        crate::types::DataType::UInt64 => core::ptr::read_unaligned(key_ptr as *const u64),
+                        crate::types::DataType::Int8 => *(key_ptr as *const i8) as u64,
+                        crate::types::DataType::Int16 => core::ptr::read_unaligned(key_ptr as *const i16) as u64,
+                        crate::types::DataType::Int32 => core::ptr::read_unaligned(key_ptr as *const i32) as u64,
+                        crate::types::DataType::Int64 => core::ptr::read_unaligned(key_ptr as *const i64) as u64,
+                        _ => 0,
+                    }
+                };
+                if new_pk > table.max_pk {
+                    table.max_pk = new_pk;
+                }
             }
         }
         
@@ -918,7 +1002,8 @@ impl DdlExecutor for RemDb {
         // 记录CREATE_TABLE日志到WAL
         unsafe {
             // 直接使用LogManager写入日志，而不是通过TransactionManager
-            if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
+            let tx_manager = crate::transaction::get_tx_manager();
+            if let Some(log_manager) = tx_manager.get_log_manager_mut() {
                 // 序列化表定义信息
                 let mut log_data = [0u8; 512];
                 // 写入表名
@@ -1183,7 +1268,8 @@ impl DdlExecutor for RemDb {
         // 记录CREATE_INDEX日志到WAL
         unsafe {
             // 直接使用LogManager写入日志，而不是通过TransactionManager
-            if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
+            let tx_manager = crate::transaction::get_tx_manager();
+            if let Some(log_manager) = tx_manager.get_log_manager_mut() {
                 // 序列化索引创建信息
                 let mut log_data = [0u8; 512];
                 // 写入表名
@@ -2019,9 +2105,10 @@ pub fn reset_global_db() {
         
         DB_INSTANCE = None;
         // 重置事务管理器状态，包括日志管理器
-        crate::transaction::TX_MANAGER.reset();
+        let tx_manager = crate::transaction::get_tx_manager();
+        tx_manager.reset();
         // 清除日志管理器，确保测试之间的完全隔离
-        crate::transaction::TX_MANAGER.clear_log_manager();
+        tx_manager.clear_log_manager();
     }
 }
 

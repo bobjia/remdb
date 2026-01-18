@@ -238,14 +238,17 @@ impl TimeSeriesTable {
                     
                     // 添加日志项
                     let data_size = core::mem::size_of::<TimeSeriesRecord>();
-                    tx_mut.add_log_item(
+                    let tx_id = tx_mut.id;
+                    let record_slice = core::slice::from_raw_parts(record as *const _ as *const u8, data_size);
+                    tx_mut.begin_log_item(
+                        tx_id,
                         crate::transaction::LogOperation::TimeSeriesInsert,
                         table_id,
                         i as u16, // 使用索引作为record_id
-                        core::ptr::null(), // 旧数据为null
-                        record as *const _ as *const u8, // 新数据指针
-                        data_size
-                    )?;
+                        data_size as u16,
+                        None, // 旧数据为null
+                        Some(record_slice) // 新数据指针
+                    );
                 }
             }
             

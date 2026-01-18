@@ -196,6 +196,11 @@ impl Platform for PosixPlatform {
     
     /// 计算CRC32校验和
     fn crc32(&self, data: *const u8, size: usize) -> u32 {
+        // 空数据的CRC32值为0xFFFFFFFF ^ 0xFFFFFFFF = 0
+        if size == 0 || data.is_null() {
+            return 0;
+        }
+        
         // CRC32标准多项式：0xEDB88320
         const CRC32_POLY: u32 = 0xEDB88320;
         
@@ -215,6 +220,7 @@ impl Platform for PosixPlatform {
         
         // 计算CRC32值
         let mut crc = 0xFFFFFFFFu32;
+        // 安全创建切片：data非空且size>0
         let data_slice = unsafe { core::slice::from_raw_parts(data, size) };
         
         for &byte in data_slice {

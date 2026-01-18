@@ -146,9 +146,6 @@ fn test_sql_query() {
     // 使用局部内存缓冲区，确保测试之间的隔离
     let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
-    
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
     
@@ -159,6 +156,9 @@ fn test_sql_query() {
             db_memory.len()
         ).unwrap();
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
     
     // 初始化数据库
     let config = &TEST_DB;
@@ -410,9 +410,6 @@ fn test_sql_join() {
     // 使用局部内存缓冲区，确保测试之间的隔离
     let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
-    
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
     
@@ -423,6 +420,9 @@ fn test_sql_join() {
             db_memory.len()
         ).unwrap();
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
     
     // 初始化数据库
     let config = &TEST_DB;
@@ -555,9 +555,6 @@ fn test_sql_distinct() {
     // 使用局部内存缓冲区，确保测试之间的隔离
     let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
-    
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
     
@@ -568,6 +565,9 @@ fn test_sql_distinct() {
             db_memory.len()
         ).unwrap();
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
     
     // 初始化数据库
     let config = &TEST_DB;
@@ -639,9 +639,6 @@ fn test_sql_aliases() {
     // 使用局部内存缓冲区，确保测试之间的隔离
     let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
-    
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
     
@@ -652,6 +649,9 @@ fn test_sql_aliases() {
             db_memory.len()
         ).unwrap();
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
     
     // 初始化数据库
     let config = &TEST_DB;
@@ -695,9 +695,6 @@ fn test_sql_functions() {
     // 使用局部内存缓冲区，确保测试之间的隔离
     let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
-    
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
     
@@ -708,6 +705,9 @@ fn test_sql_functions() {
             db_memory.len()
         ).unwrap();
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
     
     // 初始化数据库
     let config = &TEST_DB;
@@ -786,9 +786,6 @@ fn test_sql_statistical_functions() {
     // 使用局部内存缓冲区，确保测试之间的隔离
     let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
-    
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
     
@@ -799,6 +796,9 @@ fn test_sql_statistical_functions() {
             db_memory.len()
         ).unwrap();
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
     
     // 初始化数据库
     let config = &TEST_DB;
@@ -853,9 +853,6 @@ fn test_sql_aggregate_functions() {
     // 使用局部内存缓冲区，确保测试之间的隔离
     let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
-    
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
     
@@ -866,6 +863,9 @@ fn test_sql_aggregate_functions() {
             db_memory.len()
         ).unwrap();
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
     
     // 初始化数据库
     let config = &TEST_DB;
@@ -922,9 +922,6 @@ fn test_sql_group_by() {
     // 使用局部内存缓冲区，确保测试之间的隔离
     let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
     
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
-    
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
     
@@ -935,6 +932,9 @@ fn test_sql_group_by() {
             db_memory.len()
         ).unwrap();
     }
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
     
     // 初始化数据库
     let config = &TEST_DB;
