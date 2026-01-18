@@ -68,6 +68,10 @@ pub enum LogOperation {
     Checkpoint = 7,
     /// 创建索引
     CreateIndex = 8,
+    /// 进入低功耗模式
+    EnterLowPowerMode = 9,
+    /// 退出低功耗模式
+    ExitLowPowerMode = 10,
 }
 
 /// 日志文件头
@@ -908,7 +912,7 @@ impl LogManager {
             let has_valid_data = log_item.data_size > 0;
             
             // 检查是否是系统级操作（即使没有数据也有效）
-            let is_system_op = matches!(log_item.op_type, LogOperation::CreateTable | LogOperation::CreateIndex | LogOperation::Checkpoint | LogOperation::Commit | LogOperation::Abort);
+            let is_system_op = matches!(log_item.op_type, LogOperation::CreateTable | LogOperation::CreateIndex | LogOperation::Checkpoint | LogOperation::Commit | LogOperation::Abort | LogOperation::EnterLowPowerMode | LogOperation::ExitLowPowerMode);
             
             // 检查是否是可能的零初始化日志项
             let is_zero_initialized = log_item.tx_id == 0 && log_item.timestamp == 0;
@@ -920,7 +924,7 @@ impl LogManager {
             }
             
             // 3. Check for valid op_type
-            if !matches!(log_item.op_type, LogOperation::Insert | LogOperation::Delete | LogOperation::Update | LogOperation::CreateTable | LogOperation::TimeSeriesInsert | LogOperation::Commit | LogOperation::Abort | LogOperation::Checkpoint | LogOperation::CreateIndex) {
+            if !matches!(log_item.op_type, LogOperation::Insert | LogOperation::Delete | LogOperation::Update | LogOperation::CreateTable | LogOperation::TimeSeriesInsert | LogOperation::Commit | LogOperation::Abort | LogOperation::Checkpoint | LogOperation::CreateIndex | LogOperation::EnterLowPowerMode | LogOperation::ExitLowPowerMode) {
                 // Invalid operation type, skip
                 continue;
             }
@@ -1346,10 +1350,85 @@ impl LogManager {
             }
         }
         
-        // 阶段3：处理所有的数据操作，确保表结构已建立
-        println!("Phase 3: Processing data operations (Insert, Update, Delete, TimeSeriesInsert)...");
+        // 阶段3：处理所有的数据操作和系统操作
+        println!("Phase 3: Processing operations (Insert, Update, Delete, TimeSeriesInsert, LowPowerMode)...");
         for log_item in &valid_log_items {
             match log_item.op_type {
+                LogOperation::EnterLowPowerMode => {
+                    // 处理进入低功耗模式日志
+                    println!("Processing EnterLowPowerMode log item");
+                    
+                    // 检查配置是否支持低功耗模式
+                    if db.config.low_power_mode_supported {
+                        // 设置事务管理器为低功耗模式
+                        crate::transaction::set_low_power_mode(true);
+                        
+                        // 如果数据库尚未进入低功耗模式，执行相关操作
+                        if !db.is_low_power_mode() {
+                            // 执行进入低功耗模式的准备工作
+                            unsafe {
+                                // 检查当前内存使用情况
+                                let current_memory = db.config.total_memory;
+                                if current_memory > db.low_power_memory_limit {
+                                    // 内存使用超出限制，需要进行优化
+                                    db.optimize_memory_usage();
+                                }
+                            }
+                            
+                            // 遍历所有表，设置低功耗模式
+                            for table in &mut db.tables.iter_mut() {
+                                if let Some(table) = table {
+                                    table.set_low_power_mode(true, db.config.low_power_max_records);
+                                }
+                            }
+                            
+                            // 更新状态
+                            db.low_power_mode = true;
+                        }
+                    } else {
+                        // 如果配置不支持低功耗模式，确保事务管理器也处于正常模式
+                        crate::transaction::set_low_power_mode(false);
+                    }
+                },
+                LogOperation::ExitLowPowerMode => {
+                    // 处理退出低功耗模式日志
+                    println!("Processing ExitLowPowerMode log item");
+                    
+                    // 无论配置是否支持低功耗模式，都确保事务管理器处于正常模式
+                    crate::transaction::set_low_power_mode(false);
+                    
+                    // 检查配置是否支持低功耗模式
+                    if db.config.low_power_mode_supported {
+                        // 如果数据库当前处于低功耗模式，执行相关操作
+                        if db.is_low_power_mode() {
+                            // 执行退出低功耗模式的准备工作
+                            unsafe {
+                                // 恢复正常的索引更新频率
+                                // 恢复正常的事务日志写入频率
+                                // 检查并扩展内存使用（如果需要）
+                            }
+                            
+                            // 遍历所有表，退出低功耗模式
+                            for table in &mut db.tables.iter_mut() {
+                                if let Some(table) = table {
+                                    table.set_low_power_mode(false, None);
+                                }
+                            }
+                            
+                            // 更新状态
+                            db.low_power_mode = false;
+                        }
+                    } else {
+                        // 如果配置不支持低功耗模式，确保所有表也处于正常模式
+                        for table in &mut db.tables.iter_mut() {
+                            if let Some(table) = table {
+                                table.set_low_power_mode(false, None);
+                            }
+                        }
+                        // 确保数据库状态也更新
+                        db.low_power_mode = false;
+                    }
+                },
                 LogOperation::Insert => {
                     // 执行插入操作
                     // 检查table_id是否在有效范围内
@@ -1390,6 +1469,24 @@ impl LogManager {
                             let primary_key_field = &table.def.fields[table.def.primary_key];
                             let key_ptr = record_ptr.add(primary_key_field.offset);
                             primary_index.insert(key_ptr, primary_key_field.size, log_item.record_id as u16)?;
+                        }
+                        
+                        // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
+                        let primary_key_field = &table.def.fields[table.def.primary_key];
+                        let key_ptr = record_ptr.add(primary_key_field.offset);
+                        let new_pk = match primary_key_field.data_type {
+                            crate::types::DataType::UInt8 => (unsafe { *(key_ptr as *const u8) }) as u64,
+                            crate::types::DataType::UInt16 => (unsafe { *(key_ptr as *const u16) }) as u64,
+                            crate::types::DataType::UInt32 => (unsafe { *(key_ptr as *const u32) }) as u64,
+                            crate::types::DataType::UInt64 => unsafe { *(key_ptr as *const u64) },
+                            crate::types::DataType::Int8 => (unsafe { *(key_ptr as *const i8) }) as u64,
+                            crate::types::DataType::Int16 => (unsafe { *(key_ptr as *const i16) }) as u64,
+                            crate::types::DataType::Int32 => (unsafe { *(key_ptr as *const i32) }) as u64,
+                            crate::types::DataType::Int64 => (unsafe { *(key_ptr as *const i64) }) as u64,
+                            _ => 0,
+                        };
+                        if new_pk > table.max_pk {
+                            table.max_pk = new_pk;
                         }
                     }
                 },

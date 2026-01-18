@@ -277,6 +277,37 @@ impl RemDb {
         // 更新状态
         self.low_power_mode = true;
         
+        // 记录EnterLowPowerMode日志到WAL
+        unsafe {
+            // 直接使用LogManager写入日志，而不是通过TransactionManager
+            let tx_manager = crate::transaction::get_tx_manager();
+            if let Some(log_manager) = tx_manager.get_log_manager_mut() {
+                // 创建日志项
+                let log_item = crate::transaction::LogItem {
+                    op_type: crate::transaction::LogOperation::EnterLowPowerMode,
+                    table_id: 0, // 低功耗模式是全局操作，不需要特定表ID
+                    record_id: 0,
+                    data_size: 0,
+                    old_data: [0; 512],
+                    new_data: [0; 512],
+                    tx_id: 0,
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0,
+                };
+                
+                // 计算校验和
+                let calculated_checksum = crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
+                
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+                
+                // 写入日志
+                let _ = log_manager.write_log_item(&final_log_item);
+                // 立即刷新缓冲区，确保日志被持久化
+                let _ = log_manager.flush_buffer();
+            }
+        }
+        
         Ok(())
     }
     
@@ -335,6 +366,37 @@ impl RemDb {
         
         // 更新状态
         self.low_power_mode = false;
+        
+        // 记录ExitLowPowerMode日志到WAL
+        unsafe {
+            // 直接使用LogManager写入日志，而不是通过TransactionManager
+            let tx_manager = crate::transaction::get_tx_manager();
+            if let Some(log_manager) = tx_manager.get_log_manager_mut() {
+                // 创建日志项
+                let log_item = crate::transaction::LogItem {
+                    op_type: crate::transaction::LogOperation::ExitLowPowerMode,
+                    table_id: 0, // 低功耗模式是全局操作，不需要特定表ID
+                    record_id: 0,
+                    data_size: 0,
+                    old_data: [0; 512],
+                    new_data: [0; 512],
+                    tx_id: 0,
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0,
+                };
+                
+                // 计算校验和
+                let calculated_checksum = crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
+                
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+                
+                // 写入日志
+                let _ = log_manager.write_log_item(&final_log_item);
+                // 立即刷新缓冲区，确保日志被持久化
+                let _ = log_manager.flush_buffer();
+            }
+        }
         
         Ok(())
     }
