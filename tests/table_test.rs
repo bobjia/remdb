@@ -123,6 +123,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             unique: true,
             auto_increment: true,
             default_value: None,
+            vector_metadata: None,
         },
         FieldDef {
             name: "value",
@@ -134,6 +135,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
     ],
     primary_key: 0,
@@ -398,6 +400,7 @@ static SMALL_TABLE_DEF: TableDef = TableDef {
             unique: true,
             auto_increment: true,
             default_value: None,
+            vector_metadata: None,
         },
     ],
     primary_key: 0,
@@ -528,6 +531,7 @@ fn test_not_null_constraint() {
                 unique: true,
                 auto_increment: true,
                 default_value: None,
+                vector_metadata: None,
             },
             FieldDef {
                 name: "name",
@@ -539,6 +543,7 @@ fn test_not_null_constraint() {
                 unique: false,
                 auto_increment: false,
                 default_value: None,
+                vector_metadata: None,
             },
             FieldDef {
                 name: "value_float",
@@ -550,6 +555,7 @@ fn test_not_null_constraint() {
                 unique: false,
                 auto_increment: false,
                 default_value: None,
+                vector_metadata: None,
             },
             FieldDef {
                 name: "value_int",
@@ -559,8 +565,9 @@ fn test_not_null_constraint() {
                 primary_key: false,
                 not_null: true,
                 unique: false,
-                    auto_increment: false,
+                auto_increment: false,
                 default_value: None,
+                vector_metadata: None,
             },
             ],
             primary_key: 0,
@@ -694,6 +701,7 @@ fn test_table_record_ref_and_scan_ref() {
                 unique: true,
                 auto_increment: true,
                 default_value: None,
+                vector_metadata: None,
             },
             FieldDef {
                 name: "name",
@@ -705,6 +713,7 @@ fn test_table_record_ref_and_scan_ref() {
                 unique: false,
                 auto_increment: false,
                 default_value: None,
+                vector_metadata: None,
             },
         ].into_boxed_slice());
 

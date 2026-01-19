@@ -20,7 +20,7 @@ pub mod ha;
 pub mod time_series;
 
 // 导出核心类型
-pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType, MAX_STRING_LEN};
+pub use types::{DataType, FieldDef, TableDef, Value, Result, RemDbError, IndexType, MAX_STRING_LEN, DistanceType, VectorMetadata, VectorIndexType};
 pub use table::{MemoryTable, RecordRef, RecordCursor, RecordIdCursor};
 
 pub use index::{PrimaryIndex, SecondaryIndex, BTreeIndex, TTreeIndex, IndexStats, AnySecondaryIndex, PrimaryIndexItem};
@@ -42,6 +42,7 @@ use alloc::string::String;
 use alloc::string::ToString;
 
 /// 字段约束信息
+#[derive(Clone)]
 pub struct FieldConstraint {
     /// 是否为主键
     pub primary_key: bool,
@@ -59,7 +60,7 @@ pub trait DdlExecutor {
     fn create_table(
         &mut self,
         name: &str,
-        fields: &[(&str, DataType, Option<Value>)],
+        fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)],
         constraints: Option<&[FieldConstraint]>,
         primary_key: Option<usize>
     ) -> Result<()>;
@@ -904,7 +905,7 @@ impl DdlExecutor for RemDb {
     fn create_table(
         &mut self,
         name: &str,
-        fields: &[(&str, DataType, Option<Value>)],
+        fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)],
         constraints: Option<&[FieldConstraint]>,
         primary_key: Option<usize>
     ) -> Result<()> {
@@ -935,10 +936,14 @@ impl DdlExecutor for RemDb {
         let mut offset = 0;
         let mut record_size = 0;
         
-        for (i, (field_name, data_type, default_value)) in fields.iter().enumerate() {
+        for (i, (field_name, data_type, dimension, distance_type, default_value)) in fields.iter().enumerate() {
             // 计算字段大小
             let field_size = match data_type {
                 DataType::String => MAX_STRING_LEN,
+                DataType::Vector => {
+                    // 向量类型：维度 * 4字节（f32）
+                    *dimension as usize * 4
+                },
                 _ => data_type.size(),
             };
             
@@ -969,6 +974,17 @@ impl DdlExecutor for RemDb {
             // 主键必须是唯一的，覆盖用户设置
             let final_unique = is_primary_key || constraint.unique;
             
+            // 创建向量元数据（仅向量类型需要）
+            let vector_metadata = if *data_type == DataType::Vector {
+                Some(VectorMetadata {
+                    dimension: *dimension,
+                    distance_type: distance_type.unwrap_or(DistanceType::L2),
+                    index_type: VectorIndexType::HNSW, // 默认使用HNSW索引
+                })
+            } else {
+                None
+            };
+            
             // 创建字段定义，设置默认约束
             let field_def = FieldDef {
                 name: field_name_static,
@@ -980,6 +996,7 @@ impl DdlExecutor for RemDb {
                 unique: final_unique, // 应用唯一约束
                 auto_increment: is_auto_increment, // 应用自增约束
                 default_value: *default_value, // 设置字段默认值
+                vector_metadata, // 设置向量元数据
             };
             
             field_defs.push(field_def);
@@ -1117,6 +1134,18 @@ impl DdlExecutor for RemDb {
                     if let Some(default_value) = field.default_value {
                         // 根据数据类型写入默认值，添加完善的边界检查
                         match field.data_type {
+                            // 向量类型
+                            crate::types::DataType::Vector => {
+                                // 向量默认值处理
+                                let vector_size = field.vector_metadata.unwrap().dimension as usize * 4; // float32
+                                if offset + vector_size <= log_data.len() {
+                                    unsafe {
+                                        let vector_ptr = default_value.vector;
+                                        std::ptr::copy(vector_ptr as *const u8, log_data.as_mut_ptr().add(offset), vector_size);
+                                    }
+                                    offset += vector_size;
+                                }
+                            },
                             // 1字节类型
                             crate::types::DataType::Bool | 
                             crate::types::DataType::Int8 | 
@@ -1258,12 +1287,23 @@ impl DdlExecutor for RemDb {
         let field_index = table.def.fields.iter().position(|f| f.name == field_name)
             .ok_or(RemDbError::FieldNotFound)?;
         
-        // 3. 检查是否已存在索引
+        // 3. 对于向量索引，检查向量维度是否超过限制
+        let field = &table.def.fields[field_index];
+        if index_type == IndexType::Vector || field.data_type == DataType::Vector {
+            if let Some(vector_meta) = &field.vector_metadata {
+                // 索引的向量列最大维度限制为1024
+                if vector_meta.dimension > 1024 {
+                    return Err(RemDbError::TypeMismatch);
+                }
+            }
+        }
+        
+        // 4. 检查是否已存在索引
     if self.secondary_indices[table_id].is_some() {
         return Err(RemDbError::TwoMoreIndexNotSupported);
     }
         
-        // 4. 创建新的表定义，包含索引信息
+        // 5. 创建新的表定义，包含索引信息
         let mut new_fields = Vec::new();
         for field in table.def.fields {
             new_fields.push(FieldDef {
@@ -1276,6 +1316,7 @@ impl DdlExecutor for RemDb {
                 unique: field.unique,
                 auto_increment: field.auto_increment,
                 default_value: field.default_value,
+                vector_metadata: field.vector_metadata,
             });
         }
         
@@ -1290,7 +1331,7 @@ impl DdlExecutor for RemDb {
             max_records: table.def.max_records,
         });
         
-        // 5. 为索引分配内存
+        // 6. 为索引分配内存
         let max_items = table.def.max_records;
         
         // 对于BTree和TTree索引，减少节点数量，避免占用过多内存导致测试卡住
@@ -1298,12 +1339,13 @@ impl DdlExecutor for RemDb {
             IndexType::BTree | IndexType::TTree => 100, // 只使用100个节点的容量
             IndexType::SortedArray => max_items, // 有序数组索引使用原始值
             IndexType::Hash => max_items, // 哈希索引使用原始值
+            IndexType::Vector => max_items, // 向量索引使用原始值
         };
         
         let index_size = AnySecondaryIndex::calculate_memory_size(new_def.as_ref(), index_max_nodes);
         let index_memory = crate::memory::allocator::alloc(index_size)?;
         
-        // 6. 创建索引
+        // 7. 创建索引
         let index = unsafe {
             AnySecondaryIndex::new(
                 alloc::sync::Arc::from(new_def),
@@ -1312,10 +1354,10 @@ impl DdlExecutor for RemDb {
             )?
         };
         
-        // 7. 存储索引
+        // 8. 存储索引
         self.secondary_indices[table_id] = Some(index);
         
-        // 记录CREATE_INDEX日志到WAL
+        // 9. 记录CREATE_INDEX日志到WAL
         unsafe {
             // 直接使用LogManager写入日志，而不是通过TransactionManager
             let tx_manager = crate::transaction::get_tx_manager();
@@ -1431,7 +1473,7 @@ impl RemDb {
     }
     
     /// 创建表
-    pub fn create_table(&mut self, table_name: &str, fields: &[(&str, DataType, Option<Value>)], primary_key: Option<usize>) -> Result<()> {
+    pub fn create_table(&mut self, table_name: &str, fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)], primary_key: Option<usize>) -> Result<()> {
         // 调用已有的DdlExecutor实现，不传递约束信息
         DdlExecutor::create_table(self, table_name, fields, None, primary_key)
     }
@@ -1457,6 +1499,7 @@ impl RemDb {
             unique: false,
             auto_increment: false,
             default_value: Some(Value { time: crate::types::db_timestamp::new(0, 0, 0, 0) }),
+            vector_metadata: None,
         });
         offset += time_field_size;
         record_size += time_field_size;
@@ -1474,6 +1517,7 @@ impl RemDb {
             unique: false,
             auto_increment: false,
             default_value: Some(Value { float64: 0.0 }),
+            vector_metadata: None,
         });
         offset += value_field_size;
         record_size += value_field_size;
@@ -1493,6 +1537,7 @@ impl RemDb {
                 unique: false,
                 auto_increment: false,
                 default_value: None, // 标签字段默认值为None
+                vector_metadata: None,
             });
             tag_field_indices.push((i + 2) as usize); // 时间字段(0) + 值字段(1) + 标签字段(i)
             offset += tag_field_size;
@@ -1826,6 +1871,7 @@ impl RemDb {
                             IndexType::SortedArray => "sortedarray",
                             IndexType::BTree => "btree",
                             IndexType::TTree => "ttree",
+                            IndexType::Vector => "vector",
                         };
                         
                         let create_index_sql = format!("CREATE INDEX {} ON {} USING {} ({});\n\n", 
@@ -1952,6 +1998,7 @@ impl RemDb {
                                 DataType::Interval => {
                                     alloc::format!("{}", core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval).value)
                                 },
+                                DataType::Vector => format!("<vector>"),
                             };
                             
                             field_values.push(value_str);

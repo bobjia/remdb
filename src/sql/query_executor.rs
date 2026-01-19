@@ -10,27 +10,37 @@ use crate::{TableDef,RemDb, MemoryTable, Value, RemDbError, types::{DataType, Ty
 use crate::sql::{SqlQuery, ResultSet, Condition, ComparisonCondition, ComparisonOperator, OrderByClause};
 use crate::sql::query_parser::{BetweenCondition, Expression, BinaryOperator, GroupByClause, JoinType};
 
-/// 解析数据类型字符串，提取基本类型和精度
+/// 解析数据类型字符串，提取基本类型和精度/维度
 /// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6)
-fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u8), QueryExecutionError> {
+///       "VECTOR(768)" -> ("VECTOR", 768)
+fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16), QueryExecutionError> {
     let type_str = type_str.to_uppercase();
     
     // 查找左括号位置
     if let Some(open_paren) = type_str.find('(') {
-        // 查找对应的右括号
-        if let Some(close_paren) = type_str.find(')') {
-            // 提取基本类型
-            let base_type = type_str[..open_paren].trim();
-            // 提取精度值
-            let precision_str = type_str[open_paren + 1..close_paren].trim();
-            let precision = precision_str.parse::<u8>().map_err(|_| QueryExecutionError::TypeMismatch)?;
-            
-            Ok((base_type.to_string(), precision))
-        } else {
-            Err(QueryExecutionError::TypeMismatch)
+        // 查找对应的右括号，忽略WITH子句
+        let close_paren = type_str.find(')').ok_or(QueryExecutionError::TypeMismatch)?;
+        
+        // 提取基本类型 - 对于VECTOR类型，保留完整的修饰符信息
+        let base_type_full = type_str.trim();
+        // 提取括号内的维度值
+        let param_str = type_str[open_paren + 1..close_paren].trim();
+        let param = param_str.parse::<u16>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+        
+        // 提取纯基本类型，用于匹配DataType
+        let base_type = type_str[..open_paren].trim();
+        
+        // 对向量类型添加维度限制
+        if base_type == "VECTOR" {
+            // 向量维度限制为1-4096
+            if param < 1 || param > 4096 {
+                return Err(QueryExecutionError::TypeMismatch);
+            }
         }
+        
+        Ok((base_type.to_string(), param))
     } else {
-        // 没有精度，使用默认值
+        // 没有参数，使用默认值
         Ok((type_str.trim().to_string(), 6)) // 默认精度6（微秒）
     }
 }
@@ -949,6 +959,10 @@ fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
             DataType::Timestamp => left.value.time == right.value.time,
             DataType::TimestampTZ => left.value.time == right.value.time,
             DataType::Interval => left.value.interval == right.value.interval,
+            DataType::Vector => {
+                    // 向量比较：目前不支持精确比较，返回false
+                    false
+                },
         }
     }
 }
@@ -1258,6 +1272,7 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                             DataType::Timestamp => TypedValue { value_type: DataType::Timestamp, value: Value { u64: 0 } },
                             DataType::TimestampTZ => TypedValue { value_type: DataType::TimestampTZ, value: Value { u64: 0 } },
                             DataType::Interval => TypedValue { value_type: DataType::Interval, value: Value { i64: 0 } },
+                            DataType::Vector => TypedValue { value_type: DataType::Vector, value: Value { vector: std::ptr::null() } },
                         };
                         join_default_values.push(default_value);
                     }
@@ -1434,6 +1449,7 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                                 DataType::Timestamp => TypedValue { value_type: DataType::Timestamp, value: Value { u64: 0 } },
                                 DataType::TimestampTZ => TypedValue { value_type: DataType::TimestampTZ, value: Value { u64: 0 } },
                                 DataType::Interval => TypedValue { value_type: DataType::Interval, value: Value { i64: 0 } },
+                                DataType::Vector => TypedValue { value_type: DataType::Vector, value: Value { vector: std::ptr::null() } },
                             };
                             main_default_values.push(default_value);
                         }
@@ -3136,6 +3152,7 @@ fn parse_interval_string(interval_str: &str) -> Result<i64, QueryExecutionError>
 /// 执行CREATE TABLE查询
 fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
     // 将SQL数据类型转换为RemDb DataType
+    // 字段定义：(字段名, 数据类型, 维度/精度, 距离度量, 默认值)
     let mut fields = Vec::new();
     let mut field_constraints = Vec::new(); // 存储约束信息
     
@@ -3169,6 +3186,9 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
             
             // 字符串类型
             "STRING" | "TEXT" | "VARCHAR" | "NVARCHAR" | "CHAR" | "CLOB" => DataType::String,
+            
+            // 向量类型
+            "VECTOR" => DataType::Vector,
             
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
@@ -3214,8 +3234,8 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Bool => Value { bool: actual_value != 0 },
                             DataType::Float32 => Value { float32: actual_value as f32 },
                             DataType::Float64 => Value { float64: actual_value as f64 },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(actual_value, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(actual_value, 0, precision, 0) },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(actual_value, 0, precision.try_into().unwrap(), 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(actual_value, 0, precision.try_into().unwrap(), 0) },
                             DataType::String => {
                                 let mut s = [0; MAX_STRING_LEN];
                                 let str_val = actual_value.to_string();
@@ -3223,7 +3243,8 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                                 s[..len].copy_from_slice(str_val.as_bytes());
                                 Value { string: s }
                             },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(actual_value, precision, 0) },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(actual_value, precision.try_into().unwrap(), 0) },
+                            DataType::Vector => Value { vector: core::ptr::null() },
                         }
                     },
                     crate::sql::Value::Float(f) => {
@@ -3239,8 +3260,8 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Bool => Value { bool: *f != 0.0 },
                             DataType::Float32 => Value { float32: *f as f32 },
                             DataType::Float64 => Value { float64: *f },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(*f as i64, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(*f as i64, 0, precision, 0) },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(*f as i64, 0, precision.try_into().unwrap(), 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(*f as i64, 0, precision.try_into().unwrap(), 0) },
                             DataType::String => {
                                 let mut s = [0; MAX_STRING_LEN];
                                 let str_val = f.to_string();
@@ -3248,7 +3269,8 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                                 s[..len].copy_from_slice(str_val.as_bytes());
                                 Value { string: s }
                             },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(*f as i64, precision, 0) },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(*f as i64, precision.try_into().unwrap(), 0) },
+                            DataType::Vector => Value { vector: core::ptr::null() },
                         }
                     },
                     crate::sql::Value::Boolean(b) => {
@@ -3264,8 +3286,8 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Bool => Value { bool: *b },
                             DataType::Float32 => Value { float32: (*b as i32) as f32 },
                             DataType::Float64 => Value { float64: (*b as i32) as f64 },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(*b as i64, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(*b as i64, 0, precision, 0) },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(*b as i64, 0, precision.try_into().unwrap(), 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(*b as i64, 0, precision.try_into().unwrap(), 0) },
                             DataType::String => {
                                 let mut s = [0; MAX_STRING_LEN];
                                 let str_val = b.to_string();
@@ -3273,7 +3295,8 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                                 s[..len].copy_from_slice(str_val.as_bytes());
                                 Value { string: s }
                             },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(*b as i64, precision, 0) },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(*b as i64, precision.try_into().unwrap(), 0) },
+                            DataType::Vector => Value { vector: core::ptr::null() },
                         }
                     },
                     crate::sql::Value::String(s) => {
@@ -3289,15 +3312,16 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Bool => Value { bool: s.parse().unwrap_or(false) },
                             DataType::Float32 => Value { float32: s.parse().unwrap_or(0.0) },
                             DataType::Float64 => Value { float64: s.parse().unwrap_or(0.0) },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision.try_into().unwrap(), 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision.try_into().unwrap(), 0) },
                             DataType::String => {
                                 let mut buf = [0; MAX_STRING_LEN];
                                 let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                                 buf[..len].copy_from_slice(s.as_bytes());
                                 Value { string: buf }
                             },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision, 0) },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision.try_into().unwrap(), 0) },
+                            DataType::Vector => Value { vector: core::ptr::null() },
                         }
                     },
                     crate::sql::Value::Identifier(s) => {
@@ -3314,15 +3338,16 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Bool => Value { bool: s.parse().unwrap_or(false) },
                             DataType::Float32 => Value { float32: s.parse().unwrap_or(0.0) },
                             DataType::Float64 => Value { float64: s.parse().unwrap_or(0.0) },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision.try_into().unwrap(), 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision.try_into().unwrap(), 0) },
                             DataType::String => {
                                 let mut buf = [0; MAX_STRING_LEN];
                                 let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                                 buf[..len].copy_from_slice(s.as_bytes());
                                 Value { string: buf }
                             },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision, 0) },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision.try_into().unwrap(), 0) },
+                            DataType::Vector => Value { vector: core::ptr::null() },
                         }
                     },
                     crate::sql::Value::Null => {
@@ -3339,10 +3364,11 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                             DataType::Bool => Value { bool: false },
                             DataType::Float32 => Value { float32: 0.0 },
                             DataType::Float64 => Value { float64: 0.0 },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(0, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(0, 0, precision, 0) },
+                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(0, 0, precision.try_into().unwrap(), 0) },
+                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(0, 0, precision.try_into().unwrap(), 0) },
                             DataType::String => Value { string: [0; MAX_STRING_LEN] },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(0, precision, 0) },
+                            DataType::Interval => Value { interval: crate::types::db_interval::new(0, precision.try_into().unwrap(), 0) },
+                            DataType::Vector => Value { vector: core::ptr::null() },
                         }
                     },
                 };
@@ -3351,18 +3377,32 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
             None => None,
         };
         
+        // 解析向量类型的距离度量
+        let mut distance_type = None;
+        if data_type == DataType::Vector {
+            // 检查是否包含WITH DISTANCE修饰符
+            if data_type_str.contains("WITH DISTANCE=L2") {
+                distance_type = Some(crate::types::DistanceType::L2);
+            } else if data_type_str.contains("WITH DISTANCE=INNER_PRODUCT") {
+                distance_type = Some(crate::types::DistanceType::InnerProduct);
+            } else if data_type_str.contains("WITH DISTANCE=COSINE") {
+                distance_type = Some(crate::types::DistanceType::Cosine);
+            }
+        }
+        
         // 保存字段和约束信息
-    fields.push((field_name.as_str(), data_type, converted_default));
+        // 对于向量类型，使用解析出的精度作为维度
+        fields.push((field_name.as_str(), data_type, precision, distance_type, converted_default));
     
-    // 转换为FieldConstraint对象
-    let field_constraint = crate::FieldConstraint {
-        primary_key: *is_primary_key,
-        not_null: *is_not_null,
-        unique: *is_unique,
-        auto_increment: *is_auto_increment,
-    };
-    field_constraints.push(field_constraint);
-}
+        // 转换为FieldConstraint对象
+        let field_constraint = crate::FieldConstraint {
+            primary_key: *is_primary_key,
+            not_null: *is_not_null,
+            unique: *is_unique,
+            auto_increment: *is_auto_increment,
+        };
+        field_constraints.push(field_constraint);
+    }
 
 // 查找主键字段索引
 let primary_key_index = query.primary_key.as_ref().and_then(|pk| {
@@ -3862,6 +3902,8 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
                 },
                 // 时间间隔类型
                 DataType::Interval => alloc::format!("{}", unsafe { default_val.interval.value }),
+                // 向量类型
+                DataType::Vector => "<vector>".to_string(),
             }
         } else {
             "".to_string()
@@ -3884,6 +3926,7 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
             crate::DataType::Float32 => "float".to_string(),
             crate::DataType::Float64 => "double".to_string(),
             crate::DataType::Interval => "interval".to_string(),
+            crate::DataType::Vector => alloc::format!("vector({})", field.vector_metadata.unwrap().dimension),
         };
         
         // 创建行数据
@@ -4199,6 +4242,15 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                         },
                         DataType::Interval => {
                             core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut crate::types::db_interval, default_value.interval);
+                        },
+                        DataType::Vector => {
+                            // 写入向量数据
+                            // 将目标指针转换为*mut f32类型，第三个参数是元素数量（field.size / 4，因为每个f32是4字节）
+                            core::ptr::copy_nonoverlapping(
+                                default_value.vector,
+                                record_data.as_mut_ptr().add(field.offset) as *mut f32,
+                                field.size / 4
+                            );
                         },
                     }
                 }
@@ -4737,6 +4789,20 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             DataType::Interval => {
                 return Err(QueryExecutionError::TypeMismatch);
             },
+            // 向量类型
+            DataType::Vector => {
+                match evaluated_value.value_type {
+                    DataType::Vector => {
+                        // 直接复制向量数据
+                        core::ptr::copy_nonoverlapping(
+                            evaluated_value.value.vector,
+                            record_data.as_mut_ptr().add(offset) as *mut f32,
+                            field_size / 4
+                        );
+                    },
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                }
+            },
         }
     }
     
@@ -5082,6 +5148,10 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
                 _ => false, // 类型不匹配
             }
         },
+        // 向量类型 - 目前不支持直接比较
+        DataType::Vector => {
+            false
+        },
     }
 }
 
@@ -5372,6 +5442,10 @@ fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &Or
                 let a_val = unsafe { val_a.value.interval.value };
                 let b_val = unsafe { val_b.value.interval.value };
                 a_val.cmp(&b_val)
+            },
+            // 向量类型 - 目前不支持排序
+            DataType::Vector => {
+                core::cmp::Ordering::Equal
             },
         };
         

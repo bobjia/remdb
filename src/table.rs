@@ -529,6 +529,7 @@ impl MemoryTable {
                             let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const crate::types::db_interval);
                             current.value == existing.value
                         },
+                        DataType::Vector => false, // 向量字段暂不支持作为主键
                     };
                     
                     if is_duplicate {
@@ -658,6 +659,7 @@ impl MemoryTable {
                             let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const crate::types::db_interval);
                             current.value == existing.value
                         },
+                        DataType::Vector => false, // 向量字段暂不支持唯一约束
                     };
                     
                     if is_duplicate {
@@ -695,6 +697,7 @@ impl MemoryTable {
                 memcpy(str_value.as_mut_ptr(), field_ptr, size);
                 Value { string: str_value }
             },
+            DataType::Vector => Value { vector: field_ptr as *const f32 },
         };
         
         Ok(value)
@@ -1138,6 +1141,9 @@ impl MemoryTable {
             },
             crate::types::DataType::Interval => {
                 Value { interval: core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval) }
+            },
+            crate::types::DataType::Vector => {
+                Value { vector: field_ptr as *const f32 }
             }
         };
         
@@ -1205,6 +1211,10 @@ impl MemoryTable {
             },
             crate::types::DataType::Interval => {
                 *(field_ptr as *mut crate::types::db_interval) = value.interval;
+            },
+            crate::types::DataType::Vector => {
+                // 复制vector数据到字段位置
+                memcpy(field_ptr, value.vector as *const u8, field.size);
             }
         }
         

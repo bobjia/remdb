@@ -116,6 +116,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             unique: true,
             auto_increment: true,
             default_value: None,
+            vector_metadata: None,
         },
         FieldDef {
             name: "value",
@@ -127,6 +128,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
     ],
     primary_key: 0,

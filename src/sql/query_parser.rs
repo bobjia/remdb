@@ -1769,7 +1769,7 @@ impl SqlParser {
         // 保存完整类型，包括参数和修饰符
         let mut result = base_type.clone();
         
-        // 检查是否有参数，如 VARCHAR(255) 或 TIMESTAMP(6)
+        // 检查是否有参数，如 VARCHAR(255), VECTOR(768) 或 TIMESTAMP(6)
         self.skip_whitespace();
         if self.match_char('(') {
             // 包含参数
@@ -1786,7 +1786,7 @@ impl SqlParser {
             }
         }
         
-        // 检查是否有修饰符，如 UNSIGNED 或 WITH TIME ZONE
+        // 检查是否有修饰符，如 UNSIGNED, WITH TIME ZONE 或 WITH DISTANCE=L2
         self.skip_whitespace();
         while self.peek_char().is_some() {
             // 检查是否是约束关键字（这些应该在数据类型之后单独解析）
@@ -1807,22 +1807,35 @@ impl SqlParser {
                 result.push(' ');
                 result.push_str(&modifier);
                 
-                // 检查是否是 WITH TIME ZONE 结构
+                // 检查是否是 WITH 修饰符，如 WITH TIME ZONE 或 WITH DISTANCE=L2
                 if modifier.eq_ignore_ascii_case("WITH") {
                     self.skip_whitespace();
-                    if self.peek_char().is_some() {
-                        let next_modifier = self.parse_identifier()?;
-                        result.push(' ');
-                        result.push_str(&next_modifier);
-                        
-                        if next_modifier.eq_ignore_ascii_case("TIME") {
-                            self.skip_whitespace();
-                            if self.peek_char().is_some() {
-                                let last_modifier = self.parse_identifier()?;
-                                result.push(' ');
-                                result.push_str(&last_modifier);
+                    while self.peek_char().is_some() {
+                        // 检查是否是约束关键字
+                        let next_token = self.peek_identifier();
+                        if let Some(token) = next_token {
+                            let token_upper = token.to_uppercase();
+                            if ["PRIMARY", "NOT", "UNIQUE", "AUTOINCREMENT", "AUTO_INCREMENT", "DEFAULT"].contains(&token_upper.as_str()) {
+                                break;
                             }
                         }
+                        
+                        // 解析 WITH 后的修饰符
+                        let with_modifier = self.parse_identifier()?;
+                        result.push(' ');
+                        result.push_str(&with_modifier);
+                        
+                        // 检查是否有等号，如 DISTANCE=L2
+                        self.skip_whitespace();
+                        if self.match_char('=') {
+                            result.push('=');
+                            
+                            // 解析等号后的数值或标识符
+                            let value = self.parse_identifier()?;
+                            result.push_str(&value);
+                        }
+                        
+                        self.skip_whitespace();
                     }
                 }
                 

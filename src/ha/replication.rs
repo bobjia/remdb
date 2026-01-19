@@ -5,6 +5,8 @@ use crate::ha::{Result, HAError};
 use crate::transaction::LogItem;
 use crate::pubsub;
 use crate::pubsub::{PubSubConfig, UdpMode};
+use crate::DdlExecutor;
+use crate::FieldConstraint;
 use std::time::Instant;
 
 // WAL复制主题ID
@@ -316,6 +318,29 @@ impl ReplicationManager {
                                             };
                                         }
                                     },
+                                    crate::types::DataType::Vector => {
+                                        // 向量类型处理，假设向量数据以float32数组形式存储
+                                        // 解析向量维度
+                                        let dimensions = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
+                                        offset += 2;
+                                        
+                                        // 解析向量数据
+                                        let vector_size = (dimensions as usize) * 4; // float32每个元素4字节
+                                        let mut vector_data = [0u8; 4096]; // 最大支持1024维向量
+                                        vector_data[..vector_size].copy_from_slice(&log_item.new_data[offset..offset+vector_size]);
+                                        offset += vector_size;
+                                        
+                                        // 设置向量值为float32指针
+                                        unsafe {
+                                            value.vector = vector_data.as_ptr() as *const f32;
+                                            // 同时设置向量元数据
+                                            value.vector_metadata = crate::types::VectorMetadata {
+                                                dimension: dimensions,
+                                                distance_type: crate::types::DistanceType::L2, // 默认L2距离
+                                                index_type: crate::types::VectorIndexType::HNSW, // 默认HNSW索引
+                                            };
+                                        }
+                                    },
                                 }
                                 Some(value)
                             } else {
@@ -323,11 +348,25 @@ impl ReplicationManager {
                             };
                             
                             // 添加字段到列表
-                            fields.push((field_name, data_type, default_value));
+                            // 对于向量类型，使用默认维度128和L2距离
+                            let dimension = if data_type == crate::types::DataType::Vector {
+                                128
+                            } else {
+                                6
+                            };
+                            fields.push((field_name, data_type, dimension, None, default_value));
                         }
                         
+                        // 转换为FieldConstraint对象
+                        let field_constraints = vec![crate::FieldConstraint {
+                            primary_key: false,
+                            not_null: false,
+                            unique: false,
+                            auto_increment: false,
+                        }; fields.len()];
+                        
                         // 调用全局数据库的create_table方法
-                        let _ = db.create_table(table_name, &fields, Some(primary_key));
+                        let _ = DdlExecutor::create_table(db, table_name, &fields, Some(&field_constraints), Some(primary_key));
                         
                         eprintln!("[Slave] Created table: {}", table_name);
                     },

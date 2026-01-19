@@ -23,6 +23,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             unique: true,
             auto_increment: true,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "name",
@@ -34,6 +35,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "email",
@@ -45,6 +47,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             unique: true,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "age",
@@ -56,6 +59,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "active",
@@ -67,17 +71,19 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "created_at",
             data_type: remdb::types::DataType::Timestamp,
             size: 8,
-            offset: 104,
+            offset: 102,
             primary_key: false,
-            not_null: true,
+            not_null: false,
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
     ],
     primary_key: 0,
@@ -102,6 +108,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             unique: true,
             auto_increment: true,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "user_id",
@@ -113,6 +120,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "product",
@@ -124,6 +132,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "quantity",
@@ -135,6 +144,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "amount",
@@ -146,6 +156,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "status",
@@ -157,6 +168,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "created_at",
@@ -168,6 +180,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
     ],
     primary_key: 0,
@@ -192,6 +205,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             unique: true,
             auto_increment: true,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "name",
@@ -203,6 +217,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             unique: true,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "description",
@@ -214,6 +229,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "price",
@@ -225,6 +241,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "stock",
@@ -236,6 +253,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "active",
@@ -247,6 +265,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
     ],
     primary_key: 0,

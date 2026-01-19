@@ -113,6 +113,7 @@ static TEST_TABLE: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: true,
             default_value: None,
+            vector_metadata: None,
         },
         remdb::types::FieldDef {
             name: "name",
@@ -124,6 +125,7 @@ static TEST_TABLE: remdb::types::TableDef = remdb::types::TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
+            vector_metadata: None,
         },
     ],
     primary_key: 0,

@@ -103,6 +103,7 @@ impl From<&FieldDef> for RemDbFieldDef {
                 DataType::TimestampTZ => RemDbDataType::Timestamp, // 映射为Timestamp
                 DataType::String => RemDbDataType::String,
                 DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
+                DataType::Vector => RemDbDataType::UInt64, // 映射为UInt64
             },
             size: rust_field.size,
             offset: rust_field.offset,

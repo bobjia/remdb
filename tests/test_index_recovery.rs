@@ -154,9 +154,9 @@ fn test_index_recovery() -> Result<()> {
     
     // 创建表
     let fields = &[
-        ("id", remdb::DataType::UInt64, None),
-        ("name", remdb::DataType::String, None),
-        ("value", remdb::DataType::UInt32, None),
+        ("id", remdb::DataType::UInt64, 8, None, None),
+        ("name", remdb::DataType::String, 32, None, None),
+        ("value", remdb::DataType::UInt32, 4, None, None),
     ];
     
     db.create_table("test_table", fields, Some(0))?;

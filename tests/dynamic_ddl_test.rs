@@ -162,10 +162,10 @@ fn test_create_table() {
     let result = db.create_table(
         "users",
         &[
-            ("id", DataType::UInt32, None),
-            ("name", DataType::String, None),
-            ("age", DataType::UInt8, None),
-            ("active", DataType::Bool, None),
+            ("id", DataType::UInt32, 4, None, None),
+            ("name", DataType::String, 32, None, None),
+            ("age", DataType::UInt8, 1, None, None),
+            ("active", DataType::Bool, 1, None, None),
         ],
         Some(0) // 主键为id字段
     );
@@ -187,7 +187,7 @@ fn test_create_table_invalid() {
     // 测试创建主键索引超出范围的表（应该失败）
     let result = db.create_table(
         "invalid_pk_table",
-        &[("id", DataType::UInt32, None)],
+        &[ ("id", DataType::UInt32, 4, None, None) ],
         Some(1) // 主键索引超出范围
     );
     assert!(result.is_err(), "Creating table with invalid primary key should fail");
@@ -214,10 +214,10 @@ fn test_create_index() {
     let result = db.create_table(
         "products",
         &[
-            ("id", DataType::UInt32, None),
-            ("name", DataType::String, None),
-            ("price", DataType::Float32, None),
-            ("category", DataType::String, None),
+            ("id", DataType::UInt32, 4, None, None),
+            ("name", DataType::String, 32, None, None),
+            ("price", DataType::Float32, 4, None, None),
+            ("category", DataType::String, 32, None, None),
         ],
         Some(0) // 主键为id字段
     );
@@ -236,10 +236,10 @@ fn test_create_index() {
     let result = db.create_table(
         "orders_ttree",
         &[
-            ("id", DataType::UInt32, None),
-            ("customer_id", DataType::UInt32, None),
-            ("amount", DataType::Float64, None),
-            ("created_at", DataType::Timestamp, None),
+            ("id", DataType::UInt32, 4, None, None),
+            ("customer_id", DataType::UInt32, 4, None, None),
+            ("amount", DataType::Float64, 8, None, None),
+            ("created_at", DataType::Timestamp, 8, None, None),
         ],
         Some(0) // 主键为id字段
     );
@@ -257,10 +257,10 @@ fn test_create_index() {
     let result = db.create_table(
         "orders_sorted",
         &[
-            ("id", DataType::UInt32, None),
-            ("customer_id", DataType::UInt32, None),
-            ("amount", DataType::Float64, None),
-            ("created_at", DataType::Timestamp, None),
+            ("id", DataType::UInt32, 4, None, None),
+            ("customer_id", DataType::UInt32, 4, None, None),
+            ("amount", DataType::Float64, 8, None, None),
+            ("created_at", DataType::Timestamp, 8, None, None),
         ],
         Some(0) // 主键为id字段
     );
@@ -296,11 +296,11 @@ fn test_describe_table() {
     let result = db.create_table(
         "employees",
         &[
-            ("id", DataType::UInt32, None),
-            ("name", DataType::String, None),
-            ("department", DataType::String, None),
-            ("salary", DataType::Float64, None),
-            ("active", DataType::Bool, None),
+            ("id", DataType::UInt32, 4, None, None),
+            ("name", DataType::String, 32, None, None),
+            ("department", DataType::String, 32, None, None),
+            ("salary", DataType::Float64, 8, None, None),
+            ("active", DataType::Bool, 1, None, None),
         ],
         Some(0) // 主键为id字段
     );
@@ -497,9 +497,9 @@ fn test_ddl_export_with_time_series() {
     let result = db.create_table(
         "users",
         &[
-            ("id", DataType::UInt32, None),
-            ("name", DataType::String, None),
-            ("age", DataType::UInt8, None),
+            ("id", DataType::UInt32, 4, None, None),
+            ("name", DataType::String, 32, None, None),
+            ("age", DataType::UInt8, 1, None, None),
         ],
         Some(0) // 主键为id字段
     );

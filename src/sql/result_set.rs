@@ -228,6 +228,9 @@ fn value_to_string_repr(value: &TypedValue) -> String {
             DataType::Interval => {
                 alloc::format!("{}", value.value.interval.value)
             },
+            DataType::Vector => {
+                alloc::format!("<vector>")
+            },
         }
     }
 }

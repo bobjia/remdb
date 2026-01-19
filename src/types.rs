@@ -6,6 +6,45 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::string::ToString;
 
+/// 向量距离度量类型
+#[repr(u8)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Ord, PartialOrd)]
+pub enum DistanceType {
+    /// L2距离（欧几里得距离）
+    L2 = 0,
+    /// 内积
+    InnerProduct = 1,
+    /// 余弦相似度
+    Cosine = 2,
+}
+
+/// 向量索引类型
+#[repr(u8)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Ord, PartialOrd)]
+pub enum VectorIndexType {
+    /// HNSW索引（Hierarchical Navigable Small World）
+    HNSW = 0,
+    /// HNSW_SQ索引（带标量量化的HNSW）
+    HNSW_SQ = 1,
+    /// HNSW_BQ索引（带二进制量化的HNSW）
+    HNSW_BQ = 2,
+    /// IVF索引（Inverted File）
+    IVF = 3,
+    /// IVF_PQ索引（带乘积量化的IVF）
+    IVF_PQ = 4,
+}
+
+/// 向量元数据
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct VectorMetadata {
+    /// 向量维度
+    pub dimension: u16,
+    /// 距离度量类型
+    pub distance_type: DistanceType,
+    /// 索引类型
+    pub index_type: VectorIndexType,
+}
+
 /// 基本数据类型枚举
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -40,6 +79,8 @@ pub enum DataType {
     String = 13,
     /// 时间间隔
     Interval = 14,
+    /// 向量类型
+    Vector = 15,
 }
 
 /// 实现从u8到DataType的转换
@@ -61,6 +102,7 @@ impl From<u8> for DataType {
             12 => DataType::TimestampTZ,
             13 => DataType::String,
             14 => DataType::Interval,
+            15 => DataType::Vector,
             _ => DataType::String, // 默认为String类型
         }
     }
@@ -73,6 +115,7 @@ impl DataType {
     /// - 精度 3-5: 6字节（毫秒级）
     /// - 精度 6-8: 8字节（微秒级，默认）
     /// - 精度 9: 10字节（纳秒级）
+    /// 向量类型：维度 * 4字节（float32）
     pub const fn size(&self) -> usize {
         match self {
             DataType::UInt8 => 1,
@@ -90,6 +133,7 @@ impl DataType {
             DataType::TimestampTZ => core::mem::size_of::<db_timestamp>(), // 实际大小，包括精度和时区偏移
             DataType::Interval => core::mem::size_of::<db_interval>(),   // 实际大小，包括精度和标志
             DataType::String => panic!("String size is variable at compile time"),
+            DataType::Vector => panic!("Vector size depends on dimension at runtime"),
         }
     }
     
@@ -117,6 +161,8 @@ impl DataType {
             DataType::Interval => "INTERVAL",
             // 字符串类型
             DataType::String => "TEXT",
+            // 向量类型
+            DataType::Vector => "VECTOR",
         }
     }
 }
@@ -398,6 +444,8 @@ pub union Value {
     pub time: db_timestamp,          // 新的时间戳类型
     pub interval: db_interval,       // 时间间隔类型
     pub string: [u8; MAX_STRING_LEN],
+    pub vector: *const f32,          // 向量类型（指向float32数组的指针）
+    pub vector_metadata: VectorMetadata, // 向量元数据
 }
 
 // 手动实现Debug trait，因为Rust不支持为union类型自动派生Debug
@@ -409,6 +457,15 @@ impl fmt::Debug for Value {
         }
     }
 }
+
+// 手动实现Sync trait，确保Value类型可以在多线程间安全共享
+unsafe impl Sync for Value {}
+
+// 手动实现Sync trait，确保FieldDef类型可以在多线程间安全共享
+unsafe impl Sync for FieldDef {}
+
+// 手动实现Sync trait，确保TableDef类型可以在多线程间安全共享
+unsafe impl Sync for TableDef {}
 
 /// 带类型的值
 #[derive(Copy, Clone)]
@@ -469,6 +526,12 @@ impl PartialEq for TypedValue {
                     let a_str = core::str::from_utf8(&self.value.string).unwrap_or("");
                     let b_str = core::str::from_utf8(&other.value.string).unwrap_or("");
                     a_str.trim_end_matches(char::from(0)) == b_str.trim_end_matches(char::from(0))
+                },
+                DataType::Vector => {
+                    // 向量比较：比较元数据和值
+                    // 这里简化实现，实际应该比较向量的每个元素
+                    // 注意：实际使用中需要获取向量维度信息
+                    self.value.vector_metadata == other.value.vector_metadata
                 }
             }
         }
@@ -527,6 +590,11 @@ impl Hash for TypedValue {
                     // 哈希字符串内容，忽略末尾的空字符
                     let s = core::str::from_utf8(&self.value.string).unwrap_or("");
                     s.trim_end_matches(char::from(0)).hash(state);
+                },
+                DataType::Vector => {
+                    // 向量哈希：哈希元数据
+                    // 注意：实际使用中可能需要哈希向量的部分或全部元素
+                    self.value.vector_metadata.hash(state);
                 }
             }
         }
@@ -587,6 +655,11 @@ impl PartialOrd for TypedValue {
                             let b_str = core::str::from_utf8(&other.value.string).unwrap_or("");
                             Some(a_str.trim_end_matches(char::from(0)).cmp(b_str.trim_end_matches(char::from(0))))
                         },
+                        DataType::Vector => {
+                            // 向量比较：比较元数据
+                            // 注意：实际使用中可能需要比较向量的距离或相似度
+                            Some(self.value.vector_metadata.cmp(&other.value.vector_metadata))
+                        },
                     }
                 }
             },
@@ -607,32 +680,51 @@ impl fmt::Debug for TypedValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
             match self.value_type {
-                DataType::UInt8 => write!(f, "TypedValue(UInt8, {})", self.value.u8),
-                DataType::UInt16 => write!(f, "TypedValue(UInt16, {})", self.value.u16),
-                DataType::UInt32 => write!(f, "TypedValue(UInt32, {})", self.value.u32),
-                DataType::UInt64 => write!(f, "TypedValue(UInt64, {})", self.value.u64),
-                DataType::Int8 => write!(f, "TypedValue(Int8, {})", self.value.i8),
-                DataType::Int16 => write!(f, "TypedValue(Int16, {})", self.value.i16),
-                DataType::Int32 => write!(f, "TypedValue(Int32, {})", self.value.i32),
-                DataType::Int64 => write!(f, "TypedValue(Int64, {})", self.value.i64),
-                DataType::Float32 => write!(f, "TypedValue(Float32, {})", self.value.float32),
-                DataType::Float64 => write!(f, "TypedValue(Float64, {})", self.value.float64),
-                DataType::Bool => write!(f, "TypedValue(Bool, {})", self.value.bool),
+                DataType::UInt8 => write!(f, "TypedValue(UInt8, {})
+", self.value.u8),
+                DataType::UInt16 => write!(f, "TypedValue(UInt16, {})
+", self.value.u16),
+                DataType::UInt32 => write!(f, "TypedValue(UInt32, {})
+", self.value.u32),
+                DataType::UInt64 => write!(f, "TypedValue(UInt64, {})
+", self.value.u64),
+                DataType::Int8 => write!(f, "TypedValue(Int8, {})
+", self.value.i8),
+                DataType::Int16 => write!(f, "TypedValue(Int16, {})
+", self.value.i16),
+                DataType::Int32 => write!(f, "TypedValue(Int32, {})
+", self.value.i32),
+                DataType::Int64 => write!(f, "TypedValue(Int64, {})
+", self.value.i64),
+                DataType::Float32 => write!(f, "TypedValue(Float32, {})
+", self.value.float32),
+                DataType::Float64 => write!(f, "TypedValue(Float64, {})
+", self.value.float64),
+                DataType::Bool => write!(f, "TypedValue(Bool, {})
+", self.value.bool),
                 DataType::Timestamp => {
-                    write!(f, "TypedValue(Timestamp, value: {}, precision: {})", 
+                    write!(f, "TypedValue(Timestamp, value: {}, precision: {})
+", 
                            self.value.time.value, self.value.time.precision)
                 },
                 DataType::TimestampTZ => {
-                    write!(f, "TypedValue(TimestampTZ, value: {}, tz_offset: {}s, precision: {})", 
+                    write!(f, "TypedValue(TimestampTZ, value: {}, tz_offset: {}s, precision: {})
+", 
                            self.value.time.value, self.value.time.tz_offset, self.value.time.precision)
                 },
                 DataType::String => {
                     let s = core::str::from_utf8(&self.value.string).unwrap_or("").trim_end_matches(char::from(0));
-                    write!(f, "TypedValue(String, \"{}\")", s)
+                    write!(f, "TypedValue(String, \"{}\")
+", s)
                 },
                 DataType::Interval => {
-                    write!(f, "TypedValue(Interval, value: {}, precision: {})", 
+                    write!(f, "TypedValue(Interval, value: {}, precision: {})
+", 
                            self.value.interval.value, self.value.interval.precision)
+                },
+                DataType::Vector => {
+                    write!(f, "TypedValue(Vector, metadata: {:?})
+", self.value.vector_metadata)
                 }
             }
         }
@@ -664,6 +756,8 @@ pub struct FieldDef {
     pub auto_increment: bool,
     /// 默认值
     pub default_value: Option<Value>,
+    /// 向量元数据（仅向量类型使用）
+    pub vector_metadata: Option<VectorMetadata>,
 }
 
 impl FieldDef {
@@ -712,7 +806,22 @@ impl FieldDef {
                     DataType::Timestamp => constraints.push_str(&default.timestamp.to_string()),
                     DataType::TimestampTZ => constraints.push_str(&default.timestamp.to_string()),
                     DataType::Interval => constraints.push_str(&default.interval.value.to_string()),
+                    DataType::Vector => {
+                        constraints.push_str("NULL"); // 向量类型暂不支持默认值
+                    },
                 }
+            }
+        }
+        
+        // 向量类型特殊处理：添加距离度量和索引类型
+        if self.data_type == DataType::Vector {
+            if let Some(meta) = self.vector_metadata {
+                let distance_str = match meta.distance_type {
+                    DistanceType::L2 => "L2",
+                    DistanceType::InnerProduct => "INNER_PRODUCT",
+                    DistanceType::Cosine => "COSINE",
+                };
+                constraints.push_str(&alloc::format!(" WITH DISTANCE={}", distance_str));
             }
         }
         
@@ -732,6 +841,8 @@ pub enum IndexType {
     BTree = 2,
     /// T-Tree索引
     TTree = 3,
+    /// 向量索引
+    Vector = 4,
 }
 
 /// 为IndexType实现From<u8> trait，允许从u8转换为IndexType
@@ -742,6 +853,7 @@ impl From<u8> for IndexType {
             1 => IndexType::SortedArray,
             2 => IndexType::BTree,
             3 => IndexType::TTree,
+            4 => IndexType::Vector,
             _ => IndexType::SortedArray, // 默认使用SortedArray
         }
     }
