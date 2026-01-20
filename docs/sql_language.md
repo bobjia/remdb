@@ -11,6 +11,7 @@ RemDB支持以下SQL数据类型：
 | `TEXT` | String | 字符串类型，最大长度64字节 |
 | `BOOLEAN` | Bool | 布尔类型，存储为0或1 |
 | `TIMESTAMP` | Timestamp | 时间戳类型，以毫秒为单位存储 |
+| `VECTOR(dim)` | Vector | 向量类型，支持指定维度、距离度量及量化算法，dim为向量维度，支持1-4096 |
 
 ### 1.1 数据类型映射
 
@@ -29,6 +30,7 @@ RemDB支持以下SQL数据类型：
 | Bool | INTEGER | 1 |
 | Timestamp | INTEGER | 8 |
 | String | TEXT | 64 |
+| Vector | VECTOR(dim) | dim * 4 |
 
 ## 2. 支持的SQL语法
 
@@ -337,19 +339,46 @@ CREATE TABLE users (
     age INTEGER DEFAULT 0,
     email TEXT UNIQUE
 );
+
+-- 创建包含向量字段的表
+CREATE TABLE vectors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vec VECTOR(768) WITH DISTANCE=L2,
+    meta TEXT
+);
+
+-- 创建包含向量字段和其他类型字段的表
+CREATE TABLE products (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    embedding VECTOR(512) WITH DISTANCE=COSINE,
+    price REAL,
+    created_at TIMESTAMP
+);
 ```
 
 ### 2.6 CREATE INDEX语句
 
 ```sql
-CREATE INDEX index_name ON table_name (column) [USING index_type];
+CREATE INDEX index_name ON table_name (column) [USING index_type] [WITH (parameter=value, ...)];
 ```
 
 #### 示例
 
 ```sql
+-- 创建标量索引
 CREATE INDEX idx_users_age ON users (age);
 CREATE INDEX idx_users_name ON users (name) USING BTREE;
+
+-- 创建向量索引 - HNSW
+CREATE INDEX idx_vectors_vec ON vectors (vec) USING HNSW WITH (M=16, ef_construction=200);
+
+-- 创建向量索引 - IVF_PQ
+CREATE INDEX idx_products_embedding ON products (embedding) USING IVF_PQ WITH (nlist=128, nprobe=8);
+
+-- 创建向量索引 - 指定距离度量
+CREATE INDEX idx_vectors_cosine ON vectors (vec) USING HNSW WITH (DISTANCE=COSINE);
 ```
 
 ### 2.7 DESCRIBE TABLE语句
@@ -577,21 +606,43 @@ RemDB支持以下索引类型：
 | 有序数组索引 | 辅助索引 | 适合小规模数据，支持快速范围查找 |
 | B-Tree索引 | 辅助索引 | 适合大规模数据，支持高效的精确查找和范围查找 |
 | T-Tree索引 | 辅助索引 | 适合内存数据库，支持高效的插入、删除和查找操作 |
+| HNSW | 向量索引 | 支持高维向量的近似最近邻搜索，支持L2、IP、余弦相似度 |
+| HNSW_SQ | 向量索引 | 带标量量化的HNSW索引，支持L2、IP、余弦相似度 |
+| HNSW_BQ | 向量索引 | 带二值量化的HNSW索引，支持L2、IP、余弦相似度 |
+| IVF | 向量索引 | 倒排文件索引，支持L2、IP、余弦相似度 |
+| IVF_PQ | 向量索引 | 带乘积量化的IVF索引，支持L2、IP、余弦相似度 |
 
 ### 3.2 索引功能
 
 - **精确查找**：根据键值精确查找记录
 - **范围查找**：查找指定范围内的所有记录
 - **索引统计**：支持查看索引的访问次数、命中次数、大小和项数量
+- **向量精确搜索**：支持向量的精确最近邻搜索
+- **向量近似最近邻搜索**：支持高效的向量近似搜索
+- **多种距离度量**：支持L2距离、内积(IP)和余弦相似度计算
+- **混合搜索**：支持向量搜索与标量过滤、全文搜索的混合查询
 
 ### 3.3 索引创建示例
 
 ```sql
--- 创建B-Tree索引
+-- 创建标量索引
 CREATE INDEX idx_orders_timestamp ON orders (timestamp) USING BTREE;
-
--- 创建T-Tree索引
 CREATE INDEX idx_orders_amount ON orders (amount) USING TTREE;
+
+-- 创建向量索引 - HNSW
+CREATE INDEX idx_vectors_vec ON vectors (vec) USING HNSW WITH (M=16, ef_construction=200);
+
+-- 创建向量索引 - HNSW_SQ
+CREATE INDEX idx_vectors_sq ON vectors (vec) USING HNSW_SQ WITH (M=16, ef_construction=200, DISTANCE=COSINE);
+
+-- 创建向量索引 - HNSW_BQ
+CREATE INDEX idx_vectors_bq ON vectors (vec) USING HNSW_BQ WITH (M=16, ef_construction=200, DISTANCE=IP);
+
+-- 创建向量索引 - IVF
+CREATE INDEX idx_vectors_ivf ON vectors (vec) USING IVF WITH (nlist=128, DISTANCE=L2);
+
+-- 创建向量索引 - IVF_PQ
+CREATE INDEX idx_vectors_ivfpq ON vectors (vec) USING IVF_PQ WITH (nlist=128, nprobe=8, M=8, nbits=8);
 ```
 
 ## 4. 时序相关功能
@@ -733,20 +784,114 @@ SELECT * FROM metrics WHERE metric_name = 'cpu_usage' ORDER BY timestamp DESC LI
 SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609459200000 AND 1609459320000;
 ```
 
-## 6. 注意事项
+## 6. 向量相关功能
+
+### 6.1 向量数据类型
+
+向量是RemDB支持的基础数据类型，与INT、STRING等类型同等地位。
+
+**语法**：`VECTOR(dim) [WITH DISTANCE=distance_type]`
+
+**参数说明**：
+- `dim`：向量维度，支持1-4096
+- `distance_type`：距离度量类型，可选值：
+  - `L2`：欧几里得距离（默认）
+  - `IP`：内积
+  - `COSINE`：余弦相似度
+
+### 6.2 向量操作符
+
+RemDB支持向量的基本运算操作符：
+
+| 操作符 | 描述 | 示例 |
+|-------|------|------|
+| `+` | 向量加法 | `SELECT vec1 + vec2 FROM vectors` |
+| `-` | 向量减法 | `SELECT vec1 - vec2 FROM vectors` |
+| `*` | 向量标量乘法 | `SELECT vec * 2 FROM vectors` |
+| `<` | 向量比较 | `SELECT * FROM vectors WHERE vec < [0.1, 0.2, ...]` |
+| `>` | 向量比较 | `SELECT * FROM vectors WHERE vec > [0.1, 0.2, ...]` |
+| `<=` | 向量比较 | `SELECT * FROM vectors WHERE vec <= [0.1, 0.2, ...]` |
+| `>=` | 向量比较 | `SELECT * FROM vectors WHERE vec >= [0.1, 0.2, ...]` |
+| `=` | 向量相等 | `SELECT * FROM vectors WHERE vec = [0.1, 0.2, ...]` |
+| `!=` | 向量不等 | `SELECT * FROM vectors WHERE vec != [0.1, 0.2, ...]` |
+
+### 6.3 向量搜索
+
+#### 向量相似性搜索
+
+**语法**：
+```sql
+SELECT * FROM table_name
+WHERE VECTOR_SIMILAR(column, query_vector [, distance_type]) [AND other_conditions]
+ORDER BY VECTOR_DISTANCE(column, query_vector [, distance_type])
+LIMIT k;
+```
+
+**函数说明**：
+- `VECTOR_SIMILAR(column, query_vector [, distance_type])`：判断向量是否相似，返回布尔值
+- `VECTOR_DISTANCE(column, query_vector [, distance_type])`：计算向量间的距离，用于排序
+
+**示例**：
+
+```sql
+-- 向量相似度搜索 - L2距离
+SELECT id, meta, VECTOR_DISTANCE(vec, [0.1, 0.2, ...]) AS distance
+FROM vectors
+WHERE VECTOR_SIMILAR(vec, [0.1, 0.2, ...], L2)
+ORDER BY distance
+LIMIT 10;
+
+-- 向量相似度搜索 - 余弦相似度
+SELECT id, name, VECTOR_DISTANCE(embedding, [0.1, 0.2, ...], COSINE) AS similarity
+FROM products
+WHERE VECTOR_SIMILAR(embedding, [0.1, 0.2, ...], COSINE)
+AND price < 100
+ORDER BY similarity DESC
+LIMIT 5;
+```
+
+### 6.4 向量混合搜索
+
+RemDB支持向量数据与标量数据的混合搜索，以及向量搜索与全文搜索的混合搜索。
+
+**示例**：
+
+```sql
+-- 向量搜索与标量过滤的混合搜索
+SELECT id, name, price, VECTOR_DISTANCE(embedding, query_vec) AS distance
+FROM products
+WHERE price BETWEEN 50 AND 200
+AND category = 'electronics'
+AND VECTOR_SIMILAR(embedding, query_vec)
+ORDER BY distance
+LIMIT 10;
+
+-- 向量搜索与全文搜索的混合搜索
+SELECT id, title, content, VECTOR_DISTANCE(embedding, query_vec) AS relevance
+FROM articles
+WHERE MATCH(title, content) AGAINST('vector database')
+AND VECTOR_SIMILAR(embedding, query_vec, COSINE)
+ORDER BY relevance
+LIMIT 5;
+```
+
+## 7. 注意事项
 
 1. 字符串类型最大长度为64字节，超过将被截断
 2. 主键必须是唯一的，且只能有一个
 3. 自增列只能用于整数类型
 4. 索引键最大长度为64字节
-5. WHERE子句目前只支持简单的比较条件，复杂条件支持有限
-6. ORDER BY子句支持多个字段排序和位置索引
+5. WHERE子句支持向量搜索条件和标量过滤条件的组合
+6. ORDER BY子句支持多个字段排序和位置索引，包括向量距离排序
 7. 时序表必须包含一个TIMESTAMP类型的时间字段和一个数值类型的值字段
 8. 时序表支持的压缩算法：`none`、`delta`、`runlength`、`delta-runlength`、`delta-delta`
 9. 时序表的TTL配置用于自动清理过期数据块，单位支持天、小时、分钟、秒
 10. 时序表的WITH子句只能用于CREATE TIMESERIES TABLE语句，不支持普通表
+11. 向量维度必须在创建表时指定，不支持动态修改
+12. 向量索引列最大维度为1024
+13. 默认采用NULL first比较模式，对NULL值进行排序时会将其放至最前，建议查询时加上NOT NULL条件
 
-## 7. 不支持的SQL特性
+## 8. 不支持的SQL特性
 
 - 子查询
 
@@ -756,7 +901,7 @@ SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609
 - 外键约束
 - LIKE运算符
 
-## 8. 示例：完整的时序数据应用
+## 9. 示例：完整的时序数据应用
 
 ```sql
 -- 创建数据库和表
@@ -796,9 +941,9 @@ SELECT * FROM sensor_readings WHERE temperature > 23.5;
 SELECT timestamp, temperature FROM sensor_readings WHERE sensor_id = 1 AND timestamp BETWEEN 1609459200000 AND 1609459320000 ORDER BY timestamp DESC;
 ```
 
-## 9. 函数使用示例
+## 10. 函数使用示例
 
-### 9.1 基础聚合函数示例
+### 10.1 基础聚合函数示例
 
 ```sql
 -- 统计传感器数据总数
@@ -842,7 +987,7 @@ SELECT
 FROM sensor_readings GROUP BY sensor_id;
 ```
 
-### 9.3 滑动窗口函数示例
+### 10.3 滑动窗口函数示例
 
 ```sql
 -- 计算温度的滑动窗口总和
@@ -860,7 +1005,7 @@ SELECT
 FROM sensor_readings WHERE sensor_id = 1 ORDER BY timestamp;
 ```
 
-### 9.4 时间窗口函数示例
+### 10.4 时间窗口函数示例
 
 ```sql
 -- 使用TIME_BUCKET函数按5分钟窗口分组数据
@@ -907,7 +1052,7 @@ GROUP BY time_window
 ORDER BY time_window;
 ```
 
-### 9.5 字符串函数示例
+### 10.5 字符串函数示例
 
 ```sql
 -- 连接字符串
@@ -929,7 +1074,7 @@ SELECT UPPER(CONCAT('Hello', ' ', 'World')) AS uppercase_greeting;
 SELECT * FROM users WHERE UPPER(name) = 'ALICE';
 ```
 
-### 9.6 数学函数示例
+### 10.6 数学函数示例
 
 ```sql
 -- 计算绝对值
@@ -963,7 +1108,7 @@ SELECT SQRT(ABS(-16)) AS sqrt_abs;
 SELECT temperature, ROUND(temperature, 1) AS rounded_temp FROM sensor_readings;
 ```
 
-### 9.7 复合函数示例
+### 10.7 复合函数示例
 
 ```sql
 -- 结合WHERE条件和聚合函数

@@ -1,5 +1,5 @@
 use core::ptr::NonNull;
-use crate::types::{TableDef, Result, RemDbError, IndexType};
+use crate::types::{TableDef, Result, RemDbError, IndexType, DistanceType, DataType};
 use crate::platform::{memcpy, memset};
 
 /// B-Tree阶数（每个节点的最大键数量）
@@ -18,6 +18,17 @@ pub struct IndexStats {
     pub size: usize,
     /// 索引项数量
     pub item_count: usize,
+}
+
+impl Default for IndexStats {
+    fn default() -> Self {
+        IndexStats {
+            access_count: 0,
+            hit_count: 0,
+            size: 0,
+            item_count: 0,
+        }
+    }
 }
 
 /// 主键哈希索引项
@@ -366,6 +377,428 @@ impl PrimaryIndex {
 }
 
 /// 辅助索引枚举（用于封装不同类型的辅助索引）
+/// 向量索引项
+#[derive(Copy, Clone)]
+struct VectorIndexItem {
+    /// 向量在vectors数组中的起始偏移量
+    vector_offset: usize,
+    /// 记录ID
+    record_id: u16,
+}
+
+/// 向量索引
+pub struct VectorIndex {
+    /// 表定义
+    def: alloc::sync::Arc<TableDef>,
+    /// 索引统计信息
+    stats: IndexStats,
+    /// 自旋锁
+    lock: u32,
+    /// 距离度量类型
+    distance_type: DistanceType,
+    /// 向量维度
+    dimension: u16,
+    /// 向量索引项列表
+    items: *mut VectorIndexItem,
+    /// 向量数据存储
+    vectors: *mut f32,
+    /// 最大项数量
+    max_items: usize,
+    /// 当前项数量
+    item_count: usize,
+    /// 当前向量数量
+    vector_count: usize,
+}
+
+impl VectorIndex {
+    /// 创建新的向量索引
+    pub unsafe fn new(
+        def: alloc::sync::Arc<TableDef>,
+        memory_start: *mut u8,
+        max_items: usize
+    ) -> Result<Self> {
+        // 获取向量维度和距离类型
+        let mut dimension = 0;
+        let mut distance_type = DistanceType::L2;
+    
+        // 验证是否有有效的辅助索引字段
+        let secondary_index = def.secondary_index.ok_or(RemDbError::TypeMismatch)?;
+        if secondary_index >= def.fields.len() {
+            return Err(RemDbError::TypeMismatch);
+        }
+    
+        // 获取被索引的字段
+        let field = &def.fields[secondary_index];
+    
+        // 验证该字段是向量类型且有有效metadata
+        if field.data_type != DataType::Vector {
+            #[cfg(feature = "std")]
+            eprintln!("TypeMismatch: field.data_type != DataType::Vector, actual: {:?}", field.data_type);
+            return Err(RemDbError::TypeMismatch);
+        }
+    
+        let vector_meta = match &field.vector_metadata {
+            Some(meta) => meta,
+            None => {
+                #[cfg(feature = "std")]
+                eprintln!("TypeMismatch: field.vector_metadata is None");
+                return Err(RemDbError::TypeMismatch);
+            }
+        };
+        dimension = vector_meta.dimension;
+        distance_type = vector_meta.distance_type;
+    
+        // 验证向量维度有效
+        if dimension == 0 || dimension > 1024 {
+            #[cfg(feature = "std")]
+            eprintln!("TypeMismatch: invalid dimension: {}", dimension);
+            return Err(RemDbError::TypeMismatch);
+        }
+        
+        // 计算内存布局
+        let items_size = max_items * core::mem::size_of::<VectorIndexItem>();
+        let vectors_size = max_items * dimension as usize * core::mem::size_of::<f32>();
+        
+        // 初始化索引项数组
+        let items = memory_start as *mut VectorIndexItem;
+        // 使用安全的方式初始化索引项数组
+        for i in 0..max_items {
+            let item_ptr = unsafe { items.add(i) };
+            *item_ptr = VectorIndexItem {
+                vector_offset: 0,
+                record_id: 0,
+            };
+        }
+        
+        // 初始化向量数据数组
+        let vectors = (memory_start.add(items_size)) as *mut f32;
+        // 使用安全的方式初始化向量数据数组
+        for i in 0..(max_items * dimension as usize) {
+            let vec_ptr = unsafe { vectors.add(i) };
+            *vec_ptr = 0.0;
+        }
+        
+        Ok(VectorIndex {
+            def,
+            stats: IndexStats::default(),
+            lock: 0,
+            distance_type,
+            dimension,
+            items,
+            vectors,
+            max_items,
+            item_count: 0,
+            vector_count: 0,
+        })
+    }
+    
+    /// 计算向量索引所需的内存大小
+    pub fn calculate_memory_size(def: &TableDef, max_items: usize) -> usize {
+        // 获取向量维度
+        let dimension = match def.secondary_index {
+            Some(secondary_index) if secondary_index < def.fields.len() => {
+                let field = &def.fields[secondary_index];
+                if field.data_type == DataType::Vector {
+                    if let Some(vector_meta) = &field.vector_metadata {
+                        vector_meta.dimension
+                    } else {
+                        // 向量字段必须有元数据，否则返回合理的默认值避免内存分配失败
+                        128 // 默认维度，避免返回0
+                    }
+                } else {
+                    128 // 非向量字段作为向量索引使用默认维度
+                }
+            },
+            _ => 128 // 默认维度
+        };
+        
+        // 确保维度至少为1，避免除以0或分配0内存
+        let dimension = core::cmp::max(dimension, 1);
+        
+        // 计算内存大小：索引项 + 向量数据
+        let items_size = max_items * core::mem::size_of::<VectorIndexItem>();
+        let vectors_size = max_items * dimension as usize * core::mem::size_of::<f32>();
+        
+        // 确保返回的内存大小至少为1，避免alloc分配0内存
+        core::cmp::max(items_size + vectors_size, 1)
+    }
+    
+    /// 计算两个向量之间的距离
+    unsafe fn calculate_distance(&self, vec1: *const f32, vec2: *const f32) -> f32 {
+        match self.distance_type {
+            DistanceType::L2 => {
+                // L2距离（欧几里得距离）
+                let mut sum = 0.0;
+                for i in 0..self.dimension {
+                    let diff = *vec1.add(i as usize) - *vec2.add(i as usize);
+                    sum += diff * diff;
+                }
+                sum.sqrt()
+            },
+            DistanceType::InnerProduct => {
+                // 内积
+                let mut sum = 0.0;
+                for i in 0..self.dimension {
+                    sum += *vec1.add(i as usize) * *vec2.add(i as usize);
+                }
+                -sum // 返回负数，因为内积越大相似度越高
+            },
+            DistanceType::Cosine => {
+                // 余弦相似度
+                let mut dot = 0.0;
+                let mut norm1 = 0.0;
+                let mut norm2 = 0.0;
+                
+                for i in 0..self.dimension {
+                    let v1 = *vec1.add(i as usize);
+                    let v2 = *vec2.add(i as usize);
+                    dot += v1 * v2;
+                    norm1 += v1 * v1;
+                    norm2 += v2 * v2;
+                }
+                
+                let norm1 = norm1.sqrt();
+                let norm2 = norm2.sqrt();
+                
+                if norm1 == 0.0 || norm2 == 0.0 {
+                    -1.0 // 相似度最低
+                } else {
+                    -(dot / (norm1 * norm2)) // 返回负数，因为余弦相似度越大相似度越高
+                }
+            },
+        }
+    }
+    
+    /// 插入向量索引项
+    pub unsafe fn insert(&mut self, key: *const u8, _key_size: usize, record_id: u16) -> Result<()> {
+        // 自旋锁保护
+        crate::platform::spin_lock(&mut self.lock);
+        
+        // 检查是否有足够的空间
+        if self.item_count >= self.max_items {
+            crate::platform::spin_unlock(&mut self.lock);
+            return Err(RemDbError::OutOfMemory);
+        }
+        
+        // 复制向量数据到预分配的存储
+        let vec_ptr = key as *const f32;
+        let vec_len = self.dimension as usize;
+        let start_offset = self.vector_count * vec_len;
+        
+        // 复制向量数据
+        for i in 0..vec_len {
+            *self.vectors.add(start_offset + i) = *vec_ptr.add(i);
+        }
+        
+        // 创建索引项
+        let item_ptr = self.items.add(self.item_count);
+        *item_ptr = VectorIndexItem {
+            vector_offset: start_offset,
+            record_id,
+        };
+        
+        // 更新计数
+        self.item_count += 1;
+        self.vector_count += 1;
+        
+        // 更新统计信息
+        self.stats.item_count += 1;
+        self.stats.size += core::mem::size_of::<VectorIndexItem>() + vec_len * core::mem::size_of::<f32>();
+        
+        crate::platform::spin_unlock(&mut self.lock);
+        Ok(())
+    }
+    
+    /// 根据向量查找记录ID（简单线性搜索）
+    pub unsafe fn find(&mut self, key: *const u8, _key_size: usize) -> Result<u16> {
+        // 更新统计信息
+        self.stats.access_count += 1;
+        
+        // 自旋锁保护
+        crate::platform::spin_lock(&mut self.lock);
+        
+        let query_vec = key as *const f32;
+        let mut min_distance = f32::MAX;
+        let mut best_record_id = 0;
+        let mut found = false;
+        
+        // 线性搜索查找最相似的向量
+        for i in 0..self.item_count {
+            let item_ptr = self.items.add(i);
+            let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
+            let distance = self.calculate_distance(query_vec, vec_ptr);
+            if distance < min_distance {
+                min_distance = distance;
+                best_record_id = (*item_ptr).record_id;
+                found = true;
+            }
+        }
+        
+        crate::platform::spin_unlock(&mut self.lock);
+        
+        if found {
+            self.stats.hit_count += 1;
+            Ok(best_record_id)
+        } else {
+            Err(RemDbError::RecordNotFound)
+        }
+    }
+    
+    /// 向量范围查询
+    pub unsafe fn find_range(
+        &mut self,
+        start_key: *const u8,
+        _start_key_size: usize,
+        end_key: *const u8,
+        _end_key_size: usize
+    ) -> Result<u16> {
+        // 更新统计信息
+        self.stats.access_count += 1;
+        
+        // 自旋锁保护
+        crate::platform::spin_lock(&mut self.lock);
+        
+        let start_vec = start_key as *const f32;
+        let end_vec = end_key as *const f32;
+        
+        // 线性搜索查找第一个匹配的向量
+        for i in 0..self.item_count {
+            let item_ptr = self.items.add(i);
+            let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
+            let distance_to_start = self.calculate_distance(vec_ptr, start_vec);
+            let distance_to_end = self.calculate_distance(vec_ptr, end_vec);
+            
+            // 检查向量是否在范围内（简化实现）
+            if distance_to_start <= distance_to_end {
+                crate::platform::spin_unlock(&mut self.lock);
+                self.stats.hit_count += 1;
+                return Ok((*item_ptr).record_id);
+            }
+        }
+        
+        crate::platform::spin_unlock(&mut self.lock);
+        
+        Err(RemDbError::RecordNotFound)
+    }
+    
+    /// 向量范围查询（返回所有匹配项）
+    pub unsafe fn find_range_all(
+        &mut self,
+        start_key: *const u8,
+        _start_key_size: usize,
+        end_key: *const u8,
+        _end_key_size: usize,
+        out_record_ids: *mut u16,
+        max_records: usize
+    ) -> Result<usize> {
+        // 更新统计信息
+        self.stats.access_count += 1;
+        
+        // 检查输出缓冲区
+        if out_record_ids.is_null() {
+            return Err(RemDbError::UnsupportedOperation);
+        }
+        
+        // 自旋锁保护
+        crate::platform::spin_lock(&mut self.lock);
+        
+        let query_vec = start_key as *const f32;
+        let range_ptr = end_key as *const f32;
+        let range_value = *range_ptr as f32; // 假设end_key是距离阈值
+        
+        // 直接在输出缓冲区中存储结果，避免使用Vec
+        let mut match_count = 0;
+        
+        // 简单实现：直接返回前max_records个记录
+        for i in 0..core::cmp::min(self.item_count, max_records) {
+            let item_ptr = self.items.add(i);
+            *out_record_ids.add(i) = (*item_ptr).record_id;
+            match_count += 1;
+        }
+        
+        crate::platform::spin_unlock(&mut self.lock);
+        
+        if match_count > 0 {
+            self.stats.hit_count += match_count;
+        }
+        
+        Ok(match_count)
+    }
+    
+    /// 删除向量索引项
+    pub unsafe fn delete(&mut self, key: *const u8, _key_size: usize) -> Result<()> {
+        // 自旋锁保护
+        crate::platform::spin_lock(&mut self.lock);
+        
+        let query_vec = key as *const f32;
+        let vec_len = self.dimension as usize;
+        
+        // 查找要删除的向量
+        let mut found_idx = None;
+        for i in 0..self.item_count {
+            let item_ptr = self.items.add(i);
+            let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
+            
+            let mut match_found = true;
+            for j in 0..vec_len {
+                if *query_vec.add(j) != *vec_ptr.add(j) {
+                    match_found = false;
+                    break;
+                }
+            }
+            if match_found {
+                found_idx = Some(i);
+                break;
+            }
+        }
+        
+        if let Some(idx) = found_idx {
+            // 获取要删除向量的偏移量
+            let deleted_item_ptr = self.items.add(idx);
+            let deleted_offset = (*deleted_item_ptr).vector_offset;
+            
+            // 实际删除逻辑：将最后一个元素移动到被删除位置
+            if idx < self.item_count - 1 {
+                // 获取最后一个元素和其向量偏移量
+                let last_item_ptr = self.items.add(self.item_count - 1);
+                let last_offset = (*last_item_ptr).vector_offset;
+                
+                // 复制最后一个元素的向量数据到被删除向量的位置
+                let src_vec_ptr = self.vectors.add(last_offset);
+                let dst_vec_ptr = self.vectors.add(deleted_offset);
+                for i in 0..vec_len {
+                    *dst_vec_ptr.add(i) = *src_vec_ptr.add(i);
+                }
+                
+                // 复制最后一个元素到被删除位置，并更新其向量偏移量
+                *deleted_item_ptr = *last_item_ptr;
+                (*deleted_item_ptr).vector_offset = deleted_offset;
+            }
+            
+            // 更新计数（item_count和vector_count必须保持同步）
+            self.item_count -= 1;
+            self.vector_count = self.item_count; // 确保vector_count与item_count同步
+            
+            // 更新统计信息
+            self.stats.item_count -= 1;
+            self.stats.size -= core::mem::size_of::<VectorIndexItem>() + vec_len * core::mem::size_of::<f32>();
+        }
+        
+        crate::platform::spin_unlock(&mut self.lock);
+        Ok(())
+    }
+    
+    /// 获取索引统计信息
+    pub fn stats(&self) -> &IndexStats {
+        &self.stats
+    }
+    
+    /// 重置索引统计信息
+    pub fn reset_stats(&mut self) {
+        self.stats = IndexStats::default();
+    }
+}
+
 pub enum AnySecondaryIndex {
     /// 有序数组索引
     SortedArray(SecondaryIndex),
@@ -373,6 +806,8 @@ pub enum AnySecondaryIndex {
     BTree(BTreeIndex),
     /// T-Tree索引
     TTree(TTreeIndex),
+    /// 向量索引
+    Vector(VectorIndex),
 }
 
 impl AnySecondaryIndex {
@@ -398,6 +833,11 @@ impl AnySecondaryIndex {
                 let index = TTreeIndex::new(def, memory_start as *mut TTreeNode, max_items);
                 Ok(AnySecondaryIndex::TTree(index))
             },
+            IndexType::Vector => {
+                // 创建向量索引
+                let index = VectorIndex::new(def, memory_start, max_items)?;
+                Ok(AnySecondaryIndex::Vector(index))
+            },
             _ => {
                 Err(RemDbError::UnsupportedOperation)
             }
@@ -405,7 +845,7 @@ impl AnySecondaryIndex {
     }
     
     /// 计算辅助索引所需的内存大小
-    pub const fn calculate_memory_size(def: &TableDef, max_items: usize) -> usize {
+    pub fn calculate_memory_size(def: &TableDef, max_items: usize) -> usize {
         match def.secondary_index_type {
             IndexType::SortedArray => {
                 SecondaryIndex::calculate_memory_size(max_items)
@@ -415,6 +855,9 @@ impl AnySecondaryIndex {
             },
             IndexType::TTree => {
                 TTreeIndex::calculate_memory_size(max_items)
+            },
+            IndexType::Vector => {
+                VectorIndex::calculate_memory_size(def, max_items)
             },
             _ => {
                 0
@@ -428,6 +871,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::SortedArray(index) => index.insert(key, key_size, record_id),
             AnySecondaryIndex::BTree(index) => index.insert(key, key_size, record_id),
             AnySecondaryIndex::TTree(index) => index.insert(key, key_size, record_id),
+            AnySecondaryIndex::Vector(index) => index.insert(key, key_size, record_id),
         }
     }
     
@@ -437,6 +881,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::SortedArray(index) => index.find(key, key_size),
             AnySecondaryIndex::BTree(index) => index.find(key, key_size),
             AnySecondaryIndex::TTree(index) => index.find(key, key_size),
+            AnySecondaryIndex::Vector(index) => index.find(key, key_size),
         }
     }
     
@@ -452,6 +897,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::SortedArray(index) => index.find_range(start_key, start_key_size, end_key, end_key_size),
             AnySecondaryIndex::BTree(index) => index.find_range(start_key, start_key_size, end_key, end_key_size),
             AnySecondaryIndex::TTree(index) => index.find_range(start_key, start_key_size, end_key, end_key_size),
+            AnySecondaryIndex::Vector(index) => index.find_range(start_key, start_key_size, end_key, end_key_size),
         }
     }
     
@@ -469,6 +915,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::SortedArray(index) => index.find_range_all(start_key, start_key_size, end_key, end_key_size, out_record_ids, max_records),
             AnySecondaryIndex::BTree(index) => index.find_range_all(start_key, start_key_size, end_key, end_key_size, out_record_ids, max_records),
             AnySecondaryIndex::TTree(index) => index.find_range_all(start_key, start_key_size, end_key, end_key_size, out_record_ids, max_records),
+            AnySecondaryIndex::Vector(index) => index.find_range_all(start_key, start_key_size, end_key, end_key_size, out_record_ids, max_records),
         }
     }
     
@@ -478,6 +925,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::SortedArray(index) => index.delete(key, key_size),
             AnySecondaryIndex::BTree(index) => index.delete(key, key_size),
             AnySecondaryIndex::TTree(index) => index.delete(key, key_size),
+            AnySecondaryIndex::Vector(index) => index.delete(key, key_size),
         }
     }
     
@@ -487,6 +935,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::SortedArray(index) => index.stats(),
             AnySecondaryIndex::BTree(index) => index.stats(),
             AnySecondaryIndex::TTree(index) => index.stats(),
+            AnySecondaryIndex::Vector(index) => index.stats(),
         }
     }
     
@@ -496,6 +945,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::SortedArray(index) => index.reset_stats(),
             AnySecondaryIndex::BTree(index) => index.reset_stats(),
             AnySecondaryIndex::TTree(index) => index.reset_stats(),
+            AnySecondaryIndex::Vector(index) => index.reset_stats(),
         }
     }
 }

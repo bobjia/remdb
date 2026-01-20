@@ -272,6 +272,12 @@ pub enum BinaryOperator {
     LessThan,
     /// 小于等于
     LessThanOrEqual,
+    /// 向量L2距离 (<->)
+    VectorL2,
+    /// 向量内积 (<#>)
+    VectorIP,
+    /// 向量余弦相似度 (<=>)
+    VectorCosine,
 }
 
 /// 值类型
@@ -914,11 +920,25 @@ impl SqlParser {
                 }
                 Some('<') => {
                     self.next_char();
-                    if self.peek_char() == Some('=') {
-                        self.next_char();
-                        BinaryOperator::LessThanOrEqual
-                    } else {
-                        BinaryOperator::LessThan
+                    match self.peek_char() {
+                        Some('-') => {
+                            self.next_char();
+                            BinaryOperator::VectorL2 // <->
+                        }
+                        Some('#') => {
+                            self.next_char();
+                            BinaryOperator::VectorIP // <#>
+                        }
+                        Some('=') => {
+                            self.next_char();
+                            if self.peek_char() == Some('>') {
+                                self.next_char();
+                                BinaryOperator::VectorCosine // <=>
+                            } else {
+                                BinaryOperator::LessThanOrEqual
+                            }
+                        }
+                        _ => BinaryOperator::LessThan
                     }
                 }
                 Some('>') => {
@@ -1564,6 +1584,47 @@ impl SqlParser {
             self.expect_char(')')?;
             // 这里返回0作为占位符，实际执行时会处理
             Ok(Value::Integer(0))
+        } else if self.peek_char() == Some('[') {
+            // 数组字面量（用于向量操作符）
+            self.next_char(); // 跳过'['
+            self.skip_whitespace();
+            
+            let mut values = Vec::new();
+            
+            // 解析数组元素
+            loop {
+                self.skip_whitespace();
+                
+                // 检查是否到达数组末尾
+                if self.peek_char() == Some(']') {
+                    break;
+                }
+                
+                // 解析数组元素
+                let value = self.parse_value()?;
+                values.push(value);
+                
+                self.skip_whitespace();
+                
+                // 检查是否还有下一个元素
+                if self.match_char(',') {
+                    continue;
+                } else if self.peek_char() == Some(']') {
+                    break;
+                } else {
+                    return Err(QueryParseError::InvalidSyntax);
+                }
+            }
+            
+            self.next_char(); // 跳过']'
+            
+            // 暂时返回第一个值作为占位符，实际执行时会处理数组
+            if let Some(first_value) = values.first() {
+                Ok(first_value.clone())
+            } else {
+                // 空数组，返回NULL
+                Ok(Value::Null)
+            }
         } else if self.peek_char().is_some_and(|c| c.is_ascii_digit() || c == '-') {
             // 数字值
             let number_str = self.parse_number_str()?;

@@ -1287,43 +1287,46 @@ impl DdlExecutor for RemDb {
         let field_index = table.def.fields.iter().position(|f| f.name == field_name)
             .ok_or(RemDbError::FieldNotFound)?;
         
-        // 3. 对于向量索引，检查向量维度是否超过限制
+        // 3. 对于向量索引，检查向量维度是否有效
         let field = &table.def.fields[field_index];
-        if index_type == IndexType::Vector || field.data_type == DataType::Vector {
-            if let Some(vector_meta) = &field.vector_metadata {
-                // 索引的向量列最大维度限制为1024
-                if vector_meta.dimension > 1024 {
+        if index_type == IndexType::Vector {
+            // 向量索引必须使用向量类型的字段
+            if field.data_type != DataType::Vector {
+                #[cfg(feature = "std")]
+                eprintln!("TypeMismatch in create_index: field.data_type != DataType::Vector, actual: {:?}, field: {:?}", field.data_type, field.name);
+                return Err(RemDbError::TypeMismatch);
+            }
+            
+            let vector_meta = match field.vector_metadata.as_ref() {
+                Some(meta) => meta,
+                None => {
+                    #[cfg(feature = "std")]
+                    eprintln!("TypeMismatch in create_index: field.vector_metadata is None, field: {:?}", field.name);
                     return Err(RemDbError::TypeMismatch);
                 }
+            };
+            // 索引的向量列维度必须在1-1024范围内
+            if vector_meta.dimension == 0 || vector_meta.dimension > 1024 {
+                #[cfg(feature = "std")]
+                eprintln!("TypeMismatch in create_index: invalid dimension: {}, field: {:?}", vector_meta.dimension, field.name);
+                return Err(RemDbError::TypeMismatch);
             }
         }
         
         // 4. 检查是否已存在索引
+    // 确保secondary_indices向量有足够的容量
+    while self.secondary_indices.len() <= table_id {
+        self.secondary_indices.push(None);
+    }
     if self.secondary_indices[table_id].is_some() {
         return Err(RemDbError::TwoMoreIndexNotSupported);
     }
         
-        // 5. 创建新的表定义，包含索引信息
-        let mut new_fields = Vec::new();
-        for field in table.def.fields {
-            new_fields.push(FieldDef {
-                name: field.name,
-                data_type: field.data_type,
-                size: field.size,
-                offset: field.offset,
-                primary_key: field.primary_key,
-                not_null: field.not_null,
-                unique: field.unique,
-                auto_increment: field.auto_increment,
-                default_value: field.default_value,
-                vector_metadata: field.vector_metadata,
-            });
-        }
-        
-        let new_def = alloc::boxed::Box::new(TableDef {
+        // 6. 创建一个新的Arc<TableDef>，包含索引信息
+        let new_def = alloc::sync::Arc::new(TableDef {
             id: table.def.id,
             name: table.def.name,
-            fields: new_fields.leak(),
+            fields: table.def.fields,
             primary_key: table.def.primary_key,
             secondary_index: Some(field_index),
             secondary_index_type: index_type,
@@ -1331,7 +1334,7 @@ impl DdlExecutor for RemDb {
             max_records: table.def.max_records,
         });
         
-        // 6. 为索引分配内存
+        // 7. 为索引分配内存
         let max_items = table.def.max_records;
         
         // 对于BTree和TTree索引，减少节点数量，避免占用过多内存导致测试卡住
@@ -1342,19 +1345,26 @@ impl DdlExecutor for RemDb {
             IndexType::Vector => max_items, // 向量索引使用原始值
         };
         
+        // 计算索引所需内存大小
         let index_size = AnySecondaryIndex::calculate_memory_size(new_def.as_ref(), index_max_nodes);
+        
+        // 为索引分配内存
         let index_memory = crate::memory::allocator::alloc(index_size)?;
         
-        // 7. 创建索引
+        // 获取索引统计信息
+        let stats = crate::memory::allocator::get_memory_stats();
+        #[cfg(feature = "std")] eprintln!("Index creation stats: index_size={}, used={}, total={}", index_size, stats.used, stats.total);
+        
+        // 创建索引
         let index = unsafe {
             AnySecondaryIndex::new(
-                alloc::sync::Arc::from(new_def),
+                new_def,
                 index_memory.as_ptr(),
                 index_max_nodes
             )?
         };
         
-        // 8. 存储索引
+        // 存储索引
         self.secondary_indices[table_id] = Some(index);
         
         // 9. 记录CREATE_INDEX日志到WAL

@@ -317,6 +317,14 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 32
             };
             (quote!(remdb::types::DataType::String), str_size)
+        } else if type_name == "vector" {
+            // 处理vector(2)这样的向量类型
+            let dim = if let Some(params) = type_params {
+                params.base10_parse().unwrap_or(128)
+            } else {
+                128
+            };
+            (quote!(remdb::types::DataType::Vector), dim * 4) // 向量每个维度4字节
         } else {
             (quote!(remdb::types::DataType::Int32), 4)
         };
@@ -347,6 +355,24 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let is_integer_type = type_name == "i32" || type_name == "i64" || type_name == "u32" || type_name == "u64";
         let auto_increment_val = is_primary_key && is_integer_type;
         
+        // 生成向量元数据（仅向量类型字段需要）
+        let vector_metadata_code = if type_name == "vector" {
+            let dim = if let Some(params) = type_params {
+                params.base10_parse::<u16>().unwrap_or(128)
+            } else {
+                128u16
+            };
+            quote! {
+                Some(remdb::types::VectorMetadata {
+                    dimension: #dim,
+                    distance_type: remdb::types::DistanceType::L2,
+                    index_type: remdb::types::VectorIndexType::HNSW,
+                })
+            }
+        } else {
+            quote! { None }
+        };
+        
         // 生成字段定义
         let field_def = quote! {
             remdb::types::FieldDef {
@@ -359,7 +385,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 unique: #unique_val,
                 auto_increment: #auto_increment_val,
                 default_value: None,
-                vector_metadata: None,
+                vector_metadata: #vector_metadata_code,
             }
         };
         

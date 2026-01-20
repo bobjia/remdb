@@ -1596,11 +1596,140 @@ fn evaluate_expression(
                 let left_val = evaluate_expression(table, record_values, left)?;
                 let right_val = evaluate_expression(table, record_values, right)?;
                 
-                // 执行二元操作
+                // 对于向量操作符，从表的字段定义中获取向量维度
+                if matches!(*op, BinaryOperator::VectorL2 | BinaryOperator::VectorIP | BinaryOperator::VectorCosine) {
+                    // 检查左操作数是否是向量类型
+                    if matches!(left_val.value_type, DataType::Vector) {
+                        // 查找向量字段的索引和维度
+                        let vector_field_index = table.def.fields
+                            .iter()
+                            .position(|field| field.data_type == DataType::Vector)
+                            .ok_or(QueryExecutionError::FieldNotFound)?;
+                        let vector_dim = table.def.fields[vector_field_index].vector_metadata.unwrap().dimension;
+                        
+                        // 执行向量二元操作，传入向量维度
+                        return evaluate_vector_binary_op(left_val, *op, right_val, vector_dim);
+                    }
+                }
+                
+                // 执行普通二元操作
                 evaluate_binary_op(left_val, *op, right_val)
             }
         }
     }
+
+/// 评估向量二元操作
+fn evaluate_vector_binary_op(
+    left: TypedValue,
+    op: BinaryOperator,
+    right: TypedValue,
+    vector_dim: u16,
+) -> Result<TypedValue, QueryExecutionError> {
+    // 确保左操作数是向量类型
+    if !matches!(left.value_type, DataType::Vector) {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // 获取左向量数据指针
+    let vec1_ptr = unsafe { left.value.vector };
+    if vec1_ptr.is_null() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+    
+    // 准备右向量数据
+    let vec2_values: Vec<f32>;
+    
+    if matches!(right.value_type, DataType::Vector) {
+        // 右操作数是向量类型
+        let vec2_ptr = unsafe { right.value.vector };
+        if vec2_ptr.is_null() {
+            return Err(QueryExecutionError::TypeMismatch);
+        }
+        
+        // 复制右向量数据到Vec
+        vec2_values = unsafe {
+            core::slice::from_raw_parts(vec2_ptr, vector_dim as usize)
+        }.to_vec();
+    } else {
+        // 处理右操作数为数值类型的情况（用于数组字面量）
+        // 获取数值作为向量的所有元素（简单实现，后续改进）
+        let scalar_value = unsafe {
+            match right.value_type {
+                DataType::Float32 => right.value.float32,
+                DataType::Float64 => right.value.float64 as f32,
+                DataType::Int8 => right.value.i8 as f32,
+                DataType::Int16 => right.value.i16 as f32,
+                DataType::Int32 => right.value.i32 as f32,
+                DataType::Int64 => right.value.i64 as f32,
+                DataType::UInt8 => right.value.u8 as f32,
+                DataType::UInt16 => right.value.u16 as f32,
+                DataType::UInt32 => right.value.u32 as f32,
+                DataType::UInt64 => right.value.u64 as f32,
+                _ => return Err(QueryExecutionError::TypeMismatch),
+            }
+        };
+        
+        // 创建与左向量维度相同的向量
+        vec2_values = vec![scalar_value; vector_dim as usize];
+    }
+    
+    // 计算距离
+    let distance: f64 = unsafe {
+        match op {
+            BinaryOperator::VectorL2 => {
+                // L2距离（欧几里得距离）
+                let mut sum = 0.0f64;
+                for i in 0..vector_dim {
+                    let v1 = *vec1_ptr.add(i as usize);
+                    let v2 = vec2_values[i as usize];
+                    let diff = v1 - v2;
+                    sum += (diff as f64) * (diff as f64);
+                }
+                sum.sqrt()
+            },
+            BinaryOperator::VectorIP => {
+                // 内积
+                let mut sum = 0.0f64;
+                for i in 0..vector_dim {
+                    let v1 = *vec1_ptr.add(i as usize);
+                    let v2 = vec2_values[i as usize];
+                    sum += (v1 as f64) * (v2 as f64);
+                }
+                sum
+            },
+            BinaryOperator::VectorCosine => {
+                // 余弦相似度
+                let mut dot = 0.0f64;
+                let mut norm1 = 0.0f64;
+                let mut norm2 = 0.0f64;
+                
+                for i in 0..vector_dim {
+                    let v1 = *vec1_ptr.add(i as usize) as f64;
+                    let v2 = vec2_values[i as usize] as f64;
+                    dot += v1 * v2;
+                    norm1 += v1 * v1;
+                    norm2 += v2 * v2;
+                }
+                
+                let norm1 = norm1.sqrt();
+                let norm2 = norm2.sqrt();
+                
+                if norm1 == 0.0 || norm2 == 0.0 {
+                    -1.0 // 相似度最低
+                } else {
+                    dot / (norm1 * norm2) // 余弦相似度范围[-1, 1]
+                }
+            },
+            _ => unreachable!(),
+        }
+    };
+    
+    // 返回FLOAT64类型的距离结果
+    Ok(TypedValue {
+        value_type: DataType::Float64,
+        value: Value { float64: distance },
+    })
+}
 
 /// 评估二元操作
 fn evaluate_binary_op(
@@ -4956,6 +5085,9 @@ unsafe fn evaluate_comparison(table: &MemoryTable, record_ptr: *const u8, comp: 
         &comp.field
     };
     
+    // 检查字段是否存在于表中
+    // 注意：这里不处理SELECT子句中定义的别名，因为WHERE子句在SELECT子句之前执行
+    // 如果字段不存在于表中，条件不成立
     let field_index = match table.def.fields
         .iter()
         .position(|field| field.name == actual_field_name) {
@@ -4963,7 +5095,14 @@ unsafe fn evaluate_comparison(table: &MemoryTable, record_ptr: *const u8, comp: 
         None => return false, // 字段不存在，条件不成立
     };
     
-    let field_type = table.def.fields[field_index].data_type;
+    let field = &table.def.fields[field_index];
+    let field_type = field.data_type;
+    
+    // 对于向量类型，不支持直接比较，条件不成立
+    // 向量比较应该通过向量操作符（如<->、<#>、<=>）在SELECT子句中进行
+    if matches!(field_type, DataType::Vector) {
+        return false;
+    }
     
     // 获取字段值
     match get_field_value(table, record_ptr, &comp.field) {
