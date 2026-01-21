@@ -134,7 +134,7 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
             },
             // WAL配置
             wal_config: remdb::config::WALConfig {
-                log_path: "remdb.wal",
+                log_path: "wal",
                 log_mode: remdb::config::LogMode::Sync,
                 checkpoint_interval_ms: 60000,
                 log_file_size_limit: 16 * 1024 * 1024,
