@@ -583,6 +583,9 @@ fn test_vector_index_large_scale() {
         let query = format!("SELECT id, vector <-> [{:.1}, {:.1}] as distance FROM VECTOR_TABLE_2D ORDER BY distance LIMIT 10", 
                            (i as f32 * 0.5).sin() * 5.0, (i as f32 * 0.5).cos() * 5.0);
         let result = db.sql_query(&query);
+        if let Err(e) = &result {
+            println!("查询失败: {}, 查询语句: {}", e, query);
+        }
         assert!(result.is_ok(), "大规模向量查询应该成功");
     }
     

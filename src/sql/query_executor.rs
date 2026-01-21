@@ -169,7 +169,34 @@ fn execute_select_timeseries_query(db: &mut RemDb, query: &SqlQuery) -> Result<R
         })
         .collect();
     
-    // 4. 创建结果集
+    // 4. 创建别名映射
+    let mut alias_map = alloc::collections::BTreeMap::new();
+    for expr in &columns {
+        match expr {
+            Expression::Field { name, alias } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            },
+            Expression::FunctionCall { alias, .. } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            },
+            Expression::Constant { alias, .. } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            },
+            Expression::BinaryOp { alias, .. } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            },
+        }
+    }
+    
+    // 5. 创建结果集
     let mut result_set = ResultSet::new(result_columns);
     
     // 5. 遍历时序表中的所有记录，收集匹配的记录
@@ -184,7 +211,7 @@ fn execute_select_timeseries_query(db: &mut RemDb, query: &SqlQuery) -> Result<R
     // 5. 收集匹配的记录
     
     // 6. 计算表达式值并添加到结果集
-    for _ in &matched_rows {
+    for _ in matched_rows {
         let mut row_data = Vec::with_capacity(columns.len());
         for expr in &columns {
             // TODO: 实现时序表表达式求值
@@ -680,48 +707,97 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         })
         .collect();
     
-    // 4. 创建结果集
+    // 4. 创建别名映射
+    let mut alias_map = alloc::collections::BTreeMap::new();
+    for expr in &columns {
+        match expr {
+            Expression::Field { name, alias } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            },
+            Expression::FunctionCall { alias, .. } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            },
+            Expression::Constant { alias, .. } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            },
+            Expression::BinaryOp { alias, .. } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            },
+        }
+    }
+    
+    // 5. 创建结果集
     let mut result_set = ResultSet::new(result_columns);
     
-    // 5. 遍历表中的所有记录，收集匹配的记录
-    let mut matched_rows = Vec::with_capacity(table.def.max_records);
+    // 6. 遍历表中的所有记录，收集所有记录
+    let mut all_records = Vec::with_capacity(table.def.max_records);
     
     unsafe {
-        // 遍历表中的所有记录，收集匹配的记录
+        // 遍历表中的所有记录，收集所有记录
         let iterate_result = table.iterate(|id, record_ptr| {
-            // 检查记录是否符合WHERE条件
-            let mut matches = true;
-            if let Some(where_clause) = &query.where_clause {
-                matches = evaluate_condition(table, record_ptr, &where_clause.condition);
+            // 直接从记录中提取字段值，创建行数据
+            let mut record_values = Vec::with_capacity(table.def.fields.len());
+            for field in table.def.fields.iter() {
+                match get_field_value(table, record_ptr, &field.name) {
+                    Ok(typed_value) => record_values.push(typed_value),
+                    Err(_) => return true, // 跳过错误记录，继续遍历
+                }
             }
             
-            if matches {
-                // 直接从记录中提取字段值，创建行数据
-                let mut record_values = Vec::with_capacity(table.def.fields.len());
-                for field in table.def.fields.iter() {
-                    match get_field_value(table, record_ptr, &field.name) {
-                        Ok(typed_value) => record_values.push(typed_value),
-                        Err(_) => return true, // 跳过错误记录，继续遍历
-                    }
-                }
-                
-                // 将匹配的记录值添加到向量中
-                matched_rows.push(record_values);
-            }
+            // 将记录值添加到向量中
+            all_records.push(record_values);
             
             true // 继续遍历
         });
         iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
     }
     
-    // 6. 如果有ORDER BY子句，对记录进行排序
-    if let Some(order_by) = &query.order_by {
-        sort_rows(&mut matched_rows, table, order_by)?;
+    // 7. 计算每个记录的表达式值
+    let mut records_with_expr_values = Vec::with_capacity(all_records.len());
+    for record_values in &all_records {
+        // 计算表达式值
+        let mut expr_values = Vec::with_capacity(columns.len());
+        for expr in &columns {
+            let value = evaluate_expression(table, record_values, expr)?;
+            expr_values.push(value);
+        }
+        
+        // 将记录值和表达式值组合起来
+        records_with_expr_values.push((record_values.clone(), expr_values));
     }
     
-    // 7. 应用LIMIT限制
-    let limit = query.limit.unwrap_or(matched_rows.len());
-    let rows_to_process = &matched_rows[..core::cmp::min(matched_rows.len(), limit)];
+    // 8. 应用WHERE条件过滤记录
+    let mut filtered_records = Vec::with_capacity(records_with_expr_values.len());
+    for (record_values, expr_values) in records_with_expr_values {
+        // 检查记录是否符合WHERE条件
+        let mut matches = true;
+        if let Some(where_clause) = &query.where_clause {
+            matches = unsafe {
+                evaluate_condition_with_alias(table, &record_values, &columns, &expr_values, &where_clause.condition, &alias_map)
+            };
+        }
+        
+        if matches {
+            filtered_records.push((record_values, expr_values));
+        }
+    }
+    
+    // 9. 如果有ORDER BY子句，对记录进行排序
+    if let Some(order_by) = &query.order_by {
+        sort_rows_with_alias(&mut filtered_records, table, order_by, &columns, &alias_map)?;
+    }
+    
+    // 10. 应用LIMIT限制
+    let limit = query.limit.unwrap_or(filtered_records.len());
+    let rows_to_process = &filtered_records[..core::cmp::min(filtered_records.len(), limit)];
     
     // 8. 检查是否包含聚合函数
     let has_aggregate = columns.iter().any(|expr| {
@@ -757,12 +833,18 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     
     if has_aggregate || is_count_query || has_group_by {
         // 处理聚合查询或GROUP BY查询
+        // 提取记录值用于聚合计算
+        let mut records_for_aggregation = Vec::with_capacity(rows_to_process.len());
+        for (record_values, _) in rows_to_process {
+            records_for_aggregation.push(record_values.clone());
+        }
+        
         if has_group_by {
             // 处理GROUP BY查询
-            process_group_by_query(table, &columns, rows_to_process, query.group_by.as_ref().unwrap(), &mut result_set)?;
+            process_group_by_query(table, &columns, &records_for_aggregation, query.group_by.as_ref().unwrap(), &mut result_set)?;
         } else {
             // 处理普通聚合查询
-            process_aggregate_query(&columns, rows_to_process, &mut result_set)?;
+            process_aggregate_query(&columns, &records_for_aggregation, &mut result_set)?;
         }
     } else {
         // 处理普通查询
@@ -772,17 +854,11 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
             {
                 let mut unique_rows = std::collections::HashSet::new();
                 
-                // 计算所有行的表达式值并去重
-                for record_values in rows_to_process {
-                    let mut row_data = Vec::with_capacity(columns.len());
-                    for expr in &columns {
-                        let value = evaluate_expression(table, record_values, expr)?;
-                        row_data.push(value);
-                    }
-                    
+                // 使用预计算的表达式值进行去重和结果生成
+                for (_, expr_values) in rows_to_process {
                     // 只有当行不在集合中时才添加
-                    if unique_rows.insert(row_data.clone()) {
-                        result_set.add_row(row_data);
+                    if unique_rows.insert(expr_values.clone()) {
+                        result_set.add_row(expr_values.clone());
                     }
                 }
             }
@@ -790,24 +866,14 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
             // 在no_std环境下，不支持distinct查询，直接返回所有行
             #[cfg(not(feature = "std"))]
             {
-                for record_values in rows_to_process {
-                    let mut row_data = Vec::with_capacity(columns.len());
-                    for expr in &columns {
-                        let value = evaluate_expression(table, record_values, expr)?;
-                        row_data.push(value);
-                    }
-                    result_set.add_row(row_data);
+                for (_, expr_values) in rows_to_process {
+                    result_set.add_row(expr_values.clone());
                 }
             }
         } else {
             // 普通查询，不需要去重
-            for record_values in rows_to_process {
-                let mut row_data = Vec::with_capacity(columns.len());
-                for expr in &columns {
-                    let value = evaluate_expression(table, record_values, expr)?;
-                    row_data.push(value);
-                }
-                result_set.add_row(row_data);
+            for (_, expr_values) in rows_to_process {
+                result_set.add_row(expr_values.clone());
             }
         }
     }
@@ -1600,12 +1666,25 @@ fn evaluate_expression(
                 if matches!(*op, BinaryOperator::VectorL2 | BinaryOperator::VectorIP | BinaryOperator::VectorCosine) {
                     // 检查左操作数是否是向量类型
                     if matches!(left_val.value_type, DataType::Vector) {
+                        // 查找左表达式对应的向量字段名称
+                        let vector_field_name = match **left {
+                            Expression::Field { ref name, .. } => {
+                                if name.contains('.') {
+                                    name.split('.').last().unwrap().to_string()
+                                } else {
+                                    name.clone()
+                                }
+                            },
+                            _ => "".to_string()
+                        };
+                        
                         // 查找向量字段的索引和维度
                         let vector_field_index = table.def.fields
                             .iter()
-                            .position(|field| field.data_type == DataType::Vector)
+                            .position(|field| field.name == vector_field_name)
                             .ok_or(QueryExecutionError::FieldNotFound)?;
-                        let vector_dim = table.def.fields[vector_field_index].vector_metadata.unwrap().dimension;
+                        let vector_dim = table.def.fields[vector_field_index].vector_metadata
+                            .ok_or(QueryExecutionError::TypeMismatch)?.dimension;
                         
                         // 执行向量二元操作，传入向量维度
                         return evaluate_vector_binary_op(left_val, *op, right_val, vector_dim);
@@ -1631,7 +1710,14 @@ fn evaluate_vector_binary_op(
     }
     
     // 获取左向量数据指针
-    let vec1_ptr = unsafe { left.value.vector };
+    // 注意：向量数据可能通过vector指针或vector_metadata存储
+    // 这里简化处理，假设向量数据通过vector指针存储
+    let vec1_ptr = unsafe {
+        match left.value_type {
+            DataType::Vector => left.value.vector,
+            _ => std::ptr::null(),
+        }
+    };
     if vec1_ptr.is_null() {
         return Err(QueryExecutionError::TypeMismatch);
     }
@@ -1646,27 +1732,53 @@ fn evaluate_vector_binary_op(
             return Err(QueryExecutionError::TypeMismatch);
         }
         
-        // 复制右向量数据到Vec
+        // 安全复制右向量数据到Vec
         vec2_values = unsafe {
-            core::slice::from_raw_parts(vec2_ptr, vector_dim as usize)
-        }.to_vec();
+            let vec_slice = core::slice::from_raw_parts(vec2_ptr, vector_dim as usize);
+            vec_slice.to_vec()
+        };
+    } else if matches!(right.value_type, DataType::String) {
+        // 右操作数是字符串类型，尝试解析为向量字面量 [x1, x2, ..., xn]
+        let vec_str = unsafe {
+            core::str::from_utf8(&right.value.string)
+                .map_err(|_| QueryExecutionError::TypeMismatch)?
+                .trim_end_matches(char::from(0))
+        };
+        
+        // 解析向量字面量
+        // 移除首尾的方括号
+        let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
+        
+        // 分割逗号，得到每个元素的字符串
+        let elements: Vec<&str> = vec_str.split(',').map(|s| s.trim()).collect();
+        
+        // 检查维度是否匹配
+        if elements.len() != vector_dim as usize {
+            return Err(QueryExecutionError::TypeMismatch);
+        }
+        
+        // 解析每个元素为f32
+        vec2_values = elements.iter()
+            .map(|s| s.parse::<f32>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| QueryExecutionError::TypeMismatch)?;
     } else {
-        // 处理右操作数为数值类型的情况（用于数组字面量）
-        // 获取数值作为向量的所有元素（简单实现，后续改进）
-        let scalar_value = unsafe {
-            match right.value_type {
-                DataType::Float32 => right.value.float32,
-                DataType::Float64 => right.value.float64 as f32,
-                DataType::Int8 => right.value.i8 as f32,
-                DataType::Int16 => right.value.i16 as f32,
-                DataType::Int32 => right.value.i32 as f32,
-                DataType::Int64 => right.value.i64 as f32,
-                DataType::UInt8 => right.value.u8 as f32,
-                DataType::UInt16 => right.value.u16 as f32,
-                DataType::UInt32 => right.value.u32 as f32,
-                DataType::UInt64 => right.value.u64 as f32,
-                _ => return Err(QueryExecutionError::TypeMismatch),
-            }
+        // 处理右操作数为数值类型的情况
+        // 首先检查是否为数值类型，避免unsafe块中的内存访问违规
+        let scalar_value = match right.value_type {
+            DataType::Float32 => unsafe { right.value.float32 },
+            DataType::Float64 => unsafe { right.value.float64 as f32 },
+            DataType::Int8 => unsafe { right.value.i8 as f32 },
+            DataType::Int16 => unsafe { right.value.i16 as f32 },
+            DataType::Int32 => unsafe { right.value.i32 as f32 },
+            DataType::Int64 => unsafe { right.value.i64 as f32 },
+            DataType::UInt8 => unsafe { right.value.u8 as f32 },
+            DataType::UInt16 => unsafe { right.value.u16 as f32 },
+            DataType::UInt32 => unsafe { right.value.u32 as f32 },
+            DataType::UInt64 => unsafe { right.value.u64 as f32 },
+            _ => {
+                return Err(QueryExecutionError::TypeMismatch);
+            },
         };
         
         // 创建与左向量维度相同的向量
@@ -1679,9 +1791,10 @@ fn evaluate_vector_binary_op(
             BinaryOperator::VectorL2 => {
                 // L2距离（欧几里得距离）
                 let mut sum = 0.0f64;
-                for i in 0..vector_dim {
-                    let v1 = *vec1_ptr.add(i as usize);
-                    let v2 = vec2_values[i as usize];
+                let vector_dim_usize = vector_dim as usize;
+                for i in 0..vector_dim_usize {
+                    let v1 = *vec1_ptr.add(i);
+                    let v2 = vec2_values[i];
                     let diff = v1 - v2;
                     sum += (diff as f64) * (diff as f64);
                 }
@@ -1690,9 +1803,10 @@ fn evaluate_vector_binary_op(
             BinaryOperator::VectorIP => {
                 // 内积
                 let mut sum = 0.0f64;
-                for i in 0..vector_dim {
-                    let v1 = *vec1_ptr.add(i as usize);
-                    let v2 = vec2_values[i as usize];
+                let vector_dim_usize = vector_dim as usize;
+                for i in 0..vector_dim_usize {
+                    let v1 = *vec1_ptr.add(i);
+                    let v2 = vec2_values[i];
                     sum += (v1 as f64) * (v2 as f64);
                 }
                 sum
@@ -1703,9 +1817,10 @@ fn evaluate_vector_binary_op(
                 let mut norm1 = 0.0f64;
                 let mut norm2 = 0.0f64;
                 
-                for i in 0..vector_dim {
-                    let v1 = *vec1_ptr.add(i as usize) as f64;
-                    let v2 = vec2_values[i as usize] as f64;
+                let vector_dim_usize = vector_dim as usize;
+                for i in 0..vector_dim_usize {
+                    let v1 = *vec1_ptr.add(i) as f64;
+                    let v2 = vec2_values[i] as f64;
                     dot += v1 * v2;
                     norm1 += v1 * v1;
                     norm2 += v2 * v2;
@@ -5328,6 +5443,392 @@ fn compare_strings(f: &str, c: &str, operator: &ComparisonOperator) -> bool {
         ComparisonOperator::LessThanOrEqual => f <= c,
         _ => false,
     }
+}
+
+/// 评估条件（支持别名）
+unsafe fn evaluate_condition_with_alias(table: &MemoryTable, record_values: &[TypedValue], columns: &[Expression], expr_values: &[TypedValue], condition: &Condition, alias_map: &alloc::collections::BTreeMap<String, &Expression>) -> bool {
+    match condition {
+        Condition::Comparison(comp) => evaluate_comparison_with_alias(table, record_values, columns, expr_values, comp, alias_map),
+        Condition::Between(between) => evaluate_between_with_alias(table, record_values, columns, expr_values, between, alias_map),
+        Condition::And(left, right) => {
+            evaluate_condition_with_alias(table, record_values, columns, expr_values, left, alias_map) && 
+            evaluate_condition_with_alias(table, record_values, columns, expr_values, right, alias_map)
+        },
+        Condition::Or(left, right) => {
+            evaluate_condition_with_alias(table, record_values, columns, expr_values, left, alias_map) || 
+            evaluate_condition_with_alias(table, record_values, columns, expr_values, right, alias_map)
+        },
+    }
+}
+
+/// 评估比较条件（支持别名）
+unsafe fn evaluate_comparison_with_alias(table: &MemoryTable, record_values: &[TypedValue], columns: &[Expression], expr_values: &[TypedValue], comp: &ComparisonCondition, alias_map: &alloc::collections::BTreeMap<String, &Expression>) -> bool {
+    // 检查是否使用别名
+    if let Some(alias_expr) = alias_map.get(&comp.field) {
+        // 找到别名对应的表达式索引
+        let mut expr_index = 0;
+        for (i, expr) in columns.iter().enumerate() {
+            if expr == *alias_expr {
+                expr_index = i;
+                break;
+            }
+        }
+        
+        // 获取表达式值
+        let field_value = &expr_values[expr_index];
+        
+        // 比较值
+        match &comp.value {
+            crate::sql::Value::Identifier(right_field) => {
+                // 右值是字段引用
+                if let Some(right_alias_expr) = alias_map.get(right_field) {
+                    // 找到右值别名对应的表达式索引
+                    let mut right_expr_index = 0;
+                    for (i, expr) in columns.iter().enumerate() {
+                        if expr == *right_alias_expr {
+                            right_expr_index = i;
+                            break;
+                        }
+                    }
+                    
+                    let right_value = &expr_values[right_expr_index];
+                    // 比较两个表达式值
+                    compare_values(field_value, right_value)
+                } else {
+                    // 右值是普通字段
+                    // 从record_values向量中直接获取字段值
+                    let right_field_index = table.def.fields
+                        .iter()
+                        .position(|field| field.name == right_field)
+                        .ok_or(QueryExecutionError::FieldNotFound).unwrap();
+                    let right_field_value = &record_values[right_field_index];
+                    compare_values(field_value, right_field_value)
+                }
+            },
+            _ => {
+                // 右值是常量值
+                compare_field_with_condition(&field_value.value, field_value.value_type, &comp.operator, &comp.value)
+            },
+        }
+    } else {
+        // 没有使用别名，直接从record_values中获取字段值并比较
+        // 获取字段索引
+        let actual_field_name = if comp.field.contains('.') {
+            comp.field.split('.').last().unwrap()
+        } else {
+            &comp.field
+        };
+        
+        // 检查字段是否存在于表中
+        let field_index = match table.def.fields
+            .iter()
+            .position(|field| field.name == actual_field_name) {
+            Some(index) => index,
+            None => return false, // 字段不存在，条件不成立
+        };
+        
+        let field_value = &record_values[field_index];
+        
+        // 对于向量类型，不支持直接比较，条件不成立
+        if matches!(field_value.value_type, DataType::Vector) {
+            return false;
+        }
+        
+        // 比较字段值和条件值
+        compare_field_with_condition(&field_value.value, field_value.value_type, &comp.operator, &comp.value)
+    }
+}
+
+/// 评估BETWEEN条件（支持别名）
+unsafe fn evaluate_between_with_alias(table: &MemoryTable, record_values: &[TypedValue], columns: &[Expression], expr_values: &[TypedValue], between: &BetweenCondition, alias_map: &alloc::collections::BTreeMap<String, &Expression>) -> bool {
+    // 检查是否使用别名
+    if let Some(alias_expr) = alias_map.get(&between.field) {
+        // 找到别名对应的表达式索引
+        let mut expr_index = 0;
+        for (i, expr) in columns.iter().enumerate() {
+            if expr == *alias_expr {
+                expr_index = i;
+                break;
+            }
+        }
+        
+        // 获取表达式值
+        let field_value = &expr_values[expr_index];
+        
+        // BETWEEN条件：field_value >= min_value AND field_value <= max_value
+        let min_comp = ComparisonCondition {
+            field: between.field.clone(),
+            operator: ComparisonOperator::GreaterThanOrEqual,
+            value: between.min_value.clone(),
+        };
+        let max_comp = ComparisonCondition {
+            field: between.field.clone(),
+            operator: ComparisonOperator::LessThanOrEqual,
+            value: between.max_value.clone(),
+        };
+        
+        evaluate_comparison_with_alias(table, record_values, columns, expr_values, &min_comp, alias_map) && 
+        evaluate_comparison_with_alias(table, record_values, columns, expr_values, &max_comp, alias_map)
+    } else {
+        // 没有使用别名，直接从record_values中获取字段值并比较
+        // 获取字段索引
+        let actual_field_name = if between.field.contains('.') {
+            between.field.split('.').last().unwrap()
+        } else {
+            &between.field
+        };
+        
+        // 检查字段是否存在于表中
+        let field_index = match table.def.fields
+            .iter()
+            .position(|field| field.name == actual_field_name) {
+            Some(index) => index,
+            None => return false, // 字段不存在，条件不成立
+        };
+        
+        let field_value = &record_values[field_index];
+        
+        // 比较字段值和条件值
+        let is_greater_or_equal = compare_field_with_condition(&field_value.value, field_value.value_type, &ComparisonOperator::GreaterThanOrEqual, &between.min_value);
+        let is_less_or_equal = compare_field_with_condition(&field_value.value, field_value.value_type, &ComparisonOperator::LessThanOrEqual, &between.max_value);
+        is_greater_or_equal && is_less_or_equal
+    }
+}
+
+/// 对行进行排序（支持别名）
+fn sort_rows_with_alias(rows: &mut Vec<(Vec<TypedValue>, Vec<TypedValue>)>, table: &MemoryTable, order_by: &OrderByClause, columns: &[Expression], alias_map: &alloc::collections::BTreeMap<String, &Expression>) -> Result<(), QueryExecutionError> {
+    // 检查ORDER BY子句是否使用位置索引
+    if let Ok(col_index) = order_by.field.parse::<usize>() {
+        // ORDER BY使用位置索引
+        let sort_col_index = col_index - 1; // SQL位置索引从1开始
+        
+        // 确保索引有效
+        if rows.is_empty() { return Ok(()); }
+        if sort_col_index >= rows[0].1.len() { // rows[i].1是表达式值
+            return Err(QueryExecutionError::FieldNotFound);
+        }
+        
+        // 对行进行排序
+        rows.sort_by(|a, b| {
+            let val_a = &a.1[sort_col_index];
+            let val_b = &b.1[sort_col_index];
+            
+            // 根据值的实际类型比较
+            unsafe {
+                let comparison = match (val_a.value_type, val_b.value_type) {
+                    // 无符号整数类型
+                    (DataType::UInt8, DataType::UInt8) => val_a.value.u8.cmp(&val_b.value.u8),
+                    (DataType::UInt16, DataType::UInt16) => val_a.value.u16.cmp(&val_b.value.u16),
+                    (DataType::UInt32, DataType::UInt32) => val_a.value.u32.cmp(&val_b.value.u32),
+                    (DataType::UInt64, DataType::UInt64) => val_a.value.u64.cmp(&val_b.value.u64),
+                    
+                    // 有符号整数类型
+                    (DataType::Int8, DataType::Int8) => val_a.value.i8.cmp(&val_b.value.i8),
+                    (DataType::Int16, DataType::Int16) => val_a.value.i16.cmp(&val_b.value.i16),
+                    (DataType::Int32, DataType::Int32) => val_a.value.i32.cmp(&val_b.value.i32),
+                    (DataType::Int64, DataType::Int64) => val_a.value.i64.cmp(&val_b.value.i64),
+                    
+                    // 浮点数类型
+                    (DataType::Float32, DataType::Float32) => 
+                        val_a.value.float32.partial_cmp(&val_b.value.float32).unwrap_or(core::cmp::Ordering::Equal),
+                    (DataType::Float64, DataType::Float64) => 
+                        val_a.value.float64.partial_cmp(&val_b.value.float64).unwrap_or(core::cmp::Ordering::Equal),
+                    
+                    // 时间戳类型
+                    (DataType::Timestamp, DataType::Timestamp) => 
+                        val_a.value.time.value.cmp(&val_b.value.time.value),
+                    (DataType::TimestampTZ, DataType::TimestampTZ) => 
+                        val_a.value.time.value.cmp(&val_b.value.time.value),
+                    
+                    // 其他类型，默认按升序排列
+                    _ => core::cmp::Ordering::Equal,
+                };
+                
+                // 根据排序方向调整结果
+                match order_by.direction {
+                    crate::sql::OrderDirection::Ascending => comparison,
+                    crate::sql::OrderDirection::Descending => comparison.reverse(),
+                }
+            }
+        });
+        
+        return Ok(());
+    }
+    
+    // 处理带表别名的字段名，如 "t.id"
+    let actual_field_name = if order_by.field.contains('.') {
+        // 提取点号后面的部分作为实际字段名
+        order_by.field.split('.').last().unwrap()
+    } else {
+        // 没有表别名，直接使用字段名
+        &order_by.field
+    };
+    
+    // 检查是否使用别名
+    if let Some(alias_expr) = alias_map.get(actual_field_name) {
+        // 找到别名对应的表达式索引
+        let mut expr_index = 0;
+        for (i, expr) in columns.iter().enumerate() {
+            if expr == *alias_expr {
+                expr_index = i;
+                break;
+            }
+        }
+        
+        // 对行进行排序
+        rows.sort_by(|a, b| {
+            let val_a = &a.1[expr_index];
+            let val_b = &b.1[expr_index];
+            
+            // 根据值的实际类型比较
+            unsafe {
+                let comparison = match (val_a.value_type, val_b.value_type) {
+                    // 无符号整数类型
+                    (DataType::UInt8, DataType::UInt8) => val_a.value.u8.cmp(&val_b.value.u8),
+                    (DataType::UInt16, DataType::UInt16) => val_a.value.u16.cmp(&val_b.value.u16),
+                    (DataType::UInt32, DataType::UInt32) => val_a.value.u32.cmp(&val_b.value.u32),
+                    (DataType::UInt64, DataType::UInt64) => val_a.value.u64.cmp(&val_b.value.u64),
+                    
+                    // 有符号整数类型
+                    (DataType::Int8, DataType::Int8) => val_a.value.i8.cmp(&val_b.value.i8),
+                    (DataType::Int16, DataType::Int16) => val_a.value.i16.cmp(&val_b.value.i16),
+                    (DataType::Int32, DataType::Int32) => val_a.value.i32.cmp(&val_b.value.i32),
+                    (DataType::Int64, DataType::Int64) => val_a.value.i64.cmp(&val_b.value.i64),
+                    
+                    // 浮点数类型
+                    (DataType::Float32, DataType::Float32) => 
+                        val_a.value.float32.partial_cmp(&val_b.value.float32).unwrap_or(core::cmp::Ordering::Equal),
+                    (DataType::Float64, DataType::Float64) => 
+                        val_a.value.float64.partial_cmp(&val_b.value.float64).unwrap_or(core::cmp::Ordering::Equal),
+                    
+                    // 布尔类型
+                    (DataType::Bool, DataType::Bool) => val_a.value.bool.cmp(&val_b.value.bool),
+                    
+                    // 时间戳类型
+                    (DataType::Timestamp, DataType::Timestamp) => 
+                        val_a.value.time.value.cmp(&val_b.value.time.value),
+                    (DataType::TimestampTZ, DataType::TimestampTZ) => 
+                        val_a.value.time.value.cmp(&val_b.value.time.value),
+                    
+                    // 其他类型，默认按升序排列
+                    _ => core::cmp::Ordering::Equal,
+                };
+                
+                // 根据排序方向调整结果
+                match order_by.direction {
+                    crate::sql::OrderDirection::Ascending => comparison,
+                    crate::sql::OrderDirection::Descending => comparison.reverse(),
+                }
+            }
+        });
+        
+        return Ok(());
+    }
+    
+    // 没有使用别名，使用原始的排序逻辑
+    // 查找排序字段在表中的索引
+    let field_index = table.def.fields
+        .iter()
+        .position(|field| field.name == actual_field_name)
+        .ok_or(QueryExecutionError::FieldNotFound)?;
+    
+    let field_type = table.def.fields[field_index].data_type;
+    
+    // 对行进行排序
+    rows.sort_by(|a, b| {
+        // 查找排序字段在返回列中的索引
+        let val_a = &a.0[field_index]; // a.0是原始记录值
+        let val_b = &b.0[field_index];
+        
+        // 根据字段类型比较值
+        let comparison = match field_type {
+            // 无符号整数类型
+            DataType::UInt8 => {
+                let a_val = unsafe { val_a.value.u8 };
+                let b_val = unsafe { val_b.value.u8 };
+                a_val.cmp(&b_val)
+            },
+            DataType::UInt16 => {
+                let a_val = unsafe { val_a.value.u16 };
+                let b_val = unsafe { val_b.value.u16 };
+                a_val.cmp(&b_val)
+            },
+            DataType::UInt32 => {
+                let a_val = unsafe { val_a.value.u32 };
+                let b_val = unsafe { val_b.value.u32 };
+                a_val.cmp(&b_val)
+            },
+            DataType::UInt64 => {
+                let a_val = unsafe { val_a.value.u64 };
+                let b_val = unsafe { val_b.value.u64 };
+                a_val.cmp(&b_val)
+            },
+            
+            // 有符号整数类型
+            DataType::Int8 => {
+                let a_val = unsafe { val_a.value.i8 };
+                let b_val = unsafe { val_b.value.i8 };
+                a_val.cmp(&b_val)
+            },
+            DataType::Int16 => {
+                let a_val = unsafe { val_a.value.i16 };
+                let b_val = unsafe { val_b.value.i16 };
+                a_val.cmp(&b_val)
+            },
+            DataType::Int32 => {
+                let a_val = unsafe { val_a.value.i32 };
+                let b_val = unsafe { val_b.value.i32 };
+                a_val.cmp(&b_val)
+            },
+            DataType::Int64 => {
+                let a_val = unsafe { val_a.value.i64 };
+                let b_val = unsafe { val_b.value.i64 };
+                a_val.cmp(&b_val)
+            },
+            
+            // 浮点数类型
+            DataType::Float32 => {
+                let a_val = unsafe { val_a.value.float32 };
+                let b_val = unsafe { val_b.value.float32 };
+                a_val.partial_cmp(&b_val).unwrap_or(core::cmp::Ordering::Equal)
+            },
+            DataType::Float64 => {
+                let a_val = unsafe { val_a.value.float64 };
+                let b_val = unsafe { val_b.value.float64 };
+                a_val.partial_cmp(&b_val).unwrap_or(core::cmp::Ordering::Equal)
+            },
+            
+            // 布尔类型
+            DataType::Bool => {
+                let a_val = unsafe { val_a.value.bool };
+                let b_val = unsafe { val_b.value.bool };
+                a_val.cmp(&b_val)
+            },
+            
+            // 时间戳类型
+            DataType::Timestamp => {
+                let a_val = unsafe { val_a.value.time.value };
+                let b_val = unsafe { val_b.value.time.value };
+                a_val.cmp(&b_val)
+            },
+            DataType::TimestampTZ => {
+                let a_val = unsafe { val_a.value.time.value };
+                let b_val = unsafe { val_b.value.time.value };
+                a_val.cmp(&b_val)
+            },
+            
+            // 其他类型，默认按升序排列
+            _ => core::cmp::Ordering::Equal,
+        };
+        
+        // 根据排序方向调整结果
+        match order_by.direction {
+            crate::sql::OrderDirection::Ascending => comparison,
+            crate::sql::OrderDirection::Descending => comparison.reverse(),
+        }
+    });
+    
+    Ok(())
 }
 
 /// 处理AT TIME ZONE操作符

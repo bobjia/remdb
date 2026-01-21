@@ -326,6 +326,28 @@ fn test_vector_operators_with_array_literals() {
         println!("✅ 查询成功");
     }
     
+    // 测试4: 别名字段在WHERE和ORDER BY中的使用
+    println!("\n测试4: 别名字段在WHERE和ORDER BY中的使用");
+    let alias_tests = vec!(
+        // 使用别名进行排序
+        "SELECT id, vector_3d <-> [3.0, 4.0, 5.0] as distance FROM VECTOR_OPERATORS_TABLE ORDER BY distance",
+        "SELECT id, vector_3d <-> [3.0, 4.0, 5.0] as distance FROM VECTOR_OPERATORS_TABLE ORDER BY distance DESC",
+        // 使用别名进行过滤
+        "SELECT id, vector_3d <-> [3.0, 4.0, 5.0] as distance FROM VECTOR_OPERATORS_TABLE WHERE distance >= 3.0",
+        "SELECT id, vector_3d <-> [3.0, 4.0, 5.0] as distance FROM VECTOR_OPERATORS_TABLE WHERE distance < 10.0",
+        // 同时使用别名进行过滤和排序
+        "SELECT id, vector_3d <-> [3.0, 4.0, 5.0] as distance FROM VECTOR_OPERATORS_TABLE WHERE distance BETWEEN 3.0 AND 8.0 ORDER BY distance DESC",
+        // 结合其他条件
+        "SELECT id, category, vector_3d <-> [3.0, 4.0, 5.0] as distance FROM VECTOR_OPERATORS_TABLE WHERE category = 2 AND distance < 10.0 ORDER BY distance",
+    );
+    
+    for query in alias_tests.iter() {
+        println!("查询: {}", query);
+        let result = db.sql_query(query);
+        assert!(result.is_ok(), "别名字段查询应该成功");
+        println!("✅ 查询成功");
+    }
+    
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
     

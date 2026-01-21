@@ -1585,46 +1585,51 @@ impl SqlParser {
             // 这里返回0作为占位符，实际执行时会处理
             Ok(Value::Integer(0))
         } else if self.peek_char() == Some('[') {
-            // 数组字面量（用于向量操作符）
+            // 向量字面量 [x1, x2, ..., xn]
+            // 将整个向量字面量解析为字符串，由执行阶段处理
+            let mut vec_str = String::new();
+            vec_str.push('[');
+            
             self.next_char(); // 跳过'['
             self.skip_whitespace();
             
-            let mut values = Vec::new();
-            
-            // 解析数组元素
+            // 解析向量元素，构建完整的向量字符串
             loop {
                 self.skip_whitespace();
                 
-                // 检查是否到达数组末尾
+                // 检查是否到达向量末尾
                 if self.peek_char() == Some(']') {
+                    self.next_char(); // 跳过']'
+                    vec_str.push(']');
                     break;
                 }
                 
-                // 解析数组元素
+                // 解析向量元素并添加到字符串
                 let value = self.parse_value()?;
-                values.push(value);
+                // 将解析的值转换回字符串表示
+                match value {
+                    Value::Integer(i) => vec_str.push_str(&i.to_string()),
+                    Value::Float(f) => vec_str.push_str(&f.to_string()),
+                    _ => return Err(QueryParseError::InvalidValue),
+                }
                 
                 self.skip_whitespace();
                 
                 // 检查是否还有下一个元素
                 if self.match_char(',') {
+                    vec_str.push(',');
                     continue;
                 } else if self.peek_char() == Some(']') {
+                    self.next_char(); // 跳过']'
+                    vec_str.push(']');
                     break;
                 } else {
                     return Err(QueryParseError::InvalidSyntax);
                 }
             }
             
-            self.next_char(); // 跳过']'
-            
-            // 暂时返回第一个值作为占位符，实际执行时会处理数组
-            if let Some(first_value) = values.first() {
-                Ok(first_value.clone())
-            } else {
-                // 空数组，返回NULL
-                Ok(Value::Null)
-            }
+            // 返回完整的向量字符串
+            Ok(Value::String(vec_str))
         } else if self.peek_char().is_some_and(|c| c.is_ascii_digit() || c == '-') {
             // 数字值
             let number_str = self.parse_number_str()?;
