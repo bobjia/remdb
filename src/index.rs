@@ -658,18 +658,17 @@ impl VectorIndex {
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         
-        let start_vec = start_key as *const f32;
-        let end_vec = end_key as *const f32;
+        let query_vec = start_key as *const f32;
+        let range_value = *(end_key as *const f32); // end_key是距离阈值的指针
         
         // 线性搜索查找第一个匹配的向量
         for i in 0..self.item_count {
             let item_ptr = self.items.add(i);
             let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
-            let distance_to_start = self.calculate_distance(vec_ptr, start_vec);
-            let distance_to_end = self.calculate_distance(vec_ptr, end_vec);
+            let distance = self.calculate_distance(vec_ptr, query_vec);
             
-            // 检查向量是否在范围内（简化实现）
-            if distance_to_start <= distance_to_end {
+            // 检查向量是否在范围内
+            if distance <= range_value {
                 crate::platform::spin_unlock(&mut self.lock);
                 self.stats.hit_count += 1;
                 return Ok((*item_ptr).record_id);
@@ -703,17 +702,27 @@ impl VectorIndex {
         crate::platform::spin_lock(&mut self.lock);
         
         let query_vec = start_key as *const f32;
-        let range_ptr = end_key as *const f32;
-        let range_value = *range_ptr as f32; // 假设end_key是距离阈值
+        // end_key是距离阈值的指针，正确转换并读取该值
+        let range_value = *(end_key as *const f32);
         
         // 直接在输出缓冲区中存储结果，避免使用Vec
         let mut match_count = 0;
         
-        // 简单实现：直接返回前max_records个记录
-        for i in 0..core::cmp::min(self.item_count, max_records) {
+        // 实现真正的范围查询：返回所有距离小于等于range_value的向量
+        for i in 0..self.item_count {
+            if match_count >= max_records {
+                break;
+            }
+            
             let item_ptr = self.items.add(i);
-            *out_record_ids.add(i) = (*item_ptr).record_id;
-            match_count += 1;
+            let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
+            let distance = self.calculate_distance(query_vec, vec_ptr);
+            
+            // 检查距离是否在范围内
+            if distance <= range_value {
+                *out_record_ids.add(match_count) = (*item_ptr).record_id;
+                match_count += 1;
+            }
         }
         
         crate::platform::spin_unlock(&mut self.lock);

@@ -3573,6 +3573,7 @@ fn execute_create_index_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
         Some("BTREE") => IndexType::BTree,
         Some("TTREE") => IndexType::TTree,
         Some("SORTEDARRAY") => IndexType::SortedArray,
+        Some("HNSW") | Some("HNSW_SQ") | Some("HNSW_BQ") | Some("IVF") | Some("IVF_PQ") | Some("VECTOR") => IndexType::Vector,
         _ => IndexType::BTree, // 默认值
     };
     

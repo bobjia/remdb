@@ -296,6 +296,9 @@ fn test_vector_index_stats() {
     println!("测试2: 执行多次查询以更新统计信息");
     for _ in 0..5 {
         let result = db.sql_query("SELECT id, vector <-> [1.0, 2.0] as distance FROM VECTOR_TABLE_2D ORDER BY distance LIMIT 3");
+        if let Err(e) = &result {
+            println!("向量查询失败，错误: {:?}", e);
+        }
         assert!(result.is_ok(), "向量查询应该成功");
     }
     println!("成功执行 5 次向量查询");
@@ -477,13 +480,19 @@ fn test_vector_index_range_query() {
     
     // 测试2: 使用距离条件的范围查询
     println!("测试2: 使用距离条件的范围查询");
-    let result = db.sql_query("SELECT id, vector <-> [5.0, 5.0] as distance FROM VECTOR_TABLE_2D WHERE distance < 2.0 ORDER BY distance");
+    let result = db.sql_query("SELECT id, vector <-> [5.0, 5.0] as distance FROM VECTOR_TABLE_2D WHERE vector <-> [5.0, 5.0] < 2.0 ORDER BY distance");
+    if let Err(e) = &result {
+        println!("距离条件范围查询失败，错误: {:?}", e);
+    }
     assert!(result.is_ok(), "距离条件范围查询应该成功");
     println!("成功执行距离条件范围查询");
     
     // 测试3: 结合标量过滤的范围查询
     println!("测试3: 结合标量过滤的范围查询");
-    let result = db.sql_query("SELECT id, category, vector <-> [5.0, 5.0] as distance FROM VECTOR_TABLE_2D WHERE category = 1 AND distance < 3.0 ORDER BY distance");
+    let result = db.sql_query("SELECT id, category, vector <-> [5.0, 5.0] as distance FROM VECTOR_TABLE_2D WHERE category = 1 AND vector <-> [5.0, 5.0] < 3.0 ORDER BY distance");
+    if let Err(e) = &result {
+        println!("结合标量过滤的范围查询失败，错误: {:?}", e);
+    }
     assert!(result.is_ok(), "结合标量过滤的范围查询应该成功");
     println!("成功执行结合标量过滤的范围查询");
     
