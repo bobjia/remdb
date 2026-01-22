@@ -1,9 +1,7 @@
-
-
-use core::time::Duration;
+use super::{CompressionType, LifecycleManager, PartitionManager, TimeSeriesIndex};
+use crate::{RemDbError, Result, TableDef};
 use alloc::{sync::Arc, vec::Vec};
-use crate::{TableDef, Result, RemDbError};
-use super::{CompressionType, TimeSeriesIndex, PartitionManager, LifecycleManager};
+use core::time::Duration;
 
 #[cfg(feature = "std")]
 use std::sync::Mutex;
@@ -30,7 +28,7 @@ impl TimeSeriesConfig {
         partition_duration_secs: u64,
         retention_period_secs: u64,
         compression: CompressionType,
-        max_partitions: usize
+        max_partitions: usize,
     ) -> Self {
         Self {
             partition_duration_secs,
@@ -39,12 +37,12 @@ impl TimeSeriesConfig {
             max_partitions,
         }
     }
-    
+
     /// 获取分区时长
     pub fn partition_duration(&self) -> Duration {
         Duration::from_secs(self.partition_duration_secs)
     }
-    
+
     /// 获取数据保留期
     pub fn retention_period(&self) -> Duration {
         Duration::from_secs(self.retention_period_secs)
@@ -59,10 +57,10 @@ impl Default for TimeSeriesConfig {
 
 /// 时序数据配置默认值
 pub const DEFAULT_TIME_SERIES_CONFIG: TimeSeriesConfig = TimeSeriesConfig::new(
-    3600, // 1小时
+    3600,          // 1小时
     7 * 24 * 3600, // 7天
     CompressionType::DeltaRunLength,
-    1000
+    1000,
 );
 
 impl TimeSeriesConfig {
@@ -112,37 +110,32 @@ pub struct TimeSeriesTable {
 
 impl TimeSeriesTable {
     /// 创建新的时序表
-    pub fn new(
-        def: Arc<TimeSeriesTableDef>,
-        index: Arc<TimeSeriesIndex>
-    ) -> Result<Self> {
+    pub fn new(def: Arc<TimeSeriesTableDef>, index: Arc<TimeSeriesIndex>) -> Result<Self> {
         // 检查时间字段和值字段的有效性
         if def.time_field >= def.base.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         if def.value_field >= def.base.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         // 检查标签字段的有效性
         for &tag_field in def.tag_fields {
             if tag_field >= def.base.fields.len() {
                 return Err(RemDbError::FieldNotFound);
             }
         }
-        
+
         // 创建分区管理器
         let partition_manager = Arc::new(Mutex::new(PartitionManager::new(
             def.config.partition_duration(),
-            def.config.max_partitions
+            def.config.max_partitions,
         )));
-        
+
         // 创建生命周期管理器
-        let mut lifecycle_manager = LifecycleManager::new(
-            def.config.retention_period()
-        );
-        
+        let mut lifecycle_manager = LifecycleManager::new(def.config.retention_period());
+
         // 设置清理闭包
         let partitions_clone = partition_manager.clone();
         let retention_period = def.config.retention_period();
@@ -151,7 +144,7 @@ impl TimeSeriesTable {
             let current_time = LifecycleManager::get_current_timestamp();
             partitions_guard.cleanup_expired_partitions(current_time, retention_period);
         });
-        
+
         Ok(Self {
             def,
             partitions: partition_manager,
@@ -159,121 +152,119 @@ impl TimeSeriesTable {
             lifecycle: lifecycle_manager,
         })
     }
-    
+
     /// 批量写入时序数据
     pub unsafe fn batch_write(
         &mut self,
         records: *const TimeSeriesRecord,
-        count: usize
+        count: usize,
     ) -> Result<usize> {
         if records.is_null() || count == 0 {
             return Err(RemDbError::ConfigError);
         }
-        
+
         let mut inserted = 0;
-        
+
         // 遍历所有记录，写入到对应的分区
         for i in 0..count {
             let record = *records.add(i);
-            
+
             // 获取或创建分区
             let mut partitions_guard = self.partitions.lock().unwrap();
             let partition = partitions_guard.get_or_create_partition(record.timestamp);
-            
+
             // 写入记录到分区
             let mut partition_guard = partition.lock().unwrap();
             partition_guard.records.push(record);
             partition_guard.stats.record_count += 1;
-            
+
             // 更新索引
             self.index.insert(record.timestamp, inserted as usize);
-            
+
             inserted += 1;
         }
-        
+
         Ok(inserted)
     }
-    
+
     /// 事务化批量写入时序数据
     /// 确保一批数据要么全部成功插入并立即可见，要么全部回滚
-    pub fn write_timeseries_batch(
-        &mut self,
-        data_points: &[TimeSeriesRecord]
-    ) -> Result<usize> {
+    pub fn write_timeseries_batch(&mut self, data_points: &[TimeSeriesRecord]) -> Result<usize> {
         if data_points.is_empty() {
             return Err(RemDbError::ConfigError);
         }
-        
+
         // 检查是否有活跃事务
         let has_active_tx = crate::transaction::has_active_tx();
-        
+
         // 如果没有活跃事务，返回错误，要求调用者显式开始事务
         // 这是为了简化实现，避免直接访问Transaction结构体的私有字段
         if !has_active_tx {
             return Err(RemDbError::TransactionError);
         }
-        
+
         let mut inserted = 0;
         let table_id = self.def.base.id;
-        
+
         // 批量写入逻辑
         for (i, record) in data_points.iter().enumerate() {
             // 获取或创建分区
             let mut partitions_guard = self.partitions.lock().unwrap();
             let partition = partitions_guard.get_or_create_partition(record.timestamp);
-            
+
             // 写入记录到分区
             let mut partition_guard = partition.lock().unwrap();
             partition_guard.records.push(*record);
             partition_guard.stats.record_count = partition_guard.records.len();
-            
+
             // 更新索引
             self.index.insert(record.timestamp, inserted as usize);
-            
+
             // 记录事务日志
             unsafe {
                 // 获取当前事务
                 if let Some(mut tx_ptr) = crate::transaction::get_current_tx() {
                     let tx_mut = tx_ptr.as_mut();
-                    
+
                     // 添加日志项
                     let data_size = core::mem::size_of::<TimeSeriesRecord>();
                     let tx_id = tx_mut.id;
-                    let record_slice = core::slice::from_raw_parts(record as *const _ as *const u8, data_size);
+                    let record_slice =
+                        core::slice::from_raw_parts(record as *const _ as *const u8, data_size);
                     tx_mut.begin_log_item(
                         tx_id,
                         crate::transaction::LogOperation::TimeSeriesInsert,
                         table_id,
                         i as u16, // 使用索引作为record_id
                         data_size as u16,
-                        None, // 旧数据为null
-                        Some(record_slice) // 新数据指针
+                        None,               // 旧数据为null
+                        Some(record_slice), // 新数据指针
                     );
                 }
             }
-            
+
             inserted += 1;
         }
-        
+
         Ok(inserted)
     }
-    
+
     /// 时间范围查询
     pub fn query_time_range(
         &self,
         start_time: u64,
-        end_time: u64
+        end_time: u64,
     ) -> Result<Vec<TimeSeriesRecord>> {
         // 获取所有相关分区
         let partitions_guard = self.partitions.lock().unwrap();
         let relevant_partitions = partitions_guard.get_partitions_in_range(start_time, end_time);
-        
+
         let mut results = Vec::new();
-        
+
         // 遍历所有相关分区，查询符合条件的记录
         for partition in relevant_partitions {
             let partition_guard = partition.lock().unwrap();
-            
+
             // 遍历分区中的记录，过滤符合时间范围的记录
             for record in &partition_guard.records {
                 if record.timestamp >= start_time && record.timestamp <= end_time {
@@ -281,7 +272,7 @@ impl TimeSeriesTable {
                 }
             }
         }
-        
+
         Ok(results)
     }
 }

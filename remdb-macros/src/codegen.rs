@@ -1,6 +1,6 @@
-use quote::quote;
+use super::ddl_parser::{ColumnDef, TableDef};
 use proc_macro2::Span;
-use super::ddl_parser::{TableDef, ColumnDef};
+use quote::quote;
 
 pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
     let mut struct_defs = vec![];
@@ -8,11 +8,12 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
     let mut time_series_table_defs_code = vec![];
     let mut table_names = vec![];
     let mut time_series_table_names = vec![];
-    
+
     for table in table_defs {
         let table_name = table.name;
         // 将表名转换为驼峰式命名（CamelCase）
-        let struct_name_str = table_name.split('_')
+        let struct_name_str = table_name
+            .split('_')
             .map(|part| {
                 if part.is_empty() {
                     String::new()
@@ -25,52 +26,59 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
             })
             .collect::<String>();
         let struct_name = syn::Ident::new(&struct_name_str, Span::call_site());
-        let table_ident = syn::Ident::new(&table_name.to_uppercase().to_string(), Span::call_site());
-        
+        let table_ident =
+            syn::Ident::new(&table_name.to_uppercase().to_string(), Span::call_site());
+
         // 生成结构体定义
         let struct_fields = table.columns.iter().map(|col| {
             let field_name = syn::Ident::new(&col.name, Span::call_site());
             let rust_type = convert_to_rust_type(&col.typ, col.nullable, col.primary_key);
-            
+
             quote! {
                 #field_name: #rust_type
             }
         });
-        
+
         struct_defs.push(quote! {
             #[derive(Debug, Clone, Default)]
             pub struct #struct_name {
                 #(#struct_fields,)*
             }
         });
-        
+
         if table.is_time_series {
             // 生成时序表的基础表定义
-            let (field_defs, record_size, primary_key_index, secondary_index, secondary_index_type) = 
+            let (field_defs, record_size, primary_key_index, secondary_index, secondary_index_type) =
                 generate_field_defs(&table.columns, &table.indices);
-            
+
             let max_records = 1000usize; // 默认值，可以通过DDL扩展支持
-            
+
             // 查找时间字段和值字段的索引
-            let time_field_index = table.columns.iter()
+            let time_field_index = table
+                .columns
+                .iter()
                 .position(|col| col.name == "time" || col.name == "timestamp")
                 .unwrap_or(0);
-            let value_field_index = table.columns.iter()
+            let value_field_index = table
+                .columns
+                .iter()
                 .position(|col| col.name == "value" || col.name == "val")
                 .unwrap_or(1);
-            
+
             // 提取标签字段索引（所有非时间和非值字段）
-            let tag_field_indices: Vec<usize> = table.columns.iter()
+            let tag_field_indices: Vec<usize> = table
+                .columns
+                .iter()
                 .enumerate()
                 .filter(|(i, _col)| *i != time_field_index && *i != value_field_index)
                 .map(|(i, _)| i)
                 .collect();
-            
+
             // 转换标签字段索引为TokenStream
             let tag_fields_code = tag_field_indices.iter().map(|index| {
                 quote! { #index }
             });
-            
+
             time_series_table_defs_code.push(quote! {
                 #[allow(non_upper_case_globals)]
                 pub static #table_ident: remdb::time_series::TimeSeriesTableDef = remdb::time_series::TimeSeriesTableDef {
@@ -90,15 +98,15 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
                     config: remdb::time_series::TimeSeriesConfig::DEFAULT,
                 };
             });
-            
+
             time_series_table_names.push(table_ident);
         } else {
             // 生成普通表定义
-            let (field_defs, record_size, primary_key_index, secondary_index, secondary_index_type) = 
+            let (field_defs, record_size, primary_key_index, secondary_index, secondary_index_type) =
                 generate_field_defs(&table.columns, &table.indices);
-            
+
             let max_records = 1000usize; // 默认值，可以通过DDL扩展支持
-            
+
             table_defs_code.push(quote! {
                 #[allow(non_upper_case_globals)]
                 pub static #table_ident: remdb::types::TableDef = remdb::types::TableDef {
@@ -112,14 +120,14 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
                     max_records: #max_records,
                 };
             });
-            
+
             table_names.push(table_ident);
         }
     }
-    
+
     // 生成数据库配置
     let database_ident = syn::Ident::new("DATABASE", Span::call_site());
-    
+
     let database_code = quote! {
         #[allow(non_upper_case_globals)]
         pub static #database_ident: remdb::config::DbConfig = remdb::config::DbConfig {
@@ -161,35 +169,33 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
             time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
         };
     };
-    
+
     let output = quote! {
         #(#struct_defs)*
         #(#table_defs_code)*
         #(#time_series_table_defs_code)*
         #database_code
     };
-    
+
     output.into()
 }
 
-
-
 fn generate_field_defs(
     columns: &[ColumnDef],
-    indices: &[super::ddl_parser::IndexDef]
+    indices: &[super::ddl_parser::IndexDef],
 ) -> (
     Vec<proc_macro2::TokenStream>,
     usize,
     usize,
     proc_macro2::TokenStream,
-    proc_macro2::TokenStream
+    proc_macro2::TokenStream,
 ) {
     let mut field_defs = vec![];
     let mut offset = 0;
     let mut primary_key_index = 0;
     let mut secondary_index = None;
     let mut secondary_index_type = quote!(remdb::types::IndexType::BTree);
-    
+
     for (i, col) in columns.iter().enumerate() {
         let name = &col.name;
         let data_type = convert_to_data_type(&col.typ);
@@ -197,13 +203,13 @@ fn generate_field_defs(
         let primary_key = col.primary_key;
         let not_null = !col.nullable; // nullable为false表示not null
         let unique = col.unique;
-        
+
         // 检查是否为自增主键：
         // 1. 显式指定AUTOINCREMENT
         // 2. INTEGER PRIMARY KEY（隐式自增）
         let is_integer_primary_key = col.typ.to_lowercase() == "integer" && col.primary_key;
         let auto_increment = col.auto_increment || is_integer_primary_key;
-        
+
         field_defs.push(quote! {
             remdb::types::FieldDef {
                 name: #name,
@@ -218,11 +224,11 @@ fn generate_field_defs(
                 vector_metadata: None,
             }
         });
-        
+
         if col.primary_key {
             primary_key_index = i;
         }
-        
+
         // 检查是否有索引
         if let Some(index) = indices.first() {
             if index.field == *name {
@@ -235,16 +241,22 @@ fn generate_field_defs(
                 };
             }
         }
-        
+
         offset += size;
     }
-    
+
     let secondary_index_code = match secondary_index {
         Some(index) => quote!(Some(#index)),
         None => quote!(None),
     };
-    
-    (field_defs, offset, primary_key_index, secondary_index_code, secondary_index_type)
+
+    (
+        field_defs,
+        offset,
+        primary_key_index,
+        secondary_index_code,
+        secondary_index_type,
+    )
 }
 
 fn convert_to_data_type(sql_type: &str) -> proc_macro2::TokenStream {
@@ -280,7 +292,11 @@ fn get_type_size(sql_type: &str) -> usize {
     }
 }
 
-fn convert_to_rust_type(sql_type: &str, nullable: bool, is_primary_key: bool) -> proc_macro2::TokenStream {
+fn convert_to_rust_type(
+    sql_type: &str,
+    nullable: bool,
+    is_primary_key: bool,
+) -> proc_macro2::TokenStream {
     let base_type = match sql_type.to_lowercase().as_str() {
         "integer" | "int" => quote!(i32),
         "bigint" => quote!(i64),
@@ -297,7 +313,7 @@ fn convert_to_rust_type(sql_type: &str, nullable: bool, is_primary_key: bool) ->
         "timestamp" => quote!(u64),
         _ => quote!(i32),
     };
-    
+
     // 主键字段不能为None
     if nullable && !is_primary_key {
         quote!(Option<#base_type>)

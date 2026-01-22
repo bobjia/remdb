@@ -1,6 +1,6 @@
+use core::ptr::NonNull;
 /// 测试用内存分配器实现
 use remdb::config::MemoryAllocator;
-use core::ptr::NonNull;
 
 /// 简单的内存分配器实现，用于测试
 pub struct TestAllocator;
@@ -17,7 +17,7 @@ impl MemoryAllocator for TestAllocator {
         // 测试用实现，总是返回None，表示分配失败
         None
     }
-    
+
     fn deallocate(&self, _ptr: NonNull<u8>, _size: usize) {
         // 测试用实现，不做任何操作
     }

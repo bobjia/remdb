@@ -2,18 +2,16 @@ mod codegen;
 mod ddl_parser;
 
 use proc_macro::TokenStream;
-use syn::parse_macro_input;
 use quote::quote;
+use syn::parse_macro_input;
 
 #[proc_macro]
 pub fn define_schema(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::LitStr);
     let schema = input.value();
-    
+
     match ddl_parser::parse_ddl(&schema) {
-        Ok(table_defs) => {
-            codegen::generate_code(table_defs)
-        },
+        Ok(table_defs) => codegen::generate_code(table_defs),
         Err(e) => {
             panic!("Failed to parse DDL: {}", e);
         }
@@ -23,10 +21,10 @@ pub fn define_schema(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(MemdbTable, attributes(memdb_schema))]
 pub fn derive_memdb_table(input: TokenStream) -> TokenStream {
     let derive_input = parse_macro_input!(input as syn::DeriveInput);
-    
+
     // 查找memdb_schema属性
     let mut ddl = String::new();
-    
+
     for attr in &derive_input.attrs {
         if attr.path().is_ident("memdb_schema") {
             // 使用正确的syn 2.0 API解析属性
@@ -37,27 +35,26 @@ pub fn derive_memdb_table(input: TokenStream) -> TokenStream {
                     ddl = lit_str.value();
                 }
                 Ok(())
-            }).unwrap();
+            })
+            .unwrap();
         }
     }
-    
+
     if ddl.is_empty() {
         panic!("memdb_schema attribute with ddl parameter is required");
     }
-    
+
     // 解析DDL并生成代码
     match ddl_parser::parse_ddl(&ddl) {
-        Ok(table_defs) => {
-            codegen::generate_code(table_defs)
-        },
+        Ok(table_defs) => codegen::generate_code(table_defs),
         Err(e) => {
             panic!("Failed to parse DDL: {}", e);
         }
     }
 }
 
-use syn::{LitInt, Ident, Token};
 use syn::parse::{Parse, ParseStream};
+use syn::{Ident, LitInt, Token};
 
 // 字段定义
 struct Field {
@@ -73,20 +70,20 @@ impl Parse for Field {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let name = input.parse()?;
         let colon = input.parse()?;
-        
+
         // 解析类型名称
         let type_name = input.parse()?;
-        
+
         // 检查是否有括号参数，如 str(32)
         let type_params = if input.peek(syn::token::Paren) {
-            let content; 
+            let content;
             syn::parenthesized!(content in input);
             let params = content.parse()?;
             Some(params)
         } else {
             None
         };
-        
+
         Ok(Self {
             name,
             colon,
@@ -110,30 +107,30 @@ impl Parse for TableArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // 解析表名
         let name = input.parse()?;
-        
+
         // 解析逗号
         let _comma1: Token![,] = input.parse()?;
-        
+
         // 解析最大记录数
         let max_records = input.parse()?;
-        
+
         // 解析逗号
         let _comma2: Token![,] = input.parse()?;
-        
+
         // 解析primary_key
         let _primary_key_keyword: Ident = input.parse()?;
         let _colon1: Token![:] = input.parse()?;
         let primary_key = input.parse()?;
-        
+
         // 解析secondary_index（可选）
         let mut secondary_index = None;
         let mut secondary_index_type = None;
-        
+
         // 检查primary_key之后是否有逗号
         if input.peek(Token![,]) {
             let _comma3: Token![,] = input.parse()?;
         }
-        
+
         // 解析secondary_index、secondary_index_type和fields关键字
         loop {
             // 检查下一个标记
@@ -143,7 +140,7 @@ impl Parse for TableArgs {
                 if param_name == "secondary_index" {
                     let _colon: Token![:] = input.parse()?;
                     secondary_index = Some(input.parse()?);
-                    
+
                     // 解析逗号
                     if input.peek(Token![,]) {
                         let _comma4: Token![,] = input.parse()?;
@@ -151,7 +148,7 @@ impl Parse for TableArgs {
                 } else if param_name == "secondary_index_type" {
                     let _colon: Token![:] = input.parse()?;
                     secondary_index_type = Some(input.parse()?);
-                    
+
                     // 解析逗号
                     if input.peek(Token![,]) {
                         let _comma5: Token![,] = input.parse()?;
@@ -166,24 +163,24 @@ impl Parse for TableArgs {
                 return Err(next.error());
             }
         }
-        
+
         // 解析fields块
-        let content; 
+        let content;
         syn::braced!(content in input);
-        
+
         // 解析fields块内的内容
         let mut fields = Vec::new();
         while !content.is_empty() {
             // 解析字段
             let field = content.parse::<Field>()?;
             fields.push(field);
-            
+
             // 如果还有逗号，解析它
             if content.peek(Token![,]) {
                 content.parse::<Token![,]>()?;
             }
         }
-        
+
         Ok(Self {
             name,
             max_records,
@@ -208,48 +205,48 @@ impl Parse for DatabaseArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // 解析数据库名
         let name = input.parse()?;
-        
+
         // 解析逗号
         let _comma: Token![,] = input.parse()?;
-        
+
         // 解析tables关键字
         let _tables: Ident = input.parse()?;
-        
+
         // 解析冒号
         let _colon: Token![:] = input.parse()?;
-        
+
         // 解析表列表
-        let content; 
+        let content;
         syn::bracketed!(content in input);
-        
+
         let mut tables = Vec::new();
         while !content.is_empty() {
             // 解析表名
             let table = content.parse::<Ident>()?;
             tables.push(table);
-            
+
             // 如果还有逗号，解析它
             if content.peek(Token![,]) {
                 content.parse::<Token![,]>()?;
             }
         }
-        
+
         // 解析可选的low_power参数
         let mut low_power = false;
         let mut low_power_max_records = None;
         let mut default_max_records = 100000; // 默认值
-        
+
         // 检查是否还有更多参数
         while !input.is_empty() {
             // 解析逗号
             let _comma: Token![,] = input.parse()?;
-            
+
             // 解析参数名
             let param_name = input.parse::<Ident>()?;
-            
+
             // 解析冒号
             let _colon: Token![:] = input.parse()?;
-            
+
             if param_name == "low_power" {
                 // 解析布尔值
                 let lit_bool = input.parse::<syn::LitBool>()?;
@@ -264,7 +261,7 @@ impl Parse for DatabaseArgs {
                 default_max_records = lit_int.base10_parse().unwrap_or(100000);
             }
         }
-        
+
         Ok(Self {
             name,
             tables,
@@ -285,19 +282,19 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let secondary_index = &args.secondary_index;
     let secondary_index_type = &args.secondary_index_type;
     let fields = &args.fields;
-    
+
     // 生成字段定义
     let mut offset = 0;
     let mut field_defs = Vec::new();
     let mut record_size = 0;
     let mut primary_key_index = 0usize;
     let mut secondary_key_index: Option<usize> = None;
-    
+
     for (i, field) in fields.iter().enumerate() {
         let field_name = &field.name;
         let type_name = &field.type_name;
         let type_params = &field.type_params;
-        
+
         // 确定数据类型和大小
         let (data_type, size_val) = if type_name == "i32" {
             (quote!(remdb::types::DataType::Int32), 4)
@@ -328,7 +325,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         } else {
             (quote!(remdb::types::DataType::Int32), 4)
         };
-        
+
         // 计算对齐要求
         let alignment = if type_name == "u64" || type_name == "f64" || type_name == "i64" {
             8
@@ -339,22 +336,23 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         } else {
             1
         };
-        
+
         // 调整偏移量以满足对齐要求
         offset = ((offset + alignment - 1) / alignment) * alignment;
-        
+
         // 确定约束字段值
         let is_primary_key = field_name == primary_key;
         let primary_key_val = is_primary_key;
         let not_null_val = is_primary_key; // 主键字段默认为非空
         let unique_val = is_primary_key;
-        
+
         // 检查是否为自增主键：
         // 1. 整数主键默认自增
         // 2. 可以显式指定AUTOINCREMENT
-        let is_integer_type = type_name == "i32" || type_name == "i64" || type_name == "u32" || type_name == "u64";
+        let is_integer_type =
+            type_name == "i32" || type_name == "i64" || type_name == "u32" || type_name == "u64";
         let auto_increment_val = is_primary_key && is_integer_type;
-        
+
         // 生成向量元数据（仅向量类型字段需要）
         let vector_metadata_code = if type_name == "vector" {
             let dim = if let Some(params) = type_params {
@@ -372,7 +370,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         } else {
             quote! { None }
         };
-        
+
         // 生成字段定义
         let field_def = quote! {
             remdb::types::FieldDef {
@@ -388,32 +386,32 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 vector_metadata: #vector_metadata_code,
             }
         };
-        
+
         field_defs.push(field_def);
-        
+
         // 确定主键和二级索引的字段索引
         if field_name == primary_key {
             primary_key_index = i;
         }
-        
+
         if let Some(secondary_field) = secondary_index {
             if field_name == secondary_field {
                 secondary_key_index = Some(i);
             }
         }
-        
+
         // 更新偏移量和记录大小
         offset += size_val;
         record_size = offset;
     }
-    
+
     // 确保整个记录满足最大对齐要求（8字节对齐）
     let max_alignment = 8;
     record_size = ((record_size + max_alignment - 1) / max_alignment) * max_alignment;
-    
+
     // 将max_records转换为usize
     let max_records_usize = max_records.base10_parse::<usize>().unwrap_or(100);
-    
+
     // 确定索引类型
     let index_type = match secondary_index_type.as_ref() {
         Some(ty) if ty == "btree" => quote!(remdb::types::IndexType::BTree),
@@ -422,13 +420,13 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         Some(ty) if ty == "sortedarray" => quote!(remdb::types::IndexType::SortedArray),
         _ => quote!(remdb::types::IndexType::BTree),
     };
-    
+
     // 生成secondary_index代码
     let secondary_index_code = match secondary_key_index {
         Some(index) => quote! { Some(#index) },
         None => quote! { None },
     };
-    
+
     // 生成代码：返回一个TableDef静态变量
     let output = quote! {
         #[allow(non_upper_case_globals)]
@@ -443,7 +441,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             max_records: #max_records_usize,
         };
     };
-    
+
     output.into()
 }
 
@@ -455,13 +453,13 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let tables = &args.tables;
     let low_power = args.low_power;
     let default_max_records = args.default_max_records;
-    
+
     // 处理low_power_max_records，转换为Option<usize>
     let low_power_max_records = match args.low_power_max_records {
         Some(val) => quote! { Some(#val) },
-        None => quote! { None }
+        None => quote! { None },
     };
-    
+
     // 生成代码：返回一个DbConfig静态变量
     let output = quote! {
         #[allow(non_upper_case_globals)]
@@ -506,6 +504,6 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             }),
         };
     };
-    
+
     output.into()
 }

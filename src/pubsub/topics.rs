@@ -22,16 +22,10 @@ pub fn get_table_content_topic(table_name: &str) -> alloc::string::String {
 
 /// Returns all WAL log topics
 pub fn get_all_wal_topics() -> alloc::vec::Vec<&'static str> {
-    alloc::vec![
-        WAL_TOPIC,
-    ]
+    alloc::vec![WAL_TOPIC,]
 }
 
 /// Returns all core topics
 pub fn get_core_topics() -> alloc::vec::Vec<&'static str> {
-    alloc::vec![
-        TABLES_TOPIC,
-        METRICS_TOPIC,
-        HEALTH_STATUS_TOPIC,
-    ]
+    alloc::vec![TABLES_TOPIC, METRICS_TOPIC, HEALTH_STATUS_TOPIC,]
 }

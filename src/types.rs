@@ -129,14 +129,14 @@ impl DataType {
             DataType::Float32 => 4,
             DataType::Float64 => 8,
             DataType::Bool => 1,
-            DataType::Timestamp => core::mem::size_of::<db_timestamp>(),  // 实际大小，包括精度和标志
+            DataType::Timestamp => core::mem::size_of::<db_timestamp>(), // 实际大小，包括精度和标志
             DataType::TimestampTZ => core::mem::size_of::<db_timestamp>(), // 实际大小，包括精度和时区偏移
-            DataType::Interval => core::mem::size_of::<db_interval>(),   // 实际大小，包括精度和标志
+            DataType::Interval => core::mem::size_of::<db_interval>(), // 实际大小，包括精度和标志
             DataType::String => panic!("String size is variable at compile time"),
             DataType::Vector => panic!("Vector size depends on dimension at runtime"),
         }
     }
-    
+
     /// 将数据类型转换为SQL类型字符串
     pub fn to_sql_type(&self, size: usize) -> &'static str {
         match self {
@@ -194,18 +194,18 @@ impl db_interval {
             flags,
         }
     }
-    
+
     /// 根据精度获取存储大小
     pub const fn storage_size(precision: u8) -> usize {
         match precision {
-            0..=2 => 4,   // 秒级
-            3..=5 => 6,   // 毫秒级
-            6..=8 => 8,   // 微秒级
-            9 => 10,      // 纳秒级
-            _ => 8,       // 默认微秒级
+            0..=2 => 4, // 秒级
+            3..=5 => 6, // 毫秒级
+            6..=8 => 8, // 微秒级
+            9 => 10,    // 纳秒级
+            _ => 8,     // 默认微秒级
         }
     }
-    
+
     /// 获取当前时间间隔的存储大小
     pub const fn size(&self) -> usize {
         Self::storage_size(self.precision)
@@ -236,23 +236,23 @@ impl db_timestamp {
             flags,
         }
     }
-    
+
     /// 根据精度获取存储大小
     pub const fn storage_size(precision: u8) -> usize {
         match precision {
-            0..=2 => 4,   // 秒级
-            3..=5 => 6,   // 毫秒级
-            6..=8 => 8,   // 微秒级
-            9 => 10,      // 纳秒级
-            _ => 8,       // 默认微秒级
+            0..=2 => 4, // 秒级
+            3..=5 => 6, // 毫秒级
+            6..=8 => 8, // 微秒级
+            9 => 10,    // 纳秒级
+            _ => 8,     // 默认微秒级
         }
     }
-    
+
     /// 获取当前时间戳的存储大小
     pub const fn size(&self) -> usize {
         Self::storage_size(self.precision)
     }
-    
+
     /// 时间戳加法运算
     pub fn add(&self, interval: &db_interval) -> Self {
         Self {
@@ -262,7 +262,7 @@ impl db_timestamp {
             flags: self.flags,
         }
     }
-    
+
     /// 时间戳减法运算
     pub fn sub(&self, interval: &db_interval) -> Self {
         Self {
@@ -272,7 +272,7 @@ impl db_timestamp {
             flags: self.flags,
         }
     }
-    
+
     /// 计算两个时间戳之间的时间差
     pub fn diff(&self, other: &db_timestamp) -> db_interval {
         let diff_value = self.value - other.value;
@@ -294,16 +294,39 @@ pub struct TimeZone {
 
 /// 内置时区列表
 pub const TIME_ZONES: &[TimeZone] = &[
-    TimeZone { name: "UTC", offset: 0, uses_dst: false },
-    TimeZone { name: "Asia/Shanghai", offset: 8 * 3600, uses_dst: false },
-    TimeZone { name: "America/New_York", offset: -5 * 3600, uses_dst: true },
-    TimeZone { name: "Europe/London", offset: 0, uses_dst: true },
-    TimeZone { name: "Asia/Tokyo", offset: 9 * 3600, uses_dst: false },
+    TimeZone {
+        name: "UTC",
+        offset: 0,
+        uses_dst: false,
+    },
+    TimeZone {
+        name: "Asia/Shanghai",
+        offset: 8 * 3600,
+        uses_dst: false,
+    },
+    TimeZone {
+        name: "America/New_York",
+        offset: -5 * 3600,
+        uses_dst: true,
+    },
+    TimeZone {
+        name: "Europe/London",
+        offset: 0,
+        uses_dst: true,
+    },
+    TimeZone {
+        name: "Asia/Tokyo",
+        offset: 9 * 3600,
+        uses_dst: false,
+    },
 ];
 
 /// 查找时区信息
 pub fn find_timezone(name: &str) -> Option<TimeZone> {
-    TIME_ZONES.iter().find(|tz| tz.name.eq_ignore_ascii_case(name)).copied()
+    TIME_ZONES
+        .iter()
+        .find(|tz| tz.name.eq_ignore_ascii_case(name))
+        .copied()
 }
 
 /// 转换时间戳到指定时区
@@ -320,8 +343,7 @@ pub fn convert_timezone(timestamp: &db_timestamp, tz_offset: i16) -> db_timestam
 
 /// 根据时区名称获取时区偏移（秒）
 pub fn get_timezone_offset(timezone_name: &str) -> Option<i16> {
-    find_timezone(timezone_name)
-        .map(|tz| tz.offset as i16)
+    find_timezone(timezone_name).map(|tz| tz.offset as i16)
 }
 
 /// 根据时区偏移（秒）创建时区信息
@@ -341,14 +363,14 @@ pub mod time_format {
         // 这里使用简化实现，实际应该根据精度和时区偏移进行完整格式化
         alloc::format!("2023-01-01T12:00:00.000000+00:00")
     }
-    
+
     /// 将db_timestamp转换为指定格式的字符串
     pub fn to_char(timestamp: &super::db_timestamp, format: &str) -> alloc::string::String {
         // 实现指定格式的格式化
         // 这里使用简化实现，实际应该支持各种格式说明符
         alloc::format!("{}", timestamp.value)
     }
-    
+
     /// 将db_timestamp转换为 epoch 时间戳（秒）
     pub fn to_epoch(timestamp: &super::db_timestamp) -> f64 {
         // 转换为秒级epoch时间
@@ -362,32 +384,32 @@ pub mod time_utils {
     pub const fn seconds_to_millis(seconds: u64) -> u64 {
         seconds * 1000
     }
-    
+
     /// 将毫秒转换为秒
     pub const fn millis_to_seconds(millis: u64) -> u64 {
         millis / 1000
     }
-    
+
     /// 将微秒转换为毫秒
     pub const fn micros_to_millis(micros: u64) -> u64 {
         micros / 1000
     }
-    
+
     /// 将毫秒转换为微秒
     pub const fn millis_to_micros(millis: u64) -> u64 {
         millis * 1000
     }
-    
+
     /// 将纳秒转换为毫秒
     pub const fn nanos_to_millis(nanos: u64) -> u64 {
         nanos / 1000000
     }
-    
+
     /// 将毫秒转换为纳秒
     pub const fn millis_to_nanos(millis: u64) -> u64 {
         millis * 1000000
     }
-    
+
     /// 计算两个时间戳之间的时间差（毫秒）
     pub fn time_diff(start: u64, end: u64) -> u64 {
         if end > start {
@@ -396,12 +418,12 @@ pub mod time_utils {
             start - end
         }
     }
-    
+
     /// 检查时间戳是否在指定范围内
     pub fn is_in_time_range(timestamp: u64, start: u64, end: u64) -> bool {
         timestamp >= start && timestamp <= end
     }
-    
+
     /// 获取当前时间戳（毫秒）
     /// 注意：在no_std环境中，此函数需要平台支持
     #[cfg(feature = "std")]
@@ -412,7 +434,7 @@ pub mod time_utils {
             .expect("Time went backwards")
             .as_millis() as u64
     }
-    
+
     /// 获取当前时间戳（微秒）
     /// 注意：在no_std环境中，此函数需要平台支持
     #[cfg(feature = "std")]
@@ -440,11 +462,11 @@ pub union Value {
     pub float32: f32,
     pub float64: f64,
     pub bool: bool,
-    pub timestamp: u64,              // 兼容旧版本
-    pub time: db_timestamp,          // 新的时间戳类型
-    pub interval: db_interval,       // 时间间隔类型
+    pub timestamp: u64,        // 兼容旧版本
+    pub time: db_timestamp,    // 新的时间戳类型
+    pub interval: db_interval, // 时间间隔类型
     pub string: [u8; MAX_STRING_LEN],
-    pub vector: *const f32,          // 向量类型（指向float32数组的指针）
+    pub vector: *const f32,              // 向量类型（指向float32数组的指针）
     pub vector_metadata: VectorMetadata, // 向量元数据
 }
 
@@ -452,9 +474,7 @@ pub union Value {
 impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // 默认打印为u64值，实际使用时需要根据数据类型进行转换
-        unsafe {
-            write!(f, "Value(0x{:x})", self.u64)
-        }
+        unsafe { write!(f, "Value(0x{:x})", self.u64) }
     }
 }
 
@@ -483,7 +503,7 @@ impl PartialEq for TypedValue {
         if self.value_type != other.value_type {
             return false;
         }
-        
+
         unsafe {
             match self.value_type {
                 DataType::UInt8 => self.value.u8 == other.value.u8,
@@ -517,16 +537,16 @@ impl PartialEq for TypedValue {
                 DataType::Timestamp => self.value.time.value == other.value.time.value,
                 DataType::TimestampTZ => {
                     // 比较值和时区偏移
-                    self.value.time.value == other.value.time.value && 
-                    self.value.time.tz_offset == other.value.time.tz_offset
-                },
+                    self.value.time.value == other.value.time.value
+                        && self.value.time.tz_offset == other.value.time.tz_offset
+                }
                 DataType::Interval => self.value.interval.value == other.value.interval.value,
                 DataType::String => {
                     // 比较字符串数组
                     let a_str = core::str::from_utf8(&self.value.string).unwrap_or("");
                     let b_str = core::str::from_utf8(&other.value.string).unwrap_or("");
                     a_str.trim_end_matches(char::from(0)) == b_str.trim_end_matches(char::from(0))
-                },
+                }
                 DataType::Vector => {
                     // 向量比较：比较元数据和值
                     // 这里简化实现，实际应该比较向量的每个元素
@@ -548,7 +568,7 @@ impl Hash for TypedValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // 首先哈希类型
         self.value_type.hash(state);
-        
+
         unsafe {
             match self.value_type {
                 DataType::UInt8 => self.value.u8.hash(state),
@@ -568,7 +588,7 @@ impl Hash for TypedValue {
                     } else {
                         a.to_bits().hash(state);
                     }
-                },
+                }
                 DataType::Float64 => {
                     let a = self.value.float64;
                     if a.is_nan() {
@@ -577,20 +597,20 @@ impl Hash for TypedValue {
                     } else {
                         a.to_bits().hash(state);
                     }
-                },
+                }
                 DataType::Bool => self.value.bool.hash(state),
                 DataType::Timestamp => self.value.time.value.hash(state),
                 DataType::TimestampTZ => {
                     // 哈希值和时区偏移
                     self.value.time.value.hash(state);
                     self.value.time.tz_offset.hash(state);
-                },
+                }
                 DataType::Interval => self.value.interval.value.hash(state),
                 DataType::String => {
                     // 哈希字符串内容，忽略末尾的空字符
                     let s = core::str::from_utf8(&self.value.string).unwrap_or("");
                     s.trim_end_matches(char::from(0)).hash(state);
-                },
+                }
                 DataType::Vector => {
                     // 向量哈希：哈希元数据
                     // 注意：实际使用中可能需要哈希向量的部分或全部元素
@@ -627,7 +647,7 @@ impl PartialOrd for TypedValue {
                             } else {
                                 Some(a.partial_cmp(&b).unwrap())
                             }
-                        },
+                        }
                         DataType::Float64 => {
                             let a = self.value.float64;
                             let b = other.value.float64;
@@ -636,33 +656,41 @@ impl PartialOrd for TypedValue {
                             } else {
                                 Some(a.partial_cmp(&b).unwrap())
                             }
-                        },
+                        }
                         DataType::Bool => Some(self.value.bool.cmp(&other.value.bool)),
-                        DataType::Timestamp => Some(self.value.time.value.cmp(&other.value.time.value)),
+                        DataType::Timestamp => {
+                            Some(self.value.time.value.cmp(&other.value.time.value))
+                        }
                         DataType::TimestampTZ => {
                             // 先比较时间值，再比较时区偏移
                             match self.value.time.value.cmp(&other.value.time.value) {
                                 core::cmp::Ordering::Equal => {
                                     Some(self.value.time.tz_offset.cmp(&other.value.time.tz_offset))
-                                },
+                                }
                                 ordering => Some(ordering),
                             }
-                        },
-                        DataType::Interval => Some(self.value.interval.value.cmp(&other.value.interval.value)),
+                        }
+                        DataType::Interval => {
+                            Some(self.value.interval.value.cmp(&other.value.interval.value))
+                        }
                         DataType::String => {
                             // 比较字符串内容
                             let a_str = core::str::from_utf8(&self.value.string).unwrap_or("");
                             let b_str = core::str::from_utf8(&other.value.string).unwrap_or("");
-                            Some(a_str.trim_end_matches(char::from(0)).cmp(b_str.trim_end_matches(char::from(0))))
-                        },
+                            Some(
+                                a_str
+                                    .trim_end_matches(char::from(0))
+                                    .cmp(b_str.trim_end_matches(char::from(0))),
+                            )
+                        }
                         DataType::Vector => {
                             // 向量比较：比较元数据
                             // 注意：实际使用中可能需要比较向量的距离或相似度
                             Some(self.value.vector_metadata.cmp(&other.value.vector_metadata))
-                        },
+                        }
                     }
                 }
-            },
+            }
             ordering => Some(ordering),
         }
     }
@@ -671,7 +699,8 @@ impl PartialOrd for TypedValue {
 /// 手动实现Ord trait，用于在BTreeMap中用作键
 impl Ord for TypedValue {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(core::cmp::Ordering::Equal)
+        self.partial_cmp(other)
+            .unwrap_or(core::cmp::Ordering::Equal)
     }
 }
 
@@ -680,51 +709,114 @@ impl fmt::Debug for TypedValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
             match self.value_type {
-                DataType::UInt8 => write!(f, "TypedValue(UInt8, {})
-", self.value.u8),
-                DataType::UInt16 => write!(f, "TypedValue(UInt16, {})
-", self.value.u16),
-                DataType::UInt32 => write!(f, "TypedValue(UInt32, {})
-", self.value.u32),
-                DataType::UInt64 => write!(f, "TypedValue(UInt64, {})
-", self.value.u64),
-                DataType::Int8 => write!(f, "TypedValue(Int8, {})
-", self.value.i8),
-                DataType::Int16 => write!(f, "TypedValue(Int16, {})
-", self.value.i16),
-                DataType::Int32 => write!(f, "TypedValue(Int32, {})
-", self.value.i32),
-                DataType::Int64 => write!(f, "TypedValue(Int64, {})
-", self.value.i64),
-                DataType::Float32 => write!(f, "TypedValue(Float32, {})
-", self.value.float32),
-                DataType::Float64 => write!(f, "TypedValue(Float64, {})
-", self.value.float64),
-                DataType::Bool => write!(f, "TypedValue(Bool, {})
-", self.value.bool),
+                DataType::UInt8 => write!(
+                    f,
+                    "TypedValue(UInt8, {})
+",
+                    self.value.u8
+                ),
+                DataType::UInt16 => write!(
+                    f,
+                    "TypedValue(UInt16, {})
+",
+                    self.value.u16
+                ),
+                DataType::UInt32 => write!(
+                    f,
+                    "TypedValue(UInt32, {})
+",
+                    self.value.u32
+                ),
+                DataType::UInt64 => write!(
+                    f,
+                    "TypedValue(UInt64, {})
+",
+                    self.value.u64
+                ),
+                DataType::Int8 => write!(
+                    f,
+                    "TypedValue(Int8, {})
+",
+                    self.value.i8
+                ),
+                DataType::Int16 => write!(
+                    f,
+                    "TypedValue(Int16, {})
+",
+                    self.value.i16
+                ),
+                DataType::Int32 => write!(
+                    f,
+                    "TypedValue(Int32, {})
+",
+                    self.value.i32
+                ),
+                DataType::Int64 => write!(
+                    f,
+                    "TypedValue(Int64, {})
+",
+                    self.value.i64
+                ),
+                DataType::Float32 => write!(
+                    f,
+                    "TypedValue(Float32, {})
+",
+                    self.value.float32
+                ),
+                DataType::Float64 => write!(
+                    f,
+                    "TypedValue(Float64, {})
+",
+                    self.value.float64
+                ),
+                DataType::Bool => write!(
+                    f,
+                    "TypedValue(Bool, {})
+",
+                    self.value.bool
+                ),
                 DataType::Timestamp => {
-                    write!(f, "TypedValue(Timestamp, value: {}, precision: {})
-", 
-                           self.value.time.value, self.value.time.precision)
-                },
+                    write!(
+                        f,
+                        "TypedValue(Timestamp, value: {}, precision: {})
+",
+                        self.value.time.value, self.value.time.precision
+                    )
+                }
                 DataType::TimestampTZ => {
-                    write!(f, "TypedValue(TimestampTZ, value: {}, tz_offset: {}s, precision: {})
-", 
-                           self.value.time.value, self.value.time.tz_offset, self.value.time.precision)
-                },
+                    write!(
+                        f,
+                        "TypedValue(TimestampTZ, value: {}, tz_offset: {}s, precision: {})
+",
+                        self.value.time.value, self.value.time.tz_offset, self.value.time.precision
+                    )
+                }
                 DataType::String => {
-                    let s = core::str::from_utf8(&self.value.string).unwrap_or("").trim_end_matches(char::from(0));
-                    write!(f, "TypedValue(String, \"{}\")
-", s)
-                },
+                    let s = core::str::from_utf8(&self.value.string)
+                        .unwrap_or("")
+                        .trim_end_matches(char::from(0));
+                    write!(
+                        f,
+                        "TypedValue(String, \"{}\")
+",
+                        s
+                    )
+                }
                 DataType::Interval => {
-                    write!(f, "TypedValue(Interval, value: {}, precision: {})
-", 
-                           self.value.interval.value, self.value.interval.precision)
-                },
+                    write!(
+                        f,
+                        "TypedValue(Interval, value: {}, precision: {})
+",
+                        self.value.interval.value, self.value.interval.precision
+                    )
+                }
                 DataType::Vector => {
-                    write!(f, "TypedValue(Vector, metadata: {:?})
-", self.value.vector_metadata)
+                    write!(
+                        f,
+                        "TypedValue(Vector, metadata: {:?})
+",
+                        self.value.vector_metadata
+                    )
                 }
             }
         }
@@ -764,35 +856,37 @@ impl FieldDef {
     /// 生成字段的SQL约束字符串
     pub fn constraints_to_sql(&self) -> alloc::string::String {
         let mut constraints = alloc::string::String::new();
-        
+
         if self.primary_key {
             constraints.push_str(" PRIMARY KEY");
         }
-        
+
         if self.auto_increment {
             constraints.push_str(" AUTO_INCREMENT");
         }
-        
+
         if self.not_null {
             constraints.push_str(" NOT NULL");
         }
-        
+
         if self.unique && !self.primary_key {
             constraints.push_str(" UNIQUE");
         }
-        
+
         if let Some(default) = self.default_value {
             constraints.push_str(" DEFAULT ");
             unsafe {
                 match self.data_type {
                     DataType::String => {
-                        let s = core::str::from_utf8(&default.string).unwrap_or("").trim_end_matches(char::from(0));
+                        let s = core::str::from_utf8(&default.string)
+                            .unwrap_or("")
+                            .trim_end_matches(char::from(0));
                         constraints.push_str(&alloc::format!("'{}'", s));
-                    },
+                    }
                     DataType::Bool => {
                         let b = default.bool;
                         constraints.push_str(if b { "TRUE" } else { "FALSE" });
-                    },
+                    }
                     DataType::UInt8 => constraints.push_str(&default.u8.to_string()),
                     DataType::UInt16 => constraints.push_str(&default.u16.to_string()),
                     DataType::UInt32 => constraints.push_str(&default.u32.to_string()),
@@ -808,11 +902,11 @@ impl FieldDef {
                     DataType::Interval => constraints.push_str(&default.interval.value.to_string()),
                     DataType::Vector => {
                         constraints.push_str("NULL"); // 向量类型暂不支持默认值
-                    },
+                    }
                 }
             }
         }
-        
+
         // 向量类型特殊处理：添加距离度量和索引类型
         if self.data_type == DataType::Vector {
             if let Some(meta) = self.vector_metadata {
@@ -824,7 +918,7 @@ impl FieldDef {
                 constraints.push_str(&alloc::format!(" WITH DISTANCE={}", distance_str));
             }
         }
-        
+
         constraints
     }
 }

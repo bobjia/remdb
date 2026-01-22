@@ -1,7 +1,10 @@
-use core::ptr::NonNull;
-use crate::{types::{RecordHeader, RecordStatus, TableDef, Value, Result, RemDbError, DataType}, DataType as CrateDataType};
-use crate::platform::{memcpy, memset};
 use crate::defer;
+use crate::platform::{memcpy, memset};
+use crate::{
+    types::{DataType, RecordHeader, RecordStatus, RemDbError, Result, TableDef, Value},
+    DataType as CrateDataType,
+};
+use core::ptr::NonNull;
 
 // 引入alloc模块
 extern crate alloc;
@@ -58,7 +61,6 @@ impl<'a> RecordRef<'a> {
     pub fn table_def(&self) -> &'a TableDef {
         self.table.def.as_ref()
     }
-
 
     fn field_def(&self, col: usize) -> Result<&'a crate::types::FieldDef> {
         self.table
@@ -177,7 +179,9 @@ impl<'a> RecordRef<'a> {
         if field.data_type != DataType::Timestamp && field.data_type != DataType::TimestampTZ {
             return Err(RemDbError::TypeMismatch);
         }
-        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const crate::types::db_timestamp) })
+        Ok(unsafe {
+            core::ptr::read_unaligned(self.field_ptr(field) as *const crate::types::db_timestamp)
+        })
     }
 
     /// 按列索引读取时间间隔
@@ -186,7 +190,9 @@ impl<'a> RecordRef<'a> {
         if field.data_type != DataType::Interval {
             return Err(RemDbError::TypeMismatch);
         }
-        Ok(unsafe { core::ptr::read_unaligned(self.field_ptr(field) as *const crate::types::db_interval) })
+        Ok(unsafe {
+            core::ptr::read_unaligned(self.field_ptr(field) as *const crate::types::db_interval)
+        })
     }
 
     /// 按列索引读取字符串（零拷贝）
@@ -281,7 +287,6 @@ impl<'a> Iterator for RecordIdCursor<'a> {
     }
 }
 
-
 // 添加Drop trait实现，用于释放动态分配的内存
 impl Drop for MemoryTable {
     fn drop(&mut self) {
@@ -303,17 +308,17 @@ impl MemoryTable {
         if def.max_records == 0 {
             return Err(RemDbError::ConfigError);
         }
-        
+
         // 计算所需内存大小
         let data_size = def.record_size * def.max_records;
         let status_size = core::mem::size_of::<RecordHeader>() * def.max_records;
         let free_slots_size = core::mem::size_of::<usize>() * def.max_records;
-        
+
         // 动态分配内存
         let data_start = crate::memory::allocator::alloc(data_size)?;
         let status_start = crate::memory::allocator::alloc(status_size)?;
         let free_slots_start = crate::memory::allocator::alloc(free_slots_size)?;
-        
+
         // 初始化状态数组
         unsafe {
             let status_array = status_start.cast::<RecordHeader>();
@@ -325,14 +330,14 @@ impl MemoryTable {
                 (*status_ptr).lock_owner = 0;
                 (*status_ptr).lock_count = 0;
             }
-            
+
             // 初始化空闲记录槽栈，将所有记录槽压入栈中
             let free_slots = free_slots_start.cast::<usize>();
             for i in 0..def.max_records {
                 *free_slots.as_ptr().add(i) = (def.max_records - 1 - i) as usize;
             }
         }
-        
+
         Ok(MemoryTable {
             def: def.clone(),
             data_start,
@@ -342,13 +347,13 @@ impl MemoryTable {
             record_size: def.record_size, // 使用表定义中已经计算好的record_size
             free_slots: free_slots_start.cast(),
             free_slot_count: def.max_records,
-            low_power_mode: false, // 默认不启用低功耗模式
+            low_power_mode: false,       // 默认不启用低功耗模式
             low_power_max_records: None, // 默认使用表定义的最大记录数
-            snapshot_version: 0, // 初始快照版本为0
-            max_pk: 0, // 初始最大主键值为0
+            snapshot_version: 0,         // 初始快照版本为0
+            max_pk: 0,                   // 初始最大主键值为0
         })
     }
-    
+
     /// 计算表所需的总内存大小
     pub const fn calculate_memory_size(def: &TableDef) -> usize {
         // 数据大小：记录大小 * 最大记录数
@@ -357,13 +362,16 @@ impl MemoryTable {
         let status_size = core::mem::size_of::<RecordHeader>() * def.max_records;
         // 空闲槽栈大小：usize大小 * 最大记录数
         let free_slots_size = core::mem::size_of::<usize>() * def.max_records;
-        
+
         data_size + status_size + free_slots_size
     }
-    
+
     /// 验证记录的约束
-    pub unsafe fn validate_constraints(&self, record_data: *const u8, exclude_slot: Option<usize>) -> Result<()>
-    {
+    pub unsafe fn validate_constraints(
+        &self,
+        record_data: *const u8,
+        exclude_slot: Option<usize>,
+    ) -> Result<()> {
         // 验证非空约束
         for field in self.def.fields {
             if field.not_null {
@@ -380,7 +388,7 @@ impl MemoryTable {
                             }
                         }
                         all_zero
-                    },
+                    }
                     // 对于其他类型，我们需要检查是否使用了默认的零值作为null标记
                     // 这需要结合具体的业务逻辑和数据存储方式来判断
                     // 当前实现：检查是否有默认值，如果没有默认值且字段为NOT NULL，则验证该字段
@@ -395,25 +403,27 @@ impl MemoryTable {
                     return Err(RemDbError::NotNullViolation);
                 }
             }
-            
+
             // 验证数值类型的有效性
             match field.data_type {
                 DataType::Float32 => {
-                    let value = core::ptr::read_unaligned(record_data.add(field.offset) as *const f32);
+                    let value =
+                        core::ptr::read_unaligned(record_data.add(field.offset) as *const f32);
                     if value.is_nan() || value.is_infinite() {
                         return Err(RemDbError::TypeMismatch);
                     }
-                },
+                }
                 DataType::Float64 => {
-                    let value = core::ptr::read_unaligned(record_data.add(field.offset) as *const f64);
+                    let value =
+                        core::ptr::read_unaligned(record_data.add(field.offset) as *const f64);
                     if value.is_nan() || value.is_infinite() {
                         return Err(RemDbError::TypeMismatch);
                     }
-                },
+                }
                 _ => {}
             }
         }
-        
+
         // 验证主键唯一性约束
         if let Some(primary_key_field) = self.def.fields.iter().find(|f| f.primary_key) {
             // 遍历所有记录，检查是否存在重复主键
@@ -422,99 +432,146 @@ impl MemoryTable {
                 if exclude_slot == Some(slot_id) {
                     continue;
                 }
-                
+
                 let status_ptr = self.status_array.as_ptr().add(slot_id);
                 let status = &*status_ptr;
-                
+
                 // 只检查已使用且可见的记录（考虑MVCC）
                 if status.status == RecordStatus::Used {
                     // 获取当前事务ID
                     let current_tx_id = crate::transaction::tx_id_counter();
-                    
+
                     // 检查记录是否可见
                     let is_visible = crate::transaction::is_visible(
                         status.create_tx_id,
                         status.delete_tx_id,
-                        current_tx_id
+                        current_tx_id,
                     );
-                    
+
                     if !is_visible {
                         continue;
                     }
                     // 获取记录数据指针
                     let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
-                    
+
                     // 根据字段类型比较主键值
                     let is_duplicate = match primary_key_field.data_type {
                         DataType::UInt8 => {
                             let current = *(record_data.add(primary_key_field.offset) as *const u8);
                             let existing = *(record_ptr.add(primary_key_field.offset) as *const u8);
                             current == existing
-                        },
+                        }
                         DataType::UInt16 => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const u16);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const u16);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset) as *const u16,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(primary_key_field.offset) as *const u16,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::UInt32 => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const u32);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const u32);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset) as *const u32,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(primary_key_field.offset) as *const u32,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::UInt64 => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const u64);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const u64);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset) as *const u64,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(primary_key_field.offset) as *const u64,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Int8 => {
                             let current = *(record_data.add(primary_key_field.offset) as *const i8);
                             let existing = *(record_ptr.add(primary_key_field.offset) as *const i8);
                             current == existing
-                        },
+                        }
                         DataType::Int16 => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const i16);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const i16);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset) as *const i16,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(primary_key_field.offset) as *const i16,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Int32 => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const i32);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const i32);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset) as *const i32,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(primary_key_field.offset) as *const i32,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Int64 => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const i64);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const i64);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset) as *const i64,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(primary_key_field.offset) as *const i64,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Float32 => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const f32);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const f32);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset) as *const f32,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(primary_key_field.offset) as *const f32,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Float64 => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const f64);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const f64);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset) as *const f64,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(primary_key_field.offset) as *const f64,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Bool => {
-                            let current = *(record_data.add(primary_key_field.offset) as *const bool);
-                            let existing = *(record_ptr.add(primary_key_field.offset) as *const bool);
+                            let current =
+                                *(record_data.add(primary_key_field.offset) as *const bool);
+                            let existing =
+                                *(record_ptr.add(primary_key_field.offset) as *const bool);
                             current == existing
-                        },
+                        }
                         DataType::Timestamp => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const crate::types::db_timestamp);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const crate::types::db_timestamp);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset)
+                                    as *const crate::types::db_timestamp,
+                            );
+                            let existing =
+                                core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset)
+                                    as *const crate::types::db_timestamp);
                             current.value == existing.value
-                        },
+                        }
                         DataType::TimestampTZ => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const crate::types::db_timestamp);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const crate::types::db_timestamp);
-                            current.value == existing.value && current.tz_offset == existing.tz_offset
-                        },
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset)
+                                    as *const crate::types::db_timestamp,
+                            );
+                            let existing =
+                                core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset)
+                                    as *const crate::types::db_timestamp);
+                            current.value == existing.value
+                                && current.tz_offset == existing.tz_offset
+                        }
                         DataType::String => {
                             // 比较字符串内容
-                            let current_str = record_data.add(primary_key_field.offset) as *const u8;
-                            let existing_str = record_ptr.add(primary_key_field.offset) as *const u8;
+                            let current_str =
+                                record_data.add(primary_key_field.offset) as *const u8;
+                            let existing_str =
+                                record_ptr.add(primary_key_field.offset) as *const u8;
                             let mut is_equal = true;
                             for i in 0..primary_key_field.size {
                                 if *current_str.add(i) != *existing_str.add(i) {
@@ -523,124 +580,170 @@ impl MemoryTable {
                                 }
                             }
                             is_equal
-                        },
+                        }
                         DataType::Interval => {
-                            let current = core::ptr::read_unaligned(record_data.add(primary_key_field.offset) as *const crate::types::db_interval);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset) as *const crate::types::db_interval);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(primary_key_field.offset)
+                                    as *const crate::types::db_interval,
+                            );
+                            let existing =
+                                core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset)
+                                    as *const crate::types::db_interval);
                             current.value == existing.value
-                        },
+                        }
                         DataType::Vector => false, // 向量字段暂不支持作为主键
                     };
-                    
+
                     if is_duplicate {
                         return Err(RemDbError::DuplicateKey);
                     }
                 }
             }
         }
-        
+
         // 验证唯一约束（UNIQUE）
         for unique_field in self.def.fields.iter().filter(|f| f.unique) {
             // 跳过主键字段，因为已经检查过了
             if unique_field.primary_key {
                 continue;
             }
-            
+
             // 遍历所有记录，检查是否存在重复值
             for slot_id in 0..self.def.max_records {
                 // 跳过要排除的槽位（用于更新操作）
                 if exclude_slot == Some(slot_id) {
                     continue;
                 }
-                
+
                 let status_ptr = self.status_array.as_ptr().add(slot_id);
                 let status = &*status_ptr;
-                
+
                 // 只检查已使用且可见的记录（考虑MVCC）
                 if status.status == RecordStatus::Used {
                     // 获取当前事务ID
                     let current_tx_id = crate::transaction::tx_id_counter();
-                    
+
                     // 检查记录是否可见
                     let is_visible = crate::transaction::is_visible(
                         status.create_tx_id,
                         status.delete_tx_id,
-                        current_tx_id
+                        current_tx_id,
                     );
-                    
+
                     if !is_visible {
                         continue;
                     }
                     // 获取记录数据指针
                     let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
-                    
+
                     // 根据字段类型比较值
                     let is_duplicate = match unique_field.data_type {
                         DataType::UInt8 => {
                             let current = *(record_data.add(unique_field.offset) as *const u8);
                             let existing = *(record_ptr.add(unique_field.offset) as *const u8);
                             current == existing
-                        },
+                        }
                         DataType::UInt16 => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const u16);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const u16);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const u16,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const u16,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::UInt32 => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const u32);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const u32);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const u32,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const u32,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::UInt64 => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const u64);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const u64);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const u64,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const u64,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Int8 => {
                             let current = *(record_data.add(unique_field.offset) as *const i8);
                             let existing = *(record_ptr.add(unique_field.offset) as *const i8);
                             current == existing
-                        },
+                        }
                         DataType::Int16 => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const i16);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const i16);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const i16,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const i16,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Int32 => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const i32);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const i32);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const i32,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const i32,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Int64 => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const i64);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const i64);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const i64,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const i64,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Float32 => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const f32);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const f32);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const f32,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const f32,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Float64 => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const f64);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const f64);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const f64,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const f64,
+                            );
                             current == existing
-                        },
+                        }
                         DataType::Bool => {
                             let current = *(record_data.add(unique_field.offset) as *const bool);
                             let existing = *(record_ptr.add(unique_field.offset) as *const bool);
                             current == existing
-                        },
+                        }
                         DataType::Timestamp => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const crate::types::db_timestamp);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const crate::types::db_timestamp);
+                            let current =
+                                core::ptr::read_unaligned(record_data.add(unique_field.offset)
+                                    as *const crate::types::db_timestamp);
+                            let existing =
+                                core::ptr::read_unaligned(record_ptr.add(unique_field.offset)
+                                    as *const crate::types::db_timestamp);
                             current.value == existing.value
-                        },
+                        }
                         DataType::TimestampTZ => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const crate::types::db_timestamp);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const crate::types::db_timestamp);
-                            current.value == existing.value && current.tz_offset == existing.tz_offset
-                        },
+                            let current =
+                                core::ptr::read_unaligned(record_data.add(unique_field.offset)
+                                    as *const crate::types::db_timestamp);
+                            let existing =
+                                core::ptr::read_unaligned(record_ptr.add(unique_field.offset)
+                                    as *const crate::types::db_timestamp);
+                            current.value == existing.value
+                                && current.tz_offset == existing.tz_offset
+                        }
                         DataType::String => {
                             // 比较字符串内容
                             let current_str = record_data.add(unique_field.offset) as *const u8;
@@ -653,106 +756,145 @@ impl MemoryTable {
                                 }
                             }
                             is_equal
-                        },
+                        }
                         DataType::Interval => {
-                            let current = core::ptr::read_unaligned(record_data.add(unique_field.offset) as *const crate::types::db_interval);
-                            let existing = core::ptr::read_unaligned(record_ptr.add(unique_field.offset) as *const crate::types::db_interval);
+                            let current =
+                                core::ptr::read_unaligned(record_data.add(unique_field.offset)
+                                    as *const crate::types::db_interval);
+                            let existing =
+                                core::ptr::read_unaligned(record_ptr.add(unique_field.offset)
+                                    as *const crate::types::db_interval);
                             current.value == existing.value
-                        },
+                        }
                         DataType::Vector => false, // 向量字段暂不支持唯一约束
                     };
-                    
+
                     if is_duplicate {
                         return Err(RemDbError::DuplicateKey);
                     }
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// 获取字段值的辅助方法（按偏移量）
-    unsafe fn get_field_by_offset(&self, record_data: *const u8, offset: usize, data_type: DataType, size: usize) -> Result<Value>
-    {
+    unsafe fn get_field_by_offset(
+        &self,
+        record_data: *const u8,
+        offset: usize,
+        data_type: DataType,
+        size: usize,
+    ) -> Result<Value> {
         let field_ptr = record_data.add(offset);
-        
+
         let value = match data_type {
-            DataType::UInt8 => Value { u8: *field_ptr as u8 },
-            DataType::UInt16 => Value { u16: core::ptr::read_unaligned(field_ptr as *const u16) },
-            DataType::UInt32 => Value { u32: core::ptr::read_unaligned(field_ptr as *const u32) },
-            DataType::UInt64 => Value { u64: core::ptr::read_unaligned(field_ptr as *const u64) },
-            DataType::Int8 => Value { i8: core::ptr::read_unaligned(field_ptr as *const i8) },
-            DataType::Int16 => Value { i16: core::ptr::read_unaligned(field_ptr as *const i16) },
-            DataType::Int32 => Value { i32: core::ptr::read_unaligned(field_ptr as *const i32) },
-            DataType::Int64 => Value { i64: core::ptr::read_unaligned(field_ptr as *const i64) },
-            DataType::Float32 => Value { float32: core::ptr::read_unaligned(field_ptr as *const f32) },
-            DataType::Float64 => Value { float64: core::ptr::read_unaligned(field_ptr as *const f64) },
-            DataType::Bool => Value { bool: *field_ptr != 0 },
-            DataType::Timestamp => Value { time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp) },
-            DataType::TimestampTZ => Value { time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp) },
-            DataType::Interval => Value { interval: core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval) },
+            DataType::UInt8 => Value {
+                u8: *field_ptr as u8,
+            },
+            DataType::UInt16 => Value {
+                u16: core::ptr::read_unaligned(field_ptr as *const u16),
+            },
+            DataType::UInt32 => Value {
+                u32: core::ptr::read_unaligned(field_ptr as *const u32),
+            },
+            DataType::UInt64 => Value {
+                u64: core::ptr::read_unaligned(field_ptr as *const u64),
+            },
+            DataType::Int8 => Value {
+                i8: core::ptr::read_unaligned(field_ptr as *const i8),
+            },
+            DataType::Int16 => Value {
+                i16: core::ptr::read_unaligned(field_ptr as *const i16),
+            },
+            DataType::Int32 => Value {
+                i32: core::ptr::read_unaligned(field_ptr as *const i32),
+            },
+            DataType::Int64 => Value {
+                i64: core::ptr::read_unaligned(field_ptr as *const i64),
+            },
+            DataType::Float32 => Value {
+                float32: core::ptr::read_unaligned(field_ptr as *const f32),
+            },
+            DataType::Float64 => Value {
+                float64: core::ptr::read_unaligned(field_ptr as *const f64),
+            },
+            DataType::Bool => Value {
+                bool: *field_ptr != 0,
+            },
+            DataType::Timestamp => Value {
+                time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp),
+            },
+            DataType::TimestampTZ => Value {
+                time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp),
+            },
+            DataType::Interval => Value {
+                interval: core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval),
+            },
             DataType::String => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                 memcpy(str_value.as_mut_ptr(), field_ptr, size);
                 Value { string: str_value }
+            }
+            DataType::Vector => Value {
+                vector: field_ptr as *const f32,
             },
-            DataType::Vector => Value { vector: field_ptr as *const f32 },
         };
-        
+
         Ok(value)
     }
-    
+
     /// 插入记录
     pub fn insert(&mut self, record_data: *const u8) -> Result<usize> {
         // 增加写入操作计数
         crate::get_global_db().map(|db| db.metrics.inc_write_ops());
-        
+
         // 验证约束
         unsafe {
             self.validate_constraints(record_data, None)?;
         }
-        
+
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
-        
+
         // 检查是否已满
         let max_records = if self.low_power_mode {
             self.low_power_max_records.unwrap_or(self.def.max_records)
         } else {
             self.def.max_records
         };
-        
+
         let mut slot_id = 0;
         let mut is_overwrite = false;
-        
+
         if self.record_count >= max_records {
             if self.low_power_mode {
-            // 低功耗模式：覆盖最旧的记录
-            // 查找最旧的记录
-            let mut oldest_id = None;
-            let mut oldest_version = u16::MAX;
-            
-            for i in 0..self.def.max_records {
-                unsafe {
-                    let status_ptr = self.status_array.as_ptr().add(i);
-                    let status = &*status_ptr;
-                    if status.status == RecordStatus::Used && status.version < oldest_version {
-                        oldest_id = Some(i);
-                        oldest_version = status.version;
+                // 低功耗模式：覆盖最旧的记录
+                // 查找最旧的记录
+                let mut oldest_id = None;
+                let mut oldest_version = u16::MAX;
+
+                for i in 0..self.def.max_records {
+                    unsafe {
+                        let status_ptr = self.status_array.as_ptr().add(i);
+                        let status = &*status_ptr;
+                        if status.status == RecordStatus::Used && status.version < oldest_version {
+                            oldest_id = Some(i);
+                            oldest_version = status.version;
+                        }
                     }
                 }
-            }
-            
-            let slot_id_val = match oldest_id {
-                Some(id) => id,
-                None => return Err(RemDbError::NoRecordsToOverwrite),
-            };
-            
-            slot_id = slot_id_val;
-            is_overwrite = true;
-        } else {
+
+                let slot_id_val = match oldest_id {
+                    Some(id) => id,
+                    None => return Err(RemDbError::NoRecordsToOverwrite),
+                };
+
+                slot_id = slot_id_val;
+                is_overwrite = true;
+            } else {
                 // 正常模式：返回错误
                 return Err(RemDbError::OutOfMemory);
             }
@@ -761,24 +903,24 @@ impl MemoryTable {
             if self.free_slot_count == 0 {
                 return Err(RemDbError::OutOfMemory);
             }
-            
+
             // 获取栈顶空闲槽
             slot_id = unsafe {
                 self.free_slot_count -= 1;
                 *self.free_slots.as_ptr().add(self.free_slot_count)
             };
         }
-        
+
         // 计算记录地址
         let record_ptr = unsafe { self.data_start.as_ptr().add(slot_id * self.record_size) };
-        
+
         // 记录日志（如果有活跃事务）
         if crate::transaction::has_active_tx() {
             // 保存新数据
             let mut new_data = Vec::with_capacity(self.record_size);
             new_data.resize(self.record_size, 0);
             memcpy(new_data.as_mut_ptr(), record_data, self.record_size);
-            
+
             // 检查当前事务是否有效，避免访问悬空指针
             unsafe {
                 if let Some(mut tx) = crate::transaction::get_current_tx() {
@@ -792,118 +934,141 @@ impl MemoryTable {
                         slot_id as u16,
                         self.record_size as u16,
                         None,
-                        Some(&new_data)
+                        Some(&new_data),
                     );
                 }
             }
         }
-        
+
         // 拷贝记录数据
         memcpy(record_ptr, record_data, self.record_size);
-        
+
         // 更新状态
         let status_ptr = unsafe { self.status_array.as_ptr().add(slot_id) };
         unsafe {
             (*status_ptr).status = RecordStatus::Used;
             (*status_ptr).version += 1;
         }
-        
+
         // 更新最大主键值（如果是主键字段）
         if let Some(pk_field) = self.def.fields.get(self.def.primary_key) {
             let pk_value = unsafe {
                 match pk_field.data_type {
                     DataType::UInt8 => *record_ptr.add(pk_field.offset) as u64,
-                    DataType::UInt16 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u16) as u64,
-                    DataType::UInt32 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u32) as u64,
-                    DataType::UInt64 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u64),
+                    DataType::UInt16 => {
+                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u16)
+                            as u64
+                    }
+                    DataType::UInt32 => {
+                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u32)
+                            as u64
+                    }
+                    DataType::UInt64 => {
+                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u64)
+                    }
                     DataType::Int8 => *record_ptr.add(pk_field.offset) as i8 as u64,
-                    DataType::Int16 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i16) as u64,
-                    DataType::Int32 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i32) as u64,
-                    DataType::Int64 => core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i64) as u64,
+                    DataType::Int16 => {
+                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i16)
+                            as u64
+                    }
+                    DataType::Int32 => {
+                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i32)
+                            as u64
+                    }
+                    DataType::Int64 => {
+                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i64)
+                            as u64
+                    }
                     _ => 0, // 非整数类型主键不更新max_pk
                 }
             };
-            
+
             if pk_value > self.max_pk {
                 self.max_pk = pk_value;
             }
         }
-        
+
         // 更新记录计数（如果是覆盖旧记录，不需要增加计数）
         if !is_overwrite {
             self.record_count += 1;
             // 更新内存使用：增加一条记录的内存
             crate::get_global_db().map(|db| db.metrics.add_used_memory(self.record_size));
         }
-        
+
         let inserted_slot_id = slot_id;
         let table_name = self.def.name;
         let record_size = self.record_size;
-        
+
         // 释放锁后发布到pubsub
         Ok(inserted_slot_id)
     }
-    
+
     // 内联publish_to_pubsub逻辑，避免borrow checker问题
     #[cfg(feature = "pubsub")]
-    unsafe fn publish_to_pubsub_inline(table_name: &str, record_size: usize, id: usize, record_data: *const u8, is_insert: bool) {
+    unsafe fn publish_to_pubsub_inline(
+        table_name: &str,
+        record_size: usize,
+        id: usize,
+        record_data: *const u8,
+        is_insert: bool,
+    ) {
         let table_topic = crate::pubsub::topics::get_table_content_topic(table_name);
-        
+
         // 获取主题ID
         if let Some(topic_id) = crate::pubsub::get_topic_id(&table_topic) {
             // 构建消息
             let op_type = if is_insert { "INSERT" } else { "UPDATE" };
             let mut msg = alloc::format!("{}:table={},id={},data=", op_type, table_name, id);
-            
+
             // 添加记录数据（hex格式）
             for i in 0..record_size {
                 let byte = *record_data.add(i);
                 msg.push_str(&format!("{:02x}", byte));
             }
-            
+
             // 发布到pubsub
             let _ = crate::pubsub::publish(topic_id, msg.as_bytes());
         }
     }
-    
+
     /// 更新记录
     pub unsafe fn update(&mut self, id: usize, record_data: *const u8) -> Result<()> {
         // 增加更新操作计数
         crate::get_global_db().map(|db| db.metrics.inc_update_ops());
-        
+
         // 检查ID有效性
         if id >= self.def.max_records {
             return Err(RemDbError::RecordNotFound);
         }
-        
+
         // 获取状态指针（无锁，因为只是读取）
         let status_ptr = self.status_array.as_ptr().add(id);
         if (*status_ptr).status != RecordStatus::Used {
             return Err(RemDbError::RecordNotFound);
         }
-        
+
         // 验证约束（排除当前记录）
         self.validate_constraints(record_data, Some(id))?;
-        
+
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
-        
+
         // 计算记录地址
         let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
-        
+
         // 记录日志（如果有活跃事务）
         if crate::transaction::has_active_tx() {
             // 保存旧数据
             let mut old_data = Vec::with_capacity(self.record_size);
             old_data.resize(self.record_size, 0);
             memcpy(old_data.as_mut_ptr(), record_ptr, self.record_size);
-            
+
             // 保存新数据
             let mut new_data = Vec::with_capacity(self.record_size);
             new_data.resize(self.record_size, 0);
             memcpy(new_data.as_mut_ptr(), record_data, self.record_size);
-            
+
             // 检查当前事务是否有效，避免访问悬空指针
             if let Some(mut tx) = crate::transaction::get_current_tx() {
                 // 直接使用事务添加日志项，不检查is_active()和is_read_only()
@@ -917,21 +1082,21 @@ impl MemoryTable {
                         id as u16,
                         self.record_size as u16,
                         Some(&old_data),
-                        Some(&new_data)
+                        Some(&new_data),
                     );
                 }
             }
         }
-        
+
         // 更新记录数据
         memcpy(record_ptr, record_data, self.record_size);
-        
+
         // 更新版本号
         (*status_ptr).version += 1;
-        
+
         Ok(())
     }
-    
+
     /// 删除记录
     pub unsafe fn delete(&mut self, id: usize) -> Result<()> {
         // 增加删除操作计数
@@ -939,17 +1104,17 @@ impl MemoryTable {
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
-        
+
         // 检查ID有效性
         if id >= self.def.max_records {
             return Err(RemDbError::RecordNotFound);
         }
-        
+
         let status_ptr = self.status_array.as_ptr().add(id);
         if (*status_ptr).status != RecordStatus::Used {
             return Err(RemDbError::RecordNotFound);
         }
-        
+
         // 记录日志（如果有活跃事务）
         if crate::transaction::has_active_tx() {
             // 保存旧数据
@@ -957,7 +1122,7 @@ impl MemoryTable {
             let mut old_data = Vec::with_capacity(self.record_size);
             old_data.resize(self.record_size, 0);
             memcpy(old_data.as_mut_ptr(), record_ptr, self.record_size);
-            
+
             // 检查当前事务是否有效，避免访问悬空指针
             if let Some(mut tx) = crate::transaction::get_current_tx() {
                 // 直接使用事务添加日志项，不检查is_active()和is_read_only()
@@ -971,35 +1136,35 @@ impl MemoryTable {
                         id as u16,
                         self.record_size as u16,
                         Some(&old_data),
-                        None
+                        None,
                     );
                 }
             }
         }
-        
+
         // 标记为空闲
         (*status_ptr).status = RecordStatus::Free;
         (*status_ptr).version += 1;
-        
+
         // 清空记录数据
         let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
         memset(record_ptr, 0, self.record_size);
-        
+
         // 将空闲槽压回栈中，确保不超过数组大小
         if self.free_slot_count < self.def.max_records {
             *self.free_slots.as_ptr().add(self.free_slot_count) = id;
             self.free_slot_count += 1;
         }
-        
+
         // 更新记录计数
         self.record_count -= 1;
-        
+
         // 更新内存使用：减少一条记录的内存
         crate::get_global_db().map(|db| db.metrics.sub_used_memory(self.record_size));
-        
+
         Ok(())
     }
-    
+
     /// 根据ID获取记录
     pub unsafe fn get_by_id(&self, id: usize, dest: *mut u8) -> Result<()> {
         // 增加读取操作计数
@@ -1008,16 +1173,16 @@ impl MemoryTable {
         if id >= self.def.max_records {
             return Err(RemDbError::RecordNotFound);
         }
-        
+
         let status_ptr = self.status_array.as_ptr().add(id);
         if (*status_ptr).status != RecordStatus::Used {
             return Err(RemDbError::RecordNotFound);
         }
-        
+
         // 拷贝记录数据
         let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
         memcpy(dest, record_ptr, self.record_size);
-        
+
         Ok(())
     }
 
@@ -1051,120 +1216,115 @@ impl MemoryTable {
     pub fn scan_ids_ref(&self, ids: Vec<usize>) -> RecordIdCursor<'_> {
         RecordIdCursor::new(self, ids)
     }
-    
-    /// 发布表数据变更到pubsub
 
+    /// 发布表数据变更到pubsub
 
     #[cfg(feature = "pubsub")]
     unsafe fn publish_to_pubsub(&self, id: usize, record_data: *const u8, is_insert: bool) {
         let table_name = self.def.name;
         let table_topic = crate::pubsub::topics::get_table_content_topic(table_name);
-        
+
         // 获取主题ID
         if let Some(topic_id) = crate::pubsub::get_topic_id(&table_topic) {
             // 构建消息
             let op_type = if is_insert { "INSERT" } else { "UPDATE" };
             let mut msg = alloc::format!("{}:table={},id={},data=", op_type, table_name, id);
-            
+
             // 添加记录数据（hex格式）
             for i in 0..self.record_size {
                 let byte = *record_data.add(i);
                 msg.push_str(&format!("{:02x}", byte));
             }
-            
+
             // 发布到pubsub
             let _ = crate::pubsub::publish(topic_id, msg.as_bytes());
         }
     }
-    
+
     /// 获取字段值
-    pub unsafe fn get_field(
-        &self,
-        record_data: *const u8,
-        field_index: usize
-    ) -> Result<Value> {
+    pub unsafe fn get_field(&self, record_data: *const u8, field_index: usize) -> Result<Value> {
         // 检查字段索引有效性
         if field_index >= self.def.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         let field = &self.def.fields[field_index];
         let field_ptr = record_data.add(field.offset);
-        
+
         // 根据字段类型获取值
         let value = match field.data_type {
-            crate::types::DataType::UInt8 => {
-                Value { u8: *field_ptr as u8 }
-            }
-            crate::types::DataType::UInt16 => {
-                Value { u16: core::ptr::read_unaligned(field_ptr as *const u16) }
-            }
-            crate::types::DataType::UInt32 => {
-                Value { u32: core::ptr::read_unaligned(field_ptr as *const u32) }
-            }
-            crate::types::DataType::UInt64 => {
-                Value { u64: core::ptr::read_unaligned(field_ptr as *const u64) }
-            }
-            crate::types::DataType::Int8 => {
-                Value { i8: core::ptr::read_unaligned(field_ptr as *const i8) }
-            }
-            crate::types::DataType::Int16 => {
-                Value { i16: core::ptr::read_unaligned(field_ptr as *const i16) }
-            }
-            crate::types::DataType::Int32 => {
-                Value { i32: core::ptr::read_unaligned(field_ptr as *const i32) }
-            }
-            crate::types::DataType::Int64 => {
-                Value { i64: core::ptr::read_unaligned(field_ptr as *const i64) }
-            }
-            crate::types::DataType::Float32 => {
-                Value { float32: core::ptr::read_unaligned(field_ptr as *const f32) }
-            }
-            crate::types::DataType::Float64 => {
-                Value { float64: core::ptr::read_unaligned(field_ptr as *const f64) }
-            }
-            crate::types::DataType::Bool => {
-                Value { bool: *field_ptr != 0 }
-            }
-            crate::types::DataType::Timestamp => {
-                Value { time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp) }
-            }
-            crate::types::DataType::TimestampTZ => {
-                Value { time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp) }
-            }
+            crate::types::DataType::UInt8 => Value {
+                u8: *field_ptr as u8,
+            },
+            crate::types::DataType::UInt16 => Value {
+                u16: core::ptr::read_unaligned(field_ptr as *const u16),
+            },
+            crate::types::DataType::UInt32 => Value {
+                u32: core::ptr::read_unaligned(field_ptr as *const u32),
+            },
+            crate::types::DataType::UInt64 => Value {
+                u64: core::ptr::read_unaligned(field_ptr as *const u64),
+            },
+            crate::types::DataType::Int8 => Value {
+                i8: core::ptr::read_unaligned(field_ptr as *const i8),
+            },
+            crate::types::DataType::Int16 => Value {
+                i16: core::ptr::read_unaligned(field_ptr as *const i16),
+            },
+            crate::types::DataType::Int32 => Value {
+                i32: core::ptr::read_unaligned(field_ptr as *const i32),
+            },
+            crate::types::DataType::Int64 => Value {
+                i64: core::ptr::read_unaligned(field_ptr as *const i64),
+            },
+            crate::types::DataType::Float32 => Value {
+                float32: core::ptr::read_unaligned(field_ptr as *const f32),
+            },
+            crate::types::DataType::Float64 => Value {
+                float64: core::ptr::read_unaligned(field_ptr as *const f64),
+            },
+            crate::types::DataType::Bool => Value {
+                bool: *field_ptr != 0,
+            },
+            crate::types::DataType::Timestamp => Value {
+                time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp),
+            },
+            crate::types::DataType::TimestampTZ => Value {
+                time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp),
+            },
             crate::types::DataType::String => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                 // 只复制不超过MAX_STRING_LEN的字节，避免缓冲区溢出
                 let copy_size = core::cmp::min(field.size, crate::types::MAX_STRING_LEN);
                 memcpy(str_value.as_mut_ptr(), field_ptr, copy_size);
                 Value { string: str_value }
-            },
-            crate::types::DataType::Interval => {
-                Value { interval: core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval) }
-            },
-            crate::types::DataType::Vector => {
-                Value { vector: field_ptr as *const f32 }
             }
+            crate::types::DataType::Interval => Value {
+                interval: core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval),
+            },
+            crate::types::DataType::Vector => Value {
+                vector: field_ptr as *const f32,
+            },
         };
-        
+
         Ok(value)
     }
-    
+
     /// 设置字段值
     pub unsafe fn set_field(
         &self,
         record_data: *mut u8,
         field_index: usize,
-        value: &Value
+        value: &Value,
     ) -> Result<()> {
         // 检查字段索引有效性
         if field_index >= self.def.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         let field = &self.def.fields[field_index];
         let field_ptr = record_data.add(field.offset);
-        
+
         // 根据字段类型设置值
         match field.data_type {
             crate::types::DataType::UInt8 => {
@@ -1208,75 +1368,75 @@ impl MemoryTable {
             }
             crate::types::DataType::String => {
                 memcpy(field_ptr, value.string.as_ptr(), field.size);
-            },
+            }
             crate::types::DataType::Interval => {
                 *(field_ptr as *mut crate::types::db_interval) = value.interval;
-            },
+            }
             crate::types::DataType::Vector => {
                 // 复制vector数据到字段位置
                 memcpy(field_ptr, value.vector as *const u8, field.size);
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// 获取当前记录数
     pub fn record_count(&self) -> usize {
         self.record_count
     }
-    
+
     /// 获取最大记录数
     pub fn max_records(&self) -> usize {
         self.def.max_records
     }
-    
+
     /// 检查表是否已满
     pub fn is_full(&self) -> bool {
         self.record_count >= self.def.max_records
     }
-    
+
     /// 设置低功耗模式
     pub fn set_low_power_mode(&mut self, enabled: bool, max_records: Option<usize>) {
         self.low_power_mode = enabled;
         self.low_power_max_records = max_records;
     }
-    
+
     /// 检查是否处于低功耗模式
     pub fn is_low_power_mode(&self) -> bool {
         self.low_power_mode
     }
-    
+
     /// 遍历记录（零拷贝迭代）
-    /// 
+    ///
     /// # 功能说明
     /// 遍历表中所有已使用的记录，通过回调函数直接提供指向表内存的指针，实现零拷贝访问
-    /// 
+    ///
     /// # 安全说明
     /// - 此方法提供原始指针给回调函数，调用者需要确保指针使用的安全性
     /// - 回调函数中获取的指针在迭代过程中有效
     /// - 并发访问时需要考虑线程安全
     /// - 请勿在回调函数外部长时间持有返回的指针
     /// - 迭代过程中修改表结构可能导致未定义行为
-    /// 
+    ///
     /// # 使用场景
     /// - 全表扫描或范围查询
     /// - 批量数据处理
     /// - 数据导出或备份
     /// - 高性能数据分析
-    /// 
+    ///
     /// # 参数
     /// - `f`: 回调函数，接收记录ID和记录数据指针，返回bool值指示是否继续迭代
     ///   - `id`: 记录在表中的唯一标识符
     ///   - `record_ptr`: 指向记录数据的原始指针
     ///   - 返回值: `true` 继续迭代，`false` 停止迭代
-    /// 
+    ///
     /// # 返回值
     /// - `Result<()>`: 迭代操作的结果，成功返回`Ok(())`，失败返回错误信息
     /// ```
     /// // 示例：如何使用iterate方法遍历记录
     /// // 注意：此示例仅展示用法，实际使用时需要先创建MemoryTable实例
-    /// 
+    ///
     /// // unsafe {
     /// //     // 使用iterate方法遍历记录
     /// //     table.iterate(|id, record_ptr| {
@@ -1288,7 +1448,9 @@ impl MemoryTable {
     /// // }
     /// ```
     pub unsafe fn iterate<F>(&self, mut f: F) -> Result<()>
-    where F: FnMut(usize, *const u8) -> bool {
+    where
+        F: FnMut(usize, *const u8) -> bool,
+    {
         for i in 0..self.def.max_records {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status == RecordStatus::Used {
@@ -1298,44 +1460,49 @@ impl MemoryTable {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// 获取记录状态指针
-    /// 
+    ///
     /// # 安全说明
     /// - 此方法返回原始指针，调用者需要确保指针使用的安全性
     /// - 索引必须在有效范围内（0 <= index < max_records）
     /// - 返回的指针在表被销毁或内存重分配前有效
     pub unsafe fn get_status_ptr(&self, index: usize) -> *mut RecordHeader {
         // 安全检查：确保索引在有效范围内
-        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})", index, self.def.max_records);
+        debug_assert!(
+            index < self.def.max_records,
+            "Record index out of bounds: {} (max: {})",
+            index,
+            self.def.max_records
+        );
         self.status_array.as_ptr().add(index)
     }
-    
+
     /// 获取记录数据指针（零拷贝访问）
-    /// 
+    ///
     /// # 功能说明
     /// 直接返回指向表内存中记录数据的原始指针，实现零拷贝访问
-    /// 
+    ///
     /// # 安全说明
     /// - 此方法返回原始指针，调用者需要确保指针使用的安全性
     /// - 索引必须在有效范围内（0 <= index < max_records）
     /// - 返回的指针在表被销毁或内存重分配前有效
     /// - 并发访问时需要考虑线程安全
     /// - 请勿在事务外部长时间持有此指针
-    /// 
+    ///
     /// # 使用场景
     /// - 需要极致性能的批量数据处理
     /// - 频繁访问同一条记录的多个字段
     /// - 与外部系统集成，需要直接内存访问
-    /// 
+    ///
     /// # 示例
     /// ```
     /// // 示例：如何使用get_record_ptr方法获取记录指针
     /// // 注意：此示例仅展示用法，实际使用时需要先创建MemoryTable实例
-    /// 
+    ///
     /// // unsafe {
     /// //     let record_id = 0; // 示例记录ID
     /// //     let field_offset = 4; // 示例字段偏移量（第二个字段，偏移量为4）
@@ -1349,15 +1516,20 @@ impl MemoryTable {
     /// ```
     pub unsafe fn get_record_ptr(&self, index: usize) -> *const u8 {
         // 安全检查：确保索引在有效范围内
-        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})", index, self.def.max_records);
+        debug_assert!(
+            index < self.def.max_records,
+            "Record index out of bounds: {} (max: {})",
+            index,
+            self.def.max_records
+        );
         self.data_start.as_ptr().add(index * self.record_size)
     }
-    
+
     /// 获取记录数据可变指针（零拷贝访问）
-    /// 
+    ///
     /// # 功能说明
     /// 直接返回指向表内存中记录数据的可变原始指针，实现零拷贝访问和修改
-    /// 
+    ///
     /// # 安全说明
     /// - 此方法返回原始可变指针，调用者需要确保指针使用的安全性
     /// - 索引必须在有效范围内（0 <= index < max_records）
@@ -1365,17 +1537,17 @@ impl MemoryTable {
     /// - 并发访问时需要考虑线程安全
     /// - 请勿在事务外部长时间持有此指针
     /// - 修改数据时请确保遵循ACID原则
-    /// 
+    ///
     /// # 使用场景
     /// - 需要原地修改记录数据
     /// - 批量更新多条记录
     /// - 高性能数据处理
-    /// 
+    ///
     /// # 示例
     /// ```
     /// // 示例：如何使用get_record_ptr_mut方法获取记录可变指针
     /// // 注意：此示例仅展示用法，实际使用时需要先创建MemoryTable实例
-    /// 
+    ///
     /// // unsafe {
     /// //     let record_id = 0; // 示例记录ID
     /// //     let field_offset = 4; // 示例字段偏移量（第二个字段，偏移量为4）
@@ -1394,43 +1566,53 @@ impl MemoryTable {
     /// ```
     pub unsafe fn get_record_ptr_mut(&mut self, index: usize) -> *mut u8 {
         // 安全检查：确保索引在有效范围内
-        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})", index, self.def.max_records);
+        debug_assert!(
+            index < self.def.max_records,
+            "Record index out of bounds: {} (max: {})",
+            index,
+            self.def.max_records
+        );
         self.data_start.as_ptr().add(index * self.record_size) as *mut u8
     }
-    
+
     /// 设置记录数（仅用于快照恢复）
     pub unsafe fn set_record_count(&mut self, count: usize) {
         self.record_count = count;
     }
-    
+
     /// 增加记录数（仅用于快照恢复）
     pub unsafe fn inc_record_count(&mut self) {
         self.record_count += 1;
     }
-    
+
     /// 批量插入记录
     /// 参数：records - 指向记录数组的指针，count - 要插入的记录数，out_ids - 输出记录ID的数组指针
     /// 返回：成功插入的记录数
-    pub unsafe fn batch_insert(&mut self, records: *const u8, count: usize, out_ids: *mut usize) -> Result<usize> {
+    pub unsafe fn batch_insert(
+        &mut self,
+        records: *const u8,
+        count: usize,
+        out_ids: *mut usize,
+    ) -> Result<usize> {
         // 检查输入参数
         if records.is_null() {
             return Err(RemDbError::UnsupportedOperation);
         }
-        
+
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
-        
+
         // 计算最大记录数
         let max_records = if self.low_power_mode {
             self.low_power_max_records.unwrap_or(self.def.max_records)
         } else {
             self.def.max_records
         };
-        
+
         // 检查是否有足够空间
         let available = max_records - self.record_count;
         let mut actual_count = count;
-        
+
         if self.low_power_mode && self.record_count >= max_records {
             // 低功耗模式：可以覆盖旧记录
             actual_count = count;
@@ -1438,19 +1620,22 @@ impl MemoryTable {
             // 正常模式或低功耗模式下有空间限制
             actual_count = available;
         }
-        
+
         if actual_count == 0 {
             crate::platform::spin_unlock(&mut self.lock);
             return Err(RemDbError::OutOfMemory);
         }
-        
+
         // 批量获取空闲槽
         let mut slot_ids = [0usize; 256]; // 最多一次处理256条记录
-        assert!(actual_count <= slot_ids.len(), "Batch insert count exceeds maximum");
-        
+        assert!(
+            actual_count <= slot_ids.len(),
+            "Batch insert count exceeds maximum"
+        );
+
         let mut inserted_count = 0;
         let mut i = 0;
-        
+
         // 优先使用空闲槽
         while i < actual_count && self.free_slot_count > 0 {
             slot_ids[i] = *self.free_slots.as_ptr().add(self.free_slot_count - 1);
@@ -1458,13 +1643,13 @@ impl MemoryTable {
             inserted_count += 1;
             i += 1;
         }
-        
+
         // 如果空闲槽不够，在低功耗模式下覆盖旧记录
         if i < actual_count && self.low_power_mode {
             // 查找最旧的记录
             let mut oldest_ids = [0usize; 256];
             let mut oldest_versions = [u16::MAX; 256];
-            
+
             for record_id in 0..self.def.max_records {
                 let status_ptr = self.status_array.as_ptr().add(record_id);
                 let status = &*status_ptr;
@@ -1473,12 +1658,12 @@ impl MemoryTable {
                     for j in 0..(actual_count - i) {
                         if status.version < oldest_versions[j] {
                             // 插入到合适位置
-                            for k in (j+1)..(actual_count - i) {
-                                if oldest_versions[k] > oldest_versions[k-1] {
+                            for k in (j + 1)..(actual_count - i) {
+                                if oldest_versions[k] > oldest_versions[k - 1] {
                                     break;
                                 }
-                                oldest_ids[k] = oldest_ids[k-1];
-                                oldest_versions[k] = oldest_versions[k-1];
+                                oldest_ids[k] = oldest_ids[k - 1];
+                                oldest_versions[k] = oldest_versions[k - 1];
                             }
                             oldest_ids[j] = record_id;
                             oldest_versions[j] = status.version;
@@ -1487,14 +1672,14 @@ impl MemoryTable {
                     }
                 }
             }
-            
+
             // 使用找到的最旧记录槽
             for j in 0..(actual_count - i) {
                 slot_ids[i + j] = oldest_ids[j];
             }
             inserted_count = actual_count;
         }
-        
+
         // 检查是否有活跃事务
         let has_active_tx = crate::transaction::has_active_tx();
         let current_tx = if has_active_tx {
@@ -1502,23 +1687,23 @@ impl MemoryTable {
         } else {
             None
         };
-        
+
         // 释放锁，准备批量处理
         crate::platform::spin_unlock(&mut self.lock);
-        
+
         // 批量处理记录，不持有锁
         for j in 0..inserted_count {
             let slot_id = slot_ids[j];
-            
+
             // 保存记录ID到输出数组
             if !out_ids.is_null() {
                 *out_ids.add(j) = slot_id;
             }
-            
+
             // 计算记录地址
             let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
             let src_ptr = records.add(j * self.record_size);
-            
+
             // 记录日志（如果有活跃事务）
             if let Some(mut tx) = current_tx {
                 let tx_mut = tx.as_mut();
@@ -1527,7 +1712,7 @@ impl MemoryTable {
                     let mut new_data = Vec::with_capacity(self.record_size);
                     new_data.resize(self.record_size, 0);
                     memcpy(new_data.as_mut_ptr(), src_ptr, self.record_size);
-                    
+
                     // 添加日志项
                     tx_mut.begin_log_item(
                         tx_mut.id,
@@ -1536,68 +1721,73 @@ impl MemoryTable {
                         slot_id as u16,
                         self.record_size as u16,
                         None,
-                        Some(&new_data)
+                        Some(&new_data),
                     ); // begin_log_item返回Option<&mut LogItem>，这里不需要处理返回值
                 }
             }
-            
+
             // 拷贝记录数据
             memcpy(record_ptr, src_ptr, self.record_size);
-            
+
             // 更新状态
             let status_ptr = self.status_array.as_ptr().add(slot_id);
             (*status_ptr).status = crate::types::RecordStatus::Used;
             (*status_ptr).version += 1;
         }
-        
+
         // 再次加锁，更新记录计数
         crate::platform::spin_lock(&mut self.lock);
-        
+
         // 计算实际增加的记录数（只增加新插入的记录，不包括覆盖的记录）
         let new_records_count = if self.low_power_mode && self.record_count >= max_records {
             0 // 低功耗模式下覆盖旧记录，记录数不变
         } else {
             inserted_count // 新插入的记录数
         };
-        
+
         self.record_count += new_records_count;
         crate::platform::spin_unlock(&mut self.lock);
-        
+
         Ok(inserted_count)
     }
-    
+
     /// 时间序列批量写入优化
     /// 参数：records - 指向记录数组的指针，count - 要插入的记录数，out_ids - 输出记录ID的数组指针
     /// 返回：成功插入的记录数
-    pub unsafe fn time_series_batch_insert(&mut self, records: *const u8, count: usize, out_ids: *mut usize) -> Result<usize> {
+    pub unsafe fn time_series_batch_insert(
+        &mut self,
+        records: *const u8,
+        count: usize,
+        out_ids: *mut usize,
+    ) -> Result<usize> {
         // 此方法针对时间序列数据的高频率写入进行优化
         // 假设数据按时间顺序写入，且不需要事务日志
-        
+
         // 检查输入参数
         if records.is_null() {
             return Err(RemDbError::UnsupportedOperation);
         }
-        
+
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
-        
+
         // 检查是否有足够空间
         let available = self.def.max_records - self.record_count;
         let actual_count = core::cmp::min(count, available);
         let actual_count = core::cmp::min(actual_count, self.free_slot_count);
-        
+
         if actual_count == 0 {
             crate::platform::spin_unlock(&mut self.lock);
             return Err(RemDbError::OutOfMemory);
         }
-        
+
         // 批量获取空闲槽
         let original_free_slot_count = self.free_slot_count;
         let end_free_slot = self.free_slot_count - actual_count;
-        
+
         // 批量更新空闲槽计数
         self.free_slot_count = end_free_slot;
-        
+
         // 检查是否有活跃事务
         let has_active_tx = crate::transaction::has_active_tx();
         let current_tx = if has_active_tx {
@@ -1605,27 +1795,27 @@ impl MemoryTable {
         } else {
             None
         };
-        
+
         // 解锁，减少锁持有时间
         crate::platform::spin_unlock(&mut self.lock);
-        
+
         // 批量处理记录，不持有锁
         let mut inserted_count = 0;
-        
+
         for i in 0..actual_count {
             // 从栈顶开始获取空闲槽，正确的索引是 original_free_slot_count - 1 - i
             let free_slot_index = original_free_slot_count - 1 - i;
             let slot_id = *self.free_slots.as_ptr().add(free_slot_index);
-            
+
             // 保存记录ID到输出数组
             if !out_ids.is_null() {
                 *out_ids.add(i) = slot_id;
             }
-            
+
             // 计算记录地址
             let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
             let src_ptr = records.add(i * self.record_size);
-            
+
             // 记录日志（如果有活跃事务）
             if let Some(mut tx) = current_tx {
                 let tx_mut = tx.as_mut();
@@ -1634,7 +1824,7 @@ impl MemoryTable {
                     let mut new_data = Vec::with_capacity(self.record_size);
                     new_data.resize(self.record_size, 0);
                     memcpy(new_data.as_mut_ptr(), src_ptr, self.record_size);
-                    
+
                     // 添加日志项（使用TimeSeriesInsert操作类型）
                     tx_mut.begin_log_item(
                         tx_mut.id,
@@ -1643,118 +1833,128 @@ impl MemoryTable {
                         slot_id as u16,
                         self.record_size as u16,
                         None,
-                        Some(&new_data)
+                        Some(&new_data),
                     ); // begin_log_item返回Option<&mut LogItem>，这里不需要处理返回值
                 }
             }
-            
+
             // 拷贝记录数据
             memcpy(record_ptr, src_ptr, self.record_size);
-            
+
             // 更新状态（简化版本，减少版本号更新频率）
             let status_ptr = self.status_array.as_ptr().add(slot_id);
             (*status_ptr).status = RecordStatus::Used;
-            
+
             inserted_count += 1;
         }
-        
+
         // 再次加锁，更新记录计数
         crate::platform::spin_lock(&mut self.lock);
         self.record_count += inserted_count;
         crate::platform::spin_unlock(&mut self.lock);
-        
+
         Ok(inserted_count)
     }
-    
+
     /// 批量获取记录
     /// 参数：ids - 要获取的记录ID数组，dest - 存储结果的缓冲区
     /// 返回：成功获取的记录数
     pub unsafe fn batch_get(&self, ids: &[usize], dest: *mut u8) -> Result<usize> {
         let mut success_count = 0;
-        
+
         for (i, &id) in ids.iter().enumerate() {
             // 检查ID有效性
             if id >= self.def.max_records {
                 continue;
             }
-            
+
             let status_ptr = self.status_array.as_ptr().add(id);
             if (*status_ptr).status != RecordStatus::Used {
                 continue;
             }
-            
+
             // 拷贝记录数据
             let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
             let dest_ptr = dest.add(i * self.record_size);
             memcpy(dest_ptr, record_ptr, self.record_size);
-            
+
             success_count += 1;
         }
-        
+
         Ok(success_count)
     }
-    
+
     /// 时间序列聚合：统计时间范围内记录数
     /// 参数：time_field_index - 时间字段索引，start_time - 开始时间，end_time - 结束时间
     pub unsafe fn aggregate_count(
         &self,
         time_field_index: usize,
         start_time: u64,
-        end_time: u64
+        end_time: u64,
     ) -> Result<usize> {
         // 检查时间字段索引有效性
         if time_field_index >= self.def.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         let mut count = 0;
         let time_field = &self.def.fields[time_field_index];
-        
+
         // 遍历所有记录，统计符合时间范围的记录数
         for i in 0..self.def.max_records {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status != RecordStatus::Used {
                 continue;
             }
-            
+
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
-            
+
             // 根据字段类型读取时间值
             let timestamp = match time_field.data_type {
                 crate::types::DataType::UInt64 => {
-                    core::ptr::read_unaligned(
-                        record_ptr.add(time_field.offset) as *const u64
-                    )
-                },
+                    core::ptr::read_unaligned(record_ptr.add(time_field.offset) as *const u64)
+                }
                 crate::types::DataType::Timestamp => {
-                    core::ptr::read_unaligned(
-                        record_ptr.add(time_field.offset) as *const u64
-                    )
-                },
+                    core::ptr::read_unaligned(record_ptr.add(time_field.offset) as *const u64)
+                }
                 _ => {
                     // 对于其他数值类型，先读取为i64，再转换为u64
                     let field_ptr = record_ptr.add(time_field.offset);
                     match time_field.data_type {
-                        crate::types::DataType::UInt8 => core::ptr::read_unaligned(field_ptr as *const u8) as u64,
-                        crate::types::DataType::UInt16 => core::ptr::read_unaligned(field_ptr as *const u16) as u64,
-                        crate::types::DataType::UInt32 => core::ptr::read_unaligned(field_ptr as *const u32) as u64,
-                        crate::types::DataType::Int8 => core::ptr::read_unaligned(field_ptr as *const i8) as u64,
-                        crate::types::DataType::Int16 => core::ptr::read_unaligned(field_ptr as *const i16) as u64,
-                        crate::types::DataType::Int32 => core::ptr::read_unaligned(field_ptr as *const i32) as u64,
-                        crate::types::DataType::Int64 => core::ptr::read_unaligned(field_ptr as *const i64) as u64,
+                        crate::types::DataType::UInt8 => {
+                            core::ptr::read_unaligned(field_ptr as *const u8) as u64
+                        }
+                        crate::types::DataType::UInt16 => {
+                            core::ptr::read_unaligned(field_ptr as *const u16) as u64
+                        }
+                        crate::types::DataType::UInt32 => {
+                            core::ptr::read_unaligned(field_ptr as *const u32) as u64
+                        }
+                        crate::types::DataType::Int8 => {
+                            core::ptr::read_unaligned(field_ptr as *const i8) as u64
+                        }
+                        crate::types::DataType::Int16 => {
+                            core::ptr::read_unaligned(field_ptr as *const i16) as u64
+                        }
+                        crate::types::DataType::Int32 => {
+                            core::ptr::read_unaligned(field_ptr as *const i32) as u64
+                        }
+                        crate::types::DataType::Int64 => {
+                            core::ptr::read_unaligned(field_ptr as *const i64) as u64
+                        }
                         _ => continue, // 跳过非数值类型
                     }
                 }
             };
-            
+
             if timestamp >= start_time && timestamp <= end_time {
                 count += 1;
             }
         }
-        
+
         Ok(count)
     }
-    
+
     /// 时间序列聚合：计算时间范围内数值字段总和
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间
     pub unsafe fn aggregate_sum(
@@ -1762,53 +1962,63 @@ impl MemoryTable {
         time_field_index: usize,
         value_field_index: usize,
         start_time: u64,
-        end_time: u64
+        end_time: u64,
     ) -> Result<f64> {
         // 检查字段索引有效性
         if time_field_index >= self.def.fields.len() || value_field_index >= self.def.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         let mut sum = 0.0;
-        
+
         // 遍历所有记录，计算符合时间范围的数值总和
         for i in 0..self.def.max_records {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status != RecordStatus::Used {
                 continue;
             }
-            
+
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
-            
+
             // 根据字段类型读取时间值
             let time_field = &self.def.fields[time_field_index];
             let timestamp = match time_field.data_type {
                 crate::types::DataType::UInt64 => {
-                    core::ptr::read_unaligned(
-                        record_ptr.add(time_field.offset) as *const u64
-                    )
-                },
+                    core::ptr::read_unaligned(record_ptr.add(time_field.offset) as *const u64)
+                }
                 crate::types::DataType::Timestamp => {
-                    core::ptr::read_unaligned(
-                        record_ptr.add(time_field.offset) as *const u64
-                    )
-                },
+                    core::ptr::read_unaligned(record_ptr.add(time_field.offset) as *const u64)
+                }
                 _ => {
                     // 对于其他数值类型，先读取对应类型，再转换为u64
                     let field_ptr = record_ptr.add(time_field.offset);
                     match time_field.data_type {
-                        crate::types::DataType::UInt8 => core::ptr::read_unaligned(field_ptr as *const u8) as u64,
-                        crate::types::DataType::UInt16 => core::ptr::read_unaligned(field_ptr as *const u16) as u64,
-                        crate::types::DataType::UInt32 => core::ptr::read_unaligned(field_ptr as *const u32) as u64,
-                        crate::types::DataType::Int8 => core::ptr::read_unaligned(field_ptr as *const i8) as u64,
-                        crate::types::DataType::Int16 => core::ptr::read_unaligned(field_ptr as *const i16) as u64,
-                        crate::types::DataType::Int32 => core::ptr::read_unaligned(field_ptr as *const i32) as u64,
-                        crate::types::DataType::Int64 => core::ptr::read_unaligned(field_ptr as *const i64) as u64,
+                        crate::types::DataType::UInt8 => {
+                            core::ptr::read_unaligned(field_ptr as *const u8) as u64
+                        }
+                        crate::types::DataType::UInt16 => {
+                            core::ptr::read_unaligned(field_ptr as *const u16) as u64
+                        }
+                        crate::types::DataType::UInt32 => {
+                            core::ptr::read_unaligned(field_ptr as *const u32) as u64
+                        }
+                        crate::types::DataType::Int8 => {
+                            core::ptr::read_unaligned(field_ptr as *const i8) as u64
+                        }
+                        crate::types::DataType::Int16 => {
+                            core::ptr::read_unaligned(field_ptr as *const i16) as u64
+                        }
+                        crate::types::DataType::Int32 => {
+                            core::ptr::read_unaligned(field_ptr as *const i32) as u64
+                        }
+                        crate::types::DataType::Int64 => {
+                            core::ptr::read_unaligned(field_ptr as *const i64) as u64
+                        }
                         _ => continue, // 跳过非数值类型
                     }
                 }
             };
-            
+
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
                 let value = self.get_field(record_ptr, value_field_index)?;
@@ -1821,14 +2031,14 @@ impl MemoryTable {
                     crate::types::DataType::Float64 => value.float64,
                     _ => return Err(RemDbError::TypeMismatch),
                 };
-                
+
                 sum += numeric_value;
             }
         }
-        
+
         Ok(sum)
     }
-    
+
     /// 时间序列聚合：计算时间范围内数值字段平均值
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间
     pub unsafe fn aggregate_avg(
@@ -1836,54 +2046,64 @@ impl MemoryTable {
         time_field_index: usize,
         value_field_index: usize,
         start_time: u64,
-        end_time: u64
+        end_time: u64,
     ) -> Result<f64> {
         // 检查字段索引有效性
         if time_field_index >= self.def.fields.len() || value_field_index >= self.def.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         let mut sum = 0.0;
         let mut count = 0;
-        
+
         // 遍历所有记录，计算符合时间范围的数值总和和计数
         for i in 0..self.def.max_records {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status != RecordStatus::Used {
                 continue;
             }
-            
+
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
-            
+
             // 根据字段类型读取时间值
             let time_field = &self.def.fields[time_field_index];
             let timestamp = match time_field.data_type {
                 crate::types::DataType::UInt64 => {
-                    core::ptr::read_unaligned(
-                        record_ptr.add(time_field.offset) as *const u64
-                    )
-                },
+                    core::ptr::read_unaligned(record_ptr.add(time_field.offset) as *const u64)
+                }
                 crate::types::DataType::Timestamp => {
-                    core::ptr::read_unaligned(
-                        record_ptr.add(time_field.offset) as *const u64
-                    )
-                },
+                    core::ptr::read_unaligned(record_ptr.add(time_field.offset) as *const u64)
+                }
                 _ => {
                     // 对于其他数值类型，先读取对应类型，再转换为u64
                     let field_ptr = record_ptr.add(time_field.offset);
                     match time_field.data_type {
-                        crate::types::DataType::UInt8 => core::ptr::read_unaligned(field_ptr as *const u8) as u64,
-                        crate::types::DataType::UInt16 => core::ptr::read_unaligned(field_ptr as *const u16) as u64,
-                        crate::types::DataType::UInt32 => core::ptr::read_unaligned(field_ptr as *const u32) as u64,
-                        crate::types::DataType::Int8 => core::ptr::read_unaligned(field_ptr as *const i8) as u64,
-                        crate::types::DataType::Int16 => core::ptr::read_unaligned(field_ptr as *const i16) as u64,
-                        crate::types::DataType::Int32 => core::ptr::read_unaligned(field_ptr as *const i32) as u64,
-                        crate::types::DataType::Int64 => core::ptr::read_unaligned(field_ptr as *const i64) as u64,
+                        crate::types::DataType::UInt8 => {
+                            core::ptr::read_unaligned(field_ptr as *const u8) as u64
+                        }
+                        crate::types::DataType::UInt16 => {
+                            core::ptr::read_unaligned(field_ptr as *const u16) as u64
+                        }
+                        crate::types::DataType::UInt32 => {
+                            core::ptr::read_unaligned(field_ptr as *const u32) as u64
+                        }
+                        crate::types::DataType::Int8 => {
+                            core::ptr::read_unaligned(field_ptr as *const i8) as u64
+                        }
+                        crate::types::DataType::Int16 => {
+                            core::ptr::read_unaligned(field_ptr as *const i16) as u64
+                        }
+                        crate::types::DataType::Int32 => {
+                            core::ptr::read_unaligned(field_ptr as *const i32) as u64
+                        }
+                        crate::types::DataType::Int64 => {
+                            core::ptr::read_unaligned(field_ptr as *const i64) as u64
+                        }
                         _ => continue, // 跳过非数值类型
                     }
                 }
             };
-            
+
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
                 let value = self.get_field(record_ptr, value_field_index)?;
@@ -1896,19 +2116,19 @@ impl MemoryTable {
                     crate::types::DataType::Float64 => value.float64,
                     _ => return Err(RemDbError::TypeMismatch),
                 };
-                
+
                 sum += numeric_value;
                 count += 1;
             }
         }
-        
+
         if count == 0 {
             Ok(0.0)
         } else {
             Ok(sum / count as f64)
         }
     }
-    
+
     /// 时间序列聚合：计算时间范围内数值字段最小值
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间
     pub unsafe fn aggregate_min(
@@ -1916,53 +2136,63 @@ impl MemoryTable {
         time_field_index: usize,
         value_field_index: usize,
         start_time: u64,
-        end_time: u64
+        end_time: u64,
     ) -> Result<f64> {
         // 检查字段索引有效性
         if time_field_index >= self.def.fields.len() || value_field_index >= self.def.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         let mut min_value: Option<f64> = None;
-        
+
         // 遍历所有记录，找到符合时间范围的数值最小值
         for i in 0..self.def.max_records {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status != RecordStatus::Used {
                 continue;
             }
-            
+
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
-            
+
             // 根据字段类型读取时间值
             let time_field = &self.def.fields[time_field_index];
             let timestamp = match time_field.data_type {
                 crate::types::DataType::UInt64 => {
-                    core::ptr::read_unaligned(
-                        record_ptr.add(time_field.offset) as *const u64
-                    )
-                },
+                    core::ptr::read_unaligned(record_ptr.add(time_field.offset) as *const u64)
+                }
                 crate::types::DataType::Timestamp => {
-                    core::ptr::read_unaligned(
-                        record_ptr.add(time_field.offset) as *const u64
-                    )
-                },
+                    core::ptr::read_unaligned(record_ptr.add(time_field.offset) as *const u64)
+                }
                 _ => {
                     // 对于其他数值类型，先读取对应类型，再转换为u64
                     let field_ptr = record_ptr.add(time_field.offset);
                     match time_field.data_type {
-                        crate::types::DataType::UInt8 => core::ptr::read_unaligned(field_ptr as *const u8) as u64,
-                        crate::types::DataType::UInt16 => core::ptr::read_unaligned(field_ptr as *const u16) as u64,
-                        crate::types::DataType::UInt32 => core::ptr::read_unaligned(field_ptr as *const u32) as u64,
-                        crate::types::DataType::Int8 => core::ptr::read_unaligned(field_ptr as *const i8) as u64,
-                        crate::types::DataType::Int16 => core::ptr::read_unaligned(field_ptr as *const i16) as u64,
-                        crate::types::DataType::Int32 => core::ptr::read_unaligned(field_ptr as *const i32) as u64,
-                        crate::types::DataType::Int64 => core::ptr::read_unaligned(field_ptr as *const i64) as u64,
+                        crate::types::DataType::UInt8 => {
+                            core::ptr::read_unaligned(field_ptr as *const u8) as u64
+                        }
+                        crate::types::DataType::UInt16 => {
+                            core::ptr::read_unaligned(field_ptr as *const u16) as u64
+                        }
+                        crate::types::DataType::UInt32 => {
+                            core::ptr::read_unaligned(field_ptr as *const u32) as u64
+                        }
+                        crate::types::DataType::Int8 => {
+                            core::ptr::read_unaligned(field_ptr as *const i8) as u64
+                        }
+                        crate::types::DataType::Int16 => {
+                            core::ptr::read_unaligned(field_ptr as *const i16) as u64
+                        }
+                        crate::types::DataType::Int32 => {
+                            core::ptr::read_unaligned(field_ptr as *const i32) as u64
+                        }
+                        crate::types::DataType::Int64 => {
+                            core::ptr::read_unaligned(field_ptr as *const i64) as u64
+                        }
                         _ => continue, // 跳过非数值类型
                     }
                 }
             };
-            
+
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
                 let value = self.get_field(record_ptr, value_field_index)?;
@@ -1975,7 +2205,7 @@ impl MemoryTable {
                     crate::types::DataType::Float64 => value.float64,
                     _ => return Err(RemDbError::TypeMismatch),
                 };
-                
+
                 if let Some(current_min) = min_value {
                     if numeric_value < current_min {
                         min_value = Some(numeric_value);
@@ -1985,59 +2215,45 @@ impl MemoryTable {
                 }
             }
         }
-        
+
         min_value.ok_or(RemDbError::RecordNotFound)
     }
-    
+
     /// 辅助函数：根据字段类型读取时间值
-    unsafe fn read_timestamp_value(&self, record_ptr: *const u8, time_field_index: usize) -> Option<u64> {
+    unsafe fn read_timestamp_value(
+        &self,
+        record_ptr: *const u8,
+        time_field_index: usize,
+    ) -> Option<u64> {
         let time_field = &self.def.fields[time_field_index];
         match time_field.data_type {
-            crate::types::DataType::UInt64 => Some(
-                core::ptr::read_unaligned(
-                    record_ptr.add(time_field.offset) as *const u64
-                )
-            ),
-            crate::types::DataType::Timestamp => Some(
-                core::ptr::read_unaligned(
-                    record_ptr.add(time_field.offset) as *const u64
-                )
-            ),
-            crate::types::DataType::UInt8 => Some(
-                core::ptr::read_unaligned(
-                    record_ptr.add(time_field.offset) as *const u8
-                ) as u64
-            ),
-            crate::types::DataType::UInt16 => Some(
-                core::ptr::read_unaligned(
-                    record_ptr.add(time_field.offset) as *const u16
-                ) as u64
-            ),
-            crate::types::DataType::UInt32 => Some(
-                core::ptr::read_unaligned(
-                    record_ptr.add(time_field.offset) as *const u32
-                ) as u64
-            ),
-            crate::types::DataType::Int8 => Some(
-                core::ptr::read_unaligned(
-                    record_ptr.add(time_field.offset) as *const i8
-                ) as u64
-            ),
-            crate::types::DataType::Int16 => Some(
-                core::ptr::read_unaligned(
-                    record_ptr.add(time_field.offset) as *const i16
-                ) as u64
-            ),
-            crate::types::DataType::Int32 => Some(
-                core::ptr::read_unaligned(
-                    record_ptr.add(time_field.offset) as *const i32
-                ) as u64
-            ),
-            crate::types::DataType::Int64 => Some(
-                core::ptr::read_unaligned(
-                    record_ptr.add(time_field.offset) as *const i64
-                ) as u64
-            ),
+            crate::types::DataType::UInt64 => Some(core::ptr::read_unaligned(
+                record_ptr.add(time_field.offset) as *const u64,
+            )),
+            crate::types::DataType::Timestamp => Some(core::ptr::read_unaligned(
+                record_ptr.add(time_field.offset) as *const u64,
+            )),
+            crate::types::DataType::UInt8 => Some(core::ptr::read_unaligned(
+                record_ptr.add(time_field.offset) as *const u8,
+            ) as u64),
+            crate::types::DataType::UInt16 => Some(core::ptr::read_unaligned(
+                record_ptr.add(time_field.offset) as *const u16,
+            ) as u64),
+            crate::types::DataType::UInt32 => Some(core::ptr::read_unaligned(
+                record_ptr.add(time_field.offset) as *const u32,
+            ) as u64),
+            crate::types::DataType::Int8 => Some(core::ptr::read_unaligned(
+                record_ptr.add(time_field.offset) as *const i8,
+            ) as u64),
+            crate::types::DataType::Int16 => Some(core::ptr::read_unaligned(
+                record_ptr.add(time_field.offset) as *const i16,
+            ) as u64),
+            crate::types::DataType::Int32 => Some(core::ptr::read_unaligned(
+                record_ptr.add(time_field.offset) as *const i32,
+            ) as u64),
+            crate::types::DataType::Int64 => Some(core::ptr::read_unaligned(
+                record_ptr.add(time_field.offset) as *const i64,
+            ) as u64),
             _ => None, // 跳过非数值类型
         }
     }
@@ -2049,29 +2265,29 @@ impl MemoryTable {
         time_field_index: usize,
         value_field_index: usize,
         start_time: u64,
-        end_time: u64
+        end_time: u64,
     ) -> Result<f64> {
         // 检查字段索引有效性
         if time_field_index >= self.def.fields.len() || value_field_index >= self.def.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         let mut max_value: Option<f64> = None;
-        
+
         // 遍历所有记录，找到符合时间范围的数值最大值
         for i in 0..self.def.max_records {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status != RecordStatus::Used {
                 continue;
             }
-            
+
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
-            
+
             // 使用辅助函数读取时间值
             let Some(timestamp) = self.read_timestamp_value(record_ptr, time_field_index) else {
                 continue;
             };
-            
+
             if timestamp >= start_time && timestamp <= end_time {
                 // 获取数值
                 let value = self.get_field(record_ptr, value_field_index)?;
@@ -2084,7 +2300,7 @@ impl MemoryTable {
                     crate::types::DataType::Float64 => value.float64,
                     _ => return Err(RemDbError::TypeMismatch),
                 };
-                
+
                 if let Some(current_max) = max_value {
                     if numeric_value > current_max {
                         max_value = Some(numeric_value);
@@ -2094,64 +2310,64 @@ impl MemoryTable {
                 }
             }
         }
-        
+
         max_value.ok_or(RemDbError::RecordNotFound)
     }
-    
+
     /// 获取最新记录
     /// 参数：time_field_index - 时间字段索引，count - 要获取的记录数，dest - 存储结果的缓冲区
     pub unsafe fn get_latest_records(
         &self,
         time_field_index: usize,
         count: usize,
-        dest: *mut u8
+        dest: *mut u8,
     ) -> Result<usize> {
         // 检查时间字段索引有效性
         if time_field_index >= self.def.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         // 检查输出缓冲区是否为null
         if dest.is_null() {
             return Err(RemDbError::UnsupportedOperation);
         }
-        
+
         // 如果没有记录，直接返回
         if self.record_count == 0 {
             return Ok(0);
         }
-        
+
         // 创建一个固定大小的数组来存储记录ID和时间值
         // 使用最大记录数作为数组大小
         let mut record_times = [(0usize, 0u64); 1024]; // 假设最大记录数不超过1024
         let mut record_count = 0;
-        
+
         // 遍历所有记录，收集记录ID和时间值
         for i in 0..self.def.max_records {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status != RecordStatus::Used {
                 continue;
             }
-            
+
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
-            
+
             // 使用辅助函数读取时间值
             if let Some(timestamp) = self.read_timestamp_value(record_ptr, time_field_index) {
                 record_times[record_count] = (i, timestamp);
                 record_count += 1;
             };
         }
-        
+
         // 按时间值降序排序
         // 使用冒泡排序，避免依赖标准库的sort方法
         for i in 0..record_count {
-            for j in i+1..record_count {
+            for j in i + 1..record_count {
                 if record_times[i].1 < record_times[j].1 {
                     record_times.swap(i, j);
                 }
             }
         }
-        
+
         // 拷贝最新的count条记录到输出缓冲区
         let actual_count = core::cmp::min(count, record_count);
         for i in 0..actual_count {
@@ -2160,10 +2376,10 @@ impl MemoryTable {
             let dest_ptr = dest.add(i * self.record_size);
             memcpy(dest_ptr, src_ptr, self.record_size);
         }
-        
+
         Ok(actual_count)
     }
-    
+
     /// 获取时间窗口内的记录
     /// 参数：time_field_index - 时间字段索引，start_time - 开始时间，end_time - 结束时间，dest - 存储结果的缓冲区，max_records - 最大返回记录数
     pub unsafe fn get_records_in_time_window(
@@ -2172,36 +2388,36 @@ impl MemoryTable {
         start_time: u64,
         end_time: u64,
         dest: *mut u8,
-        max_records: usize
+        max_records: usize,
     ) -> Result<usize> {
         // 检查时间字段索引有效性
         if time_field_index >= self.def.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         // 检查输出缓冲区是否为null
         if dest.is_null() {
             return Err(RemDbError::UnsupportedOperation);
         }
-        
+
         // 如果没有记录，直接返回
         if self.record_count == 0 {
             return Ok(0);
         }
-        
+
         // 创建一个固定大小的数组来存储符合时间范围的记录ID和时间值
         let mut matched_records = [(0usize, 0u64); 1024]; // 假设最大记录数不超过1024
         let mut match_count = 0;
-        
+
         // 遍历所有记录，收集符合时间范围的记录
         for i in 0..self.def.max_records {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status != RecordStatus::Used {
                 continue;
             }
-            
+
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
-            
+
             // 使用辅助函数读取时间值
             if let Some(timestamp) = self.read_timestamp_value(record_ptr, time_field_index) {
                 if timestamp >= start_time && timestamp <= end_time {
@@ -2210,17 +2426,17 @@ impl MemoryTable {
                 }
             };
         }
-        
+
         // 按时间值升序排序
         // 使用冒泡排序，避免依赖标准库的sort方法
         for i in 0..match_count {
-            for j in i+1..match_count {
+            for j in i + 1..match_count {
                 if matched_records[i].1 > matched_records[j].1 {
                     matched_records.swap(i, j);
                 }
             }
         }
-        
+
         // 拷贝符合条件的记录到输出缓冲区
         let actual_count = core::cmp::min(max_records, match_count);
         for i in 0..actual_count {
@@ -2229,10 +2445,10 @@ impl MemoryTable {
             let dest_ptr = dest.add(i * self.record_size);
             memcpy(dest_ptr, src_ptr, self.record_size);
         }
-        
+
         Ok(actual_count)
     }
-    
+
     /// 按时间窗口聚合
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间，window_size - 窗口大小（毫秒）
     #[cfg(feature = "std")]
@@ -2242,40 +2458,41 @@ impl MemoryTable {
         value_field_index: usize,
         start_time: u64,
         end_time: u64,
-        window_size: u64
+        window_size: u64,
     ) -> Result<Vec<(u64, f64, f64, f64, f64, usize)>> {
         // 检查字段索引有效性
         if time_field_index >= self.def.fields.len() || value_field_index >= self.def.fields.len() {
             return Err(RemDbError::FieldNotFound);
         }
-        
+
         let time_field = &self.def.fields[time_field_index];
         let value_field = &self.def.fields[value_field_index];
-        
+
         // 检查时间字段类型
-        if time_field.data_type != crate::types::DataType::Timestamp && 
-           time_field.data_type != crate::types::DataType::UInt64 {
+        if time_field.data_type != crate::types::DataType::Timestamp
+            && time_field.data_type != crate::types::DataType::UInt64
+        {
             return Err(RemDbError::TypeMismatch);
         }
-        
+
         // 创建一个HashMap来存储每个时间窗口的聚合数据
         use alloc::collections::BTreeMap;
         let mut window_aggregates: BTreeMap<u64, (f64, f64, f64, f64, usize)> = BTreeMap::new();
-        
+
         // 遍历所有记录，按时间窗口聚合
         for i in 0..self.def.max_records {
             let status_ptr = self.status_array.as_ptr().add(i);
             if (*status_ptr).status != RecordStatus::Used {
                 continue;
             }
-            
+
             let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
-            
+
             // 使用辅助函数读取时间值
             let Some(time_value) = self.read_timestamp_value(record_ptr, time_field_index) else {
                 continue;
             };
-            
+
             if time_value >= start_time && time_value <= end_time {
                 // 获取数值
                 let value = self.get_field(record_ptr, value_field_index)?;
@@ -2288,30 +2505,40 @@ impl MemoryTable {
                     crate::types::DataType::Float64 => value.float64,
                     _ => return Err(RemDbError::TypeMismatch),
                 };
-                
+
                 // 计算时间窗口键
                 let window_key = time_value - (time_value % window_size);
-                
+
                 // 更新聚合数据
-                let entry = window_aggregates.entry(window_key).or_insert((0.0, numeric_value, numeric_value, 0.0, 0));
+                let entry = window_aggregates.entry(window_key).or_insert((
+                    0.0,
+                    numeric_value,
+                    numeric_value,
+                    0.0,
+                    0,
+                ));
                 entry.0 += numeric_value; // sum
-                if numeric_value < entry.1 { entry.1 = numeric_value; } // min
-                if numeric_value > entry.2 { entry.2 = numeric_value; } // max
+                if numeric_value < entry.1 {
+                    entry.1 = numeric_value;
+                } // min
+                if numeric_value > entry.2 {
+                    entry.2 = numeric_value;
+                } // max
                 entry.3 = numeric_value; // last
                 entry.4 += 1; // count
             }
         }
-        
+
         // 将聚合结果转换为向量
         let mut result = Vec::with_capacity(window_aggregates.len());
         for (window_start, (sum, min, max, last, count)) in window_aggregates {
             let avg = if count > 0 { sum / count as f64 } else { 0.0 };
             result.push((window_start, sum, avg, min, max, count));
         }
-        
+
         Ok(result)
     }
-    
+
     /// no_std环境下不支持的聚合函数
     #[cfg(not(feature = "std"))]
     pub unsafe fn get_aggregate_in_time_window(
@@ -2320,7 +2547,7 @@ impl MemoryTable {
         _value_field_index: usize,
         _start_time: u64,
         _end_time: u64,
-        _window_size: u64
+        _window_size: u64,
     ) -> Result<()> {
         // no_std环境下不支持Vec和BTreeMap，返回错误
         Err(RemDbError::UnsupportedOperation)

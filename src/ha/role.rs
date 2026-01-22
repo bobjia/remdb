@@ -1,9 +1,9 @@
 // 角色管理器实现
 
 use crate::ha::HARole;
-use crate::ha::{Result, HAError};
+use crate::ha::{HAError, Result};
 use crate::pubsub;
-use crate::pubsub::{PubSubConfig, UdpMode, PubSubError};
+use crate::pubsub::{PubSubConfig, PubSubError, UdpMode};
 use core::sync::atomic::{AtomicU8, Ordering};
 
 // 角色变更主题ID
@@ -28,15 +28,15 @@ impl RoleManager {
             is_initialized: false,
         })
     }
-    
+
     /// 初始化角色管理器
     pub fn init(&self) -> Result<()> {
         // 初始化pubsub系统（如果尚未初始化）
         self.init_pubsub()?;
-        
+
         Ok(())
     }
-    
+
     /// 初始化pubsub系统
     fn init_pubsub(&self) -> Result<()> {
         // pubsub系统可能已经由其他组件初始化
@@ -54,13 +54,13 @@ impl RoleManager {
             heartbeat_interval: core::time::Duration::from_secs(10),
             frame_pool_size: 64,
         };
-        
+
         // 尝试初始化pubsub，如果失败则忽略（测试环境可能没有网络）
         let _ = pubsub::init(pubsub_config);
-        
+
         Ok(())
     }
-    
+
     /// 获取当前角色
     pub fn get_role(&self) -> HARole {
         match self.current_role.load(Ordering::Relaxed) {
@@ -70,7 +70,7 @@ impl RoleManager {
             _ => HARole::Auto, // 默认值
         }
     }
-    
+
     /// 设置角色
     pub fn set_role(&self, role: HARole) -> Result<()> {
         // 检查角色是否变化
@@ -78,21 +78,21 @@ impl RoleManager {
         if current_role == role {
             return Ok(());
         }
-        
+
         // 更新角色
         self.current_role.store(role as u8, Ordering::Relaxed);
-        
+
         // 发布角色变更通知
         self.publish_role_change(role)?;
-        
+
         Ok(())
     }
-    
+
     /// 发布角色变更通知
     fn publish_role_change(&self, role: HARole) -> Result<()> {
         // 构建角色变更数据
         let role_data = [role as u8; 1];
-        
+
         // 发布角色变更消息
         // 注意：在测试环境中，pubsub可能未正确初始化，此时忽略发布失败
         match pubsub::publish(ROLE_CHANGE_TOPIC, &role_data) {
@@ -100,10 +100,10 @@ impl RoleManager {
             Err(_) => {
                 // 忽略发布失败，角色已经更新
                 Ok(())
-            },
+            }
         }
     }
-    
+
     /// 订阅角色变更通知
     pub fn subscribe_role_change(&self, _callback: fn(role: HARole) -> bool) -> Result<()> {
         // TODO: 实现角色变更订阅
@@ -111,23 +111,23 @@ impl RoleManager {
         // 这里需要实现静态回调函数，或者重新设计pubsub接口
         Ok(())
     }
-    
+
     /// 关闭角色管理器
     pub fn shutdown(&self) -> Result<()> {
         // 关闭相关资源
         Ok(())
     }
-    
+
     /// 检查角色是否为主节点
     pub fn is_master(&self) -> bool {
         self.get_role() == HARole::Master
     }
-    
+
     /// 检查角色是否为从节点
     pub fn is_slave(&self) -> bool {
         self.get_role() == HARole::Slave
     }
-    
+
     /// 检查角色是否为自动模式
     pub fn is_auto(&self) -> bool {
         self.get_role() == HARole::Auto

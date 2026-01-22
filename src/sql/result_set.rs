@@ -1,5 +1,5 @@
 //! SQL查询结果集
-//! 
+//!
 //! 该模块负责处理SQL查询的结果集，提供友好的结果访问接口。
 
 use alloc::string::String;
@@ -9,7 +9,7 @@ use core::iter::Iterator;
 use core::option::Option;
 use core::result::Result as CoreResult;
 
-use crate::{RemDbError, DataType, types::TypedValue};
+use crate::{types::TypedValue, DataType, RemDbError};
 
 /// 查询结果集
 pub struct ResultSet {
@@ -144,7 +144,11 @@ impl ResultRow {
     }
 
     /// 通过列名获取字段值
-    pub fn get_by_name(&self, columns: &[String], column_name: &str) -> CoreResult<&TypedValue, RemDbError> {
+    pub fn get_by_name(
+        &self,
+        columns: &[String],
+        column_name: &str,
+    ) -> CoreResult<&TypedValue, RemDbError> {
         if let Some(index) = columns.iter().position(|col| col == column_name) {
             self.get(index)
         } else {
@@ -224,13 +228,13 @@ fn value_to_string_repr(value: &TypedValue) -> String {
             DataType::String => {
                 let string_slice = core::str::from_utf8(&value.value.string).unwrap_or("");
                 string_slice.trim_end_matches(char::from(0)).to_string()
-            },
+            }
             DataType::Interval => {
                 alloc::format!("{}", value.value.interval.value)
-            },
+            }
             DataType::Vector => {
                 alloc::format!("<vector>")
-            },
+            }
         }
     }
 }

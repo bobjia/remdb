@@ -1,12 +1,12 @@
 // 嵌入式高可用主从复制模块
 
+pub mod heartbeat;
 pub mod manager;
 pub mod replication;
-pub mod heartbeat;
 pub mod role;
 
-use core::fmt;
 use alloc::vec::Vec;
+use core::fmt;
 
 // HA角色
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -112,25 +112,43 @@ static mut HA_MANAGER: Option<manager::HAManager> = None;
 /// 初始化全局HA管理器
 pub fn init(config: &'static crate::config::DbConfig) -> Result<()> {
     unsafe {
-        if HA_MANAGER.is_some() {
+        // 使用原始指针检查是否已初始化
+        let ha_manager_ptr = core::ptr::addr_of_mut!(HA_MANAGER);
+        if (*ha_manager_ptr).is_some() {
             return Err(HAError::InitFailed);
         }
-        
+
         #[cfg(feature = "std")]
-        println!("[DEBUG] {}:{}: ha::init: Creating HAManager instance", file!(), line!());
+        println!(
+            "[DEBUG] {}:{}: ha::init: Creating HAManager instance",
+            file!(),
+            line!()
+        );
         let mut ha_manager = manager::HAManager::new(config)?;
-        
+
         #[cfg(feature = "std")]
-        println!("[DEBUG] {}:{}: ha::init: Calling ha_manager.init()", file!(), line!());
+        println!(
+            "[DEBUG] {}:{}: ha::init: Calling ha_manager.init()",
+            file!(),
+            line!()
+        );
         ha_manager.init()?;
-        
+
         #[cfg(feature = "std")]
-        println!("[DEBUG] {}:{}: ha::init: Storing HAManager to global static", file!(), line!());
-        HA_MANAGER = Some(ha_manager);
-        
+        println!(
+            "[DEBUG] {}:{}: ha::init: Storing HAManager to global static",
+            file!(),
+            line!()
+        );
+        *ha_manager_ptr = Some(ha_manager);
+
         #[cfg(feature = "std")]
-        println!("[DEBUG] {}:{}: ha::init: HA initialization completed", file!(), line!());
-        
+        println!(
+            "[DEBUG] {}:{}: ha::init: HA initialization completed",
+            file!(),
+            line!()
+        );
+
         Ok(())
     }
 }
@@ -138,16 +156,19 @@ pub fn init(config: &'static crate::config::DbConfig) -> Result<()> {
 /// 获取全局HA管理器
 pub fn get_ha_manager() -> Option<&'static mut manager::HAManager> {
     unsafe {
-        HA_MANAGER.as_mut()
+        // 使用原始指针获取可变引用
+        let ha_manager_ptr = core::ptr::addr_of_mut!(HA_MANAGER);
+        (*ha_manager_ptr).as_mut()
     }
 }
 
 /// 关闭全局HA管理器
 pub fn shutdown() -> Result<()> {
     unsafe {
-        if let Some(ref mut manager) = HA_MANAGER {
+        let ha_manager_ptr = core::ptr::addr_of_mut!(HA_MANAGER);
+        if let Some(ref mut manager) = *ha_manager_ptr {
             manager.shutdown()?;
-            HA_MANAGER = None;
+            *ha_manager_ptr = None;
         }
         Ok(())
     }
@@ -156,7 +177,8 @@ pub fn shutdown() -> Result<()> {
 /// 获取当前HA角色
 pub fn get_role() -> Result<HARole> {
     unsafe {
-        if let Some(manager) = &HA_MANAGER {
+        let ha_manager_ptr = core::ptr::addr_of!(HA_MANAGER);
+        if let Some(manager) = &*ha_manager_ptr {
             Ok(manager.get_role())
         } else {
             Err(HAError::InitFailed)
@@ -167,7 +189,8 @@ pub fn get_role() -> Result<HARole> {
 /// 获取当前复制模式
 pub fn get_replication_mode() -> Result<ReplicationMode> {
     unsafe {
-        if let Some(manager) = &HA_MANAGER {
+        let ha_manager_ptr = core::ptr::addr_of!(HA_MANAGER);
+        if let Some(manager) = &*ha_manager_ptr {
             Ok(manager.get_replication_mode())
         } else {
             Err(HAError::InitFailed)
@@ -178,7 +201,8 @@ pub fn get_replication_mode() -> Result<ReplicationMode> {
 /// 提升为Master节点
 pub fn promote_to_master() -> Result<()> {
     unsafe {
-        if let Some(manager) = HA_MANAGER.as_mut() {
+        let ha_manager_ptr = core::ptr::addr_of_mut!(HA_MANAGER);
+        if let Some(manager) = (*ha_manager_ptr).as_mut() {
             manager.promote_to_master()
         } else {
             Err(HAError::InitFailed)
@@ -189,7 +213,8 @@ pub fn promote_to_master() -> Result<()> {
 /// 降级为Slave节点
 pub fn demote_to_slave() -> Result<()> {
     unsafe {
-        if let Some(manager) = HA_MANAGER.as_mut() {
+        let ha_manager_ptr = core::ptr::addr_of_mut!(HA_MANAGER);
+        if let Some(manager) = (*ha_manager_ptr).as_mut() {
             manager.demote_to_slave()
         } else {
             Err(HAError::InitFailed)
@@ -200,7 +225,8 @@ pub fn demote_to_slave() -> Result<()> {
 /// 检查HA状态
 pub fn check_status() -> Result<()> {
     unsafe {
-        if let Some(manager) = &HA_MANAGER {
+        let ha_manager_ptr = core::ptr::addr_of!(HA_MANAGER);
+        if let Some(manager) = &*ha_manager_ptr {
             manager.check_status()
         } else {
             Err(HAError::InitFailed)

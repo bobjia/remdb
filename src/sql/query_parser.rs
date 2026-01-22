@@ -1,11 +1,11 @@
 //! SQL查询解析器
-//! 
+//!
 //! 该模块负责将SQL查询字符串解析为结构化的查询对象。
 
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use alloc::boxed::Box;
 
 /// 解析时间字符串为微秒时间戳
 /// 支持的格式：
@@ -21,8 +21,9 @@ fn parse_time_string(time_str: &str) -> Result<i64, ()> {
     if time_str.contains(|c| c == 'Y' || c == 'M' || c == 'D' || c == 'H' || c == 'I' || c == 'S') {
         // 这是一个格式字符串，不是时间值
         Err(())
-    } else if (time_str.contains('T') || time_str.contains(' ')) && 
-              time_str.chars().any(|c| c.is_digit(10)) {
+    } else if (time_str.contains('T') || time_str.contains(' '))
+        && time_str.chars().any(|c| c.is_digit(10))
+    {
         // 尝试解析为ISO 8601格式，必须包含数字
         // 这里使用简化的实现，实际应该使用更完整的解析
         Ok(0) // 占位符，实际实现需要完整的时间解析
@@ -273,7 +274,7 @@ pub enum BinaryOperator {
     /// 小于等于
     LessThanOrEqual,
     /// 向量L2距离 (<->)
-VectorL2,
+    VectorL2,
     /// 向量内积 (<#>)
     VectorIP,
     /// 向量余弦相似度 (<=>)
@@ -361,10 +362,10 @@ impl SqlParser {
     /// 解析SQL查询
     pub fn parse(&mut self) -> Result<SqlQuery, QueryParseError> {
         self.skip_whitespace();
-        
+
         // 解析查询类型
         let query_type = self.parse_query_type()?;
-        
+
         let query = match query_type {
             QueryType::Select => self.parse_select_query(),
             QueryType::Insert => self.parse_insert_query(),
@@ -376,39 +377,39 @@ impl SqlParser {
             QueryType::CreateIndex => self.parse_create_index_query(),
             QueryType::Other => Err(QueryParseError::UnsupportedKeyword),
         }?;
-        
+
         // 处理语句末尾可能存在的分号
         self.skip_whitespace();
         self.match_char(';');
-        
+
         Ok(query)
     }
-    
+
     /// 解析UPDATE查询
     fn parse_update_query(&mut self) -> Result<SqlQuery, QueryParseError> {
         // 解析表名
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
-        
+
         // 解析SET关键字
         self.skip_whitespace();
         self.expect_keyword("SET")?;
-        
+
         // 解析SET子句
         let mut update_pairs = Vec::new();
-        
+
         loop {
             self.skip_whitespace();
             let field_name = self.parse_identifier()?;
-            
+
             self.skip_whitespace();
             self.expect_char('=')?;
-            
+
             self.skip_whitespace();
             let value_expr = self.parse_expression()?;
-            
+
             update_pairs.push((field_name, value_expr));
-            
+
             self.skip_whitespace();
             if self.match_char(',') {
                 continue;
@@ -416,10 +417,10 @@ impl SqlParser {
                 break;
             }
         }
-        
+
         // 解析WHERE子句（可选）
         let where_clause = self.parse_where_clause()?;
-        
+
         Ok(SqlQuery {
             query_type: QueryType::Update,
             table_name,
@@ -448,11 +449,11 @@ impl SqlParser {
         // 解析TABLE关键字（可选，支持DESCRIBE table_name和DESCRIBE TABLE table_name两种语法）
         self.skip_whitespace();
         self.match_keyword("TABLE");
-        
+
         // 解析表名
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
-        
+
         Ok(SqlQuery {
             query_type: QueryType::Describe,
             table_name,
@@ -475,7 +476,7 @@ impl SqlParser {
             ignore_duplicates: false,
         })
     }
-    
+
     /// 解析INSERT查询
     fn parse_insert_query(&mut self) -> Result<SqlQuery, QueryParseError> {
         // 检查是否有IGNORE关键字
@@ -484,25 +485,25 @@ impl SqlParser {
         if self.match_keyword("IGNORE") {
             ignore_duplicates = true;
         }
-        
+
         // 解析INTO关键字
         self.skip_whitespace();
         self.expect_keyword("INTO")?;
-        
+
         // 解析表名
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
-        
+
         // 解析插入的字段列表（可选）
         let insert_columns = self.parse_insert_columns()?;
-        
+
         // 解析VALUES关键字
         self.skip_whitespace();
         self.expect_keyword("VALUES")?;
-        
+
         // 解析值列表
         let values = self.parse_values()?;
-        
+
         Ok(SqlQuery {
             query_type: QueryType::Insert,
             table_name,
@@ -525,89 +526,89 @@ impl SqlParser {
             ignore_duplicates,
         })
     }
-    
+
     /// 解析插入的字段列表
     fn parse_insert_columns(&mut self) -> Result<Vec<String>, QueryParseError> {
         self.skip_whitespace();
-        
+
         if self.match_char('(') {
             // 解析字段列表
             let mut columns = Vec::new();
-            
+
             loop {
                 self.skip_whitespace();
                 let column = self.parse_identifier()?;
                 columns.push(column);
-                
+
                 self.skip_whitespace();
                 if self.match_char(')') {
                     break;
                 }
-                
+
                 if !self.match_char(',') {
                     return Err(QueryParseError::InvalidSyntax);
                 }
             }
-            
+
             Ok(columns)
         } else {
             // 没有指定字段，返回空列表
             Ok(Vec::new())
         }
     }
-    
+
     /// 解析值列表
     fn parse_values(&mut self) -> Result<Vec<Vec<Value>>, QueryParseError> {
         let mut all_values = Vec::new();
-        
+
         loop {
             self.skip_whitespace();
-            
+
             // 解析一个值列表
             if !self.match_char('(') {
                 return Err(QueryParseError::InvalidSyntax);
             }
-            
+
             let mut values = Vec::new();
-            
+
             loop {
                 self.skip_whitespace();
                 let value = self.parse_value()?;
                 values.push(value);
-                
+
                 self.skip_whitespace();
                 if self.match_char(')') {
                     break;
                 }
-                
+
                 if !self.match_char(',') {
                     return Err(QueryParseError::InvalidSyntax);
                 }
             }
-            
+
             all_values.push(values);
-self.skip_whitespace();
+            self.skip_whitespace();
             if !self.match_char(',') {
                 break;
             }
         }
-        
+
         Ok(all_values)
     }
-    
+
     /// 解析DELETE查询
     fn parse_delete_query(&mut self) -> Result<SqlQuery, QueryParseError> {
         // 解析FROM关键字
         self.skip_whitespace();
         self.expect_keyword("FROM")?;
-        
+
         // 解析表名
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
-        
+
         // 解析WHERE子句（可选）
         let where_clause = self.parse_where_clause()?;
-        
+
         Ok(SqlQuery {
             query_type: QueryType::Delete,
             table_name,
@@ -630,40 +631,40 @@ self.skip_whitespace();
             ignore_duplicates: false,
         })
     }
-    
+
     /// 解析CREATE TABLE查询
     fn parse_create_table_query(&mut self) -> Result<SqlQuery, QueryParseError> {
         // 解析表名
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
-        
+
         // 解析左括号
         self.skip_whitespace();
         self.expect_char('(')?;
-        
+
         // 解析字段定义
         let mut table_def = Vec::new();
         let mut primary_key = None;
-        
+
         loop {
             self.skip_whitespace();
-let field_name = self.parse_identifier()?;
-            
+            let field_name = self.parse_identifier()?;
+
             self.skip_whitespace();
             // 解析数据类型，支持复杂类型如 VARCHAR(255), INT UNSIGNED
             let data_type = self.parse_data_type()?.to_uppercase();
-            
+
             // 初始化约束标志
             let mut is_primary_key = false;
             let mut is_not_null = false;
             let mut is_unique = false;
             let mut is_auto_increment = false;
             let mut default_value: Option<Value> = None;
-            
+
             // 检查约束条件
             loop {
                 self.skip_whitespace();
-                
+
                 if self.match_keyword("PRIMARY") {
                     self.skip_whitespace();
                     self.expect_keyword("KEY")?;
@@ -675,7 +676,9 @@ let field_name = self.parse_identifier()?;
                     is_not_null = true;
                 } else if self.match_keyword("UNIQUE") {
                     is_unique = true;
-                } else if self.match_keyword("AUTOINCREMENT") || self.match_keyword("AUTO_INCREMENT") {
+                } else if self.match_keyword("AUTOINCREMENT")
+                    || self.match_keyword("AUTO_INCREMENT")
+                {
                     is_auto_increment = true;
                 } else if self.match_keyword("DEFAULT") {
                     self.skip_whitespace();
@@ -686,24 +689,32 @@ let field_name = self.parse_identifier()?;
                     break;
                 }
             }
-            
+
             // SQLite兼容：INTEGER PRIMARY KEY自动设为自增
             if data_type == "INTEGER" && is_primary_key {
                 is_auto_increment = true;
             }
-            
-            table_def.push((field_name, data_type, is_primary_key, is_not_null, is_unique, is_auto_increment, default_value));
-            
+
+            table_def.push((
+                field_name,
+                data_type,
+                is_primary_key,
+                is_not_null,
+                is_unique,
+                is_auto_increment,
+                default_value,
+            ));
+
             self.skip_whitespace();
             if self.match_char(')') {
                 break;
             }
-            
+
             if !self.match_char(',') {
                 return Err(QueryParseError::InvalidSyntax);
             }
         }
-        
+
         Ok(SqlQuery {
             query_type: QueryType::CreateTable,
             table_name,
@@ -726,33 +737,33 @@ let field_name = self.parse_identifier()?;
             ignore_duplicates: false,
         })
     }
-    
+
     /// 解析CREATE INDEX查询
     fn parse_create_index_query(&mut self) -> Result<SqlQuery, QueryParseError> {
         // 解析索引名称（可选）
         self.skip_whitespace();
         let _index_name = self.parse_identifier()?;
-        
+
         // 解析ON关键字
         self.skip_whitespace();
         self.expect_keyword("ON")?;
-        
+
         // 解析表名
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
-        
+
         // 解析左括号
         self.skip_whitespace();
         self.expect_char('(')?;
-        
+
         // 解析索引字段
         self.skip_whitespace();
         let index_column = self.parse_identifier()?;
-        
+
         // 解析右括号
         self.skip_whitespace();
         self.expect_char(')')?;
-        
+
         // 解析索引类型（可选）
         let mut index_type = None;
         self.skip_whitespace();
@@ -760,7 +771,7 @@ let field_name = self.parse_identifier()?;
             self.skip_whitespace();
             index_type = Some(self.parse_identifier()?.to_uppercase());
         }
-        
+
         Ok(SqlQuery {
             query_type: QueryType::CreateIndex,
             table_name,
@@ -821,22 +832,22 @@ let field_name = self.parse_identifier()?;
     fn parse_select_query(&mut self) -> Result<SqlQuery, QueryParseError> {
         // 解析SELECT子句
         let (columns, select_all, distinct) = self.parse_select_clause()?;
-        
+
         // 解析FROM子句和JOIN子句
         let (table_name, table_alias, joins) = self.parse_from_and_join_clauses()?;
-        
+
         // 解析WHERE子句（可选）
         let where_clause = self.parse_where_clause()?;
-        
+
         // 解析GROUP BY子句（可选）
         let group_by = self.parse_group_by_clause()?;
-        
+
         // 解析ORDER BY子句（可选）
         let order_by = self.parse_order_by_clause()?;
-        
+
         // 解析LIMIT子句（可选）
         let limit = self.parse_limit_clause()?;
-        
+
         Ok(SqlQuery {
             query_type: QueryType::Select,
             table_name,
@@ -863,46 +874,46 @@ let field_name = self.parse_identifier()?;
     /// 解析SELECT子句
     fn parse_select_clause(&mut self) -> Result<(Vec<Expression>, bool, bool), QueryParseError> {
         self.skip_whitespace();
-        
+
         // 检查是否使用DISTINCT
         let distinct = self.match_keyword("DISTINCT");
         self.skip_whitespace();
-        
+
         // 检查是否选择所有字段（*）
         if self.match_char('*') {
             Ok((Vec::new(), true, distinct))
         } else {
             // 解析表达式列表
             let mut expressions = Vec::new();
-            
+
             loop {
                 self.skip_whitespace();
                 let expr = self.parse_expression()?;
                 expressions.push(expr);
-                
+
                 self.skip_whitespace();
                 if !self.match_char(',') {
                     break;
                 }
             }
-            
+
             Ok((expressions, false, distinct))
         }
     }
-    
+
     /// 解析表达式
     fn parse_expression(&mut self) -> Result<Expression, QueryParseError> {
         self.skip_whitespace();
-        
+
         let mut left_expr = self.parse_primary_expression()?;
-        
+
         // 检查是否有二元操作符
         loop {
             self.skip_whitespace();
-            
+
             let saved_pos = self.position;
             let saved_col = self.column;
-            
+
             // 尝试解析二元操作符
             let op = match self.peek_char() {
                 Some('+') => {
@@ -953,7 +964,7 @@ let field_name = self.parse_identifier()?;
                                 BinaryOperator::LessThanOrEqual
                             }
                         }
-                        _ => BinaryOperator::LessThan
+                        _ => BinaryOperator::LessThan,
                     }
                 }
                 Some('>') => {
@@ -980,11 +991,11 @@ let field_name = self.parse_identifier()?;
                 }
                 _ => break,
             };
-            
+
             // 成功解析了操作符，继续解析右操作数
             self.skip_whitespace();
             let right_expr = self.parse_primary_expression()?;
-            
+
             // 构建新的表达式，将之前的表达式作为左操作数
             left_expr = Expression::BinaryOp {
                 left: Box::new(left_expr),
@@ -993,50 +1004,57 @@ let field_name = self.parse_identifier()?;
                 alias: None,
             };
         }
-        
+
         self.skip_whitespace();
         let alias = self.parse_alias()?;
-        
+
         // 如果有别名，需要更新表达式的别名
         match left_expr {
-            Expression::Field { alias: mut expr_alias, name, .. } => {
-                Ok(Expression::Field {
-                    name,
-                    alias: alias.or(expr_alias),
-                })
-            },
-            Expression::FunctionCall { alias: mut expr_alias, name, args, .. } => {
-                Ok(Expression::FunctionCall {
-                    name,
-                    args,
-                    alias: alias.or(expr_alias),
-                })
-            },
-            Expression::Constant { alias: mut expr_alias, value, .. } => {
-                Ok(Expression::Constant {
-                    value,
-                    alias: alias.or(expr_alias),
-                })
-            },
-            Expression::BinaryOp { left, op, right, .. } => {
-                Ok(Expression::BinaryOp {
-                    left,
-                    op,
-                    right,
-                    alias,
-                })
-            },
+            Expression::Field {
+                alias: mut expr_alias,
+                name,
+                ..
+            } => Ok(Expression::Field {
+                name,
+                alias: alias.or(expr_alias),
+            }),
+            Expression::FunctionCall {
+                alias: mut expr_alias,
+                name,
+                args,
+                ..
+            } => Ok(Expression::FunctionCall {
+                name,
+                args,
+                alias: alias.or(expr_alias),
+            }),
+            Expression::Constant {
+                alias: mut expr_alias,
+                value,
+                ..
+            } => Ok(Expression::Constant {
+                value,
+                alias: alias.or(expr_alias),
+            }),
+            Expression::BinaryOp {
+                left, op, right, ..
+            } => Ok(Expression::BinaryOp {
+                left,
+                op,
+                right,
+                alias,
+            }),
         }
     }
-    
+
     /// 解析基本表达式（字段、函数调用、常量、INTERVAL、*）
     fn parse_primary_expression(&mut self) -> Result<Expression, QueryParseError> {
         self.skip_whitespace();
-        
+
         // 保存当前位置，用于回溯
         let saved_pos = self.position;
         let saved_col = self.column;
-        
+
         // 检查是否是星号
         if self.match_char('*') {
             // 返回字段表达式，代表所有字段
@@ -1045,33 +1063,31 @@ let field_name = self.parse_identifier()?;
                 alias: None,
             });
         }
-        
+
         // 检查是否是向量字面量
         if self.peek_char() == Some('[') {
             // 尝试解析向量字面量
             if let Ok(value) = self.parse_value() {
-                return Ok(Expression::Constant {
-                    value,
-                    alias: None,
-                });
+                return Ok(Expression::Constant { value, alias: None });
             } else {
                 // 解析失败，回退到原始位置
                 self.position = saved_pos;
                 self.column = saved_col;
             }
         }
-        
+
         // 检查是否是常量值（数字、字符串）
         let current_char = self.peek_char().ok_or(QueryParseError::InvalidSyntax)?;
-        if current_char.is_ascii_digit() || current_char == '-' || current_char == '"' || current_char == '\'' {
+        if current_char.is_ascii_digit()
+            || current_char == '-'
+            || current_char == '"'
+            || current_char == '\''
+        {
             // 解析常量值
             let value = self.parse_value()?;
-            return Ok(Expression::Constant {
-                value,
-                alias: None,
-            });
+            return Ok(Expression::Constant { value, alias: None });
         }
-        
+
         // 尝试解析标识符
         if let Ok(identifier) = self.parse_identifier() {
             // 检查下一个字符是否是左括号
@@ -1080,16 +1096,16 @@ let field_name = self.parse_identifier()?;
                 // 回退到标识符开始位置
                 self.position = saved_pos;
                 self.column = saved_col;
-                
+
                 // 解析函数调用
                 return self.parse_function_call();
             } else if identifier.eq_ignore_ascii_case("INTERVAL") {
                 // 解析INTERVAL常量
                 self.skip_whitespace();
-                
+
                 // 解析间隔值（可能是数字或字符串）
                 let interval_value = self.parse_value()?;
-                
+
                 // 检查是否有单位（如HOUR, MINUTE等）
                 self.skip_whitespace();
                 if let Ok(unit) = self.parse_identifier() {
@@ -1099,7 +1115,7 @@ let field_name = self.parse_identifier()?;
                         Value::String(s) => alloc::format!("{} {}", s, unit),
                         _ => return Err(QueryParseError::InvalidValue),
                     };
-                    
+
                     // 将组合后的间隔字符串转换为微秒值
                     // 这里我们暂时返回一个占位符，实际解析将在执行时进行
                     return Ok(Expression::Constant {
@@ -1133,68 +1149,65 @@ let field_name = self.parse_identifier()?;
                 });
             }
         }
-        
+
         // 回溯，尝试解析常量值
         self.position = saved_pos;
         self.column = saved_col;
-        
+
         // 尝试解析常量值
         let value = self.parse_value()?;
-        return Ok(Expression::Constant {
-            value,
-            alias: None,
-        });
+        return Ok(Expression::Constant { value, alias: None });
     }
-    
+
     /// 解析函数调用
     fn parse_function_call(&mut self) -> Result<Expression, QueryParseError> {
         // 解析函数名
         let function_name = self.parse_identifier()?;
-        
+
         self.skip_whitespace();
-        
+
         // 检查是否有左括号
         if !self.match_char('(') {
             return Err(QueryParseError::InvalidSyntax);
         }
-        
+
         // 解析参数列表
         let args = self.parse_function_args()?;
-        
+
         // 解析右括号
         self.skip_whitespace();
         if !self.match_char(')') {
             return Err(QueryParseError::InvalidSyntax);
         }
-        
+
         // 解析别名
         let alias = self.parse_alias()?;
-        
+
         Ok(Expression::FunctionCall {
             name: function_name,
             args,
             alias,
         })
     }
-    
+
     /// 解析函数参数列表
     fn parse_function_args(&mut self) -> Result<Vec<Expression>, QueryParseError> {
         let mut args = Vec::new();
-        
+
         self.skip_whitespace();
-        
+
         // 检查是否是空参数列表
         if self.peek_char() == Some(')') {
             return Ok(args);
         }
-        
+
         loop {
             // 解析单个参数
             let arg = self.parse_expression()?;
             args.push(arg);
-            
+
             self.skip_whitespace();
-            
+
             // 检查是否还有更多参数
             if self.match_char(',') {
                 continue;
@@ -1202,37 +1215,43 @@ let field_name = self.parse_identifier()?;
                 break;
             }
         }
-        
+
         Ok(args)
     }
-    
+
     /// 解析别名
     fn parse_alias(&mut self) -> Result<Option<String>, QueryParseError> {
         self.skip_whitespace();
-        
+
         // 保存当前位置，用于回溯
         let saved_pos = self.position;
         let saved_col = self.column;
-        
+
         // 检查是否有AS关键字
         if self.match_keyword("AS") {
             self.skip_whitespace();
         }
-        
+
         // 检查下一个字符是否是关键字
         let next_token = self.peek_identifier();
         if let Some(token) = next_token {
             // 检查是否是关键字
             let token_upper = token.to_uppercase();
-            let keywords = ["FROM", "WHERE", "ORDER", "LIMIT", "GROUP", "HAVING", "JOIN", "ON", "IN", "AND", "OR", "NOT"];
+            let keywords = [
+                "FROM", "WHERE", "ORDER", "LIMIT", "GROUP", "HAVING", "JOIN", "ON", "IN", "AND",
+                "OR", "NOT",
+            ];
             if keywords.contains(&token_upper.as_str()) {
                 // 是关键字，不是别名
                 return Ok(None);
             }
         }
-        
+
         // 检查是否有别名
-        if self.peek_char().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
+        if self
+            .peek_char()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
             let alias = self.parse_identifier()?;
             Ok(Some(alias))
         } else {
@@ -1241,23 +1260,25 @@ let field_name = self.parse_identifier()?;
     }
 
     /// 解析FROM子句和JOIN子句
-    fn parse_from_and_join_clauses(&mut self) -> Result<(String, Option<String>, Vec<JoinClause>), QueryParseError> {
+    fn parse_from_and_join_clauses(
+        &mut self,
+    ) -> Result<(String, Option<String>, Vec<JoinClause>), QueryParseError> {
         self.skip_whitespace();
         self.expect_keyword("FROM")?;
-        
+
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
-        
+
         // 解析主表别名
         self.skip_whitespace();
         let table_alias = self.parse_alias()?;
-        
+
         // 解析JOIN子句
         let mut joins = Vec::new();
-        
+
         loop {
             self.skip_whitespace();
-            
+
             // 检查是否有JOIN关键字
             let join_type = match self.peek_identifier() {
                 Some(token) => {
@@ -1270,7 +1291,7 @@ let field_name = self.parse_identifier()?;
                                 return Err(QueryParseError::InvalidSyntax);
                             }
                             JoinType::Inner
-                        },
+                        }
                         "LEFT" => {
                             self.parse_identifier()?;
                             self.skip_whitespace();
@@ -1281,7 +1302,7 @@ let field_name = self.parse_identifier()?;
                                 return Err(QueryParseError::InvalidSyntax);
                             }
                             JoinType::Left
-                        },
+                        }
                         "RIGHT" => {
                             self.parse_identifier()?;
                             self.skip_whitespace();
@@ -1292,7 +1313,7 @@ let field_name = self.parse_identifier()?;
                                 return Err(QueryParseError::InvalidSyntax);
                             }
                             JoinType::Right
-                        },
+                        }
                         "FULL" => {
                             self.parse_identifier()?;
                             self.skip_whitespace();
@@ -1303,33 +1324,33 @@ let field_name = self.parse_identifier()?;
                                 return Err(QueryParseError::InvalidSyntax);
                             }
                             JoinType::Full
-                        },
+                        }
                         "JOIN" => {
                             self.parse_identifier()?;
                             JoinType::Inner
-                        },
+                        }
                         _ => break, // 不是JOIN关键字，退出循环
                     }
-                },
+                }
                 None => break, // 没有更多令牌，退出循环
             };
-            
+
             // 解析连接表名
             self.skip_whitespace();
             let join_table_name = self.parse_identifier()?;
-            
+
             // 解析连接表别名
             self.skip_whitespace();
             let join_table_alias = self.parse_alias()?;
-            
+
             // 解析ON关键字
             self.skip_whitespace();
             self.expect_keyword("ON")?;
-            
+
             // 解析连接条件
             self.skip_whitespace();
             let on_condition = self.parse_condition()?;
-            
+
             // 创建JOIN子句
             let join_clause = JoinClause {
                 join_type,
@@ -1337,17 +1358,17 @@ let field_name = self.parse_identifier()?;
                 table_alias: join_table_alias,
                 on_condition,
             };
-            
+
             joins.push(join_clause);
         }
-        
+
         Ok((table_name, table_alias, joins))
     }
 
     /// 解析WHERE子句（可选）
     fn parse_where_clause(&mut self) -> Result<Option<WhereClause>, QueryParseError> {
         self.skip_whitespace();
-        
+
         if self.match_keyword("WHERE") {
             self.skip_whitespace();
             let condition = self.parse_condition()?;
@@ -1360,51 +1381,54 @@ let field_name = self.parse_identifier()?;
     /// 解析GROUP BY子句（可选）
     fn parse_group_by_clause(&mut self) -> Result<Option<GroupByClause>, QueryParseError> {
         self.skip_whitespace();
-        
+
         if self.match_keyword("GROUP") {
             self.skip_whitespace();
             self.expect_keyword("BY")?;
-            
+
             let mut expressions = Vec::new();
             let mut fields = Vec::new();
-            
+
             loop {
                 self.skip_whitespace();
                 let expr = self.parse_expression()?;
                 expressions.push(expr.clone());
-                
+
                 // 对于简单的字段表达式，同时添加到fields列表中以兼容旧版本
                 if let Expression::Field { name, .. } = expr {
                     fields.push(name);
                 }
-                
+
                 self.skip_whitespace();
                 if !self.match_char(',') {
                     break;
                 }
             }
-            
-            Ok(Some(GroupByClause { expressions, fields }))
+
+            Ok(Some(GroupByClause {
+                expressions,
+                fields,
+            }))
         } else {
             Ok(None)
         }
     }
-    
+
     /// 解析ORDER BY子句（可选）
     fn parse_order_by_clause(&mut self) -> Result<Option<OrderByClause>, QueryParseError> {
         self.skip_whitespace();
-        
+
         if self.match_keyword("ORDER") {
             self.skip_whitespace();
             self.expect_keyword("BY")?;
-            
+
             self.skip_whitespace();
             // 解析ORDER BY子句中的字段，可以是标识符或位置索引（数字）
             let field = if let Some(c) = self.peek_char() {
                 if c.is_ascii_digit() {
                     // 解析数字作为位置索引
                     self.parse_number()?.to_string()
-} else {
+                } else {
                     // 解析标识符作为字段名
                     self.parse_identifier()?
                 }
@@ -1412,7 +1436,7 @@ let field_name = self.parse_identifier()?;
                 // 解析标识符作为字段名
                 self.parse_identifier()?
             };
-            
+
             self.skip_whitespace();
             let direction = if self.match_keyword("DESC") {
                 OrderDirection::Descending
@@ -1421,7 +1445,7 @@ let field_name = self.parse_identifier()?;
                 self.match_keyword("ASC");
                 OrderDirection::Ascending
             };
-            
+
             Ok(Some(OrderByClause { field, direction }))
         } else {
             Ok(None)
@@ -1431,7 +1455,7 @@ let field_name = self.parse_identifier()?;
     /// 解析LIMIT子句（可选）
     fn parse_limit_clause(&mut self) -> Result<Option<usize>, QueryParseError> {
         self.skip_whitespace();
-        
+
         if self.match_keyword("LIMIT") {
             self.skip_whitespace();
             let limit = self.parse_number()? as usize;
@@ -1451,11 +1475,11 @@ let field_name = self.parse_identifier()?;
     fn parse_where_condition(&mut self) -> Result<Condition, QueryParseError> {
         // 解析第一个条件
         let mut condition = self.parse_single_condition()?;
-        
+
         // 处理AND/OR组合条件
         loop {
             self.skip_whitespace();
-            
+
             if self.match_keyword("AND") {
                 // 解析AND右侧的条件
                 let right_condition = self.parse_single_condition()?;
@@ -1469,27 +1493,27 @@ let field_name = self.parse_identifier()?;
                 break;
             }
         }
-        
+
         Ok(condition)
     }
 
     /// 解析单个条件（比较或BETWEEN）
     fn parse_single_condition(&mut self) -> Result<Condition, QueryParseError> {
         self.skip_whitespace();
-        
+
         // 保存当前位置，用于回溯
         let saved_pos = self.position;
         let saved_col = self.column;
-        
+
         // 尝试解析BETWEEN条件
         if let Ok(condition) = self.parse_between_condition() {
             return Ok(condition);
         }
-        
+
         // 回溯，尝试解析比较条件
         self.position = saved_pos;
         self.column = saved_col;
-        
+
         // 解析比较条件
         self.parse_comparison_condition()
     }
@@ -1498,27 +1522,32 @@ let field_name = self.parse_identifier()?;
     fn parse_between_condition(&mut self) -> Result<Condition, QueryParseError> {
         // 解析左侧表达式，支持向量表达式
         let left_expr = self.parse_vector_expression()?;
-        
+
         self.skip_whitespace();
-        
+
         // 检查是否是BETWEEN关键字
         if !self.match_keyword("BETWEEN") {
             return Err(QueryParseError::InvalidSyntax);
         }
-        
+
         self.skip_whitespace();
         let min_value = self.parse_value()?;
-        
+
         self.skip_whitespace();
         self.expect_keyword("AND")?;
-        
+
         self.skip_whitespace();
         let max_value = self.parse_value()?;
-        
+
         // 构建字段字符串，支持向量表达式
         let field = match left_expr {
             Expression::Field { name, alias: None } => name,
-            Expression::BinaryOp { left, op, right, alias: None } => {
+            Expression::BinaryOp {
+                left,
+                op,
+                right,
+                alias: None,
+            } => {
                 // 向量距离表达式，如 "vector <-> [5.0, 5.0]"
                 let left_name = match *left {
                     Expression::Field { name, alias: None } => name,
@@ -1544,10 +1573,10 @@ let field_name = self.parse_identifier()?;
                     _ => "?",
                 };
                 format!("{} {} {}", left_name, op_str, right_str)
-            },
+            }
             _ => format!("{:?}", left_expr),
         };
-        
+
         Ok(Condition::Between(BetweenCondition {
             field,
             min_value,
@@ -1560,26 +1589,31 @@ let field_name = self.parse_identifier()?;
         // 保存当前位置，用于回溯
         let saved_pos = self.position;
         let saved_col = self.column;
-        
+
         // 解析左侧表达式，但不包含比较运算符
         let left_expr = self.parse_vector_expression()?;
-        
+
         self.skip_whitespace();
-        
+
         // 解析比较运算符
         let operator = self.parse_comparison_operator()?;
-        
+
         self.skip_whitespace();
-        
+
         // 解析右侧值
         let right_value = self.parse_value()?;
-        
+
         // 创建比较条件
         Ok(Condition::Comparison(ComparisonCondition {
             // 对于向量距离表达式，我们需要特殊处理
             field: match left_expr {
                 Expression::Field { name, alias: None } => name,
-                Expression::BinaryOp { left, op, right, alias: None } => {
+                Expression::BinaryOp {
+                    left,
+                    op,
+                    right,
+                    alias: None,
+                } => {
                     // 向量距离表达式，如 "vector <-> [5.0, 5.0]"
                     let left_name = match *left {
                         Expression::Field { name, alias: None } => name,
@@ -1590,7 +1624,7 @@ let field_name = self.parse_identifier()?;
                         _ => format!("{:?}", *right),
                     };
                     format!("{} {:?} {}", left_name, op, right_val)
-                },
+                }
                 _ => format!("{:?}", left_expr),
             },
             operator,
@@ -1602,14 +1636,14 @@ let field_name = self.parse_identifier()?;
     fn parse_vector_expression(&mut self) -> Result<Expression, QueryParseError> {
         // 解析基本表达式
         let mut expr = self.parse_primary_expression()?;
-        
+
         self.skip_whitespace();
-        
+
         // 检查是否有向量操作符
         loop {
             let saved_pos = self.position;
             let saved_col = self.column;
-            
+
             // 只尝试解析向量操作符，不解析比较运算符
             let op = match self.peek_char() {
                 Some('<') => {
@@ -1626,7 +1660,7 @@ let field_name = self.parse_identifier()?;
                                 self.column = saved_col;
                                 None
                             }
-                        },
+                        }
                         Some('#') => {
                             self.next_char();
                             if self.peek_char() == Some('>') {
@@ -1638,7 +1672,7 @@ let field_name = self.parse_identifier()?;
                                 self.column = saved_col;
                                 None
                             }
-                        },
+                        }
                         Some('=') => {
                             self.next_char();
                             if self.peek_char() == Some('>') {
@@ -1650,7 +1684,7 @@ let field_name = self.parse_identifier()?;
                                 self.column = saved_col;
                                 None
                             }
-                        },
+                        }
                         _ => {
                             // 回退，不是向量操作符
                             self.position = saved_pos;
@@ -1658,20 +1692,20 @@ let field_name = self.parse_identifier()?;
                             None
                         }
                     }
-                },
-                _ => None
+                }
+                _ => None,
             };
-            
+
             // 如果不是向量操作符，结束循环
             if op.is_none() {
                 break;
             }
-            
+
             self.skip_whitespace();
-            
+
             // 解析右操作数
             let right_expr = self.parse_primary_expression()?;
-            
+
             // 更新表达式
             expr = Expression::BinaryOp {
                 left: Box::new(expr),
@@ -1679,10 +1713,10 @@ let field_name = self.parse_identifier()?;
                 right: Box::new(right_expr),
                 alias: None,
             };
-            
+
             self.skip_whitespace();
         }
-        
+
         Ok(expr)
     }
 
@@ -1694,11 +1728,11 @@ let field_name = self.parse_identifier()?;
             Ok(ComparisonOperator::NotEqual)
         } else if self.match_str(">=") {
             Ok(ComparisonOperator::GreaterThanOrEqual)
-        } else if self.match_str(">" ) {
+        } else if self.match_str(">") {
             Ok(ComparisonOperator::GreaterThan)
         } else if self.match_str("<=") {
             Ok(ComparisonOperator::LessThanOrEqual)
-        } else if self.match_str("<" ) {
+        } else if self.match_str("<") {
             Ok(ComparisonOperator::LessThan)
         } else {
             Err(QueryParseError::InvalidOperator)
@@ -1728,19 +1762,19 @@ let field_name = self.parse_identifier()?;
     fn parse_value(&mut self) -> Result<Value, QueryParseError> {
         // 保存当前位置，用于回溯
         let saved_pos = self.position;
-        
+
         if self.peek_char() == Some('"') || self.peek_char() == Some('\'') {
             // 字符串值
             let quote_char = self.next_char().unwrap();
             let mut string_value = String::new();
-            
+
             while let Some(c) = self.next_char() {
                 if c == quote_char {
                     break;
                 }
                 string_value.push(c);
             }
-            
+
             // 尝试将字符串解析为时间值
             if let Ok(timestamp) = parse_time_string(&string_value) {
                 Ok(Value::Integer(timestamp))
@@ -1834,51 +1868,58 @@ let field_name = self.parse_identifier()?;
         } else if self.peek_char() == Some('[') {
             // 向量字面量 [x1, x2, ..., xn]
             let start_pos = self.position;
-            
+
             // 跳过左括号
             self.next_char();
-            
+
             // 查找匹配的右括号
             let mut bracket_count = 1;
             let mut end_pos = start_pos + 1;
-            
+
             while bracket_count > 0 {
                 if self.is_eof() {
                     return Err(QueryParseError::InvalidSyntax);
                 }
-                
+
                 let c = self.next_char().unwrap();
                 end_pos += 1;
-                
+
                 if c == '[' {
                     bracket_count += 1;
                 } else if c == ']' {
                     bracket_count -= 1;
                 }
             }
-            
+
             // 提取完整的向量字面量字符串
             let vec_str = self.input[start_pos..end_pos].to_string();
-            
+
             // 返回向量字符串
             Ok(Value::String(vec_str))
-        } else if self.peek_char().is_some_and(|c| c.is_ascii_digit() || c == '-') {
+        } else if self
+            .peek_char()
+            .is_some_and(|c| c.is_ascii_digit() || c == '-')
+        {
             // 数字值
             let number_str = self.parse_number_str()?;
             if number_str.contains('.') {
                 // 浮点数
-                let float_value = number_str.parse::<f64>().map_err(|_| QueryParseError::InvalidValue)?;
+                let float_value = number_str
+                    .parse::<f64>()
+                    .map_err(|_| QueryParseError::InvalidValue)?;
                 Ok(Value::Float(float_value))
             } else {
                 // 整数
-                let int_value = number_str.parse::<i64>().map_err(|_| QueryParseError::InvalidValue)?;
+                let int_value = number_str
+                    .parse::<i64>()
+                    .map_err(|_| QueryParseError::InvalidValue)?;
                 Ok(Value::Integer(int_value))
             }
         } else {
             // 回溯，尝试解析为标识符
             self.position = saved_pos;
             let identifier = self.parse_identifier()?;
-            
+
             // 检查是否是带有AT TIME ZONE修饰符的时间表达式
             self.skip_whitespace();
             if self.match_keyword("AT") {
@@ -1887,7 +1928,7 @@ let field_name = self.parse_identifier()?;
                 self.skip_whitespace();
                 self.expect_keyword("ZONE")?;
                 self.skip_whitespace();
-                
+
                 // 解析时区名称或偏移量
                 let tz_value = self.parse_value()?;
                 // 这里返回0作为占位符，实际执行时会处理
@@ -1902,15 +1943,15 @@ let field_name = self.parse_identifier()?;
     /// 解析标识符（表名、字段名，支持带点号的字段名如t.id）
     fn parse_identifier(&mut self) -> Result<String, QueryParseError> {
         let start = self.position;
-        
+
         // 标识符必须以字母或下划线开头
         let c = self.peek_char().ok_or(QueryParseError::InvalidSyntax)?;
         if !c.is_ascii_alphabetic() && c != '_' {
             return Err(QueryParseError::InvalidSyntax);
         }
-        
+
         self.next_char();
-        
+
         // 后续字符可以是字母、数字、下划线、点号
         while let Some(c) = self.peek_char() {
             if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
@@ -1919,24 +1960,24 @@ let field_name = self.parse_identifier()?;
                 break;
             }
         }
-        
+
         Ok(self.input[start..self.position].to_string())
     }
 
     /// 解析数字字符串
     fn parse_number_str(&mut self) -> Result<String, QueryParseError> {
         let start = self.position;
-        
+
         // 允许以负号开头
         if self.match_char('-') {
             // 负号已被消耗
         }
-        
+
         // 必须有数字
         if !self.peek_char().is_some_and(|c| c.is_ascii_digit()) {
             return Err(QueryParseError::InvalidValue);
         }
-        
+
         // 解析数字部分
         while let Some(c) = self.peek_char() {
             if c.is_ascii_digit() || c == '.' {
@@ -1945,25 +1986,27 @@ let field_name = self.parse_identifier()?;
                 break;
             }
         }
-        
+
         Ok(self.input[start..self.position].to_string())
     }
 
     /// 解析数字值
     fn parse_number(&mut self) -> Result<usize, QueryParseError> {
         let number_str = self.parse_number_str()?;
-        number_str.parse::<usize>().map_err(|_| QueryParseError::InvalidValue)
+        number_str
+            .parse::<usize>()
+            .map_err(|_| QueryParseError::InvalidValue)
     }
 
     /// 匹配关键字
     fn match_keyword(&mut self, keyword: &str) -> bool {
         let start = self.position;
         let end = start + keyword.len();
-        
+
         if end <= self.input.len() {
             let actual = &self.input[start..end];
             let expected = keyword;
-            
+
             if actual.eq_ignore_ascii_case(expected) {
                 // 检查是否是完整的关键字（后面跟着非字母数字字符）
                 let next_char = self.input.chars().nth(end);
@@ -1974,7 +2017,7 @@ let field_name = self.parse_identifier()?;
                 }
             }
         }
-        
+
         false
     }
 
@@ -1982,7 +2025,7 @@ let field_name = self.parse_identifier()?;
     fn match_str(&mut self, s: &str) -> bool {
         let start = self.position;
         let end = start + s.len();
-        
+
         if end <= self.input.len() {
             if &self.input[start..end] == s {
                 self.position = end;
@@ -1990,7 +2033,7 @@ let field_name = self.parse_identifier()?;
                 return true;
             }
         }
-        
+
         false
     }
 
@@ -2039,12 +2082,12 @@ let field_name = self.parse_identifier()?;
         // 添加安全检查，防止无限循环
         let max_skips = self.input.len();
         let mut skips = 0;
-        
+
         while let Some(c) = self.peek_char() {
             if skips > max_skips {
                 break; // 防止无限循环
             }
-            
+
             if c.is_whitespace() {
                 self.next_char();
                 skips += 1;
@@ -2058,15 +2101,15 @@ let field_name = self.parse_identifier()?;
     fn is_eof(&self) -> bool {
         self.position >= self.input.len()
     }
-    
+
     /// 解析数据类型，支持复杂类型如 VARCHAR(255), INT UNSIGNED
     fn parse_data_type(&mut self) -> Result<String, QueryParseError> {
         // 解析基本数据类型
         let base_type = self.parse_identifier()?;
-        
+
         // 保存完整类型，包括参数和修饰符
         let mut result = base_type.clone();
-        
+
         // 检查是否有参数，如 VARCHAR(255), VECTOR(768) 或 TIMESTAMP(6)
         self.skip_whitespace();
         if self.match_char('(') {
@@ -2083,7 +2126,7 @@ let field_name = self.parse_identifier()?;
                 }
             }
         }
-        
+
         // 检查是否有修饰符，如 UNSIGNED, WITH TIME ZONE 或 WITH DISTANCE=L2
         self.skip_whitespace();
         while self.peek_char().is_some() {
@@ -2092,11 +2135,20 @@ let field_name = self.parse_identifier()?;
             if let Some(token) = next_token {
                 let token_upper = token.to_uppercase();
                 // 如果遇到约束关键字，停止解析数据类型
-                if ["PRIMARY", "NOT", "UNIQUE", "AUTOINCREMENT", "AUTO_INCREMENT", "DEFAULT"].contains(&token_upper.as_str()) {
+                if [
+                    "PRIMARY",
+                    "NOT",
+                    "UNIQUE",
+                    "AUTOINCREMENT",
+                    "AUTO_INCREMENT",
+                    "DEFAULT",
+                ]
+                .contains(&token_upper.as_str())
+                {
                     break;
                 }
             }
-            
+
             // 检查是否是修饰符（字母或下划线开头）
             let c = self.peek_char().unwrap();
             if c.is_ascii_alphabetic() || c == '_' {
@@ -2104,7 +2156,7 @@ let field_name = self.parse_identifier()?;
                 let modifier = self.parse_identifier()?;
                 result.push(' ');
                 result.push_str(&modifier);
-                
+
                 // 检查是否是 WITH 修饰符，如 WITH TIME ZONE 或 WITH DISTANCE=L2
                 if modifier.eq_ignore_ascii_case("WITH") {
                     self.skip_whitespace();
@@ -2113,51 +2165,60 @@ let field_name = self.parse_identifier()?;
                         let next_token = self.peek_identifier();
                         if let Some(token) = next_token {
                             let token_upper = token.to_uppercase();
-                            if ["PRIMARY", "NOT", "UNIQUE", "AUTOINCREMENT", "AUTO_INCREMENT", "DEFAULT"].contains(&token_upper.as_str()) {
+                            if [
+                                "PRIMARY",
+                                "NOT",
+                                "UNIQUE",
+                                "AUTOINCREMENT",
+                                "AUTO_INCREMENT",
+                                "DEFAULT",
+                            ]
+                            .contains(&token_upper.as_str())
+                            {
                                 break;
                             }
                         }
-                        
+
                         // 解析 WITH 后的修饰符
                         let with_modifier = self.parse_identifier()?;
                         result.push(' ');
                         result.push_str(&with_modifier);
-                        
+
                         // 检查是否有等号，如 DISTANCE=L2
                         self.skip_whitespace();
                         if self.match_char('=') {
                             result.push('=');
-                            
+
                             // 解析等号后的数值或标识符
                             let value = self.parse_identifier()?;
                             result.push_str(&value);
                         }
-                        
+
                         self.skip_whitespace();
                     }
                 }
-                
+
                 self.skip_whitespace();
             } else {
                 break;
             }
         }
-        
+
         Ok(result)
     }
-    
+
     /// 预看下一个标识符
     fn peek_identifier(&self) -> Option<String> {
         let start = self.position;
         let mut pos = start;
-        
+
         // 检查第一个字符是否是字母或下划线
         if let Some(c) = self.input.chars().nth(pos) {
             if !c.is_ascii_alphabetic() && c != '_' {
                 return None;
             }
             pos += 1;
-            
+
             // 继续读取直到遇到非字母数字或下划线
             while let Some(c) = self.input.chars().nth(pos) {
                 if c.is_ascii_alphanumeric() || c == '_' {
@@ -2166,14 +2227,14 @@ let field_name = self.parse_identifier()?;
                     break;
                 }
             }
-            
+
             // 返回预看的标识符
             Some(self.input[start..pos].to_string())
         } else {
             None
         }
     }
-    
+
     /// 期望匹配指定字符
     fn expect_char(&mut self, c: char) -> Result<(), QueryParseError> {
         if self.match_char(c) {

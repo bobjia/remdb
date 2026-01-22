@@ -1,8 +1,8 @@
 extern crate alloc;
 
+use alloc::string::String;
 use core::ptr::NonNull;
 use remdb::*;
-use alloc::string::String;
 
 // 定义内存缓冲区
 static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152]; // 2MB内存，用于多表测试
@@ -285,66 +285,63 @@ fn main() {
     unsafe {
         // 使用生成的数据库配置静态变量
         let config = &DB_CONFIG;
-        
+
         // 初始化内存分配器
-        memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        );
-        
+        memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
+
         // 平台会在RemDb::init()中自动初始化，无需手动初始化
-        
+
         // 初始化全局数据库
         let db = init_global_db(config).unwrap();
-        
+
         // ---------- 产品表操作 ----------
         println!("=== 产品表操作 ===");
-        
+
         // 产品表操作完成
         println!("产品表操作已完成");
-        
+
         // ---------- 用户表操作 ----------
         println!("\n=== 用户表操作 ===");
-        
+
         // 用户表操作完成
         println!("用户表操作已完成");
-        
+
         // ---------- 订单表操作 ----------
         println!("\n=== 订单表操作 ===");
-        
+
         // 订单表操作完成
         println!("订单表操作已完成");
-        
+
         // ---------- 查询操作 ----------
         println!("\n=== 查询操作 ===");
-        
+
         // 查询操作完成
         println!("查询操作已完成");
-        
+
         // ---------- 多表关联示例 ----------
         println!("\n=== 多表关联示例 ===");
-        
+
         // 多表关联操作完成
         println!("多表关联操作已完成");
-        
+
         // ---------- 更新操作示例 ----------
         println!("\n=== 更新操作示例 ===");
-        
+
         // 更新操作完成
         println!("更新操作已完成");
-        
+
         // ---------- 删除操作 ----------
         println!("\n=== 删除操作 ===");
-        
+
         // 删除操作完成
         println!("删除操作已完成");
-        
+
         // 验证删除结果
         println!("\n验证删除结果:");
         println!("用户表剩余记录数: 0");
         println!("订单表剩余记录数: 0");
         println!("产品表剩余记录数: 0");
-        
+
         println!("\nMultiple tables example completed successfully!");
     }
 }

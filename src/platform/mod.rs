@@ -25,19 +25,20 @@ impl<T> OnceLock<T> {
             initialized: core::sync::atomic::AtomicBool::new(false),
         }
     }
-    
+
     pub fn get(&self) -> Option<&T> {
         if self.initialized.load(core::sync::atomic::Ordering::Acquire) {
-            unsafe {
-                (*self.data.get()).as_ref()
-            }
+            unsafe { (*self.data.get()).as_ref() }
         } else {
             None
         }
     }
-    
+
     pub fn set(&self, value: T) -> core::result::Result<(), T> {
-        if self.initialized.swap(true, core::sync::atomic::Ordering::AcqRel) {
+        if self
+            .initialized
+            .swap(true, core::sync::atomic::Ordering::AcqRel)
+        {
             Err(value)
         } else {
             unsafe {
@@ -55,55 +56,55 @@ pub type FileResult<T> = core::result::Result<T, ()>;
 pub trait Platform: Send + Sync {
     /// 获取当前时间戳（毫秒）
     fn get_timestamp(&self) -> u64;
-    
+
     /// 获取当前时间戳（微秒）
     fn get_timestamp_us(&self) -> u64;
-    
+
     /// 自旋锁实现
     fn spin_lock(&self, lock: &mut u32);
-    
+
     /// 自旋锁释放
     fn spin_unlock(&self, lock: &mut u32);
-    
+
     /// 内存屏障 - 编译器屏障
     fn compiler_barrier(&self);
-    
+
     /// 内存屏障 - 读写屏障
     fn full_memory_barrier(&self);
-    
+
     /// 内存拷贝（安全版本）
     fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize);
-    
+
     /// 内存设置
     fn memset(&self, dest: *mut u8, value: u8, size: usize);
-    
+
     /// 延迟（毫秒）
     fn delay_ms(&self, ms: u32);
-    
+
     /// 延迟（微秒）
     fn delay_us(&self, us: u32);
-    
+
     /// 打开文件
     fn file_open(&self, path: &str, mode: FileMode) -> FileResult<FileHandle>;
-    
+
     /// 关闭文件
     fn file_close(&self, handle: FileHandle) -> FileResult<()>;
-    
+
     /// 写入文件
     fn file_write(&self, handle: FileHandle, buffer: *const u8, size: usize) -> FileResult<usize>;
-    
+
     /// 读取文件
     fn file_read(&self, handle: FileHandle, buffer: *mut u8, size: usize) -> FileResult<usize>;
-    
+
     /// 文件定位
     fn file_seek(&self, handle: FileHandle, offset: i64, whence: SeekWhence) -> FileResult<u64>;
-    
+
     /// 删除文件
     fn file_remove(&self, path: &str) -> FileResult<()>;
-    
+
     /// 获取文件大小
     fn file_size(&self, path: &str) -> FileResult<usize>;
-    
+
     /// 计算CRC32校验和
     fn crc32(&self, data: *const u8, size: usize) -> u32;
 }
@@ -306,5 +307,5 @@ pub fn crc32(data: *const u8, size: usize) -> u32 {
 }
 
 // 重新导出子模块
-pub mod posix;
 pub mod baremetal;
+pub mod posix;

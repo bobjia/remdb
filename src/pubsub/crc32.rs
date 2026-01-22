@@ -10,12 +10,12 @@ static CRC32_TABLE: [u32; 256] = generate_crc32_table();
 const fn generate_crc32_table() -> [u32; 256] {
     let mut table = [0u32; 256];
     let mut i = 0;
-    
+
     // 预计算CRC32表
     while i < 256 {
         let mut crc = (i as u32) << 24;
         let mut j = 0;
-        
+
         while j < 8 {
             if crc & 0x80000000 != 0 {
                 crc = (crc << 1) ^ CRC32_POLYNOMIAL;
@@ -24,39 +24,39 @@ const fn generate_crc32_table() -> [u32; 256] {
             }
             j += 1;
         }
-        
+
         table[i] = crc;
         i += 1;
     }
-    
+
     table
 }
 
 /// 计算数据的CRC32校验和
-/// 
+///
 /// # 参数
 /// - `data`: 要计算CRC的数据
-/// 
+///
 /// # 返回值
 /// - CRC32校验和
 #[inline]
 pub fn calculate_crc32(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFFFFFF;
-    
+
     for &byte in data {
         let index = ((crc >> 24) ^ (byte as u32)) as u8;
         crc = (crc << 8) ^ CRC32_TABLE[index as usize];
     }
-    
+
     crc ^ 0xFFFFFFFF
 }
 
 /// 验证数据的CRC32校验和
-/// 
+///
 /// # 参数
 /// - `data`: 要验证的数据
 /// - `expected_crc`: 期望的CRC32校验和
-/// 
+///
 /// # 返回值
 /// - 验证结果，true表示校验通过，false表示校验失败
 #[inline]
@@ -68,7 +68,7 @@ pub fn verify_crc32(data: &[u8], expected_crc: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_crc32_calculation() {
         // 测试空数据
@@ -76,35 +76,35 @@ mod tests {
         let empty_crc = calculate_crc32(empty_data);
         assert_eq!(calculate_crc32(empty_data), empty_crc);
         assert!(verify_crc32(empty_data, empty_crc));
-        
+
         // 测试简单数据
         let simple_data = b"Hello, world!";
         let simple_crc = calculate_crc32(simple_data);
         // 验证一致性
         assert_eq!(calculate_crc32(simple_data), simple_crc);
         assert!(verify_crc32(simple_data, simple_crc));
-        
+
         // 测试不同数据
         let different_data = b"123456789";
         let different_crc = calculate_crc32(different_data);
         // 验证一致性
         assert_eq!(calculate_crc32(different_data), different_crc);
         assert!(verify_crc32(different_data, different_crc));
-        
+
         // 验证不同数据产生不同的CRC值
         assert_ne!(simple_crc, different_crc);
         assert_ne!(empty_crc, simple_crc);
         assert_ne!(empty_crc, different_crc);
     }
-    
+
     #[test]
     fn test_crc32_verification() {
         let data = b"test data";
         let crc = calculate_crc32(data);
-        
+
         // 正确的CRC应该验证通过
         assert!(verify_crc32(data, crc));
-        
+
         // 错误的CRC应该验证失败
         assert!(!verify_crc32(data, crc + 1));
         assert!(!verify_crc32(data, crc - 1));

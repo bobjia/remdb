@@ -1,8 +1,6 @@
-
-use core::time::Duration;
-use core::sync::atomic::{AtomicBool, Ordering};
 use alloc::sync::Arc;
-
+use core::sync::atomic::{AtomicBool, Ordering};
+use core::time::Duration;
 
 /// 数据保留策略
 #[derive(Debug, Clone)]
@@ -37,12 +35,12 @@ impl LifecycleManager {
             cleanup_callback: None,
         }
     }
-    
+
     /// 设置清理间隔
     pub fn set_cleanup_interval(&mut self, interval: Duration) {
         self.cleanup_interval = interval;
     }
-    
+
     /// 设置清理闭包
     pub fn set_cleanup_callback<F>(&mut self, callback: F)
     where
@@ -50,7 +48,7 @@ impl LifecycleManager {
     {
         self.cleanup_callback = Some(Arc::new(callback));
     }
-    
+
     /// 获取当前时间戳（秒）
     pub fn get_current_timestamp() -> u64 {
         #[cfg(feature = "std")]
@@ -67,48 +65,48 @@ impl LifecycleManager {
             0
         }
     }
-    
+
     /// 检查数据是否过期
     pub fn is_expired(&self, timestamp: u64) -> bool {
         let now = Self::get_current_timestamp();
         let expire_time = now - self.retention_period.as_secs();
         timestamp < expire_time
     }
-    
+
     /// 启动清理任务
     pub fn start(&self) {
         if self.running.load(Ordering::SeqCst) {
             return;
         }
-        
+
         self.running.store(true, Ordering::SeqCst);
-        
-        #[cfg(feature = "std")] 
+
+        #[cfg(feature = "std")]
         {
             // 克隆所需数据
             let cleanup_interval = self.cleanup_interval;
             let running = self.running.clone();
             let cleanup = self.cleanup_callback.clone();
-            
+
             std::thread::spawn(move || {
                 while running.load(Ordering::SeqCst) {
                     // 执行清理逻辑
                     if let Some(callback) = cleanup.as_ref() {
                         callback();
                     }
-                    
+
                     // 休眠指定间隔
                     std::thread::sleep(cleanup_interval);
                 }
             });
         }
     }
-    
+
     /// 停止清理任务
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
     }
-    
+
     /// 执行清理逻辑
     pub fn cleanup(&self) {
         if let Some(callback) = &self.cleanup_callback {

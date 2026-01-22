@@ -1,17 +1,17 @@
 // 基于UDP的高可靠数据订阅与发布模块
 
-pub mod protocol;
-pub mod udp;
-pub mod subscriber;
-pub mod publisher;
 pub mod crc32;
+pub mod protocol;
+pub mod publisher;
+pub mod subscriber;
 pub mod topics;
 pub mod ttl_ringbuffer;
+pub mod udp;
 
-use core::fmt;
-use alloc::vec::Vec;
-use protocol::ProtocolFrame;
 use crate::pubsub::topics::*;
+use alloc::vec::Vec;
+use core::fmt;
+use protocol::ProtocolFrame;
 
 // 公共错误类型
 #[derive(Debug, PartialEq, Eq)]
@@ -82,18 +82,18 @@ pub struct PubSubConfig {
     pub udp_mode: UdpMode,
     pub multicast_addr: Option<std::net::IpAddr>,
     pub port: u16,
-    
+
     // 资源配置
     pub max_topics: usize,
     pub max_subscribers_per_topic: usize,
     pub buffer_size: usize,
-    
+
     // 可靠性配置
     pub enable_nack: bool,
     pub retransmit_timeout: core::time::Duration,
     pub max_retransmits: usize,
     pub heartbeat_interval: core::time::Duration,
-    
+
     // 内存池配置
     pub frame_pool_size: usize,
 }
@@ -136,22 +136,22 @@ impl PubSub {
             config.udp_mode,
             config.multicast_addr,
             config.port,
-            config.buffer_size
+            config.buffer_size,
         )?;
-        
+
         // 创建订阅者管理器
         let subscribers = subscriber::SubscriberManager::new(
             config.max_topics,
-            config.max_subscribers_per_topic
+            config.max_subscribers_per_topic,
         )?;
-        
+
         // 创建发布者
         let publisher = publisher::Publisher::new(
             config.enable_nack,
             config.retransmit_timeout,
-            config.max_retransmits
+            config.max_retransmits,
         )?;
-        
+
         Ok(Self {
             config,
             subscribers,
@@ -160,23 +160,23 @@ impl PubSub {
             is_running: false,
         })
     }
-    
+
     /// 获取实际使用的端口
     pub fn get_actual_port(&self) -> Result<u16> {
         self.udp_socket.get_port()
     }
-    
+
     /// 初始化发布/订阅系统
     pub fn init(&mut self) -> Result<()> {
         // 初始化UDP套接字
         self.udp_socket.init()?;
-        
+
         // 标记为运行中
         self.is_running = true;
-        
+
         Ok(())
     }
-    
+
     /// 启动接收线程（仅POSIX平台）
     /// 注意：该方法目前不可用，需要解决生命周期问题
     #[cfg(feature = "posix")]
@@ -184,28 +184,28 @@ impl PubSub {
         if !self.is_running {
             return Err(PubSubError::InitFailed);
         }
-        
+
         // TODO: 修复生命周期问题
         // 暂时不实现线程接收，使用轮询方式
         Err(PubSubError::UnsupportedOperation)
     }
-    
+
     /// 接收循环（外部可调用）
     pub fn receive_loop(&mut self) {
         // 分配接收缓冲区
         let mut buf = alloc::vec::Vec::with_capacity(self.config.buffer_size);
         buf.resize(self.config.buffer_size, 0);
-        
+
         // 分配重传帧缓冲区
         let mut retransmit_frames = alloc::vec::Vec::new();
-        
+
         loop {
             // 检查待重传的数据
             retransmit_frames.clear();
             if let Ok(frames) = self.publisher.check_timeouts() {
                 retransmit_frames.extend(frames);
             }
-            
+
             // 发送待重传的数据
             for frame in &retransmit_frames {
                 let bytes = frame.to_bytes();
@@ -213,17 +213,17 @@ impl PubSub {
                     // 发送失败，记录错误或重试
                 }
             }
-            
+
             // 接收数据
             match self.udp_socket.recv(&mut buf) {
                 Ok(len) if len > 0 => {
                     // 处理接收到的数据
                     self.handle_received_data(&buf[..len]);
-                },
+                }
                 Err(_) => {
                     // 接收错误，继续循环
                     continue;
-                },
+                }
                 _ => {
                     // 接收到0字节，继续循环
                     continue;
@@ -231,7 +231,7 @@ impl PubSub {
             }
         }
     }
-    
+
     /// 处理接收到的数据
     fn handle_received_data(&mut self, data: &[u8]) {
         // 解析协议帧
@@ -242,24 +242,24 @@ impl PubSub {
                     protocol::FrameType::Data => {
                         // 处理数据帧
                         self.handle_data_frame(frame);
-                    },
+                    }
                     protocol::FrameType::Nack => {
                         // 处理NACK帧
                         self.handle_nack_frame(frame);
-                    },
+                    }
                     protocol::FrameType::Heartbeat => {
                         // 处理心跳帧
                         self.handle_heartbeat_frame(frame);
-                    },
+                    }
                 }
-            },
+            }
             Err(e) => {
                 // 解析错误，记录或忽略
                 match e {
                     PubSubError::CrcCheckFailed => {
                         // CRC校验失败，可能需要发送NACK
                         // 这里简化处理，直接忽略
-                    },
+                    }
                     _ => {
                         // 其他错误，忽略
                     }
@@ -267,29 +267,29 @@ impl PubSub {
             }
         }
     }
-    
+
     /// 处理数据帧
     fn handle_data_frame(&mut self, frame: protocol::ProtocolFrame) {
         // 获取帧信息
         let topic_id = frame.topic_id();
         let seq_num = frame.seq_num();
         let payload = frame.payload();
-        
+
         // 检查序列号（这里简化处理，直接接收）
         // TODO: 实现序列号检查和NACK生成
-        
+
         // 将数据分发给订阅者
         if let Err(e) = self.subscribers.handle_data(topic_id, payload) {
             // 处理分发错误
         }
     }
-    
+
     /// 处理NACK帧
     fn handle_nack_frame(&mut self, frame: protocol::ProtocolFrame) {
         // 获取帧信息
         let topic_id = frame.topic_id();
         let seq_num = frame.seq_num();
-        
+
         // 处理NACK，获取需要重传的帧
         match self.publisher.handle_nack(seq_num, topic_id) {
             Ok(frames) => {
@@ -300,13 +300,13 @@ impl PubSub {
                         // 发送失败，记录错误
                     }
                 }
-            },
+            }
             Err(_) => {
                 // 处理错误
             }
         }
     }
-    
+
     /// 处理心跳帧
     fn handle_heartbeat_frame(&mut self, _frame: protocol::ProtocolFrame) {
         // 心跳帧处理：更新订阅者活跃状态
@@ -316,54 +316,54 @@ impl PubSub {
             // 处理清理错误
         }
     }
-    
+
     /// 订阅主题
     pub fn subscribe(&mut self, topic_id: u16, callback: PubSubCallback) -> Result<SubscriptionId> {
         self.subscribers.subscribe(topic_id, callback)
     }
-    
+
     /// 取消订阅
     pub fn unsubscribe(&mut self, subscription_id: SubscriptionId) -> Result<()> {
         self.subscribers.unsubscribe(subscription_id)
     }
-    
+
     /// 发布数据
     pub fn publish(&mut self, topic_id: u16, data: &[u8]) -> Result<()> {
         // 生成协议帧
         let frame = self.publisher.create_frame(topic_id, data)?;
-        
+
         // 将帧转换为字节数组
         let bytes = frame.to_bytes();
-        
+
         // 发送数据
         self.udp_socket.send(&bytes)?;
-        
+
         Ok(())
     }
-    
+
     /// 注册主题名称到ID的映射
     pub fn register_topic(&mut self, topic_name: &'static str, topic_id: u16) -> Result<()> {
         self.subscribers.register_topic(topic_name, topic_id)
     }
-    
+
     /// 根据主题名称获取ID
     pub fn get_topic_id(&self, topic_name: &str) -> Option<u16> {
         self.subscribers.get_topic_id(topic_name)
     }
-    
+
     /// 根据ID获取主题名称
     pub fn get_topic_name(&self, topic_id: u16) -> Option<&'static str> {
         self.subscribers.get_topic_name(topic_id)
     }
-    
+
     /// 停止发布/订阅系统
     pub fn shutdown(&mut self) -> Result<()> {
         // 关闭UDP套接字
         self.udp_socket.close()?;
-        
+
         // 标记为停止
         self.is_running = false;
-        
+
         Ok(())
     }
 }
@@ -371,19 +371,20 @@ impl PubSub {
 /// 初始化全局发布/订阅实例
 pub fn init(config: PubSubConfig) -> Result<()> {
     unsafe {
-        if PUB_SUB_INSTANCE.is_some() {
+        let pubsub_ptr = core::ptr::addr_of_mut!(PUB_SUB_INSTANCE);
+        if (*pubsub_ptr).is_some() {
             // 如果已经初始化，直接返回成功
             return Ok(());
         }
-        
+
         let mut pubsub = PubSub::new(config)?;
         pubsub.init()?;
-        
+
         // Register all predefined topics
         register_predefined_topics(&mut pubsub)?;
-        
-        PUB_SUB_INSTANCE = Some(pubsub);
-        
+
+        *pubsub_ptr = Some(pubsub);
+
         Ok(())
     }
 }
@@ -395,20 +396,21 @@ fn register_predefined_topics(pubsub: &mut PubSub) -> Result<()> {
     for (i, topic) in wal_topics.iter().enumerate() {
         pubsub.register_topic(topic, i as u16 + 1)?;
     }
-    
+
     // Register core topics (start from 11 to avoid overlap with WAL topics)
     let core_topics = get_core_topics();
     for (i, topic) in core_topics.iter().enumerate() {
         pubsub.register_topic(topic, i as u16 + 11)?;
     }
-    
+
     Ok(())
 }
 
 /// 订阅主题
 pub fn subscribe(topic_id: u16, callback: PubSubCallback) -> Result<SubscriptionId> {
     unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
+        let pubsub_ptr = core::ptr::addr_of_mut!(PUB_SUB_INSTANCE);
+        if let Some(ref mut pubsub) = *pubsub_ptr {
             pubsub.subscribe(topic_id, callback)
         } else {
             Err(PubSubError::InitFailed)
@@ -419,7 +421,8 @@ pub fn subscribe(topic_id: u16, callback: PubSubCallback) -> Result<Subscription
 /// 取消订阅
 pub fn unsubscribe(subscription_id: SubscriptionId) -> Result<()> {
     unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
+        let pubsub_ptr = core::ptr::addr_of_mut!(PUB_SUB_INSTANCE);
+        if let Some(ref mut pubsub) = *pubsub_ptr {
             pubsub.unsubscribe(subscription_id)
         } else {
             Err(PubSubError::InitFailed)
@@ -430,7 +433,8 @@ pub fn unsubscribe(subscription_id: SubscriptionId) -> Result<()> {
 /// 发布数据
 pub fn publish(topic_id: u16, data: &[u8]) -> Result<()> {
     unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
+        let pubsub_ptr = core::ptr::addr_of_mut!(PUB_SUB_INSTANCE);
+        if let Some(ref mut pubsub) = *pubsub_ptr {
             pubsub.publish(topic_id, data)
         } else {
             Err(PubSubError::InitFailed)
@@ -442,7 +446,8 @@ pub fn publish(topic_id: u16, data: &[u8]) -> Result<()> {
 #[cfg(feature = "posix")]
 pub fn start_receiver() -> Result<()> {
     unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
+        let pubsub_ptr = core::ptr::addr_of_mut!(PUB_SUB_INSTANCE);
+        if let Some(ref mut pubsub) = *pubsub_ptr {
             pubsub.start_receiver()
         } else {
             Err(PubSubError::InitFailed)
@@ -453,7 +458,8 @@ pub fn start_receiver() -> Result<()> {
 /// 注册主题名称到ID的映射（全局实例）
 pub fn register_topic(topic_name: &'static str, topic_id: u16) -> Result<()> {
     unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
+        let pubsub_ptr = core::ptr::addr_of_mut!(PUB_SUB_INSTANCE);
+        if let Some(ref mut pubsub) = *pubsub_ptr {
             pubsub.register_topic(topic_name, topic_id)
         } else {
             Err(PubSubError::InitFailed)
@@ -464,7 +470,8 @@ pub fn register_topic(topic_name: &'static str, topic_id: u16) -> Result<()> {
 /// 根据主题名称获取ID（全局实例）
 pub fn get_topic_id(topic_name: &str) -> Option<u16> {
     unsafe {
-        if let Some(ref pubsub) = PUB_SUB_INSTANCE {
+        let pubsub_ptr = core::ptr::addr_of!(PUB_SUB_INSTANCE);
+        if let Some(ref pubsub) = *pubsub_ptr {
             pubsub.get_topic_id(topic_name)
         } else {
             None
@@ -475,7 +482,8 @@ pub fn get_topic_id(topic_name: &str) -> Option<u16> {
 /// 根据ID获取主题名称（全局实例）
 pub fn get_topic_name(topic_id: u16) -> Option<&'static str> {
     unsafe {
-        if let Some(ref pubsub) = PUB_SUB_INSTANCE {
+        let pubsub_ptr = core::ptr::addr_of!(PUB_SUB_INSTANCE);
+        if let Some(ref pubsub) = *pubsub_ptr {
             pubsub.get_topic_name(topic_id)
         } else {
             None
@@ -486,22 +494,24 @@ pub fn get_topic_name(topic_id: u16) -> Option<&'static str> {
 /// 获取全局pubsub实例（用于内部使用）
 pub(crate) fn get_global_pubsub() -> Option<&'static mut PubSub> {
     unsafe {
-        PUB_SUB_INSTANCE.as_mut()
+        let pubsub_ptr = core::ptr::addr_of_mut!(PUB_SUB_INSTANCE);
+        (*pubsub_ptr).as_mut()
     }
 }
 
 /// 停止发布/订阅系统
 pub fn shutdown() -> Result<()> {
     unsafe {
+        let pubsub_ptr = core::ptr::addr_of_mut!(PUB_SUB_INSTANCE);
         // Only shutdown if we have an instance
-        if PUB_SUB_INSTANCE.is_some() {
+        if (*pubsub_ptr).is_some() {
             // First get a mutable reference to the instance
-            let pubsub = PUB_SUB_INSTANCE.as_mut().unwrap();
+            let pubsub = (*pubsub_ptr).as_mut().unwrap();
             // Call shutdown on the instance
             let result = pubsub.shutdown();
             // Always clear the instance after shutdown, regardless of result
             // This prevents the instance from being used again after shutdown
-            PUB_SUB_INSTANCE = None;
+            *pubsub_ptr = None;
             result
         } else {
             // If instance is already None, return Ok to avoid errors in tests

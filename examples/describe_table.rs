@@ -29,13 +29,10 @@ fn main() {
     unsafe {
         // 使用生成的数据库配置静态变量
         let config = &DB_CONFIG;
-        
+
         // 初始化内存分配器
-        memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        );
-        
+        memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
+
         // 初始化平台抽象层
         // 使用一个简单的平台实现
         struct DummyPlatform;
@@ -46,14 +43,10 @@ fn main() {
             fn get_timestamp_us(&self) -> u64 {
                 0
             }
-            fn spin_lock(&self, _lock: &mut u32) {
-            }
-            fn spin_unlock(&self, _lock: &mut u32) {
-            }
-            fn compiler_barrier(&self) {
-            }
-            fn full_memory_barrier(&self) {
-            }
+            fn spin_lock(&self, _lock: &mut u32) {}
+            fn spin_unlock(&self, _lock: &mut u32) {}
+            fn compiler_barrier(&self) {}
+            fn full_memory_barrier(&self) {}
             fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
                 unsafe {
                     core::ptr::copy_nonoverlapping(src, dest, size);
@@ -64,26 +57,43 @@ fn main() {
                     core::ptr::write_bytes(dest, value, size);
                 }
             }
-            fn delay_ms(&self, _ms: u32) {
-            }
-            fn delay_us(&self, _us: u32) {
-            }
-            fn file_open(&self, _path: &str, _mode: platform::FileMode) -> platform::FileResult<platform::FileHandle> {
+            fn delay_ms(&self, _ms: u32) {}
+            fn delay_us(&self, _us: u32) {}
+            fn file_open(
+                &self,
+                _path: &str,
+                _mode: platform::FileMode,
+            ) -> platform::FileResult<platform::FileHandle> {
                 // 返回一个非空指针作为有效的FileHandle
                 Ok(1 as *const u8)
             }
             fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
                 Ok(())
             }
-            fn file_write(&self, _handle: platform::FileHandle, _buffer: *const u8, size: usize) -> platform::FileResult<usize> {
+            fn file_write(
+                &self,
+                _handle: platform::FileHandle,
+                _buffer: *const u8,
+                size: usize,
+            ) -> platform::FileResult<usize> {
                 // 模拟写入成功，返回写入的字节数
                 Ok(size)
             }
-            fn file_read(&self, _handle: platform::FileHandle, _buffer: *mut u8, _size: usize) -> platform::FileResult<usize> {
+            fn file_read(
+                &self,
+                _handle: platform::FileHandle,
+                _buffer: *mut u8,
+                _size: usize,
+            ) -> platform::FileResult<usize> {
                 // 模拟读取成功，返回0表示文件为空
                 Ok(0)
             }
-            fn file_seek(&self, _handle: platform::FileHandle, _offset: i64, _whence: platform::SeekWhence) -> platform::FileResult<u64> {
+            fn file_seek(
+                &self,
+                _handle: platform::FileHandle,
+                _offset: i64,
+                _whence: platform::SeekWhence,
+            ) -> platform::FileResult<u64> {
                 // 模拟seek成功，返回当前位置0
                 Ok(0)
             }
@@ -99,25 +109,25 @@ fn main() {
         }
         static DUMMY_PLATFORM: DummyPlatform = DummyPlatform;
         platform::init_platform(&DUMMY_PLATFORM);
-        
+
         // 初始化全局数据库
         let db = init_global_db(config).unwrap();
-        
+
         println!("Database initialized successfully.");
         println!("\n--- Testing DESCRIBE TABLE ---");
-        
+
         // 测试 DESCRIBE TABLE 命令
         let result = db.sql_query("DESCRIBE TABLE TEST_TABLE");
         match result {
             Ok(result_set) => {
                 println!("\nDESCRIBE TABLE TEST_TABLE result:");
                 println!("{}", result_set.to_string());
-            },
+            }
             Err(e) => {
                 println!("Error executing DESCRIBE TABLE: {:?}", e);
             }
         }
-        
+
         // 测试简写形式 DESCRIBE users
         println!("\n--- Testing DESCRIBE TEST_TABLE (short form) ---");
         let result = db.sql_query("DESCRIBE TEST_TABLE");
@@ -125,15 +135,15 @@ fn main() {
             Ok(result_set) => {
                 println!("\nDESCRIBE TEST_TABLE result:");
                 println!("{}", result_set.to_string());
-            },
+            }
             Err(e) => {
                 println!("Error executing DESCRIBE TEST_TABLE: {:?}", e);
             }
         }
-        
+
         // 测试新专用方法
         println!("\n--- Testing New Dedicated Methods ---");
-        
+
         // 使用insert_record插入记录
         println!("\n1. 使用insert_record插入记录:");
         let columns = &["id", "name", "age", "active"];
@@ -141,53 +151,57 @@ fn main() {
         match db.insert_record("TEST_TABLE", columns, values) {
             Ok(affected_rows) => {
                 println!("✅ 插入记录成功，影响行数: {}", affected_rows);
-            },
+            }
             Err(e) => {
                 println!("❌ 插入记录失败: {:?}", e);
             }
         }
-        
+
         // 使用execute_query查询记录
         println!("\n2. 使用execute_query查询记录:");
         match db.execute_query("TEST_TABLE", &["id", "name", "age", "active"], None, None) {
             Ok(result_set) => {
                 println!("✅ 查询记录成功:");
                 println!("{}", result_set.to_string());
-            },
+            }
             Err(e) => {
                 println!("❌ 查询记录失败: {:?}", e);
             }
         }
-        
+
         // 使用update_record更新记录
         println!("\n3. 使用update_record更新记录:");
         match db.update_record("TEST_TABLE", "age = 31, active = false", Some("id = 1")) {
             Ok(affected_rows) => {
                 println!("✅ 更新记录成功，影响行数: {}", affected_rows);
-                
+
                 // 查询验证
-                if let Ok(result_set) = db.execute_query("TEST_TABLE", &["id", "name", "age", "active"], None, None) {
+                if let Ok(result_set) =
+                    db.execute_query("TEST_TABLE", &["id", "name", "age", "active"], None, None)
+                {
                     println!("✅ 更新后查询结果:");
                     println!("{}", result_set.to_string());
                 }
-            },
+            }
             Err(e) => {
                 println!("❌ 更新记录失败: {:?}", e);
             }
         }
-        
+
         // 使用delete_record删除记录
         println!("\n4. 使用delete_record删除记录:");
         match db.delete_record("TEST_TABLE", Some("id = 1")) {
             Ok(affected_rows) => {
                 println!("✅ 删除记录成功，影响行数: {}", affected_rows);
-                
+
                 // 查询验证
-                if let Ok(result_set) = db.execute_query("TEST_TABLE", &["id", "name", "age", "active"], None, None) {
+                if let Ok(result_set) =
+                    db.execute_query("TEST_TABLE", &["id", "name", "age", "active"], None, None)
+                {
                     println!("✅ 删除后查询结果:");
                     println!("{}", result_set.to_string());
                 }
-            },
+            }
             Err(e) => {
                 println!("❌ 删除记录失败: {:?}", e);
             }

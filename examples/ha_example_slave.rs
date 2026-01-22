@@ -5,10 +5,10 @@
 extern crate remdb;
 
 use core::ptr::NonNull;
-use remdb::*;
-use remdb::ha::{HARole, ReplicationMode, HAConfig};
-use remdb::config::{DbConfig, WALConfig, DefaultMemoryAllocator, LogMode};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, WALConfig};
+use remdb::ha::{HAConfig, HARole, ReplicationMode};
 use remdb::time_series::TimeSeriesConfig;
+use remdb::*;
 
 // 定义内存缓冲区
 static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
@@ -63,21 +63,18 @@ static SLAVE_DB_CONFIG: DbConfig = DbConfig {
 // 从节点示例
 fn slave_example() {
     println!("\n=== 从节点示例 ===");
-    
+
     unsafe {
         // 初始化内存分配器
-        memory::allocator::init_global_allocator(
-            DB_MEMORY.as_mut_ptr(),
-            DB_MEMORY.len()
-        );
-        
+        memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
+
         // 平台初始化由RemDb的init方法自动处理
-        
+
         // 初始化全局数据库
         let db = init_global_db(&SLAVE_DB_CONFIG).expect("Failed to initialize database");
-        
+
         // HA管理器由RemDb自动初始化和管理
-        
+
         // 运行一段时间，等待从主节点同步数据
         // 同时定期检查HA状态
         for i in 0..15 {
@@ -87,39 +84,43 @@ fn slave_example() {
                     println!("[HA] Slave check status error: {:?}", e);
                 }
             }
-            
+
             // 每1秒检查一次
             std::thread::sleep(std::time::Duration::from_secs(1));
-            println!("[HA] Slave running, iteration: {}", i+1);
+            println!("[HA] Slave running, iteration: {}", i + 1);
         }
-        
+
         // 读取数据（应该是从主节点复制过来的）
         let table = db.get_table(0).expect("Failed to get table");
         let record_id = 0;
-        
+
         // 尝试获取记录，get_by_id如果失败会返回错误
         let mut result_data = [0u8; 40];
         match table.get_by_id(record_id, result_data.as_mut_ptr()) {
             Ok(_) => {
                 // 读取字段值
                 let result_id = core::ptr::read(result_data.as_ptr() as *const u32);
-                let result_name = core::str::from_utf8(&result_data[4..36]).unwrap().trim_end_matches(char::from(0));
+                let result_name = core::str::from_utf8(&result_data[4..36])
+                    .unwrap()
+                    .trim_end_matches(char::from(0));
                 let result_age = core::ptr::read(result_data.as_ptr().add(36) as *const u8);
                 let result_active = core::ptr::read(result_data.as_ptr().add(37) as *const bool);
-                
+
                 println!("从节点：成功读取到主节点复制的数据");
-                println!("从节点：ID: {}, Name: {}, Age: {}, Active: {}", 
-                         result_id, result_name, result_age, result_active);
-            },
+                println!(
+                    "从节点：ID: {}, Name: {}, Age: {}, Active: {}",
+                    result_id, result_name, result_age, result_active
+                );
+            }
             Err(_) => {
                 println!("从节点：未能读取到主节点数据");
             }
         }
-        
+
         // 关闭HA管理器
         ha::shutdown().expect("Failed to shutdown HA manager");
     }
-    
+
     println!("从节点示例完成");
 }
 
