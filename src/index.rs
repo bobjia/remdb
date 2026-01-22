@@ -597,9 +597,9 @@ impl VectorIndex {
             record_id,
         };
         
-        // 更新计数
+        // 更新计数（确保item_count和vector_count始终同步）
         self.item_count += 1;
-        self.vector_count += 1;
+        self.vector_count = self.item_count;
         
         // 更新统计信息
         self.stats.item_count += 1;

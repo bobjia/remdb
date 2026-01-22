@@ -582,6 +582,20 @@ fn test_vector_index_large_scale() {
     for i in 0..10 {
         let query = format!("SELECT id, vector <-> [{:.1}, {:.1}] as distance FROM VECTOR_TABLE_2D ORDER BY distance LIMIT 10", 
                            (i as f32 * 0.5).sin() * 5.0, (i as f32 * 0.5).cos() * 5.0);
+        
+        // 调试：直接测试SQL解析
+        match remdb::sql::parse_sql_query(&query) {
+            Ok(parsed) => {
+                println!("✅ 调试：SQL解析成功！查询: {}", query);
+                println!("   查询类型: {:?}", parsed.query_type);
+                println!("   列数: {}", parsed.columns.len());
+                println!("   ORDER BY: {:?}", parsed.order_by);
+            },
+            Err(err) => {
+                println!("❌ 调试：SQL解析失败！错误: {:?}", err);
+            }
+        }
+        
         let result = db.sql_query(&query);
         if let Err(e) = &result {
             println!("查询失败: {}, 查询语句: {}", e, query);

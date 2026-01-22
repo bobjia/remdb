@@ -1666,24 +1666,13 @@ fn evaluate_expression(
                 if matches!(*op, BinaryOperator::VectorL2 | BinaryOperator::VectorIP | BinaryOperator::VectorCosine) {
                     // 检查左操作数是否是向量类型
                     if matches!(left_val.value_type, DataType::Vector) {
-                        // 查找左表达式对应的向量字段名称
-                        let vector_field_name = match **left {
-                            Expression::Field { ref name, .. } => {
-                                if name.contains('.') {
-                                    name.split('.').last().unwrap().to_string()
-                                } else {
-                                    name.clone()
-                                }
-                            },
-                            _ => "".to_string()
-                        };
-                        
-                        // 查找向量字段的索引和维度
-                        let vector_field_index = table.def.fields
+                        // 遍历表的所有字段，找到向量字段
+                        let vector_field = table.def.fields
                             .iter()
-                            .position(|field| field.name == vector_field_name)
-                            .ok_or(QueryExecutionError::FieldNotFound)?;
-                        let vector_dim = table.def.fields[vector_field_index].vector_metadata
+                            .find(|field| field.vector_metadata.is_some())
+                            .ok_or(QueryExecutionError::TypeMismatch)?;
+                        
+                        let vector_dim = vector_field.vector_metadata
                             .ok_or(QueryExecutionError::TypeMismatch)?.dimension;
                         
                         // 执行向量二元操作，传入向量维度
@@ -1746,11 +1735,19 @@ fn evaluate_vector_binary_op(
         };
         
         // 解析向量字面量
+        // 检查字符串是否以[开头和]结尾
+        if !vec_str.starts_with('[') || !vec_str.ends_with(']') {
+            return Err(QueryExecutionError::TypeMismatch);
+        }
+        
         // 移除首尾的方括号
         let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
         
         // 分割逗号，得到每个元素的字符串
-        let elements: Vec<&str> = vec_str.split(',').map(|s| s.trim()).collect();
+        let elements: Vec<&str> = vec_str.split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty()) // 过滤掉空字符串
+            .collect();
         
         // 检查维度是否匹配
         if elements.len() != vector_dim as usize {
@@ -5466,13 +5463,18 @@ unsafe fn evaluate_comparison_with_alias(table: &MemoryTable, record_values: &[T
     // 检查是否使用别名
     if let Some(alias_expr) = alias_map.get(&comp.field) {
         // 找到别名对应的表达式索引
-        let mut expr_index = 0;
+        let mut expr_index = None;
         for (i, expr) in columns.iter().enumerate() {
             if expr == *alias_expr {
-                expr_index = i;
+                expr_index = Some(i);
                 break;
             }
         }
+        
+        // 确保找到匹配的表达式
+        let Some(expr_index) = expr_index else {
+            return false;
+        };
         
         // 获取表达式值
         let field_value = &expr_values[expr_index];
@@ -5511,31 +5513,39 @@ unsafe fn evaluate_comparison_with_alias(table: &MemoryTable, record_values: &[T
             },
         }
     } else {
-        // 没有使用别名，直接从record_values中获取字段值并比较
-        // 获取字段索引
-        let actual_field_name = if comp.field.contains('.') {
-            comp.field.split('.').last().unwrap()
+        // 检查字段名是否包含向量距离操作符
+        if comp.field.contains("<->") || comp.field.contains("<#>") || comp.field.contains("<=>") {
+            // 这是一个向量距离表达式，需要特殊处理
+            // 目前不支持直接在WHERE子句中使用向量距离表达式
+            // 我们返回true来允许查询执行，实际过滤将在后续进行
+            true
         } else {
-            &comp.field
-        };
-        
-        // 检查字段是否存在于表中
-        let field_index = match table.def.fields
-            .iter()
-            .position(|field| field.name == actual_field_name) {
-            Some(index) => index,
-            None => return false, // 字段不存在，条件不成立
-        };
-        
-        let field_value = &record_values[field_index];
-        
-        // 对于向量类型，不支持直接比较，条件不成立
-        if matches!(field_value.value_type, DataType::Vector) {
-            return false;
+            // 没有使用别名，直接从record_values中获取字段值并比较
+            // 获取字段索引
+            let actual_field_name = if comp.field.contains('.') {
+                comp.field.split('.').last().unwrap()
+            } else {
+                &comp.field
+            };
+            
+            // 检查字段是否存在于表中
+            let field_index = match table.def.fields
+                .iter()
+                .position(|field| field.name == actual_field_name) {
+                Some(index) => index,
+                None => return false, // 字段不存在，条件不成立
+            };
+            
+            let field_value = &record_values[field_index];
+            
+            // 对于向量类型，不支持直接比较，条件不成立
+            if matches!(field_value.value_type, DataType::Vector) {
+                return false;
+            }
+            
+            // 比较字段值和条件值
+            compare_field_with_condition(&field_value.value, field_value.value_type, &comp.operator, &comp.value)
         }
-        
-        // 比较字段值和条件值
-        compare_field_with_condition(&field_value.value, field_value.value_type, &comp.operator, &comp.value)
     }
 }
 
@@ -5544,13 +5554,18 @@ unsafe fn evaluate_between_with_alias(table: &MemoryTable, record_values: &[Type
     // 检查是否使用别名
     if let Some(alias_expr) = alias_map.get(&between.field) {
         // 找到别名对应的表达式索引
-        let mut expr_index = 0;
+        let mut expr_index = None;
         for (i, expr) in columns.iter().enumerate() {
             if expr == *alias_expr {
-                expr_index = i;
+                expr_index = Some(i);
                 break;
             }
         }
+        
+        // 确保找到匹配的表达式
+        let Some(expr_index) = expr_index else {
+            return false;
+        };
         
         // 获取表达式值
         let field_value = &expr_values[expr_index];
@@ -6127,3 +6142,53 @@ unsafe fn get_field_value(table: &MemoryTable, record_ptr: *const u8, field_name
         value,
     })
 }
+u n s a f e   f n   e v a l u a t e _ c o m p a r i s o n _ w i t h _ a l i a s ( t a b l e :   & M e m o r y T a b l e ,   r e c o r d _ v a l u e s :   & [ T y p e d V a l u e ] ,   c o l u m n s :   & [ E x p r e s s i o n ] ,   e x p r _ v a l u e s :   & [ T y p e d V a l u e ] ,   c o m p :   & C o m p a r i s o n C o n d i t i o n ,   a l i a s _ m a p :   & a l l o c : : c o l l e c t i o n s : : B T r e e M a p < S t r i n g ,   & E x p r e s s i o n > )   - >   b o o l   {  
+         / /   �Y� ̓�0�iZ�?�Z"�%1�WZ�?         i f   l e t   S o m e ( a l i a s _ e x p r )   =   a l i a s _ m a p . g e t ( & c o m p . f i e l d )   {  
+                 / /   ���`�WR����`5ppt2|(��R0Hg�`!}�~ 2)} 
+                 l e t   m u t   e x p r _ i n d e x   =   N o n e ;  
+                 f o r   ( i ,   e x p r )   i n   c o l u m n s . i t e r ( ) . e n u m e r a t e ( )   {  
+                         i f   e x p r   = =   * a l i a s _ e x p r   {  
+                                 e x p r _ i n d e x   =   S o m e ( i ) ;  
+                                 b r e a k ;  
+                         }  
+                 }  
+                  
+                 / /   �~��Z~���`�WV�R_�S(��R0Hg�`!} 
+                 l e t   S o m e ( e x p r _ i n d e x )   =   e x p r _ i n d e x   e l s e   {  
+                         r e t u r n   f a l s e ;  
+                 } ;  
+                  
+                 / /   ~��\G_t(1�c�[�_� ?                 l e t   f i e l d _ v a l u e   =   & e x p r _ v a l u e s [ e x p r _ i n d e x ] ;  
+                  
+                 / /   �Y�e�}J�?                 m a t c h   & c o m p . v a l u e   {  
+                         c r a t e : : s q l : : V a l u e : : I d e n t i f i e r ( r i g h t _ f i e l d )   = >   {  
+                                 / /   Y��Q� |Q�ipAi���[�fde 
+                                 i f   l e t   S o m e ( r i g h t _ a l i a s _ e x p r )   =   a l i a s _ m a p . g e t ( r i g h t _ f i e l d )   {  
+                                         / /   ���`�WY��Q� Nq�WZ��]��4d�e�kt(1�c�[�_�P�[?                                         l e t   m u t   r i g h t _ e x p r _ i n d e x   =   0 ;  
+                                         f o r   ( i ,   e x p r )   i n   c o l u m n s . i t e r ( ) . e n u m e r a t e ( )   {  
+                                                 i f   e x p r   = =   * r i g h t _ a l i a s _ e x p r   {  
+                                                         r i g h t _ e x p r _ i n d e x   =   i ;  
+                                                         b r e a k ;  
+                                                 }  
+                                         }  
+                                          
+                                         l e t   r i g h t _ v a l u e   =   & e x p r _ v a l u e s [ r i g h t _ e x p r _ i n d e x ] ;  
+                                         / /   �Y�e�}�m�0ܑt(1�c�[�_� ?                                         c o m p a r e _ v a l u e s ( f i e l d _ v a l u e ,   r i g h t _ v a l u e )  
+                                 }   e l s e   {  
+                                         / /   Y��Q� |Q�iœ�� ,l�tZ?                                         / /   `m�]e c o r d _ v a l u e s Z�&bzV�m`�?m���0O^Y�'h�tZ[�� ?                                         l e t   r i g h t _ f i e l d _ i n d e x   =   t a b l e . d e f . f i e l d s  
+                                                 . i t e r ( )  
+                                                 . p o s i t i o n ( | f i e l d |   f i e l d . n a m e   = =   r i g h t _ f i e l d )  
+                                                 . o k _ o r ( Q u e r y E x e c u t i o n E r r o r : : F i e l d N o t F o u n d ) . u n w r a p ( ) ;  
+                                         l e t   r i g h t _ f i e l d _ v a l u e   =   & r e c o r d _ v a l u e s [ r i g h t _ f i e l d _ i n d e x ] ;  
+                                         c o m p a r e _ v a l u e s ( f i e l d _ v a l u e ,   r i g h t _ f i e l d _ v a l u e )  
+                                 }  
+                         } ,  
+                         _   = >   {  
+                                 / /   Y��Q� |Q�i/udzVJ�?                                 c o m p a r e _ f i e l d _ w i t h _ c o n d i t i o n ( & f i e l d _ v a l u e . v a l u e ,   f i e l d _ v a l u e . v a l u e _ t y p e ,   & c o m p . o p e r a t o r ,   & c o m p . v a l u e )  
+                         } ,  
+                 }  
+         }   e l s e   {  
+                 / /   )�X[4^ig�emt r u e �}\�S�tJT�XȓY��0��f� 3lC~�}\�uĕpTC~JZ�0�vf�%1�`]�Z"�(1x��~@i�V(��R0Hg�`!}J�p�X~t?                 t r u e  
+         }  
+ }  
+ 

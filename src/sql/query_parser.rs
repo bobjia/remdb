@@ -1030,6 +1030,32 @@ impl SqlParser {
             });
         }
         
+        // 检查是否是向量字面量
+        if self.peek_char() == Some('[') {
+            // 尝试解析向量字面量
+            if let Ok(value) = self.parse_value() {
+                return Ok(Expression::Constant {
+                    value,
+                    alias: None,
+                });
+            } else {
+                // 解析失败，回退到原始位置
+                self.position = saved_pos;
+                self.column = saved_col;
+            }
+        }
+        
+        // 检查是否是常量值（数字、字符串）
+        let current_char = self.peek_char().ok_or(QueryParseError::InvalidSyntax)?;
+        if current_char.is_ascii_digit() || current_char == '-' || current_char == '"' || current_char == '\'' {
+            // 解析常量值
+            let value = self.parse_value()?;
+            return Ok(Expression::Constant {
+                value,
+                alias: None,
+            });
+        }
+        
         // 尝试解析标识符
         if let Ok(identifier) = self.parse_identifier() {
             // 检查下一个字符是否是左括号
@@ -1438,7 +1464,7 @@ impl SqlParser {
 
     /// 解析比较条件
     fn parse_comparison(&mut self) -> Result<ComparisonCondition, QueryParseError> {
-        // 解析字段名
+        // 解析字段名或表达式
         let field = self.parse_identifier()?;
         
         self.skip_whitespace();
@@ -1586,49 +1612,34 @@ impl SqlParser {
             Ok(Value::Integer(0))
         } else if self.peek_char() == Some('[') {
             // 向量字面量 [x1, x2, ..., xn]
-            // 将整个向量字面量解析为字符串，由执行阶段处理
-            let mut vec_str = String::new();
-            vec_str.push('[');
+            let start_pos = self.position;
             
-            self.next_char(); // 跳过'['
-            self.skip_whitespace();
+            // 跳过左括号
+            self.next_char();
             
-            // 解析向量元素，构建完整的向量字符串
-            loop {
-                self.skip_whitespace();
-                
-                // 检查是否到达向量末尾
-                if self.peek_char() == Some(']') {
-                    self.next_char(); // 跳过']'
-                    vec_str.push(']');
-                    break;
-                }
-                
-                // 解析向量元素并添加到字符串
-                let value = self.parse_value()?;
-                // 将解析的值转换回字符串表示
-                match value {
-                    Value::Integer(i) => vec_str.push_str(&i.to_string()),
-                    Value::Float(f) => vec_str.push_str(&f.to_string()),
-                    _ => return Err(QueryParseError::InvalidValue),
-                }
-                
-                self.skip_whitespace();
-                
-                // 检查是否还有下一个元素
-                if self.match_char(',') {
-                    vec_str.push(',');
-                    continue;
-                } else if self.peek_char() == Some(']') {
-                    self.next_char(); // 跳过']'
-                    vec_str.push(']');
-                    break;
-                } else {
+            // 查找匹配的右括号
+            let mut bracket_count = 1;
+            let mut end_pos = start_pos + 1;
+            
+            while bracket_count > 0 {
+                if self.is_eof() {
                     return Err(QueryParseError::InvalidSyntax);
+                }
+                
+                let c = self.next_char().unwrap();
+                end_pos += 1;
+                
+                if c == '[' {
+                    bracket_count += 1;
+                } else if c == ']' {
+                    bracket_count -= 1;
                 }
             }
             
-            // 返回完整的向量字符串
+            // 提取完整的向量字面量字符串
+            let vec_str = self.input[start_pos..end_pos].to_string();
+            
+            // 返回向量字符串
             Ok(Value::String(vec_str))
         } else if self.peek_char().is_some_and(|c| c.is_ascii_digit() || c == '-') {
             // 数字值
@@ -1679,10 +1690,70 @@ impl SqlParser {
         
         self.next_char();
         
-        // 后续字符可以是字母、数字、下划线或点号（支持表别名，如t.id）
+        // 后续字符可以是字母、数字、下划线、点号或向量距离操作符
         while let Some(c) = self.peek_char() {
             if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
                 self.next_char();
+            } else if c == '<' {
+                // 检查是否是向量距离操作符
+                let current_pos = self.position;
+                let mut temp_pos = current_pos;
+                let mut has_op = false;
+                
+                // 检查 <->
+                if temp_pos + 2 <= self.input.len() {
+                    let slice = &self.input[temp_pos..temp_pos+3];
+                    if slice == "<->" {
+                        // 消耗三个字符
+                        self.position += 3;
+                        has_op = true;
+                    }
+                }
+                
+                // 检查 <#>
+                if !has_op && temp_pos + 2 <= self.input.len() {
+                    let slice = &self.input[temp_pos..temp_pos+3];
+                    if slice == "<#>" {
+                        // 消耗三个字符
+                        self.position += 3;
+                        has_op = true;
+                    }
+                }
+                
+                // 检查 <=>
+                if !has_op && temp_pos + 2 <= self.input.len() {
+                    let slice = &self.input[temp_pos..temp_pos+3];
+                    if slice == "<=>" {
+                        // 消耗三个字符
+                        self.position += 3;
+                        has_op = true;
+                    }
+                }
+                
+                if !has_op {
+                    break;
+                }
+                
+                // 向量操作符后面可能跟着向量字面量 [x1, x2, ...]
+                self.skip_whitespace();
+                if self.peek_char() == Some('[') {
+                    // 跳过向量字面量
+                    let mut bracket_count = 1;
+                    self.next_char(); // 消耗左括号
+                    
+                    while bracket_count > 0 {
+                        if self.is_eof() {
+                            return Err(QueryParseError::InvalidSyntax);
+                        }
+                        
+                        let c = self.next_char().unwrap();
+                        if c == '[' {
+                            bracket_count += 1;
+                        } else if c == ']' {
+                            bracket_count -= 1;
+                        }
+                    }
+                }
             } else {
                 break;
             }
