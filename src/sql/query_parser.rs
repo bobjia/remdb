@@ -273,7 +273,7 @@ pub enum BinaryOperator {
     /// 小于等于
     LessThanOrEqual,
     /// 向量L2距离 (<->)
-    VectorL2,
+VectorL2,
     /// 向量内积 (<#>)
     VectorIP,
     /// 向量余弦相似度 (<=>)
@@ -586,8 +586,7 @@ impl SqlParser {
             }
             
             all_values.push(values);
-            
-            self.skip_whitespace();
+self.skip_whitespace();
             if !self.match_char(',') {
                 break;
             }
@@ -648,7 +647,7 @@ impl SqlParser {
         
         loop {
             self.skip_whitespace();
-            let field_name = self.parse_identifier()?;
+let field_name = self.parse_identifier()?;
             
             self.skip_whitespace();
             // 解析数据类型，支持复杂类型如 VARCHAR(255), INT UNSIGNED
@@ -923,11 +922,27 @@ impl SqlParser {
                     match self.peek_char() {
                         Some('-') => {
                             self.next_char();
-                            BinaryOperator::VectorL2 // <->
+                            if self.peek_char() == Some('>') {
+                                self.next_char();
+                                BinaryOperator::VectorL2 // <->
+                            } else {
+                                // 回退到小于号
+                                self.position = saved_pos;
+                                self.column = saved_col;
+                                break;
+                            }
                         }
                         Some('#') => {
                             self.next_char();
-                            BinaryOperator::VectorIP // <#>
+                            if self.peek_char() == Some('>') {
+                                self.next_char();
+                                BinaryOperator::VectorIP // <#>
+                            } else {
+                                // 回退到小于号
+                                self.position = saved_pos;
+                                self.column = saved_col;
+                                break;
+                            }
                         }
                         Some('=') => {
                             self.next_char();
@@ -966,6 +981,7 @@ impl SqlParser {
                 _ => break,
             };
             
+            // 成功解析了操作符，继续解析右操作数
             self.skip_whitespace();
             let right_expr = self.parse_primary_expression()?;
             
@@ -1388,7 +1404,7 @@ impl SqlParser {
                 if c.is_ascii_digit() {
                     // 解析数字作为位置索引
                     self.parse_number()?.to_string()
-                } else {
+} else {
                     // 解析标识符作为字段名
                     self.parse_identifier()?
                 }
@@ -1690,70 +1706,10 @@ impl SqlParser {
         
         self.next_char();
         
-        // 后续字符可以是字母、数字、下划线、点号或向量距离操作符
+        // 后续字符可以是字母、数字、下划线、点号
         while let Some(c) = self.peek_char() {
             if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
                 self.next_char();
-            } else if c == '<' {
-                // 检查是否是向量距离操作符
-                let current_pos = self.position;
-                let mut temp_pos = current_pos;
-                let mut has_op = false;
-                
-                // 检查 <->
-                if temp_pos + 2 <= self.input.len() {
-                    let slice = &self.input[temp_pos..temp_pos+3];
-                    if slice == "<->" {
-                        // 消耗三个字符
-                        self.position += 3;
-                        has_op = true;
-                    }
-                }
-                
-                // 检查 <#>
-                if !has_op && temp_pos + 2 <= self.input.len() {
-                    let slice = &self.input[temp_pos..temp_pos+3];
-                    if slice == "<#>" {
-                        // 消耗三个字符
-                        self.position += 3;
-                        has_op = true;
-                    }
-                }
-                
-                // 检查 <=>
-                if !has_op && temp_pos + 2 <= self.input.len() {
-                    let slice = &self.input[temp_pos..temp_pos+3];
-                    if slice == "<=>" {
-                        // 消耗三个字符
-                        self.position += 3;
-                        has_op = true;
-                    }
-                }
-                
-                if !has_op {
-                    break;
-                }
-                
-                // 向量操作符后面可能跟着向量字面量 [x1, x2, ...]
-                self.skip_whitespace();
-                if self.peek_char() == Some('[') {
-                    // 跳过向量字面量
-                    let mut bracket_count = 1;
-                    self.next_char(); // 消耗左括号
-                    
-                    while bracket_count > 0 {
-                        if self.is_eof() {
-                            return Err(QueryParseError::InvalidSyntax);
-                        }
-                        
-                        let c = self.next_char().unwrap();
-                        if c == '[' {
-                            bracket_count += 1;
-                        } else if c == ']' {
-                            bracket_count -= 1;
-                        }
-                    }
-                }
             } else {
                 break;
             }
