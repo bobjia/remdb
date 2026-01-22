@@ -427,6 +427,12 @@ CREATE TIMESERIES TABLE table_name (
 - `AND`：逻辑与
 - `OR`：逻辑或
 
+#### 向量距离运算符
+
+- `<->`：向量L2距离，用于计算欧几里得距离
+- `<#>`：向量内积，用于计算向量点积
+- `<=>`：向量余弦相似度，用于计算向量夹角余弦值
+
 ### 2.10 函数支持
 
 RemDB支持在SELECT语句中使用内嵌函数，包括聚合函数和窗口函数。
@@ -801,7 +807,9 @@ SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609
 
 ### 6.2 向量操作符
 
-RemDB支持向量的基本运算操作符：
+RemDB支持向量的基本运算操作符和距离度量操作符：
+
+#### 基本向量操作符
 
 | 操作符 | 描述 | 示例 |
 |-------|------|------|
@@ -815,9 +823,86 @@ RemDB支持向量的基本运算操作符：
 | `=` | 向量相等 | `SELECT * FROM vectors WHERE vec = [0.1, 0.2, ...]` |
 | `!=` | 向量不等 | `SELECT * FROM vectors WHERE vec != [0.1, 0.2, ...]` |
 
+#### 向量距离操作符
+
+RemDB支持以下向量距离度量操作符，用于计算两个向量之间的相似度：
+
+| 操作符 | 距离度量 | 描述 | 示例 |
+|-------|----------|------|------|
+| `<->` | L2距离 | 欧几里得距离，值越小表示越相似 | `SELECT id, vec <-> [0.1, 0.2] AS distance FROM vectors ORDER BY distance LIMIT 10` |
+| `<#>` | 内积 | 向量内积，值越大表示越相似 | `SELECT id, vec <#> [0.1, 0.2] AS similarity FROM vectors ORDER BY similarity DESC LIMIT 10` |
+| `<=>` | 余弦相似度 | 余弦相似度，值越大表示越相似 | `SELECT id, vec <=> [0.1, 0.2] AS similarity FROM vectors ORDER BY similarity DESC LIMIT 10` |
+
+**说明**：
+- 这些操作符可以用于SELECT列表、WHERE子句和ORDER BY子句
+- 在WHERE子句中，它们可以与BETWEEN条件结合使用
+- 支持与标量条件的混合查询
+
+**示例**：
+
+```sql
+-- 在SELECT列表中使用向量距离操作符
+SELECT id, name, embedding <-> [0.1, 0.2, 0.3] AS distance FROM products;
+
+-- 在WHERE子句中使用向量距离操作符
+SELECT id, name FROM vectors WHERE vec <-> [0.5, 0.5] < 0.5;
+
+-- 在BETWEEN条件中使用向量距离操作符
+SELECT id, name FROM vectors WHERE vec <-> [0.5, 0.5] BETWEEN 0.1 AND 0.5;
+
+-- 结合向量距离和标量条件
+SELECT id, name FROM products WHERE embedding <=> [0.1, 0.2] > 0.8 AND price < 100;
+
+-- 在ORDER BY子句中使用向量距离
+SELECT id, name FROM vectors ORDER BY vec <#> [0.5, 0.5] DESC LIMIT 5;
+```
+
 ### 6.3 向量搜索
 
-#### 向量相似性搜索
+RemDB支持多种向量搜索方式，包括使用专用函数和直接使用向量距离操作符。
+
+#### 1. 使用向量距离操作符（推荐）
+
+直接使用向量距离操作符是进行向量搜索的最直观方式：
+
+**语法**：
+```sql
+SELECT * FROM table_name
+WHERE vector_column <-> query_vector [operator] threshold
+[AND other_conditions]
+ORDER BY vector_column <-> query_vector [ASC | DESC]
+LIMIT k;
+```
+
+**示例**：
+
+```sql
+-- 使用L2距离操作符进行搜索
+SELECT id, meta, vec <-> [0.1, 0.2, ...] AS distance
+FROM vectors
+WHERE vec <-> [0.1, 0.2, ...] < 0.5
+ORDER BY distance
+LIMIT 10;
+
+-- 使用余弦相似度操作符进行搜索
+SELECT id, name, embedding <=> [0.1, 0.2, ...] AS similarity
+FROM products
+WHERE embedding <=> [0.1, 0.2, ...] > 0.8
+AND price < 100
+ORDER BY similarity DESC
+LIMIT 5;
+
+-- 使用内积操作符进行搜索
+SELECT id, name, vec <#> [0.5, 0.5] AS similarity
+FROM vectors
+WHERE vec <#> [0.5, 0.5] BETWEEN 0.3 AND 0.8
+ORDER BY similarity DESC
+LIMIT 10;
+```
+
+#### 2. 使用向量搜索函数
+
+RemDB也支持使用专用函数进行向量搜索：
 
 **语法**：
 ```sql
@@ -834,14 +919,14 @@ LIMIT k;
 **示例**：
 
 ```sql
--- 向量相似度搜索 - L2距离
+-- 使用VECTOR_SIMILAR和VECTOR_DISTANCE函数
 SELECT id, meta, VECTOR_DISTANCE(vec, [0.1, 0.2, ...]) AS distance
 FROM vectors
 WHERE VECTOR_SIMILAR(vec, [0.1, 0.2, ...], L2)
 ORDER BY distance
 LIMIT 10;
 
--- 向量相似度搜索 - 余弦相似度
+-- 结合函数和标量条件
 SELECT id, name, VECTOR_DISTANCE(embedding, [0.1, 0.2, ...], COSINE) AS similarity
 FROM products
 WHERE VECTOR_SIMILAR(embedding, [0.1, 0.2, ...], COSINE)
@@ -852,25 +937,43 @@ LIMIT 5;
 
 ### 6.4 向量混合搜索
 
-RemDB支持向量数据与标量数据的混合搜索，以及向量搜索与全文搜索的混合搜索。
+RemDB支持向量数据与标量数据的混合搜索，以及向量搜索与其他搜索条件的结合。
 
 **示例**：
 
 ```sql
--- 向量搜索与标量过滤的混合搜索
-SELECT id, name, price, VECTOR_DISTANCE(embedding, query_vec) AS distance
+-- 使用距离操作符的向量搜索与标量过滤的混合搜索
+SELECT id, name, price, embedding <-> query_vec AS distance
 FROM products
 WHERE price BETWEEN 50 AND 200
 AND category = 'electronics'
-AND VECTOR_SIMILAR(embedding, query_vec)
+AND embedding <-> query_vec < 0.5
 ORDER BY distance
 LIMIT 10;
 
+-- 使用余弦相似度的混合搜索
+SELECT id, name, price, embedding <=> [0.1, 0.2, ...] AS similarity
+FROM products
+WHERE category = 'books'
+AND embedding <=> [0.1, 0.2, ...] > 0.7
+AND price < 50
+ORDER BY similarity DESC
+LIMIT 5;
+
+-- 结合向量距离和多个标量条件
+SELECT id, meta, vec <-> [0.5, 0.5] AS distance
+FROM vectors
+WHERE vec <-> [0.5, 0.5] BETWEEN 0.1 AND 0.5
+AND category = 'image'
+AND created_at > 1609459200000
+ORDER BY distance
+LIMIT 20;
+
 -- 向量搜索与全文搜索的混合搜索
-SELECT id, title, content, VECTOR_DISTANCE(embedding, query_vec) AS relevance
+SELECT id, title, content, embedding <=> query_vec AS relevance
 FROM articles
 WHERE MATCH(title, content) AGAINST('vector database')
-AND VECTOR_SIMILAR(embedding, query_vec, COSINE)
+AND embedding <=> query_vec > 0.8
 ORDER BY relevance
 LIMIT 5;
 ```
