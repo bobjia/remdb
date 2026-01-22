@@ -1443,61 +1443,233 @@ let field_name = self.parse_identifier()?;
 
     /// 解析条件表达式
     fn parse_condition(&mut self) -> Result<Condition, QueryParseError> {
+        // 解析WHERE条件
+        self.parse_where_condition()
+    }
+
+    /// 解析WHERE条件，支持AND/OR组合
+    fn parse_where_condition(&mut self) -> Result<Condition, QueryParseError> {
+        // 解析第一个条件
+        let mut condition = self.parse_single_condition()?;
+        
+        // 处理AND/OR组合条件
+        loop {
+            self.skip_whitespace();
+            
+            if self.match_keyword("AND") {
+                // 解析AND右侧的条件
+                let right_condition = self.parse_single_condition()?;
+                condition = Condition::And(Box::new(condition), Box::new(right_condition));
+            } else if self.match_keyword("OR") {
+                // 解析OR右侧的条件
+                let right_condition = self.parse_single_condition()?;
+                condition = Condition::Or(Box::new(condition), Box::new(right_condition));
+            } else {
+                // 没有更多的逻辑运算符，结束循环
+                break;
+            }
+        }
+        
+        Ok(condition)
+    }
+
+    /// 解析单个条件（比较或BETWEEN）
+    fn parse_single_condition(&mut self) -> Result<Condition, QueryParseError> {
+        self.skip_whitespace();
+        
         // 保存当前位置，用于回溯
         let saved_pos = self.position;
         let saved_col = self.column;
         
-        // 尝试解析字段名
+        // 尝试解析BETWEEN条件
+        if let Ok(condition) = self.parse_between_condition() {
+            return Ok(condition);
+        }
+        
+        // 回溯，尝试解析比较条件
+        self.position = saved_pos;
+        self.column = saved_col;
+        
+        // 解析比较条件
+        self.parse_comparison_condition()
+    }
+
+    /// 解析BETWEEN条件
+    fn parse_between_condition(&mut self) -> Result<Condition, QueryParseError> {
+        // 解析字段名
         let field = self.parse_identifier()?;
         
         self.skip_whitespace();
         
-        // 检查是否是BETWEEN条件
-        if self.match_keyword("BETWEEN") {
-            self.skip_whitespace();
-            let min_value = self.parse_value()?;
-            
-            self.skip_whitespace();
-            self.expect_keyword("AND")?;
-            
-            self.skip_whitespace();
-            let max_value = self.parse_value()?;
-            
-            Ok(Condition::Between(BetweenCondition {
-                field,
-                min_value,
-                max_value,
-            }))
-        } else {
-            // 不是BETWEEN条件，回溯并解析为普通比较条件
-            self.position = saved_pos;
-            self.column = saved_col;
-            
-            let comparison = self.parse_comparison()?;
-            Ok(Condition::Comparison(comparison))
+        // 检查是否是BETWEEN关键字
+        if !self.match_keyword("BETWEEN") {
+            return Err(QueryParseError::InvalidSyntax);
         }
+        
+        self.skip_whitespace();
+        let min_value = self.parse_value()?;
+        
+        self.skip_whitespace();
+        self.expect_keyword("AND")?;
+        
+        self.skip_whitespace();
+        let max_value = self.parse_value()?;
+        
+        Ok(Condition::Between(BetweenCondition {
+            field,
+            min_value,
+            max_value,
+        }))
     }
 
     /// 解析比较条件
-    fn parse_comparison(&mut self) -> Result<ComparisonCondition, QueryParseError> {
-        // 解析字段名或表达式
-        let field = self.parse_identifier()?;
+    fn parse_comparison_condition(&mut self) -> Result<Condition, QueryParseError> {
+        // 保存当前位置，用于回溯
+        let saved_pos = self.position;
+        let saved_col = self.column;
+        
+        // 解析左侧表达式，但不包含比较运算符
+        let left_expr = self.parse_vector_expression()?;
         
         self.skip_whitespace();
         
         // 解析比较运算符
-        let operator = self.parse_operator()?;
+        let operator = self.parse_comparison_operator()?;
         
         self.skip_whitespace();
         
-        // 解析值
-        let value = self.parse_value()?;
+        // 解析右侧值
+        let right_value = self.parse_value()?;
         
-        Ok(ComparisonCondition {
-            field,
+        // 创建比较条件
+        Ok(Condition::Comparison(ComparisonCondition {
+            // 对于向量距离表达式，我们需要特殊处理
+            field: match left_expr {
+                Expression::Field { name, alias: None } => name,
+                Expression::BinaryOp { left, op, right, alias: None } => {
+                    // 向量距离表达式，如 "vector <-> [5.0, 5.0]"
+                    let left_name = match *left {
+                        Expression::Field { name, alias: None } => name,
+                        _ => format!("{:?}", *left),
+                    };
+                    let right_val = match *right {
+                        Expression::Constant { value, alias: None } => format!("{:?}", value),
+                        _ => format!("{:?}", *right),
+                    };
+                    format!("{} {:?} {}", left_name, op, right_val)
+                },
+                _ => format!("{:?}", left_expr),
+            },
             operator,
-            value,
-        })
+            value: right_value,
+        }))
+    }
+
+    /// 解析向量表达式，用于WHERE子句中的比较条件左侧
+    fn parse_vector_expression(&mut self) -> Result<Expression, QueryParseError> {
+        // 解析基本表达式
+        let mut expr = self.parse_primary_expression()?;
+        
+        self.skip_whitespace();
+        
+        // 检查是否有向量操作符
+        loop {
+            let saved_pos = self.position;
+            let saved_col = self.column;
+            
+            // 只尝试解析向量操作符，不解析比较运算符
+            let op = match self.peek_char() {
+                Some('<') => {
+                    self.next_char();
+                    match self.peek_char() {
+                        Some('-') => {
+                            self.next_char();
+                            if self.peek_char() == Some('>') {
+                                self.next_char();
+                                Some(BinaryOperator::VectorL2) // <->
+                            } else {
+                                // 回退，不是向量操作符
+                                self.position = saved_pos;
+                                self.column = saved_col;
+                                None
+                            }
+                        },
+                        Some('#') => {
+                            self.next_char();
+                            if self.peek_char() == Some('>') {
+                                self.next_char();
+                                Some(BinaryOperator::VectorIP) // <#>
+                            } else {
+                                // 回退，不是向量操作符
+                                self.position = saved_pos;
+                                self.column = saved_col;
+                                None
+                            }
+                        },
+                        Some('=') => {
+                            self.next_char();
+                            if self.peek_char() == Some('>') {
+                                self.next_char();
+                                Some(BinaryOperator::VectorCosine) // <=>
+                            } else {
+                                // 回退，不是向量操作符
+                                self.position = saved_pos;
+                                self.column = saved_col;
+                                None
+                            }
+                        },
+                        _ => {
+                            // 回退，不是向量操作符
+                            self.position = saved_pos;
+                            self.column = saved_col;
+                            None
+                        }
+                    }
+                },
+                _ => None
+            };
+            
+            // 如果不是向量操作符，结束循环
+            if op.is_none() {
+                break;
+            }
+            
+            self.skip_whitespace();
+            
+            // 解析右操作数
+            let right_expr = self.parse_primary_expression()?;
+            
+            // 更新表达式
+            expr = Expression::BinaryOp {
+                left: Box::new(expr),
+                op: op.unwrap(),
+                right: Box::new(right_expr),
+                alias: None,
+            };
+            
+            self.skip_whitespace();
+        }
+        
+        Ok(expr)
+    }
+
+    /// 解析比较运算符（不包括向量操作符）
+    fn parse_comparison_operator(&mut self) -> Result<ComparisonOperator, QueryParseError> {
+        if self.match_str("=") {
+            Ok(ComparisonOperator::Equal)
+        } else if self.match_str("<>") || self.match_str("!=") {
+            Ok(ComparisonOperator::NotEqual)
+        } else if self.match_str(">=") {
+            Ok(ComparisonOperator::GreaterThanOrEqual)
+        } else if self.match_str(">" ) {
+            Ok(ComparisonOperator::GreaterThan)
+        } else if self.match_str("<=") {
+            Ok(ComparisonOperator::LessThanOrEqual)
+        } else if self.match_str("<" ) {
+            Ok(ComparisonOperator::LessThan)
+        } else {
+            Err(QueryParseError::InvalidOperator)
+        }
     }
 
     /// 解析比较运算符
