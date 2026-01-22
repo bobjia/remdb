@@ -1085,7 +1085,7 @@ impl DdlExecutor for RemDb {
                 
                 // 写入字段定义信息
                 let mut offset = 67;
-                for (i, field) in table_def.fields.iter().enumerate() {
+                for (_i, field) in table_def.fields.iter().enumerate() {
                     // 检查缓冲区是否有足够空间写入基础字段信息
                     // 基础信息：1字节长度 + 32字节名字 + 1字节类型 + 1字节约束 + 1字节默认值标志 = 36字节
                     if offset + 36 > log_data.len() {

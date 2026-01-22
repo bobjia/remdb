@@ -1496,8 +1496,8 @@ let field_name = self.parse_identifier()?;
 
     /// 解析BETWEEN条件
     fn parse_between_condition(&mut self) -> Result<Condition, QueryParseError> {
-        // 解析字段名
-        let field = self.parse_identifier()?;
+        // 解析左侧表达式，支持向量表达式
+        let left_expr = self.parse_vector_expression()?;
         
         self.skip_whitespace();
         
@@ -1514,6 +1514,39 @@ let field_name = self.parse_identifier()?;
         
         self.skip_whitespace();
         let max_value = self.parse_value()?;
+        
+        // 构建字段字符串，支持向量表达式
+        let field = match left_expr {
+            Expression::Field { name, alias: None } => name,
+            Expression::BinaryOp { left, op, right, alias: None } => {
+                // 向量距离表达式，如 "vector <-> [5.0, 5.0]"
+                let left_name = match *left {
+                    Expression::Field { name, alias: None } => name,
+                    _ => format!("{:?}", *left),
+                };
+                let right_str = match *right {
+                    Expression::Constant { value, alias: None } => format!("{:?}", value),
+                    _ => format!("{:?}", *right),
+                };
+                let op_str = match op {
+                    BinaryOperator::Add => "+",
+                    BinaryOperator::Subtract => "-",
+                    BinaryOperator::Multiply => "*",
+                    BinaryOperator::Equal => "=",
+                    BinaryOperator::NotEqual => "!=",
+                    BinaryOperator::GreaterThan => ">",
+                    BinaryOperator::GreaterThanOrEqual => ">=",
+                    BinaryOperator::LessThan => "<",
+                    BinaryOperator::LessThanOrEqual => "<=",
+                    BinaryOperator::VectorL2 => "<->",
+                    BinaryOperator::VectorIP => "<#>",
+                    BinaryOperator::VectorCosine => "<=>",
+                    _ => "?",
+                };
+                format!("{} {} {}", left_name, op_str, right_str)
+            },
+            _ => format!("{:?}", left_expr),
+        };
         
         Ok(Condition::Between(BetweenCondition {
             field,

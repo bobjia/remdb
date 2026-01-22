@@ -126,8 +126,9 @@ remdb::database!(
 fn test_ivf_variants_basic_functionality() {
     println!("=== 测试 IVF 变体索引基本功能 ===");
     
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 2097152]; // 2MB内存缓冲区
+    // 使用堆分配的内存缓冲区，确保测试之间的隔离
+    let mut db_memory = Vec::with_capacity(2097152); // 2MB内存缓冲区
+    db_memory.resize(2097152, 0u8);
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -218,8 +219,9 @@ fn test_ivf_variants_basic_functionality() {
 fn test_ivf_variants_with_different_data_sizes() {
     println!("=== 测试 IVF 变体索引在不同数据规模下的性能 ===");
     
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 2097152]; // 2MB内存缓冲区
+    // 使用堆分配的内存缓冲区，确保测试之间的隔离
+    let mut db_memory = Vec::with_capacity(2097152); // 2MB内存缓冲区
+    db_memory.resize(2097152, 0u8);
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -309,8 +311,9 @@ fn test_ivf_variants_with_different_data_sizes() {
 fn test_ivf_variants_comparison() {
     println!("=== 测试 IVF 变体索引比较 ===");
     
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 2097152]; // 2MB内存缓冲区
+    // 使用堆分配的内存缓冲区，确保测试之间的隔离
+    let mut db_memory = Vec::with_capacity(2097152); // 2MB内存缓冲区
+    db_memory.resize(2097152, 0u8);
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -430,8 +433,9 @@ fn test_ivf_variants_comparison() {
 fn test_ivf_variants_distance_algorithms() {
     println!("=== 测试 IVF 变体索引与不同距离算法 ===");
     
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区
+    // 使用堆分配的内存缓冲区，确保测试之间的隔离
+    let mut db_memory = Vec::with_capacity(1048576); // 1MB内存缓冲区
+    db_memory.resize(1048576, 0u8);
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
