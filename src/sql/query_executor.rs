@@ -21,6 +21,7 @@ use crate::{
 /// 解析数据类型字符串，提取基本类型和精度/维度
 /// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6)
 ///       "VECTOR(768)" -> ("VECTOR", 768)
+///       "VECTOR(64) WITH DISTANCE=IP" -> ("VECTOR", 64)
 fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16), QueryExecutionError> {
     let type_str = type_str.to_uppercase();
 
@@ -31,9 +32,7 @@ fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16), Query
             .find(')')
             .ok_or(QueryExecutionError::TypeMismatch)?;
 
-        // 提取基本类型 - 对于VECTOR类型，保留完整的修饰符信息
-        let base_type_full = type_str.trim();
-        // 提取括号内的维度值
+        // 提取括号内的维度值，确保只包含数字
         let param_str = type_str[open_paren + 1..close_paren].trim();
         let param = param_str
             .parse::<u16>()
@@ -1978,6 +1977,7 @@ fn evaluate_expression(
                 SqlValue::Integer(i) => (DataType::Int64, Value { i64: *i }),
                 SqlValue::Float(f) => (DataType::Float64, Value { float64: *f }),
                 SqlValue::String(s) => {
+                    // 普通字符串
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                     buf[..len].copy_from_slice(s.as_bytes());
@@ -4333,7 +4333,9 @@ fn execute_create_table_query(
             // 检查是否包含WITH DISTANCE修饰符
             if data_type_str.contains("WITH DISTANCE=L2") {
                 distance_type = Some(crate::types::DistanceType::L2);
-            } else if data_type_str.contains("WITH DISTANCE=INNER_PRODUCT") {
+            } else if data_type_str.contains("WITH DISTANCE=INNER_PRODUCT")
+                || data_type_str.contains("WITH DISTANCE=IP")
+            {
                 distance_type = Some(crate::types::DistanceType::InnerProduct);
             } else if data_type_str.contains("WITH DISTANCE=COSINE") {
                 distance_type = Some(crate::types::DistanceType::Cosine);
@@ -5997,6 +5999,40 @@ fn set_field_value(
             }
             // 向量类型
             DataType::Vector => {
+                // 处理字符串类型的向量字面量（来自evaluate_expression的结果）
+                if matches!(evaluated_value.value_type, DataType::String) {
+                    // 从固定大小的字符串数组中提取有效字符串（去除后面的零字节）
+                    let string_slice = evaluated_value.value.string.iter()
+                        .take_while(|&&c| c != 0)
+                        .map(|&c| c)
+                        .collect::<Vec<_>>();
+                    let s = core::str::from_utf8(&string_slice).unwrap_or_default();
+                    
+                    // 检查是否是向量字面量格式 [x1, x2, ..., xn]
+                    if s.starts_with('[') && s.ends_with(']') {
+                        let vec_str = &s[1..s.len()-1];
+                        let vec_values: Vec<&str> = vec_str.split(',').map(|v| v.trim()).collect();
+                        
+                        // 计算向量维度
+                        let expected_dim = field_size / 4;
+                        if vec_values.len() != expected_dim {
+                            return Err(QueryExecutionError::TypeMismatch);
+                        }
+                        
+                        // 解析向量值并写入记录
+                        let vec_ptr = record_data.as_mut_ptr().add(offset) as *mut f32;
+                        for (i, val_str) in vec_values.iter().enumerate() {
+                            if let Ok(val) = val_str.parse::<f32>() {
+                                *vec_ptr.add(i) = val;
+                            } else {
+                                return Err(QueryExecutionError::TypeMismatch);
+                            }
+                        }
+                        return Ok(());
+                    }
+                }
+                
+                // 处理其他表达式类型或非向量字面量情况
                 match evaluated_value.value_type {
                     DataType::Vector => {
                         // 直接复制向量数据
@@ -6006,7 +6042,16 @@ fn set_field_value(
                             field_size / 4,
                         );
                     }
-                    _ => return Err(QueryExecutionError::TypeMismatch),
+                    _ => {
+                        // 调试信息
+                        if matches!(evaluated_value.value_type, DataType::String) {
+                            let s = core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default();
+                            eprintln!("DEBUG: Vector field got string: '{}', starts_with('['): {}, ends_with(']'): {}", s, s.starts_with('['), s.ends_with(']'));
+                        } else {
+                            eprintln!("DEBUG: Vector field got unexpected type: {:?}", evaluated_value.value_type);
+                        }
+                        return Err(QueryExecutionError::TypeMismatch);
+                    }
                 }
             }
         }

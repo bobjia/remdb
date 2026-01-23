@@ -65,20 +65,52 @@ fn main() -> Result<()> {
     // 初始化数据库
     db.init()?;
 
-    // 创建一个包含向量字段的表 - 完整版，使用WITH DISTANCE子句
-    let sql = r#"CREATE TABLE products (
+    // 使用SQL创建包含向量字段的表
+    let create_sql = r#"CREATE TABLE products (
         id INT32 PRIMARY KEY,
-        name VARCHAR(255),
-        embedding VECTOR(128) WITH DISTANCE=L2
+        name TEXT,
+        embedding VECTOR(4) WITH DISTANCE=IP
     )"#;
+    db.sql_query(create_sql)?;
+    println!("成功创建包含向量字段的表！");
 
-    // 使用sql_query方法执行DDL语句
-    let _result = db.sql_query(sql)?;
+    // 通过SQL插入向量数据
+    let insert_sql = r#"INSERT INTO products (id, name, embedding) VALUES
+        (1, 'product1', '[0.1, 0.2, 0.3, 0.4]'),
+        (2, 'product2', '[1.0, 0.9, 0.8, 0.7]')
+    "#;
+    db.sql_query(insert_sql)?;
+    println!("成功插入向量数据！");
 
-    println!("表创建成功！");
+    // 查询插入的数据
+    let select_sql = "SELECT id, name FROM products";
+    let result = db.sql_query(select_sql)?;
+    println!("\n查询结果：");
+    println!("查询成功，返回 {} 行数据", result.rows.len());
+    for (i, row) in result.rows.iter().enumerate() {
+        println!("行 {}: id={:?}, name={:?}", i+1, row.values[0], row.values[1]);
+    }
 
-    // 简化版本，直接打印结果
-    println!("向量表示例运行完成！");
+    // 向量功能说明
+    println!("\n向量功能支持情况：");
+    println!("✓ 支持向量字段定义: VECTOR(dimension)");
+    println!("✓ 支持距离度量指定: WITH DISTANCE=L2/COSINE/IP/INNER_PRODUCT");
+    println!("✓ 支持向量数据插入: INSERT INTO table (vector_col) VALUES ([1.0, 2.0, ...])");
+    println!("! 向量相似性查询: 开发中 (语法: embedding <-> '[1.0, 2.0, 3.0, ...]')");
+    println!("! 向量索引: 开发中");
+
+    println!("\n示例SQL语法：");
+    println!("- 创建向量表 (默认距离): CREATE TABLE products (id INT32 PRIMARY KEY, embedding VECTOR(64))");
+    println!("- 创建向量表 (L2距离): CREATE TABLE products_l2 (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=L2)");
+    println!("- 创建向量表 (余弦距离): CREATE TABLE products_cosine (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=COSINE)");
+    println!("- 创建向量表 (内积距离简写): CREATE TABLE products_ip (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=IP)");
+    println!("- 创建向量表 (内积距离完整): CREATE TABLE products_ip_full (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=INNER_PRODUCT)");
+    println!("- 插入向量数据: INSERT INTO products (id, embedding) VALUES (1, '[1.0, 2.0, 3.0, ...]')");
+    println!(
+        "- 向量相似性查询: SELECT * FROM products ORDER BY embedding <-> '[1.0, 2.0, ...]' LIMIT 5"
+    );
+
+    println!("\n向量表示例运行完成！");
 
     Ok(())
 }

@@ -17,6 +17,13 @@ fn parse_time_string(time_str: &str) -> Result<i64, ()> {
     // 简单的实现，实际应该支持更多格式
     // 这里只做一个示例，解析ISO 8601格式
     // 检查是否是实际的时间格式，而不是格式字符串
+    
+    // 首先检查是否是向量字面量格式 [x1, x2, ..., xn]
+    if time_str.starts_with('[') && time_str.ends_with(']') {
+        // 这是一个向量字面量，不是时间值
+        return Err(());
+    }
+    
     // 格式字符串通常包含Y, M, D, H, I, S等格式说明符
     if time_str.contains(|c| c == 'Y' || c == 'M' || c == 'D' || c == 'H' || c == 'I' || c == 'S') {
         // 这是一个格式字符串，不是时间值
@@ -2179,6 +2186,12 @@ impl SqlParser {
                             }
                         }
 
+                        // 检查下一个字符是否是标识符的开始（字母或下划线）
+                        let next_char = self.peek_char().unwrap();
+                        if !next_char.is_ascii_alphabetic() && next_char != '_' {
+                            break;
+                        }
+                        
                         // 解析 WITH 后的修饰符
                         let with_modifier = self.parse_identifier()?;
                         result.push(' ');
