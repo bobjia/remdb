@@ -1622,15 +1622,33 @@ impl SqlParser {
                     alias: None,
                 } => {
                     // 向量距离表达式，如 "vector <-> [5.0, 5.0]"
-                    let left_name = match *left {
+                    // 直接构建完整的向量距离表达式
+                    let field_name = match *left {
                         Expression::Field { name, alias: None } => name,
-                        _ => format!("{:?}", *left),
+                        _ => return Err(QueryParseError::InvalidSyntax),
                     };
-                    let right_val = match *right {
-                        Expression::Constant { value, alias: None } => format!("{:?}", value),
-                        _ => format!("{:?}", *right),
+                    
+                    // 获取向量操作符的字符串表示
+                    let op_str = match op {
+                        BinaryOperator::VectorL2 => "<->",
+                        BinaryOperator::VectorIP => "<#>",
+                        BinaryOperator::VectorCosine => "<=>",
+                        _ => return Err(QueryParseError::InvalidSyntax),
                     };
-                    format!("{} {:?} {}", left_name, op, right_val)
+                    
+                    // 从右侧表达式中提取实际向量值
+                    let vector_str = match *right {
+                        Expression::Constant { ref value, alias: None } => {
+                            match value {
+                                Value::String(ref vec_str) => vec_str.clone(),
+                                _ => return Err(QueryParseError::InvalidSyntax),
+                            }
+                        },
+                        _ => return Err(QueryParseError::InvalidSyntax),
+                    };
+                    
+                    // 构建完整的向量距离表达式
+                    format!("{field_name} {op_str} {vector_str}")
                 }
                 _ => format!("{:?}", left_expr),
             },

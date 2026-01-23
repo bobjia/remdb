@@ -445,6 +445,99 @@ fn test_sql_query() {
     remdb::reset_global_db();
 }
 
+// 定义混合查询测试表，包含向量字段
+remdb::table!( 
+    HYBRID_TABLE,
+    100, // 最大记录数
+    primary_key: id,
+    fields: {
+        id: i32,
+        category: str(50),
+        price: f64,
+        vector: vector(3) // 3维向量
+    }
+);
+
+// 定义包含混合查询测试表的数据库
+remdb::database!( 
+    HYBRID_DB,
+    tables: [HYBRID_TABLE]
+);
+
+#[test]
+#[serial]
+fn test_sql_hybrid_query() {
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+
+    // 初始化内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
+            .unwrap();
+    }
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+
+    // 初始化数据库
+    let db = unsafe { init_global_db(&HYBRID_DB).unwrap() };
+
+    // 测试1：混合查询 - 结构化条件AND向量条件
+    println!("=== 测试1: 混合查询 - 结构化条件AND向量条件 ===");
+    let result1 = db
+        .sql_query("SELECT id, category, price FROM HYBRID_TABLE WHERE category = 'electronics' AND vector <-> [1.0, 2.0, 3.0] < 0.5")
+        .unwrap();
+    
+    // 验证结果：应该返回0行（表中还没有数据）
+    println!("结果行数: {}", result1.row_count());
+    assert_eq!(result1.row_count(), 0, "混合查询AND条件结果行数应该为0");
+    
+    // 测试2：插入数据后再执行混合查询
+    println!("\n=== 插入测试数据 ===");
+    
+    // 使用SQL插入数据
+    let insert_result1 = db.sql_query("INSERT INTO HYBRID_TABLE (id, category, price, vector) VALUES (1, 'electronics', 999.99, [1.0, 2.0, 3.0])");
+    assert!(insert_result1.is_ok(), "插入数据1失败");
+    
+    let insert_result2 = db.sql_query("INSERT INTO HYBRID_TABLE (id, category, price, vector) VALUES (2, 'electronics', 699.99, [1.1, 2.1, 3.1])");
+    assert!(insert_result2.is_ok(), "插入数据2失败");
+    
+    let insert_result3 = db.sql_query("INSERT INTO HYBRID_TABLE (id, category, price, vector) VALUES (3, 'electronics', 399.99, [4.0, 5.0, 6.0])");
+    assert!(insert_result3.is_ok(), "插入数据3失败");
+    
+    let insert_result4 = db.sql_query("INSERT INTO HYBRID_TABLE (id, category, price, vector) VALUES (4, 'furniture', 199.99, [7.0, 8.0, 9.0])");
+    assert!(insert_result4.is_ok(), "插入数据4失败");
+    
+    let insert_result5 = db.sql_query("INSERT INTO HYBRID_TABLE (id, category, price, vector) VALUES (5, 'furniture', 499.99, [7.1, 8.1, 9.1])");
+    assert!(insert_result5.is_ok(), "插入数据5失败");
+    
+    // 测试3：插入数据后执行混合查询 - 结构化条件AND向量条件
+    println!("\n=== 测试3: 插入数据后执行混合查询 - 结构化条件AND向量条件 ===");
+    let result3 = db
+        .sql_query("SELECT id, category, price FROM HYBRID_TABLE WHERE category = 'electronics' AND vector <-> [1.0, 2.0, 3.0] < 0.5")
+        .unwrap();
+    
+    // 验证结果：应该只返回id=1和id=2的产品（电子类别且向量距离近）
+    println!("结果行数: {}", result3.row_count());
+    assert!(result3.row_count() >= 2, "混合查询AND条件结果行数不足");
+    
+    // 测试4：插入数据后执行混合查询 - 结构化条件OR向量条件
+    println!("\n=== 测试4: 插入数据后执行混合查询 - 结构化条件OR向量条件 ===");
+    let result4 = db
+        .sql_query("SELECT id, category, price FROM HYBRID_TABLE WHERE price > 500 OR vector <-> [7.0, 8.0, 9.0] < 0.5")
+        .unwrap();
+    
+    // 验证结果：应该返回id=1（价格>500）、id=2（价格>500）、id=4（向量距离近）、id=5（向量距离近）
+    println!("结果行数: {}", result4.row_count());
+    assert!(result4.row_count() >= 4, "混合查询OR条件结果行数不足");
+    
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+}
+
 // 测试SQL JOIN查询
 #[test]
 #[serial]

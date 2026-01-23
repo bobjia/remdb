@@ -138,7 +138,7 @@ impl DataType {
     }
 
     /// 将数据类型转换为SQL类型字符串
-    pub fn to_sql_type(&self, size: usize) -> &'static str {
+    pub fn to_sql_type(&self, _size: usize) -> &'static str {
         match self {
             // 整数类型
             DataType::UInt8 => "INTEGER",
@@ -358,14 +358,14 @@ pub fn create_timezone_from_offset(offset: i16) -> TimeZone {
 /// 时间格式化辅助函数
 pub mod time_format {
     /// 将db_timestamp转换为ISO 8601格式字符串
-    pub fn to_iso8601(timestamp: &super::db_timestamp) -> alloc::string::String {
+    pub fn to_iso8601(_timestamp: &super::db_timestamp) -> alloc::string::String {
         // 实现ISO 8601格式化
         // 这里使用简化实现，实际应该根据精度和时区偏移进行完整格式化
         alloc::format!("2023-01-01T12:00:00.000000+00:00")
     }
 
     /// 将db_timestamp转换为指定格式的字符串
-    pub fn to_char(timestamp: &super::db_timestamp, format: &str) -> alloc::string::String {
+    pub fn to_char(timestamp: &super::db_timestamp, _format: &str) -> alloc::string::String {
         // 实现指定格式的格式化
         // 这里使用简化实现，实际应该支持各种格式说明符
         alloc::format!("{}", timestamp.value)

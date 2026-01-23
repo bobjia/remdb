@@ -310,22 +310,20 @@ impl RemDb {
         }
 
         // 执行低功耗模式准备工作
-        unsafe {
-            // 1. 压缩内存使用：释放不必要的内存
-            // 2. 减少索引更新频率
-            // 3. 降低事务日志的写入频率
+        // 1. 压缩内存使用：释放不必要的内存
+        // 2. 减少索引更新频率
+        // 3. 降低事务日志的写入频率
 
-            // 检查当前内存使用情况
-            let current_memory = self.config.total_memory;
-            if current_memory > self.low_power_memory_limit {
-                // 内存使用超出限制，需要进行优化
-                // 实现内存优化逻辑
-                self.optimize_memory_usage();
-            }
-
-            // 设置事务管理器为低功耗模式
-            crate::transaction::set_low_power_mode(true);
+        // 检查当前内存使用情况
+        let current_memory = self.config.total_memory;
+        if current_memory > self.low_power_memory_limit {
+            // 内存使用超出限制，需要进行优化
+            // 实现内存优化逻辑
+            self.optimize_memory_usage();
         }
+
+        // 设置事务管理器为低功耗模式
+        crate::transaction::set_low_power_mode(true);
 
         // 遍历所有表，设置低功耗模式
         for table in &mut self.tables.iter_mut() {
@@ -380,7 +378,7 @@ impl RemDb {
 
         // 遍历所有表，进行内存优化
         for table in &mut self.tables.iter_mut() {
-            if let Some(table) = table {
+            if let Some(_table) = table {
                 // 优化普通表的内存使用
                 // 这里可以添加具体的表内存优化逻辑
             }
@@ -388,7 +386,7 @@ impl RemDb {
 
         // 遍历所有时序表，进行内存优化
         for ts_table in &mut self.time_series_tables.iter_mut() {
-            if let Some(ts_table) = ts_table {
+            if let Some(_ts_table) = ts_table {
                 // 优化时序表的内存使用
                 // 这里可以添加具体的时序表内存优化逻辑
             }
@@ -409,14 +407,12 @@ impl RemDb {
         }
 
         // 执行退出低功耗模式的准备工作
-        unsafe {
-            // 1. 恢复正常的索引更新频率
-            // 2. 恢复正常的事务日志写入频率
-            // 3. 检查并扩展内存使用（如果需要）
+        // 1. 恢复正常的索引更新频率
+        // 2. 恢复正常的事务日志写入频率
+        // 3. 检查并扩展内存使用（如果需要）
 
-            // 设置事务管理器为正常模式
-            crate::transaction::set_low_power_mode(false);
-        }
+        // 设置事务管理器为正常模式
+        crate::transaction::set_low_power_mode(false);
 
         // 遍历所有表，退出低功耗模式
         for table in &mut self.tables.iter_mut() {
@@ -1252,14 +1248,12 @@ impl DdlExecutor for RemDb {
                                 if let Some(metadata) = &field.vector_metadata {
                                     let vector_size = metadata.dimension as usize * 4; // float32
                                     if offset + vector_size <= log_data.len() {
-                                        unsafe {
-                                            let vector_ptr = default_value.vector;
-                                            std::ptr::copy(
-                                                vector_ptr as *const u8,
-                                                log_data.as_mut_ptr().add(offset),
-                                                vector_size,
-                                            );
-                                        }
+                                        let vector_ptr = default_value.vector;
+                                        std::ptr::copy(
+                                            vector_ptr as *const u8,
+                                            log_data.as_mut_ptr().add(offset),
+                                            vector_size,
+                                        );
                                         offset += vector_size;
                                     }
                                 }
