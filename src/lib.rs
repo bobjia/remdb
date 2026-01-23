@@ -1177,60 +1177,70 @@ impl DdlExecutor for RemDb {
                 log_data[66] = table_def.primary_key as u8;
 
                 // 写入字段定义信息
-                let mut offset = 67;
-                for (_i, field) in table_def.fields.iter().enumerate() {
-                    // 检查缓冲区是否有足够空间写入基础字段信息
-                    // 基础信息：1字节长度 + 32字节名字 + 1字节类型 + 1字节约束 + 1字节默认值标志 = 36字节
-                    if offset + 36 > log_data.len() {
-                        break;
-                    }
+                    let mut offset = 67;
+                    for (_i, field) in table_def.fields.iter().enumerate() {
+                        // 检查缓冲区是否有足够空间写入基础字段信息
+                        // 基础信息：1字节长度 + 32字节名字 + 1字节类型 + 1字节约束 + 1字节默认值标志 + 2字节向量维度 = 38字节
+                        if offset + 38 > log_data.len() {
+                            break;
+                        }
 
-                    // 写入字段名
-                    let field_name = field.name;
-                    let field_name_bytes = field_name.as_bytes();
-                    let field_name_len = core::cmp::min(field_name_bytes.len(), 32);
+                        // 写入字段名
+                        let field_name = field.name;
+                        let field_name_bytes = field_name.as_bytes();
+                        let field_name_len = core::cmp::min(field_name_bytes.len(), 32);
 
-                    // 安全写入字段名长度
-                    log_data[offset] = field_name_len as u8;
-                    offset += 1;
-
-                    // 安全复制字段名
-                    let copy_end = core::cmp::min(offset + field_name_len, log_data.len());
-                    let actual_copy_len = copy_end - offset;
-                    log_data[offset..copy_end]
-                        .copy_from_slice(&field_name_bytes[..actual_copy_len]);
-                    offset += 32; // 固定32字节字段名空间
-
-                    // 检查数据类型写入边界
-                    if offset < log_data.len() {
-                        // 写入数据类型
-                        log_data[offset] = field.data_type as u8;
+                        // 安全写入字段名长度
+                        log_data[offset] = field_name_len as u8;
                         offset += 1;
-                    } else {
-                        break;
-                    }
 
-                    // 写入字段约束
-                    let mut constraints = 0u8;
-                    if field.primary_key {
-                        constraints |= 0b0001;
-                    }
-                    if field.not_null {
-                        constraints |= 0b0010;
-                    }
-                    if field.unique {
-                        constraints |= 0b0100;
-                    }
-                    if field.auto_increment {
-                        constraints |= 0b1000;
-                    }
-                    log_data[offset] = constraints;
-                    offset += 1;
+                        // 安全复制字段名
+                        let copy_end = core::cmp::min(offset + field_name_len, log_data.len());
+                        let actual_copy_len = copy_end - offset;
+                        log_data[offset..copy_end]
+                            .copy_from_slice(&field_name_bytes[..actual_copy_len]);
+                        offset += 32; // 固定32字节字段名空间
 
-                    // 写入默认值存在标志
-                    let has_default = field.default_value.is_some();
-                    log_data[offset] = has_default as u8;
-                    offset += 1;
+                        // 检查数据类型写入边界
+                        if offset < log_data.len() {
+                            // 写入数据类型
+                            log_data[offset] = field.data_type as u8;
+                            offset += 1;
+                        } else {
+                            break;
+                        }
+
+                        // 写入字段约束
+                        let mut constraints = 0u8;
+                        if field.primary_key {
+                            constraints |= 0b0001;
+                        }
+                        if field.not_null {
+                            constraints |= 0b0010;
+                        }
+                        if field.unique {
+                            constraints |= 0b0100;
+                        }
+                        if field.auto_increment {
+                            constraints |= 0b1000;
+                        }
+                        log_data[offset] = constraints;
+                        offset += 1;
+
+                        // 写入向量维度（如果是向量类型）
+                        let mut vector_dimension = 0u16;
+                        if field.data_type == crate::types::DataType::Vector {
+                            if let Some(metadata) = &field.vector_metadata {
+                                vector_dimension = metadata.dimension;
+                            }
+                        }
+                        log_data[offset..offset+2].copy_from_slice(&vector_dimension.to_le_bytes());
+                        offset += 2;
+
+                        // 写入默认值存在标志
+                        let has_default = field.default_value.is_some();
+                        log_data[offset] = has_default as u8;
+                        offset += 1;
 
                     // 写入默认值（如果有）
                     if let Some(default_value) = field.default_value {
@@ -1239,18 +1249,19 @@ impl DdlExecutor for RemDb {
                             // 向量类型
                             crate::types::DataType::Vector => {
                                 // 向量默认值处理
-                                let vector_size =
-                                    field.vector_metadata.unwrap().dimension as usize * 4; // float32
-                                if offset + vector_size <= log_data.len() {
-                                    unsafe {
-                                        let vector_ptr = default_value.vector;
-                                        std::ptr::copy(
-                                            vector_ptr as *const u8,
-                                            log_data.as_mut_ptr().add(offset),
-                                            vector_size,
-                                        );
+                                if let Some(metadata) = &field.vector_metadata {
+                                    let vector_size = metadata.dimension as usize * 4; // float32
+                                    if offset + vector_size <= log_data.len() {
+                                        unsafe {
+                                            let vector_ptr = default_value.vector;
+                                            std::ptr::copy(
+                                                vector_ptr as *const u8,
+                                                log_data.as_mut_ptr().add(offset),
+                                                vector_size,
+                                            );
+                                        }
+                                        offset += vector_size;
                                     }
-                                    offset += vector_size;
                                 }
                             }
                             // 1字节类型

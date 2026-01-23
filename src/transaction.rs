@@ -1018,6 +1018,14 @@ impl LogManager {
                         let unique_flag = (constraints & 0b0100) != 0;
                         let auto_increment_flag = (constraints & 0b1000) != 0;
 
+                        // 解析向量维度（2字节）
+                        let vector_dimension = if offset + 1 < new_data_len {
+                            u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]])
+                        } else {
+                            0
+                        };
+                        offset += 2;
+
                         // 解析默认值存在标志
                         let has_default = log_item.new_data[offset] != 0;
                         offset += 1;
@@ -1261,8 +1269,27 @@ impl LogManager {
                             | crate::types::DataType::Timestamp
                             | crate::types::DataType::TimestampTZ => 8,
                             crate::types::DataType::String => 64, // 默认64字节字符串
+                            crate::types::DataType::Vector => {
+                                // 向量大小 = 维度 * 4字节（float32）
+                                if vector_dimension > 0 {
+                                    vector_dimension as usize * 4
+                                } else {
+                                    8 // 默认8字节
+                                }
+                            }
                             crate::types::DataType::Interval => 10, // 8字节值 + 1字节精度 + 1字节标志
                             _ => 8,                                 // 默认8字节
+                        };
+
+                        // 创建向量元数据（如果是向量类型且维度大于0）
+                        let vector_metadata = if data_type == crate::types::DataType::Vector && vector_dimension > 0 {
+                            Some(crate::types::VectorMetadata {
+                                dimension: vector_dimension,
+                                distance_type: crate::types::DistanceType::L2, // 默认L2距离
+                                index_type: crate::types::VectorIndexType::HNSW, // 默认HNSW索引
+                            })
+                        } else {
+                            None
                         };
 
                         // 创建字段定义
@@ -1276,7 +1303,7 @@ impl LogManager {
                             unique: unique_flag,
                             auto_increment: auto_increment_flag,
                             default_value: default_value, // 使用解析出的默认值
-                            vector_metadata: None,        // 向量元数据，非向量类型设为None
+                            vector_metadata: vector_metadata, // 设置向量元数据
                         };
 
                         fields.push(field_def);

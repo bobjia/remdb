@@ -4945,8 +4945,8 @@ fn execute_describe_query(
                 }
                 // 时间间隔类型
                 DataType::Interval => alloc::format!("{}", unsafe { default_val.interval.value }),
-                // 向量类型
-                DataType::Vector => "<vector>".to_string(),
+                // 向量类型，默认值显示为<vector>
+                DataType::Vector => "<vector>".to_string()
             }
         } else {
             "".to_string()
@@ -4970,7 +4970,11 @@ fn execute_describe_query(
             crate::DataType::Float64 => "double".to_string(),
             crate::DataType::Interval => "interval".to_string(),
             crate::DataType::Vector => {
-                alloc::format!("vector({})", field.vector_metadata.unwrap().dimension)
+                if let Some(metadata) = &field.vector_metadata {
+                    alloc::format!("vector({})", metadata.dimension)
+                } else {
+                    "vector".to_string()
+                }
             }
         };
 
