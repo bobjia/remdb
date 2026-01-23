@@ -30,6 +30,12 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 从节点确认机制：从节点接收到WAL日志后发送确认给主节点
   - 复制状态检查：定期检查复制状态，包括从节点数量、延迟等
   - 支持全量和增量同步：从节点可以请求全量同步或从特定日志索引开始的增量同步
+- **向量数据库支持**：
+  - 原生向量数据类型：`VECTOR(dimension)`
+  - 支持多种距离度量：L2（欧几里得距离）、IP（内积）、COSINE（余弦相似度）
+  - 多种向量索引类型：HNSW、HNSW_SQ（带标量量化）、HNSW_BQ（带二值量化）、IVF、IVF_PQ（带乘积量化）
+  - 向量相似性查询：支持L2距离 `<->`、内积 `<#>`、余弦相似度 `<=>` 操作符
+  - 混合查询：支持向量搜索与标量过滤的混合查询
 - **时序数据库支持**：
   - 专用的时序表实现，优化时间序列数据存储和查询
   - 支持多种压缩算法
@@ -546,6 +552,68 @@ fn main() {
 }
 ```
 
+## 向量数据库
+
+remdb提供了强大的向量数据库功能，支持原生向量类型、多种距离度量和高效的向量索引：
+
+### 基本使用
+
+```rust
+use remdb::*;
+use remdb::config::{DbConfig, WALConfig};
+
+// 初始化数据库配置
+let config = Box::leak(Box::new(DbConfig {
+    tables: &[],
+    total_memory: 16 * 1024 * 1024, // 16MB
+    low_power_mode_supported: false,
+    low_power_max_records: None,
+    memory_allocator: &SimpleAllocator,
+    wal_config: WALConfig {
+        log_path: "./wal",
+        log_mode: remdb::config::LogMode::Async,
+        checkpoint_interval_ms: 60000,
+        log_file_size_limit: 16 * 1024 * 1024,
+        log_prealloc_size: 4 * 1024 * 1024,
+        log_segment_size: 16 * 1024 * 1024,
+        retained_checkpoints: 2,
+    },
+    time_series_defaults: TimeSeriesConfig {
+        partition_duration_secs: 3600,
+        retention_period_secs: 7 * 24 * 3600,
+        compression: remdb::time_series::compression::CompressionType::None,
+        max_partitions: 100,
+    },
+}));
+
+// 初始化数据库
+let mut db = RemDb::new(config);
+db.init()?;
+
+// 创建包含向量字段的表
+let create_sql = r#"CREATE TABLE products (
+    id INT32 PRIMARY KEY,
+    name TEXT,
+    embedding VECTOR(4) WITH DISTANCE=IP
+)"#;
+db.sql_query(create_sql)?;
+
+// 插入向量数据
+let insert_sql = r#"INSERT INTO products (id, name, embedding) VALUES
+    (1, 'product1', '[0.1, 0.2, 0.3, 0.4]'),
+    (2, 'product2', '[1.0, 0.9, 0.8, 0.7]')
+"#;
+db.sql_query(insert_sql)?;
+
+// 向量相似性查询 - 内积距离
+let similarity_sql = "SELECT id, name, embedding <#> '[0.2, 0.3, 0.4, 0.5]' AS similarity FROM products ORDER BY similarity DESC LIMIT 2";
+let similarity_result = db.sql_query(similarity_sql)?;
+
+// 创建向量索引
+let create_index_sql = "CREATE INDEX idx_products_embedding ON products (embedding) USING HNSW WITH (M=16, ef_construction=200)";
+db.sql_query(create_index_sql)?;
+```
+
 ## 平台支持
 
 ### POSIX平台
@@ -637,6 +705,8 @@ cargo check --no-default-features --features=baremetal
 - `ddl_runtime_example.rs`：运行时DDL配置示例，展示如何使用运行时DDL API
 - `pubsub_example.rs`：发布/订阅示例，展示如何使用基于UDP的高可靠数据订阅与发布功能
 - `time_series.rs`：时间序列示例，展示如何处理时间序列数据
+- `vector_example.rs`：向量数据库示例，展示如何使用向量字段、插入向量数据和执行向量相似性查询
+- `vector_distance_test.rs`：向量距离测试示例，展示不同距离度量的向量相似性计算
 - `test_remdb_server.rs`：主从复制示例，展示如何使用同步或异步复制模式运行主从服务器
 
 ### 主从复制示例

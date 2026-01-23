@@ -30,6 +30,12 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Slave node acknowledgment mechanism: Slaves send acknowledgment to master after receiving WAL logs
   - Replication status checking: Regularly checks replication status including slave count and latency
   - Support for full and incremental synchronization: Slaves can request full sync or incremental sync from specific log index
+- **Vector Database Support**:
+  - Native vector data type: `VECTOR(dimension)`
+  - Support for multiple distance metrics: L2 (Euclidean), IP (Inner Product), COSINE (Cosine Similarity)
+  - Multiple vector index types: HNSW, HNSW_SQ (with scalar quantization), HNSW_BQ (with binary quantization), IVF, IVF_PQ (with product quantization)
+  - Vector similarity search: Support for L2 distance `<->`, inner product `<#>`, cosine similarity `<=>` operators
+  - Hybrid search: Support for combining vector search with scalar filtering
 - **Time Series Database Support**:
   - Dedicated time series table implementation optimized for time series data storage and querying
   - Support for multiple compression algorithms
@@ -546,6 +552,68 @@ fn main() {
 }
 ```
 
+## Vector Database
+
+remdb provides powerful vector database functionality, supporting native vector types, multiple distance metrics, and efficient vector indexing:
+
+### Basic Usage
+
+```rust
+use remdb::*;
+use remdb::config::{DbConfig, WALConfig};
+
+// Initialize database configuration
+let config = Box::leak(Box::new(DbConfig {
+    tables: &[],
+    total_memory: 16 * 1024 * 1024, // 16MB
+    low_power_mode_supported: false,
+    low_power_max_records: None,
+    memory_allocator: &SimpleAllocator,
+    wal_config: WALConfig {
+        log_path: "./wal",
+        log_mode: remdb::config::LogMode::Async,
+        checkpoint_interval_ms: 60000,
+        log_file_size_limit: 16 * 1024 * 1024,
+        log_prealloc_size: 4 * 1024 * 1024,
+        log_segment_size: 16 * 1024 * 1024,
+        retained_checkpoints: 2,
+    },
+    time_series_defaults: TimeSeriesConfig {
+        partition_duration_secs: 3600,
+        retention_period_secs: 7 * 24 * 3600,
+        compression: remdb::time_series::compression::CompressionType::None,
+        max_partitions: 100,
+    },
+}));
+
+// Initialize database
+let mut db = RemDb::new(config);
+db.init()?;
+
+// Create table with vector field
+let create_sql = r#"CREATE TABLE products (
+    id INT32 PRIMARY KEY,
+    name TEXT,
+    embedding VECTOR(4) WITH DISTANCE=IP
+)"#;
+db.sql_query(create_sql)?;
+
+// Insert vector data
+let insert_sql = r#"INSERT INTO products (id, name, embedding) VALUES
+    (1, 'product1', '[0.1, 0.2, 0.3, 0.4]'),
+    (2, 'product2', '[1.0, 0.9, 0.8, 0.7]')
+"#;
+db.sql_query(insert_sql)?;
+
+// Vector similarity query - inner product distance
+let similarity_sql = "SELECT id, name, embedding <#> '[0.2, 0.3, 0.4, 0.5]' AS similarity FROM products ORDER BY similarity DESC LIMIT 2";
+let similarity_result = db.sql_query(similarity_sql)?;
+
+// Create vector index
+let create_index_sql = "CREATE INDEX idx_products_embedding ON products (embedding) USING HNSW WITH (M=16, ef_construction=200)";
+db.sql_query(create_index_sql)?;
+```
+
 ## Platform Support
 
 ### POSIX Platform
@@ -637,6 +705,8 @@ Check the examples directory for sample code:
 - `ddl_runtime_example.rs`: Runtime DDL configuration example demonstrating how to use the runtime DDL API
 - `pubsub_example.rs`: Pub/Sub example demonstrating how to use the UDP-based reliable data publish/subscribe functionality
 - `time_series.rs`: Time series example demonstrating how to handle time series data
+- `vector_example.rs`: Vector database example demonstrating how to use vector fields, insert vector data, and perform vector similarity queries
+- `vector_distance_test.rs`: Vector distance test example demonstrating vector similarity calculations with different distance metrics
 - `test_remdb_server.rs`: Master-slave replication example demonstrating how to run master and slave servers with synchronous or asynchronous replication mode
 
 ### Master-Slave Replication Example

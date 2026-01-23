@@ -91,24 +91,69 @@ fn main() -> Result<()> {
         println!("行 {}: id={:?}, name={:?}", i+1, row.values[0], row.values[1]);
     }
 
+    // 向量相似性查询 - 使用内积距离操作符 <#> (越大越相似)
+    let ip_sql = "SELECT id, name, embedding <#> '[0.2, 0.3, 0.4, 0.5]' AS ip_similarity FROM products ORDER BY ip_similarity DESC LIMIT 2";
+    let ip_result = db.sql_query(ip_sql)?;
+    println!("\n内积距离相似性查询结果：");
+    println!("查询成功，返回 {} 行数据", ip_result.rows.len());
+    for (i, row) in ip_result.rows.iter().enumerate() {
+        println!("行 {}: id={:?}, name={:?}, ip_similarity={:?}", i+1, row.values[0], row.values[1], row.values[2]);
+    }
+
+    // 向量相似性查询 - 使用余弦相似度操作符 <=> (越大越相似)
+    let cosine_sql = "SELECT id, name, embedding <=> '[0.2, 0.3, 0.4, 0.5]' AS cosine_similarity FROM products ORDER BY cosine_similarity DESC LIMIT 2";
+    let cosine_result = db.sql_query(cosine_sql)?;
+    println!("\n余弦相似度查询结果：");
+    println!("查询成功，返回 {} 行数据", cosine_result.rows.len());
+    for (i, row) in cosine_result.rows.iter().enumerate() {
+        println!("行 {}: id={:?}, name={:?}, cosine_similarity={:?}", i+1, row.values[0], row.values[1], row.values[2]);
+    }
+
+    // 向量相似性查询 - 使用L2距离操作符 <-> (越小越相似)
+    let l2_sql = "SELECT id, name, embedding <-> '[0.2, 0.3, 0.4, 0.5]' AS l2_distance FROM products ORDER BY l2_distance ASC LIMIT 2";
+    let l2_result = db.sql_query(l2_sql)?;
+    println!("\nL2距离相似性查询结果：");
+    println!("查询成功，返回 {} 行数据", l2_result.rows.len());
+    for (i, row) in l2_result.rows.iter().enumerate() {
+        println!("行 {}: id={:?}, name={:?}, l2_distance={:?}", i+1, row.values[0], row.values[1], row.values[2]);
+    }
+
+    // 创建向量索引
+    let create_index_sql = "CREATE INDEX idx_products_embedding ON products (embedding) USING HNSW WITH (M=16, ef_construction=200)";
+    db.sql_query(create_index_sql)?;
+    println!("成功创建向量索引！");
+
     // 向量功能说明
     println!("\n向量功能支持情况：");
     println!("✓ 支持向量字段定义: VECTOR(dimension)");
     println!("✓ 支持距离度量指定: WITH DISTANCE=L2/COSINE/IP/INNER_PRODUCT");
     println!("✓ 支持向量数据插入: INSERT INTO table (vector_col) VALUES ([1.0, 2.0, ...])");
-    println!("! 向量相似性查询: 开发中 (语法: embedding <-> '[1.0, 2.0, 3.0, ...]')");
-    println!("! 向量索引: 开发中");
+    println!("✓ 支持向量相似性查询: SELECT * FROM table ORDER BY vector_col <-> '[1.0, 2.0, ...]' LIMIT k");
+    println!("✓ 支持向量索引: HNSW/HNSW_SQ/HNSW_BQ/IVF/IVF_PQ");
 
     println!("\n示例SQL语法：");
-    println!("- 创建向量表 (默认距离): CREATE TABLE products (id INT32 PRIMARY KEY, embedding VECTOR(64))");
-    println!("- 创建向量表 (L2距离): CREATE TABLE products_l2 (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=L2)");
-    println!("- 创建向量表 (余弦距离): CREATE TABLE products_cosine (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=COSINE)");
-    println!("- 创建向量表 (内积距离简写): CREATE TABLE products_ip (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=IP)");
-    println!("- 创建向量表 (内积距离完整): CREATE TABLE products_ip_full (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=INNER_PRODUCT)");
-    println!("- 插入向量数据: INSERT INTO products (id, embedding) VALUES (1, '[1.0, 2.0, 3.0, ...]')");
-    println!(
-        "- 向量相似性查询: SELECT * FROM products ORDER BY embedding <-> '[1.0, 2.0, ...]' LIMIT 5"
-    );
+    println!("1. 创建向量表");
+    println!("   CREATE TABLE products (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=IP)");
+    println!("   CREATE TABLE products_l2 (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=L2)");
+    println!("   CREATE TABLE products_cosine (id INT32 PRIMARY KEY, embedding VECTOR(64) WITH DISTANCE=COSINE)");
+    println!();
+    println!("2. 插入向量数据");
+    println!("   INSERT INTO products (id, embedding) VALUES (1, '[1.0, 2.0, 3.0, ...]')");
+    println!();
+    println!("3. 向量相似性查询");
+    println!("   SELECT * FROM products ORDER BY embedding <-> '[1.0, 2.0, ...]' LIMIT 5  -- L2距离");
+    println!("   SELECT * FROM products ORDER BY embedding <#> '[1.0, 2.0, ...]' DESC LIMIT 5  -- 内积");
+    println!("   SELECT * FROM products ORDER BY embedding <=> '[1.0, 2.0, ...]' DESC LIMIT 5  -- 余弦相似度");
+    println!();
+    println!("4. 混合查询");
+    println!("   SELECT * FROM products WHERE price < 100 AND embedding <=> '[1.0, 2.0, ...]' > 0.8 LIMIT 5");
+    println!();
+    println!("5. 创建向量索引");
+    println!("   CREATE INDEX idx_vec ON table (vector_col) USING HNSW WITH (M=16, ef_construction=200)");
+    println!("   CREATE INDEX idx_vec_sq ON table (vector_col) USING HNSW_SQ WITH (M=16, ef_construction=200, DISTANCE=COSINE)");
+    println!("   CREATE INDEX idx_vec_bq ON table (vector_col) USING HNSW_BQ WITH (M=16, ef_construction=200, DISTANCE=IP)");
+    println!("   CREATE INDEX idx_vec_ivf ON table (vector_col) USING IVF WITH (nlist=128, DISTANCE=L2)");
+    println!("   CREATE INDEX idx_vec_ivfpq ON table (vector_col) USING IVF_PQ WITH (nlist=128, nprobe=8, M=8, nbits=8)");
 
     println!("\n向量表示例运行完成！");
 
