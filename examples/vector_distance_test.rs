@@ -65,49 +65,49 @@ fn main() -> Result<()> {
 
     // 测试不同距离类型的CREATE TABLE语句
     let test_cases = [
-        ("L2距离", r#"CREATE TABLE products_l2 (
+        ("L2 distance", r#"CREATE TABLE products_l2 (
             id INT32 PRIMARY KEY,
             name TEXT,
-            embedding VECTOR(64) WITH DISTANCE=L2
+            embedding VECTOR(4) WITH DISTANCE=L2
         )"#),
-        ("COSINE距离", r#"CREATE TABLE products_cosine (
+        ("COSINE distance", r#"CREATE TABLE products_cosine (
             id INT32 PRIMARY KEY,
             name TEXT,
-            embedding VECTOR(64) WITH DISTANCE=COSINE
+            embedding VECTOR(4) WITH DISTANCE=COSINE
         )"#),
-        ("IP距离", r#"CREATE TABLE products_ip (
+        ("IP distance", r#"CREATE TABLE products_ip (
             id INT32 PRIMARY KEY,
             name TEXT,
-            embedding VECTOR(64) WITH DISTANCE=IP
+            embedding VECTOR(4) WITH DISTANCE=IP
         )"#),
-        ("INNER_PRODUCT完整写法", r#"CREATE TABLE products_inner_product (
+        ("INNER_PRODUCT full name", r#"CREATE TABLE products_inner_product (
             id INT32 PRIMARY KEY,
             name TEXT,
-            embedding VECTOR(64) WITH DISTANCE=INNER_PRODUCT
+            embedding VECTOR(4) WITH DISTANCE=INNER_PRODUCT
         )"#),
     ];
 
     for (test_name, sql) in test_cases.iter() {
-        println!("\n测试 {}:", test_name);
+        println!("\nTest {}:", test_name);
         println!("SQL: {}", sql);
         match db.sql_query(sql) {
-            Ok(_) => println!("✓ 成功"),
-            Err(e) => println!("✗ 失败: {}", e),
+            Ok(_) => println!("[OK] Success"),
+            Err(e) => println!("[ERROR] Failed: {}", e),
         }
     }
 
     // 验证表创建成功
-    println!("\n验证表创建:");
+    println!("\nVerify tables created:");
     let tables = ["products_l2", "products_cosine", "products_ip", "products_inner_product"];
     for table in tables.iter() {
         let select_sql = format!("SELECT * FROM {}", table);
         match db.sql_query(&select_sql) {
-            Ok(result) => println!("✓ 表 {} 存在，返回 {} 行数据", table, result.rows.len()),
-            Err(e) => println!("✗ 表 {} 验证失败: {}", table, e),
+            Ok(result) => println!("[OK] Table {} exists, returned {} rows", table, result.rows.len()),
+            Err(e) => println!("[ERROR] Table {} verification failed: {}", table, e),
         }
     }
 
-    println!("\n所有距离类型测试完成！");
+    println!("\nAll distance type tests completed!");
 
     Ok(())
 }
