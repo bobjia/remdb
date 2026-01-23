@@ -147,8 +147,122 @@ static TEST_TABLE: remdb::types::TableDef = remdb::types::TableDef {
     max_records: 100,
 };
 
+// 定义时序表配置
+static TEST_TIMESERIES_TABLE: remdb::types::TableDef = remdb::types::TableDef {
+    id: 1,
+    name: "sensor_data",
+    fields: &[
+        remdb::types::FieldDef {
+            name: "id",
+            data_type: remdb::types::DataType::Int32,
+            size: 4,
+            offset: 0,
+            primary_key: true,
+            not_null: true,
+            unique: false,
+            auto_increment: true,
+            default_value: None,
+            vector_metadata: None,
+        },
+        remdb::types::FieldDef {
+            name: "sensor_id",
+            data_type: remdb::types::DataType::String,
+            size: 32,
+            offset: 4,
+            primary_key: false,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+        },
+        remdb::types::FieldDef {
+            name: "value",
+            data_type: remdb::types::DataType::Float64,
+            size: 8,
+            offset: 36,
+            primary_key: false,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+        },
+        remdb::types::FieldDef {
+            name: "timestamp",
+            data_type: remdb::types::DataType::Int64,
+            size: 8,
+            offset: 44,
+            primary_key: false,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+        },
+    ],
+    primary_key: 0,
+    secondary_index: Some(3), // 时间戳字段索引
+    secondary_index_type: remdb::types::IndexType::SortedArray,
+    record_size: 52,
+    max_records: 100,
+};
+
+// 定义包含向量数据的表配置
+static TEST_VECTOR_TABLE: remdb::types::TableDef = remdb::types::TableDef {
+    id: 2,
+    name: "vector_data",
+    fields: &[
+        remdb::types::FieldDef {
+            name: "id",
+            data_type: remdb::types::DataType::Int32,
+            size: 4,
+            offset: 0,
+            primary_key: true,
+            not_null: true,
+            unique: false,
+            auto_increment: true,
+            default_value: None,
+            vector_metadata: None,
+        },
+        remdb::types::FieldDef {
+            name: "name",
+            data_type: remdb::types::DataType::String,
+            size: 32,
+            offset: 4,
+            primary_key: false,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+        },
+        remdb::types::FieldDef {
+            name: "vector",
+            data_type: remdb::types::DataType::Vector,
+            size: 32, // 8维向量，每个元素4字节，共32字节
+            offset: 36,
+            primary_key: false,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: Some(remdb::types::VectorMetadata {
+                dimension: 8,
+                distance_type: remdb::types::DistanceType::L2,
+                index_type: remdb::types::VectorIndexType::HNSW,
+            }),
+        },
+    ],
+    primary_key: 0,
+    secondary_index: None,
+    secondary_index_type: remdb::types::IndexType::SortedArray,
+    record_size: 68,
+    max_records: 100,
+};
+
 // 静态测试表配置数组
-static TEST_TABLES: &[remdb::types::TableDef] = &[TEST_TABLE];
+static TEST_TABLES: &[remdb::types::TableDef] = &[TEST_TABLE, TEST_TIMESERIES_TABLE, TEST_VECTOR_TABLE];
 
 // 静态测试数据库配置
 static TEST_DB_CONFIG: DbConfig = DbConfig {
@@ -194,15 +308,20 @@ fn test_wal_recovery_no_overwrite() {
     // 初始化数据库
     let db = init_global_db(&TEST_DB_CONFIG).unwrap();
 
-    // 插入第一条数据
+    // 插入普通表数据
     let insert_sql1 = "INSERT INTO test_table (name) VALUES ('test1')";
     let result1 = db.sql_query(insert_sql1);
     assert!(result1.is_ok());
 
-    // 插入第二条数据
-    let insert_sql2 = "INSERT INTO test_table (name) VALUES ('test2')";
+    // 插入时序表数据
+    let insert_sql2 = "INSERT INTO sensor_data (sensor_id, value, timestamp) VALUES ('sensor1', 25.5, 1609459200000)";
     let result2 = db.sql_query(insert_sql2);
     assert!(result2.is_ok());
+
+    // 插入向量表数据
+    let insert_sql3 = "INSERT INTO vector_data (name, vector) VALUES ('vector1', '[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]')";
+    let result3 = db.sql_query(insert_sql3);
+    assert!(result3.is_ok());
 
     // 重置数据库以模拟重启
     reset_global_db();
@@ -214,15 +333,33 @@ fn test_wal_recovery_no_overwrite() {
     // 由于我们的测试平台模拟了空文件，所以实际不会恢复任何数据
     // 但代码会执行recover方法，这正是我们要测试的
 
-    // 插入新数据
-    let insert_sql3 = "INSERT INTO test_table (name) VALUES ('test3')";
-    let result3 = db2.sql_query(insert_sql3);
-    assert!(result3.is_ok());
+    // 插入新的普通表数据
+    let insert_sql4 = "INSERT INTO test_table (name) VALUES ('test3')";
+    let result4 = db2.sql_query(insert_sql4);
+    assert!(result4.is_ok());
 
-    // 查询所有数据，验证不会覆盖
-    let select_sql = "SELECT * FROM test_table";
-    let result = db2.sql_query(select_sql);
-    assert!(result.is_ok());
+    // 插入新的时序表数据
+    let insert_sql5 = "INSERT INTO sensor_data (sensor_id, value, timestamp) VALUES ('sensor2', 26.0, 1609459260000)";
+    let result5 = db2.sql_query(insert_sql5);
+    assert!(result5.is_ok());
+
+    // 插入新的向量表数据
+    let insert_sql6 = "INSERT INTO vector_data (name, vector) VALUES ('vector2', '[0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]')";
+    let result6 = db2.sql_query(insert_sql6);
+    assert!(result6.is_ok());
+
+    // 查询所有表数据，验证不会覆盖
+    let select_sql1 = "SELECT * FROM test_table";
+    let result7 = db2.sql_query(select_sql1);
+    assert!(result7.is_ok());
+
+    let select_sql2 = "SELECT * FROM sensor_data";
+    let result8 = db2.sql_query(select_sql2);
+    assert!(result8.is_ok());
+
+    let select_sql3 = "SELECT * FROM vector_data";
+    let result9 = db2.sql_query(select_sql3);
+    assert!(result9.is_ok());
 
     println!("WAL recovery test passed: New data inserted without overwriting existing records!");
 }
