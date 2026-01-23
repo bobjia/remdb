@@ -233,7 +233,49 @@ fn value_to_string_repr(value: &TypedValue) -> String {
                 alloc::format!("{}", value.value.interval.value)
             }
             DataType::Vector => {
-                alloc::format!("<vector>")
+                // 向量类型转换为字符串表示
+                let vector_ptr = value.value.vector;
+                if !vector_ptr.is_null() {
+                    // 从向量元数据获取实际维度
+                    let meta = value.value.vector_metadata;
+                    let dimension = meta.dimension as usize;
+                    let mut vec_str = alloc::string::String::from("[");
+                    
+                    // 显示前3个元素
+                    for i in 0..core::cmp::min(3, dimension) {
+                        if i > 0 {
+                            vec_str.push_str(", ");
+                        }
+                        let val = *vector_ptr.add(i);
+                        vec_str.push_str(&alloc::format!("{:.4}", val));
+                    }
+                    
+                    // 如果向量很长，显示省略号
+                    if dimension > 6 {
+                        vec_str.push_str(", ..., ");
+                        
+                        // 显示后3个元素
+                        for i in (dimension - 3)..dimension {
+                            if i > dimension - 3 {
+                                vec_str.push_str(", ");
+                            }
+                            let val = *vector_ptr.add(i);
+                            vec_str.push_str(&alloc::format!("{:.4}", val));
+                        }
+                    } else if dimension > 3 {
+                        // 显示中间的元素
+                        for i in 3..dimension {
+                            vec_str.push_str(", ");
+                            let val = *vector_ptr.add(i);
+                            vec_str.push_str(&alloc::format!("{:.4}", val));
+                        }
+                    }
+                    
+                    vec_str.push_str("]");
+                    vec_str
+                } else {
+                    alloc::format!("[null]")
+                }
             }
         }
     }
