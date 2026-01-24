@@ -411,7 +411,82 @@ CREATE TIMESERIES TABLE table_name (
 
 详细的语法说明和示例请参见[4.2 CREATE TIMESERIES TABLE语句](#42-create-timeseries-table-语句)。
 
-### 2.9 支持的运算符
+### 2.9 事务相关语句
+
+RemDB支持基本的事务操作，包括开始事务、提交事务和回滚事务。
+
+#### 2.9.1 BEGIN TRANSACTION语句
+
+用于开始一个新的事务。
+
+**语法**：
+```sql
+BEGIN TRANSACTION;
+-- 或简化形式
+BEGIN;
+```
+
+**说明**：
+- 启动一个新的事务上下文
+- 后续的SQL操作将在该事务中执行
+- 支持的隔离级别为可重复读(Repeatable Read)
+
+#### 2.9.2 COMMIT语句
+
+用于提交当前事务，将所有更改持久化到数据库。
+
+**语法**：
+```sql
+COMMIT;
+-- 或完整形式
+COMMIT TRANSACTION;
+```
+
+**说明**：
+- 提交当前事务中的所有操作
+- 将更改从事务日志写入到数据文件
+- 释放事务资源
+
+#### 2.9.3 ROLLBACK语句
+
+用于回滚当前事务，撤销所有未提交的更改。
+
+**语法**：
+```sql
+ROLLBACK;
+-- 或完整形式
+ROLLBACK TRANSACTION;
+```
+
+**说明**：
+- 撤销当前事务中的所有操作
+- 恢复事务开始前的状态
+- 释放事务资源
+
+**事务示例**：
+
+```sql
+-- 开始事务
+BEGIN TRANSACTION;
+
+-- 执行多个操作
+INSERT INTO users VALUES (1, 'Alice', 25);
+UPDATE users SET age = 26 WHERE name = 'Bob';
+
+-- 提交事务
+COMMIT;
+
+-- 开始另一个事务
+BEGIN;
+
+-- 执行操作
+DELETE FROM users WHERE id = 3;
+
+-- 回滚事务，撤销删除操作
+ROLLBACK;
+```
+
+### 2.10 支持的运算符
 
 #### 比较运算符
 
@@ -433,7 +508,7 @@ CREATE TIMESERIES TABLE table_name (
 - `<#>`：向量内积，用于计算向量点积
 - `<=>`：向量余弦相似度，用于计算向量夹角余弦值
 
-### 2.10 函数支持
+### 2.11 函数支持
 
 RemDB支持在SELECT语句中使用内嵌函数，包括聚合函数和窗口函数。
 
@@ -999,7 +1074,6 @@ LIMIT 5;
 - 子查询
 
 - DROP TABLE和ALTER TABLE
-- 事务（部分支持）
 - 视图和存储过程
 - 外键约束
 - LIKE运算符
@@ -1251,9 +1325,10 @@ RemDB提供了轻量级的SQL支持，适合嵌入式系统和边缘计算场景
 ## 核心功能
 
 1. **基本SQL操作**：完整支持SELECT、INSERT、UPDATE、DELETE等核心SQL语句
-2. **索引机制**：支持多种索引类型，包括哈希索引、有序数组索引、B-Tree索引和T-Tree索引
-3. **时序数据支持**：专门的时序表创建语法，支持数据压缩和TTL自动清理
-4. **内嵌函数支持**：
+2. **事务支持**：支持ACID事务，包括BEGIN TRANSACTION、COMMIT和ROLLBACK语句
+3. **索引机制**：支持多种索引类型，包括哈希索引、有序数组索引、B-Tree索引和T-Tree索引
+4. **时序数据支持**：专门的时序表创建语法，支持数据压缩和TTL自动清理
+5. **内嵌函数支持**：
    - 基础统计聚合函数：COUNT、SUM、AVG、MIN、MAX
    - 扩展统计函数：VAR、STDDEV（总体方差和标准差）、VAR_SAMP、STDDEV_SAMP（样本方差和标准差）
    - 滑动窗口函数：MOVING_SUM、MOVING_AVERAGE
