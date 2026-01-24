@@ -1,6 +1,5 @@
 extern crate alloc;
 
-use core::ptr::NonNull;
 use remdb::*;
 
 // 定义内存缓冲区
@@ -33,7 +32,7 @@ fn main() {
         let config = &DB_CONFIG;
 
         // 初始化内存分配器
-        memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
+        let _ = memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
 
         // 初始化平台抽象层
         #[cfg(feature = "posix")]
@@ -170,21 +169,10 @@ fn main() {
         println!("Deleted record with ID: {}", record_id);
 
         // 测试事务
-        // 创建事务缓冲区（未初始化）
-        let mut tx_buffer: transaction::Transaction =
-            core::mem::MaybeUninit::uninit().assume_init();
+        // 创建事务缓冲区（使用默认初始化）
+        let mut tx_buffer = transaction::Transaction::default();
 
-        let mut log_buffer = [transaction::LogItem {
-            op_type: transaction::LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            data_size: 0,
-            checksum: 0,
-            timestamp: 0,
-            tx_id: 0,
-            old_data: [0u8; 512],
-            new_data: [0u8; 512],
-        }; 10];
+        let mut log_buffer = [transaction::LogItem::default(); 10];
 
         let tx = transaction::begin(
             transaction::TransactionType::ReadWrite,

@@ -52,7 +52,7 @@ echo.
     if "!example!" == "ha_example" set features=--features "pubsub ha"
     
     REM Run the example with appropriate features
-    cargo run --example !example! !features! --release >> %LOG_FILE% 2>&1
+    cargo run --example !example! !features! >> %LOG_FILE% 2>&1
     
     REM Check exit code
     if !errorlevel! equ 0 (

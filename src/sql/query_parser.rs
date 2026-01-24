@@ -1302,87 +1302,138 @@ impl SqlParser {
             }
         }
 
-        // 检查是否是常量值（数字、字符串）
+        // 检查是否是常量值（数字、字符串、布尔值）
         let current_char = self.peek_char().ok_or(QueryParseError::InvalidSyntax)?;
         if current_char.is_ascii_digit()
             || current_char == '-'
             || current_char == '"'
             || current_char == '\''
+            || current_char.is_ascii_alphabetic()
         {
-            // 解析常量值
-            let value = self.parse_value()?;
-            return Ok(Expression::Constant { value, alias: None });
+            // 检查是否是布尔值
+            let saved_pos_bool = self.position;
+            if self.match_keyword("TRUE") {
+                return Ok(Expression::Constant { 
+                    value: Value::Boolean(true), 
+                    alias: None 
+                });
+            } else if self.match_keyword("FALSE") {
+                return Ok(Expression::Constant { 
+                    value: Value::Boolean(false), 
+                    alias: None 
+                });
+            }
+            // 回退到原始位置
+            self.position = saved_pos_bool;
+            self.column = saved_col;
+            
+            // 检查是否是数字
+            if current_char.is_ascii_digit() || current_char == '-'
+            {
+                // 解析常量值
+                let value = self.parse_value()?;
+                return Ok(Expression::Constant { value, alias: None });
+            }
+            // 检查是否是字符串
+            else if current_char == '"' || current_char == '\''
+            {
+                // 解析常量值
+                let value = self.parse_value()?;
+                return Ok(Expression::Constant { value, alias: None });
+            }
         }
 
-        // 尝试解析标识符
-        if let Ok(identifier) = self.parse_identifier() {
-            // 检查下一个字符是否是左括号
+        // 尝试直接解析函数调用，避免循环调用
+        let func_saved_pos = self.position;
+        let func_saved_col = self.column;
+        
+        // 尝试解析函数名
+        if let Ok(function_name) = self.parse_identifier() {
             self.skip_whitespace();
+            // 检查下一个字符是否是左括号
             if self.peek_char() == Some('(') {
-                // 回退到标识符开始位置
-                self.position = saved_pos;
-                self.column = saved_col;
+                // 解析左括号
+                self.next_char();
+                
+                // 解析函数参数
+                let mut args = Vec::new();
 
-                // 解析函数调用
-                return self.parse_function_call();
-            } else if identifier.eq_ignore_ascii_case("INTERVAL") {
-                // 解析INTERVAL常量
-                self.skip_whitespace();
+                loop {
+                    self.skip_whitespace();
 
-                // 解析间隔值（可能是数字或字符串）
-                let interval_value = self.parse_value()?;
+                    if self.peek_char() == Some(')') {
+                        break;
+                    }
 
-                // 检查是否有单位（如HOUR, MINUTE等）
-                self.skip_whitespace();
-                if let Ok(unit) = self.parse_identifier() {
-                    // 组合值和单位为字符串，如"1 HOUR"或"30 MINUTE"
-                    let interval_str = match interval_value {
-                        Value::Integer(i) => alloc::format!("{} {}", i, unit),
-                        Value::String(s) => alloc::format!("{} {}", s, unit),
-                        _ => return Err(QueryParseError::InvalidValue),
-                    };
+                    // 解析参数表达式
+                    let arg_expr = self.parse_expression()?;
+                    args.push(arg_expr);
 
-                    // 将组合后的间隔字符串转换为微秒值
-                    // 这里我们暂时返回一个占位符，实际解析将在执行时进行
-                    return Ok(Expression::Constant {
-                        value: Value::String(interval_str),
-                        alias: None,
-                    });
-                } else {
-                    // 只有值，没有单位
-                    return Ok(Expression::Constant {
-                        value: interval_value,
-                        alias: None,
-                    });
+                    self.skip_whitespace();
+                    if self.match_char(',') {
+                        continue;
+                    } else {
+                        break;
+                    }
                 }
-            } else if identifier.eq_ignore_ascii_case("TRUE") {
-                // 布尔常量TRUE
-                return Ok(Expression::Constant {
-                    value: Value::Boolean(true),
-                    alias: None,
-                });
-            } else if identifier.eq_ignore_ascii_case("FALSE") {
-                // 布尔常量FALSE
-                return Ok(Expression::Constant {
-                    value: Value::Boolean(false),
-                    alias: None,
-                });
-            } else {
-                // 不是函数调用，返回字段表达式
-                return Ok(Expression::Field {
-                    name: identifier,
+
+                self.skip_whitespace();
+                self.expect_char(')')?;
+
+                return Ok(Expression::FunctionCall {
+                    name: function_name,
+                    args,
                     alias: None,
                 });
             }
         }
+        
+        // 回退到原始位置
+        self.position = func_saved_pos;
+        self.column = func_saved_col;
+        
+        // 尝试解析标识符作为字段
+        let identifier = self.parse_identifier()?;
+        
+        // 检查是否是INTERVAL常量
+        if identifier.eq_ignore_ascii_case("INTERVAL") {
+            // 解析INTERVAL常量
+            self.skip_whitespace();
 
-        // 回溯，尝试解析常量值
-        self.position = saved_pos;
-        self.column = saved_col;
+            // 解析间隔值（可能是数字或字符串）
+            let interval_value = self.parse_value()?;
 
-        // 尝试解析常量值
-        let value = self.parse_value()?;
-        return Ok(Expression::Constant { value, alias: None });
+            // 检查是否有单位（如HOUR, MINUTE等）
+            self.skip_whitespace();
+            if let Ok(unit) = self.parse_identifier() {
+                // 组合值和单位为字符串，如"1 HOUR"或"30 MINUTE"
+                let interval_str = match interval_value {
+                    Value::Integer(i) => alloc::format!("{} {}", i, unit),
+                    Value::String(s) => alloc::format!("{} {}", s, unit),
+                    _ => return Err(QueryParseError::InvalidValue),
+                };
+
+                // 将组合后的间隔字符串转换为微秒值
+                // 这里我们暂时返回一个占位符，实际解析将在执行时进行
+                return Ok(Expression::Constant {
+                    value: Value::String(interval_str),
+                    alias: None,
+                });
+            } else {
+                // 只有值，没有单位
+                return Ok(Expression::Constant {
+                    value: interval_value,
+                    alias: None,
+                });
+            }
+        } 
+        // 不是INTERVAL，直接返回字段表达式
+        else {
+            return Ok(Expression::Field {
+                name: identifier,
+                alias: None,
+            });
+        }
     }
 
     /// 解析函数调用
@@ -1884,76 +1935,70 @@ impl SqlParser {
         self.skip_whitespace();
 
         // 检查是否有向量操作符
-        loop {
-            let saved_pos = self.position;
-            let saved_col = self.column;
+        let saved_pos = self.position;
+        let saved_col = self.column;
 
-            // 只尝试解析向量操作符，不解析比较运算符
-            let op = match self.peek_char() {
-                Some('<') => {
-                    self.next_char();
-                    match self.peek_char() {
-                        Some('-') => {
+        // 只尝试解析一次向量操作符
+        let op = match self.peek_char() {
+            Some('<') => {
+                self.next_char();
+                match self.peek_char() {
+                    Some('-') => {
+                        self.next_char();
+                        if self.peek_char() == Some('>') {
                             self.next_char();
-                            if self.peek_char() == Some('>') {
-                                self.next_char();
-                                Some(BinaryOperator::VectorL2) // <->
-                            } else {
-                                // 回退，不是向量操作符
-                                self.position = saved_pos;
-                                self.column = saved_col;
-                                None
-                            }
-                        }
-                        Some('#') => {
-                            self.next_char();
-                            if self.peek_char() == Some('>') {
-                                self.next_char();
-                                Some(BinaryOperator::VectorIP) // <#>
-                            } else {
-                                // 回退，不是向量操作符
-                                self.position = saved_pos;
-                                self.column = saved_col;
-                                None
-                            }
-                        }
-                        Some('=') => {
-                            self.next_char();
-                            if self.peek_char() == Some('>') {
-                                self.next_char();
-                                Some(BinaryOperator::VectorCosine) // <=>
-                            } else {
-                                // 回退，不是向量操作符
-                                self.position = saved_pos;
-                                self.column = saved_col;
-                                None
-                            }
-                        }
-                        _ => {
+                            Some(BinaryOperator::VectorL2) // <->
+                        } else {
                             // 回退，不是向量操作符
                             self.position = saved_pos;
                             self.column = saved_col;
                             None
                         }
                     }
+                    Some('#') => {
+                        self.next_char();
+                        if self.peek_char() == Some('>') {
+                            self.next_char();
+                            Some(BinaryOperator::VectorIP) // <#>
+                        } else {
+                            // 回退，不是向量操作符
+                            self.position = saved_pos;
+                            self.column = saved_col;
+                            None
+                        }
+                    }
+                    Some('=') => {
+                        self.next_char();
+                        if self.peek_char() == Some('>') {
+                            self.next_char();
+                            Some(BinaryOperator::VectorCosine) // <=>
+                        } else {
+                            // 回退，不是向量操作符
+                            self.position = saved_pos;
+                            self.column = saved_col;
+                            None
+                        }
+                    }
+                    _ => {
+                        // 回退，不是向量操作符
+                        self.position = saved_pos;
+                        self.column = saved_col;
+                        None
+                    }
                 }
-                _ => None,
-            };
-
-            // 如果不是向量操作符，结束循环
-            if op.is_none() {
-                break;
             }
+            _ => None,
+        };
 
+        // 如果是向量操作符，解析右侧操作数并构造新的表达式
+        if let Some(op) = op {
             self.skip_whitespace();
-
-            // 解析右操作数
             let right_expr = self.parse_primary_expression()?;
 
             // 更新表达式
             expr = Expression::BinaryOp {
                 left: Box::new(expr),
-                op: op.unwrap(),
+                op,
                 right: Box::new(right_expr),
                 alias: None,
             };
@@ -2061,52 +2106,51 @@ impl SqlParser {
             // 这里返回0作为占位符，实际执行时会替换为当前时间
             Ok(Value::Integer(0))
         } else if self.match_keyword("TIMEZONE") {
-            // 处理TIMEZONE()函数
+            // 处理TIMEZONE()函数 - 直接跳过内部内容，避免递归
             self.skip_whitespace();
             self.expect_char('(')?;
             self.skip_whitespace();
-            // 解析时区名称或偏移量
-            let tz_param = self.parse_value()?;
-            self.skip_whitespace();
-            self.expect_char(')')?;
+            // 直接跳过参数，不递归调用parse_value
+            while self.peek_char() != Some(')') {
+                self.next_char();
+            }
+            self.next_char();
             // 这里返回0作为占位符，实际执行时会处理
             Ok(Value::Integer(0))
         } else if self.match_keyword("TO_CHAR") {
-            // 处理TO_CHAR()函数
+            // 处理TO_CHAR()函数 - 直接跳过内部内容，避免递归
             self.skip_whitespace();
             self.expect_char('(')?;
             self.skip_whitespace();
-            // 解析时间值参数
-            let time_param = self.parse_value()?;
-            self.skip_whitespace();
-            self.expect_char(',')?;
-            self.skip_whitespace();
-            // 解析格式字符串参数
-            let format_param = self.parse_value()?;
-            self.skip_whitespace();
-            self.expect_char(')')?;
+            // 直接跳过参数，不递归调用parse_value
+            while self.peek_char() != Some(')') {
+                self.next_char();
+            }
+            self.next_char();
             // 这里返回0作为占位符，实际执行时会处理
             Ok(Value::Integer(0))
         } else if self.match_keyword("TO_ISO8601") {
-            // 处理TO_ISO8601()函数
+            // 处理TO_ISO8601()函数 - 直接跳过内部内容，避免递归
             self.skip_whitespace();
             self.expect_char('(')?;
             self.skip_whitespace();
-            // 解析时间值参数
-            let time_param = self.parse_value()?;
-            self.skip_whitespace();
-            self.expect_char(')')?;
+            // 直接跳过参数，不递归调用parse_value
+            while self.peek_char() != Some(')') {
+                self.next_char();
+            }
+            self.next_char();
             // 这里返回0作为占位符，实际执行时会处理
             Ok(Value::Integer(0))
         } else if self.match_keyword("TO_EPOCH") {
-            // 处理TO_EPOCH()函数
+            // 处理TO_EPOCH()函数 - 直接跳过内部内容，避免递归
             self.skip_whitespace();
             self.expect_char('(')?;
             self.skip_whitespace();
-            // 解析时间值参数
-            let time_param = self.parse_value()?;
-            self.skip_whitespace();
-            self.expect_char(')')?;
+            // 直接跳过参数，不递归调用parse_value
+            while self.peek_char() != Some(')') {
+                self.next_char();
+            }
+            self.next_char();
             // 这里返回0作为占位符，实际执行时会处理
             Ok(Value::Integer(0))
         } else if self.peek_char() == Some('[') {
@@ -2160,27 +2204,9 @@ impl SqlParser {
                 Ok(Value::Integer(int_value))
             }
         } else {
-            // 回溯，尝试解析为标识符
-            self.position = saved_pos;
-            let identifier = self.parse_identifier()?;
-
-            // 检查是否是带有AT TIME ZONE修饰符的时间表达式
-            self.skip_whitespace();
-            if self.match_keyword("AT") {
-                self.skip_whitespace();
-                self.expect_keyword("TIME")?;
-                self.skip_whitespace();
-                self.expect_keyword("ZONE")?;
-                self.skip_whitespace();
-
-                // 解析时区名称或偏移量
-                let tz_value = self.parse_value()?;
-                // 这里返回0作为占位符，实际执行时会处理
-                Ok(Value::Integer(0))
-            } else {
-                // 不是AT TIME ZONE表达式，返回标识符
-                Ok(Value::Identifier(identifier))
-            }
+            // 简化处理：只处理基本类型的值，不处理标识符或函数调用
+            // 避免与其他函数形成循环调用，导致无限递归
+            return Err(QueryParseError::InvalidValue);
         }
     }
 
@@ -2373,7 +2399,9 @@ impl SqlParser {
 
         // 检查是否有修饰符，如 UNSIGNED, WITH TIME ZONE 或 WITH DISTANCE=L2
         self.skip_whitespace();
-        while self.peek_char().is_some() {
+        
+        // 只尝试解析修饰符一次，避免无限循环
+        if self.peek_char().is_some() {
             // 检查是否是约束关键字（这些应该在数据类型之后单独解析）
             let next_token = self.peek_identifier();
             if let Some(token) = next_token {
@@ -2389,7 +2417,7 @@ impl SqlParser {
                 ]
                 .contains(&token_upper.as_str())
                 {
-                    break;
+                    return Ok(result);
                 }
             }
 
@@ -2404,53 +2432,42 @@ impl SqlParser {
                 // 检查是否是 WITH 修饰符，如 WITH TIME ZONE 或 WITH DISTANCE=L2
                 if modifier.eq_ignore_ascii_case("WITH") {
                     self.skip_whitespace();
-                    while self.peek_char().is_some() {
+                    
+                    if self.peek_char().is_some() {
                         // 检查是否是约束关键字
                         let next_token = self.peek_identifier();
                         if let Some(token) = next_token {
                             let token_upper = token.to_uppercase();
-                            if [
-                                "PRIMARY",
+                            if !["PRIMARY",
                                 "NOT",
                                 "UNIQUE",
                                 "AUTOINCREMENT",
                                 "AUTO_INCREMENT",
                                 "DEFAULT",
                             ]
-                            .contains(&token_upper.as_str())
-                            {
-                                break;
+                            .contains(&token_upper.as_str()) {
+                                // 检查下一个字符是否是标识符的开始（字母或下划线）
+                                let next_char = self.peek_char().unwrap();
+                                if next_char.is_ascii_alphabetic() || next_char == '_' {
+                                    // 解析 WITH 后的修饰符
+                                    let with_modifier = self.parse_identifier()?;
+                                    result.push(' ');
+                                    result.push_str(&with_modifier);
+
+                                    // 检查是否有等号，如 DISTANCE=L2
+                                    self.skip_whitespace();
+                                    if self.match_char('=') {
+                                        result.push('=');
+
+                                        // 解析等号后的数值或标识符
+                                        let value = self.parse_identifier()?;
+                                        result.push_str(&value);
+                                    }
+                                }
                             }
                         }
-
-                        // 检查下一个字符是否是标识符的开始（字母或下划线）
-                        let next_char = self.peek_char().unwrap();
-                        if !next_char.is_ascii_alphabetic() && next_char != '_' {
-                            break;
-                        }
-                        
-                        // 解析 WITH 后的修饰符
-                        let with_modifier = self.parse_identifier()?;
-                        result.push(' ');
-                        result.push_str(&with_modifier);
-
-                        // 检查是否有等号，如 DISTANCE=L2
-                        self.skip_whitespace();
-                        if self.match_char('=') {
-                            result.push('=');
-
-                            // 解析等号后的数值或标识符
-                            let value = self.parse_identifier()?;
-                            result.push_str(&value);
-                        }
-
-                        self.skip_whitespace();
                     }
                 }
-
-                self.skip_whitespace();
-            } else {
-                break;
             }
         }
 

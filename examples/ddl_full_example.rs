@@ -22,6 +22,7 @@ use remdb_macros::MemdbTable;
     value_string TEXT(64)
 );
 CREATE INDEX idx_sensor_timestamp ON sensor_data USING btree (timestamp);")]
+#[allow(dead_code)]
 struct Database;
 
 // SensorData结构体将由MemdbTable宏自动生成
@@ -39,7 +40,8 @@ fn main() {
         println!("\n1. Initializing database...");
 
         // 初始化内存分配器
-        memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
+        #[allow(static_mut_refs)]
+        let _ = memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
 
         // 初始化平台抽象层
         struct DummyPlatform;

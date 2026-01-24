@@ -8,7 +8,7 @@ use remdb::ha::{HAConfig, HARole, ReplicationMode};
 use remdb::memory::allocator::init_global_allocator;
 use remdb::{
     types::{DataType, IndexType},
-    DdlExecutor, RemDb,
+    RemDb,
 };
 
 // 简单的内存分配器实现
@@ -37,6 +37,7 @@ fn main() {
     // 初始化全局内存分配器
     static mut MEMORY_BUFFER: [u8; 1024 * 1024] = [0; 1024 * 1024];
     unsafe {
+        #[allow(static_mut_refs)]
         init_global_allocator(MEMORY_BUFFER.as_mut_ptr(), MEMORY_BUFFER.len())
             .expect("Failed to initialize global allocator");
     }
@@ -117,7 +118,7 @@ fn main() {
 
     // 使用SQL语句创建表
     let result = db.sql_query(
-        "CREATE TABLE products (id UINT32 PRIMARY KEY, name STRING, price FLOAT32, in_stock BOOL);",
+        "CREATE TABLE products (id INTEGER PRIMARY KEY, name VARCHAR(32), price FLOAT, in_stock BOOL);",
     );
 
     match result {
