@@ -180,8 +180,7 @@ fn test_large_table_performance() {
 
     // 创建数据库配置
     static DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
-    
-    let db_config = DbConfig {
+    static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(|| DbConfig {
         tables: vec![create_large_table_def()],
         total_memory: 500_000_000, // 500MB
         low_power_mode_supported: false,
@@ -189,7 +188,7 @@ fn test_large_table_performance() {
         default_max_records: 100000,
         memory_allocator: &DEFAULT_ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "./wal".to_string(),
+            log_path: "./wal",
             log_mode: remdb::config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -212,20 +211,20 @@ fn test_large_table_performance() {
             master_port: None,
             replication_port: 5556,
         }),
-    };
+    });
 
     unsafe {
         // 预分配内存缓冲区并初始化全局分配器
-        let mut memory_buffer = Vec::with_capacity(db_config.total_memory);
-        memory_buffer.set_len(db_config.total_memory);
+        let mut memory_buffer = Vec::with_capacity(TEST_DB_CONFIG.total_memory);
+        memory_buffer.set_len(TEST_DB_CONFIG.total_memory);
         remdb::memory::allocator::init_global_allocator(
             memory_buffer.as_mut_ptr(),
-            db_config.total_memory,
+            TEST_DB_CONFIG.total_memory,
         )
         .unwrap();
 
         // 初始化数据库实例
-        let db = init_global_db(&db_config).unwrap();
+        let db = init_global_db(&TEST_DB_CONFIG).unwrap();
 
         // 输出初始监控指标
         println!("\n初始监控指标:");

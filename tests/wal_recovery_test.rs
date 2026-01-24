@@ -111,12 +111,12 @@ impl Platform for TestPlatform {
 static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 // 定义测试配置
-static TEST_TABLE: remdb::types::TableDef = remdb::types::TableDef {
+static TEST_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| remdb::types::TableDef {
     id: 0,
-    name: "test_table",
-    fields: &[
+    name: "test_table".to_string(),
+    fields: vec![
         remdb::types::FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: remdb::types::DataType::Int32,
             size: 4,
             offset: 0,
@@ -128,7 +128,7 @@ static TEST_TABLE: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "name",
+            name: "name".to_string(),
             data_type: remdb::types::DataType::String,
             size: 64,
             offset: 4,
@@ -145,15 +145,18 @@ static TEST_TABLE: remdb::types::TableDef = remdb::types::TableDef {
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 68,
     max_records: 100,
-};
+    version: 1,
+    created_at: 0,
+    updated_at: 0,
+});
 
 // 定义时序表配置
-static TEST_TIMESERIES_TABLE: remdb::types::TableDef = remdb::types::TableDef {
+static TEST_TIMESERIES_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| remdb::types::TableDef {
     id: 1,
-    name: "sensor_data",
-    fields: &[
+    name: "sensor_data".to_string(),
+    fields: vec![
         remdb::types::FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: remdb::types::DataType::Int32,
             size: 4,
             offset: 0,
@@ -165,7 +168,7 @@ static TEST_TIMESERIES_TABLE: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "sensor_id",
+            name: "sensor_id".to_string(),
             data_type: remdb::types::DataType::String,
             size: 32,
             offset: 4,
@@ -177,7 +180,7 @@ static TEST_TIMESERIES_TABLE: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "value",
+            name: "value".to_string(),
             data_type: remdb::types::DataType::Float64,
             size: 8,
             offset: 36,
@@ -189,7 +192,7 @@ static TEST_TIMESERIES_TABLE: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "timestamp",
+            name: "timestamp".to_string(),
             data_type: remdb::types::DataType::Int64,
             size: 8,
             offset: 44,
@@ -206,15 +209,18 @@ static TEST_TIMESERIES_TABLE: remdb::types::TableDef = remdb::types::TableDef {
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 52,
     max_records: 100,
-};
+    version: 1,
+    created_at: 0,
+    updated_at: 0,
+});
 
 // 定义包含向量数据的表配置
-static TEST_VECTOR_TABLE: remdb::types::TableDef = remdb::types::TableDef {
+static TEST_VECTOR_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| remdb::types::TableDef {
     id: 2,
-    name: "vector_data",
-    fields: &[
+    name: "vector_data".to_string(),
+    fields: vec![
         remdb::types::FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: remdb::types::DataType::Int32,
             size: 4,
             offset: 0,
@@ -226,7 +232,7 @@ static TEST_VECTOR_TABLE: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "name",
+            name: "name".to_string(),
             data_type: remdb::types::DataType::String,
             size: 32,
             offset: 4,
@@ -238,7 +244,7 @@ static TEST_VECTOR_TABLE: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "vector",
+            name: "vector".to_string(),
             data_type: remdb::types::DataType::Vector,
             size: 32, // 8维向量，每个元素4字节，共32字节
             offset: 36,
@@ -259,14 +265,18 @@ static TEST_VECTOR_TABLE: remdb::types::TableDef = remdb::types::TableDef {
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 68,
     max_records: 100,
-};
-
-// 静态测试表配置数组
-static TEST_TABLES: &[remdb::types::TableDef] = &[TEST_TABLE, TEST_TIMESERIES_TABLE, TEST_VECTOR_TABLE];
+    version: 1,
+    created_at: 0,
+    updated_at: 0,
+});
 
 // 静态测试数据库配置
-static TEST_DB_CONFIG: DbConfig = DbConfig {
-    tables: TEST_TABLES,
+static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(|| DbConfig {
+    tables: vec![
+        TEST_TABLE.clone(),
+        TEST_TIMESERIES_TABLE.clone(),
+        TEST_VECTOR_TABLE.clone()
+    ],
     total_memory: 2097152, // 2MB
     default_max_records: 100,
     low_power_mode_supported: true,
@@ -286,7 +296,7 @@ static TEST_DB_CONFIG: DbConfig = DbConfig {
     #[cfg(feature = "ha")]
     ha_config: None,
     time_series_defaults: TimeSeriesConfig::DEFAULT,
-};
+});
 
 // 使用静态内存缓冲区，确保它不会在函数返回时被释放
 static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152];

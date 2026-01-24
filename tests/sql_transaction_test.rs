@@ -161,7 +161,7 @@ static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLo
     default_max_records: 100000,
     memory_allocator: &DEFAULT_ALLOCATOR,
     wal_config: WALConfig {
-        log_path: "./wal".to_string(),
+        log_path: "./wal",
         log_mode: config::LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
@@ -184,7 +184,7 @@ static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLo
         master_port: None,
         replication_port: 5556,
     }),
-};
+});
 
 #[test]
 #[serial]

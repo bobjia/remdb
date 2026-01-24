@@ -15,13 +15,13 @@ fn main() {
 
         // 创建数据库配置
         static ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
-        static CONFIG: DbConfig = DbConfig {
+        static CONFIG: config::DbConfig = config::DbConfig {
             tables: vec![],
             total_memory: 1024 * 1024 * 10, // 10MB
             low_power_mode_supported: false,
             low_power_max_records: None,
             default_max_records: 1000,
-            memory_allocator: &DefaultMemoryAllocator,
+            memory_allocator: &ALLOCATOR,
             wal_config: WALConfig {
                 log_path: "./wal",
                 log_mode: config::LogMode::Async,
@@ -49,7 +49,7 @@ fn main() {
         };
 
         // 初始化数据库
-        let mut db = init_global_db(&CONFIG).expect("Failed to initialize database");
+        let db = init_global_db(&CONFIG).expect("Failed to initialize database");
 
         // 创建表，使用VARCHAR类型
         let create_table_sql = "CREATE TABLE users (

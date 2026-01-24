@@ -35,7 +35,7 @@ static CONFIG: DbConfig = DbConfig {
     default_max_records: 10000,
     memory_allocator: &ALLOCATOR,
     wal_config: WALConfig {
-        log_path: "./wal".to_string(),
+        log_path: "./wal",
         log_mode: remdb::config::LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,

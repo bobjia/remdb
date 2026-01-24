@@ -27,8 +27,8 @@ remdb::table!(
 );
 
 // 定义数据库配置 - 从节点
-static SLAVE_DB_CONFIG: DbConfig = DbConfig {
-    tables: &[users],
+static SLAVE_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(|| DbConfig {
+    tables: vec![users.clone()],
     total_memory: 8 * 1024 * 1024,
     low_power_mode_supported: false,
     low_power_max_records: None,
@@ -58,7 +58,7 @@ static SLAVE_DB_CONFIG: DbConfig = DbConfig {
         master_port: Some(5556),
         replication_port: 5556,
     }),
-};
+});
 
 // 从节点示例
 fn slave_example() {

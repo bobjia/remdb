@@ -97,9 +97,9 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
                             updated_at: 0,
                         },
                         time_field: #time_field_index,
-                        value_field: #value_field_index,
-                        tag_fields: &[#(#tag_fields_code,)*],
-                        config: remdb::time_series::TimeSeriesConfig::DEFAULT,
+                            value_field: #value_field_index,
+                            tag_fields: Box::new([#(#tag_fields_code,)*]),
+                            config: remdb::time_series::TimeSeriesConfig::DEFAULT,
                     }
                 });
             });
@@ -153,7 +153,7 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
                 },
                 // WAL配置
                 wal_config: remdb::config::WALConfig {
-                    log_path: "wal".to_string(),
+                    log_path: "wal",
                     log_mode: remdb::config::LogMode::Sync,
                     checkpoint_interval_ms: 60000,
                     log_file_size_limit: 16 * 1024 * 1024,

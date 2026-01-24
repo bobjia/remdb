@@ -118,40 +118,41 @@ fn test_index_recovery() -> Result<()> {
     }
 
     // 使用全局初始化函数初始化数据库
-    let db = unsafe {
-        remdb::init_global_db(&remdb::config::DbConfig {
-            tables: vec![],
-            total_memory: 1024 * 1024, // 1MB
-            low_power_mode_supported: false,
-            low_power_max_records: None,
-            default_max_records: 100,
-            memory_allocator: &remdb::config::DefaultMemoryAllocator {},
-            wal_config: remdb::config::WALConfig {
-                log_path: "./wal".to_string(),
-                log_mode: remdb::config::LogMode::Async,
-                checkpoint_interval_ms: 60000,
-                log_file_size_limit: 16 * 1024 * 1024,
-                log_prealloc_size: 1024 * 1024,
-                log_segment_size: 16 * 1024 * 1024,
-                retained_checkpoints: 2,
-            },
-            time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
-            #[cfg(feature = "pubsub")]
-            pubsub_config: None,
-            #[cfg(feature = "ha")]
-            ha_config: Some(remdb::config::HAConfig {
-                node_id: 1, // 默认节点ID为1
-                ha_role: remdb::ha::HARole::Master,
-                replication_mode: remdb::ha::ReplicationMode::Async,
-                heartbeat_interval_ms: 1000,
-                failure_detection_ms: 5000,
-                sync_timeout_ms: 1000,
-                master_address: None,
-                master_port: None,
-                replication_port: 5556,
-            }),
-        })
-    }?;
+    // 创建静态数据库配置
+    static TEST_DB_CONFIG: std::sync::LazyLock<remdb::config::DbConfig> = std::sync::LazyLock::new(|| remdb::config::DbConfig {
+        tables: vec![],
+        total_memory: 1024 * 1024, // 1MB
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        default_max_records: 100000,
+        memory_allocator: &remdb::config::DefaultMemoryAllocator,
+        wal_config: remdb::config::WALConfig {
+            log_path: "./wal",
+            log_mode: remdb::config::LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+        },
+        time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: Some(remdb::config::HAConfig {
+            node_id: 1,
+            ha_role: remdb::ha::HARole::Auto,
+            replication_mode: remdb::ha::ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+        }),
+    });
+
+    let db = remdb::init_global_db(&TEST_DB_CONFIG)?;
 
     // 创建表
     let fields = &[

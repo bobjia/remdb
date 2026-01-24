@@ -149,7 +149,7 @@ fn test_wal_log_manager_creation() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log".to_string(),
+            log_path: "/tmp/test_wal.log",
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -201,7 +201,7 @@ fn test_wal_log_write_sync_mode() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log".to_string(),
+            log_path: "/tmp/test_wal.log",
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -271,7 +271,7 @@ fn test_wal_log_write_async_mode() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log".to_string(),
+            log_path: "/tmp/test_wal.log",
             log_mode: LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -348,7 +348,7 @@ fn test_wal_checkpoint_mechanism() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_checkpoint.log".to_string(),
+            log_path: "/tmp/test_wal_checkpoint.log",
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 100, // 100毫秒检查点间隔
             log_file_size_limit: 16 * 1024 * 1024,
@@ -426,7 +426,7 @@ fn test_wal_log_preallocation() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_prealloc.log".to_string(),
+            log_path: "/tmp/test_wal_prealloc.log",
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -490,7 +490,7 @@ fn test_wal_different_log_modes() {
             default_max_records: 1000,
             memory_allocator: &ALLOCATOR,
             wal_config: WALConfig {
-                log_path: log_path.to_string(),
+                log_path: log_path,
                 log_mode: mode,
                 checkpoint_interval_ms: 60000,
                 log_file_size_limit: 16 * 1024 * 1024,
@@ -565,7 +565,7 @@ fn test_wal_checkpoint_comprehensive() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_checkpoint_comprehensive.log".to_string(),
+            log_path: "/tmp/test_wal_checkpoint_comprehensive.log",
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 50, // 50毫秒检查点间隔，便于测试
             log_file_size_limit: 16 * 1024 * 1024,
@@ -747,7 +747,7 @@ fn test_wal_checkpoint_comprehensive() {
             default_max_records: 1000,
             memory_allocator: &ALLOCATOR,
             wal_config: WALConfig {
-                log_path: "/tmp/test_wal_checkpoint_async.log".to_string(),
+                log_path: "/tmp/test_wal_checkpoint_async.log",
                 log_mode: LogMode::Async,
                 checkpoint_interval_ms: 50,
                 log_file_size_limit: 16 * 1024 * 1024,
@@ -825,7 +825,7 @@ fn test_wal_recovery_flow() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log".to_string(),
+            log_path: "/tmp/test_wal.log",
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -1058,7 +1058,7 @@ fn test_wal_checkpoint_with_recovery() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_checkpoint_recovery.log".to_string(),
+            log_path: "/tmp/test_wal_checkpoint_recovery.log",
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 100, // 100毫秒检查点间隔
             log_file_size_limit: 16 * 1024 * 1024,

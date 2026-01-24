@@ -148,7 +148,7 @@ static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLo
         // 添加缺少的字段
         memory_allocator: &config::DefaultMemoryAllocator,
         wal_config: WALConfig {
-            log_path: "./wal".to_string(),
+            log_path: "./wal",
             log_mode: config::LogMode::Async,
             log_prealloc_size: 0,
             log_file_size_limit: 104857600,
@@ -185,7 +185,7 @@ static PERFORMANCE_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::
         // 添加缺少的字段
         memory_allocator: &config::DefaultMemoryAllocator,
         wal_config: WALConfig {
-            log_path: "./wal".to_string(),
+            log_path: "./wal",
             log_mode: config::LogMode::Async,
             log_prealloc_size: 0,
             log_file_size_limit: 104857600,
@@ -222,7 +222,7 @@ static ROLLBACK_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::syn
         // 添加缺少的字段
         memory_allocator: &config::DefaultMemoryAllocator,
         wal_config: WALConfig {
-            log_path: "./wal".to_string(),
+            log_path: "./wal",
             log_mode: config::LogMode::Sync,
             log_prealloc_size: 0,
             log_file_size_limit: 104857600,

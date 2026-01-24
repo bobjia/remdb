@@ -200,7 +200,7 @@ pub struct LogBufferConfig {
 /// 日志管理器
 pub struct LogManager {
     /// 日志文件路径
-    log_path: String,
+    log_path: &'static str,
     /// 日志文件句柄
     log_handle: crate::platform::FileHandle,
     /// 日志头
@@ -289,7 +289,7 @@ impl LogManager {
         let now_ms = now / 1000;
 
         let mut manager = LogManager {
-            log_path: config.wal_config.log_path.clone(),
+            log_path: config.wal_config.log_path,
             log_handle,
             header: LogHeader {
                 magic: 0x4C4F474D, // 'LOGM'

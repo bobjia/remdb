@@ -3,14 +3,15 @@ use remdb::platform::*;
 use remdb::*;
 use std::fs;
 use std::path::Path;
+use std::string::ToString;
 
 // 简单的表定义用于测试
-static TEST_TABLE_DEF: TableDef = TableDef {
+static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(|| TableDef {
     id: 0,
-    name: "test_table",
-    fields: &[
+    name: "test_table".to_string(),
+    fields: vec![
         FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: DataType::UInt32,
             size: 4,
             offset: 0,
@@ -22,7 +23,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             vector_metadata: None,
         },
         FieldDef {
-            name: "name",
+            name: "name".to_string(),
             data_type: DataType::String,
             size: 32,
             offset: 4,
@@ -34,7 +35,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             vector_metadata: None,
         },
         FieldDef {
-            name: "value",
+            name: "value".to_string(),
             data_type: DataType::Float32,
             size: 4,
             offset: 36,
@@ -51,11 +52,14 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     secondary_index_type: IndexType::SortedArray,
     record_size: 40,
     max_records: 100,
-};
+    version: 1,
+    created_at: 0,
+    updated_at: 0,
+});
 
 // 数据库配置
-static TEST_DB_CONFIG: DbConfig = DbConfig {
-    tables: &[TEST_TABLE_DEF],
+static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(|| DbConfig {
+    tables: vec![TEST_TABLE_DEF.clone()],
     total_memory: 1024 * 1024, // 1MB
     low_power_mode_supported: false,
     low_power_max_records: None,
@@ -88,7 +92,7 @@ static TEST_DB_CONFIG: DbConfig = DbConfig {
         master_port: None,
         replication_port: 6668,
     }),
-};
+});
 
 // 测试平台实现
 struct TestPlatform;
@@ -300,7 +304,7 @@ fn test_restart_recovery() -> Result<()> {
         crate::transaction::init_tx_manager();
 
         // 使用init_global_db初始化数据库
-        let mut db = remdb::init_global_db(&TEST_DB_CONFIG)?;
+        let db = remdb::init_global_db(&TEST_DB_CONFIG)?;
 
         // 插入测试数据
         let test_data = [
@@ -354,7 +358,7 @@ fn test_restart_recovery() -> Result<()> {
         crate::transaction::init_tx_manager();
 
         // 重新初始化数据库
-        let mut db = remdb::init_global_db(&TEST_DB_CONFIG)?;
+        let db = remdb::init_global_db(&TEST_DB_CONFIG)?;
 
         // 加载快照
         db.restore_snapshot("./test_snapshots/full_test.remd")?;
@@ -371,17 +375,15 @@ fn test_restart_recovery() -> Result<()> {
                 count += 1;
 
                 // 读取记录数据
-                let record_data = unsafe { core::slice::from_raw_parts(record_ptr, 40) };
-                let id = unsafe { core::ptr::read_unaligned(record_data.as_ptr() as *const u32) };
+                let record_data = core::slice::from_raw_parts(record_ptr, 40);
+                let id = core::ptr::read_unaligned(record_data.as_ptr() as *const u32);
                 let name_bytes = &record_data[4..36];
                 let name = std::str::from_utf8(name_bytes)
                     .unwrap()
                     .split_terminator('\0')
                     .next()
                     .unwrap();
-                let value = unsafe {
-                    core::ptr::read_unaligned(record_data.as_ptr().add(36) as *const f32)
-                };
+                let value = core::ptr::read_unaligned(record_data.as_ptr().add(36) as *const f32);
 
                 println!("恢复的数据: id={}, name={}, value={}", id, name, value);
 

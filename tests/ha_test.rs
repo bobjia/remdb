@@ -265,8 +265,8 @@ fn test_ha_manager_failover() {
     init_test_platform();
 
     // 创建从节点配置
-    static SLAVE_CONFIG: config::DbConfig = config::DbConfig {
-        tables: EMPTY_TABLES,
+    static SLAVE_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| config::DbConfig {
+        tables: EMPTY_TABLES.to_vec(),
         total_memory: 8 * 1024 * 1024, // 8MB
         low_power_mode_supported: false,
         low_power_max_records: None,
@@ -298,7 +298,7 @@ fn test_ha_manager_failover() {
             master_port: None,
             replication_port: 5556,
         }),
-    };
+    });
 
     // 创建HA管理器
     let mut ha_manager = HAManager::new(&SLAVE_CONFIG).expect("Failed to create HAManager");
@@ -380,8 +380,8 @@ fn test_ha_manager() {
     static EMPTY_TABLES: &[crate::types::TableDef] = &[];
 
     // 创建测试配置
-    static CONFIG: config::DbConfig = config::DbConfig {
-        tables: EMPTY_TABLES,
+    static CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| config::DbConfig {
+        tables: EMPTY_TABLES.to_vec(),
         total_memory: 8 * 1024 * 1024, // 8MB
         low_power_mode_supported: false,
         low_power_max_records: None,
@@ -413,7 +413,7 @@ fn test_ha_manager() {
             master_port: None,
             replication_port: 5556,
         }),
-    };
+    });
 
     // 创建HA管理器
     let mut ha_manager = HAManager::new(&CONFIG).expect("Failed to create HAManager");
@@ -443,8 +443,8 @@ fn test_ha_manager_role_switch() {
 
     // 使用全局定义的EMPTY_TABLES
     // 创建测试配置
-    static CONFIG: config::DbConfig = config::DbConfig {
-        tables: EMPTY_TABLES,
+    static CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| config::DbConfig {
+        tables: EMPTY_TABLES.to_vec(),
         total_memory: 8 * 1024 * 1024, // 8MB
         low_power_mode_supported: false,
         low_power_max_records: None,
@@ -476,7 +476,7 @@ fn test_ha_manager_role_switch() {
             master_port: None,
             replication_port: 5556,
         }),
-    };
+    });
 
     // 创建HA管理器
     let mut ha_manager = HAManager::new(&CONFIG).expect("Failed to create HAManager");
@@ -543,7 +543,7 @@ fn test_ha_config_validation() {
 
     // 创建无效配置（心跳间隔太小）
     let invalid_config = config::DbConfig {
-        tables: EMPTY_TABLES,
+        tables: EMPTY_TABLES.to_vec(),
         total_memory: 8 * 1024 * 1024, // 8MB
         low_power_mode_supported: false,
         low_power_max_records: None,
@@ -581,7 +581,7 @@ fn test_ha_config_validation() {
 
     // 创建有效配置
     let valid_config = config::DbConfig {
-        tables: EMPTY_TABLES,
+        tables: EMPTY_TABLES.to_vec(),
         total_memory: 8 * 1024 * 1024, // 8MB
         low_power_mode_supported: false,
         low_power_max_records: None,

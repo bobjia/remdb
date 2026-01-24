@@ -1,6 +1,7 @@
 extern crate alloc;
 use alloc::sync::Arc;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::sync::LazyLock;
 use remdb::memory::allocator;
 use remdb::platform::*;
 use remdb::table::*;
@@ -116,12 +117,12 @@ impl Platform for TestPlatform {
 static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 // 简单的表定义用于基准测试
-static TEST_TABLE_DEF: TableDef = TableDef {
+static TEST_TABLE_DEF: LazyLock<TableDef> = LazyLock::new(|| TableDef {
     id: 0,
-    name: "test_table",
-    fields: &[
+    name: "test_table".to_string(),
+    fields: vec![
         FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: DataType::Int32,
             size: 4,
             offset: 0,
@@ -133,7 +134,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             vector_metadata: None,
         },
         FieldDef {
-            name: "value",
+            name: "value".to_string(),
             data_type: DataType::Float32,
             size: 4,
             offset: 4,
@@ -150,15 +151,18 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     secondary_index_type: IndexType::Hash,
     record_size: 8,
     max_records: 100, // 基准测试使用较小的记录数
-};
+    version: 1,
+    created_at: 0,
+    updated_at: 0,
+});
 
 // 时间序列表定义用于基准测试
-static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
+static TIME_SERIES_TABLE_DEF: LazyLock<TableDef> = LazyLock::new(|| TableDef {
     id: 1,
-    name: "metrics",
-    fields: &[
+    name: "metrics".to_string(),
+    fields: vec![
         FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: DataType::Int32,
             size: 4,
             offset: 0,
@@ -170,7 +174,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             vector_metadata: None,
         },
         FieldDef {
-            name: "metric_name",
+            name: "metric_name".to_string(),
             data_type: DataType::String,
             size: 32,
             offset: 4,
@@ -182,7 +186,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             vector_metadata: None,
         },
         FieldDef {
-            name: "value",
+            name: "value".to_string(),
             data_type: DataType::Float64,
             size: 8,
             offset: 36,
@@ -194,7 +198,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             vector_metadata: None,
         },
         FieldDef {
-            name: "timestamp",
+            name: "timestamp".to_string(),
             data_type: DataType::Timestamp,
             size: 8,
             offset: 44,
@@ -206,7 +210,7 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
             vector_metadata: None,
         },
         FieldDef {
-            name: "tags",
+            name: "tags".to_string(),
             data_type: DataType::String,
             size: 64,
             offset: 52,
@@ -223,7 +227,10 @@ static TIME_SERIES_TABLE_DEF: TableDef = TableDef {
     secondary_index_type: IndexType::SortedArray,
     record_size: 116,  // 4 + 32 + 8 + 8 + 64 = 116字节
     max_records: 2000, // 时间序列测试使用较大的记录数，支持2000条记录
-};
+    version: 1,
+    created_at: 0,
+    updated_at: 0,
+});
 
 // 测试表的插入操作性能
 fn bench_table_insert(c: &mut Criterion) {
@@ -245,7 +252,7 @@ fn bench_table_insert(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
 
             // 只插入一条简单记录
             let record_data = [1u8; 8];
@@ -277,7 +284,7 @@ fn bench_table_query(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据
             for i in 0..100 {
@@ -317,7 +324,7 @@ fn bench_table_query(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据
             for i in 0..100 {
@@ -385,7 +392,7 @@ fn bench_table_update_delete(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据
             for i in 0..100 {
@@ -440,7 +447,7 @@ fn bench_table_update_delete(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据
             for i in 0..100 {
@@ -497,7 +504,7 @@ fn bench_table_field_operations(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据
             let mut record_data = [0u8; 8];
@@ -537,7 +544,7 @@ fn bench_table_field_operations(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据
             let mut record_data = [0u8; 8];
@@ -601,7 +608,7 @@ fn bench_time_series_insert(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 准备时间序列数据
             let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
@@ -651,7 +658,7 @@ fn bench_time_series_insert(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 准备批量时间序列数据
             let mut metrics_data = vec![0u8; 116 * 10]; // 10条记录，使用vec!在堆上分配
@@ -719,7 +726,7 @@ fn bench_time_series_query(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -775,7 +782,7 @@ fn bench_time_series_query(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -860,7 +867,7 @@ fn bench_time_series_aggregation(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -960,7 +967,7 @@ fn bench_time_series_time_range_query(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -1045,7 +1052,7 @@ fn bench_time_series_latest_query(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -1128,7 +1135,7 @@ fn bench_time_series_aggregate_functions(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -1191,7 +1198,7 @@ fn bench_time_series_aggregate_functions(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -1255,7 +1262,7 @@ fn bench_time_series_aggregate_functions(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -1336,7 +1343,7 @@ fn bench_time_series_window_aggregation(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -1399,12 +1406,12 @@ fn bench_time_series_window_aggregation(c: &mut Criterion) {
 }
 
 // 向量表定义用于基准测试
-static VECTOR_TABLE_DEF: TableDef = TableDef {
+static VECTOR_TABLE_DEF: LazyLock<TableDef> = LazyLock::new(|| TableDef {
     id: 2,
-    name: "vector_table",
-    fields: &[
+    name: "vector_table".to_string(),
+    fields: vec![
         FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: DataType::Int32,
             size: 4,
             offset: 0,
@@ -1416,7 +1423,7 @@ static VECTOR_TABLE_DEF: TableDef = TableDef {
             vector_metadata: None,
         },
         FieldDef {
-            name: "vector_32d",
+            name: "vector_32d".to_string(),
             data_type: DataType::Vector,
             size: 32 * 4, // 32维向量，每个元素4字节
             offset: 4,
@@ -1432,7 +1439,7 @@ static VECTOR_TABLE_DEF: TableDef = TableDef {
             }),
         },
         FieldDef {
-            name: "category",
+            name: "category".to_string(),
             data_type: DataType::Int32,
             size: 4,
             offset: 4 + 32 * 4,
@@ -1449,7 +1456,10 @@ static VECTOR_TABLE_DEF: TableDef = TableDef {
     secondary_index_type: IndexType::Hash,
     record_size: 4 + 32 * 4 + 4, // 4字节id + 32*4字节向量 + 4字节category
     max_records: 1000, // 基准测试使用1000条记录
-};
+    version: 1,
+    created_at: 0,
+    updated_at: 0,
+});
 
 // 测试向量数据的插入性能
 fn bench_vector_insert(c: &mut Criterion) {
@@ -1470,7 +1480,7 @@ fn bench_vector_insert(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(VECTOR_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(VECTOR_TABLE_DEF.clone())).unwrap();
 
             // 准备向量数据
             let mut record_data = vec![0u8; VECTOR_TABLE_DEF.record_size];
@@ -1499,7 +1509,7 @@ fn bench_vector_insert(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(VECTOR_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(VECTOR_TABLE_DEF.clone())).unwrap();
 
             // 准备批量向量数据
             const BATCH_SIZE: usize = 10;
@@ -1555,7 +1565,7 @@ fn bench_vector_query(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(VECTOR_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(VECTOR_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -1615,7 +1625,7 @@ fn bench_vector_query(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(VECTOR_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(VECTOR_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -1667,7 +1677,7 @@ fn bench_vector_index(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(VECTOR_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(VECTOR_TABLE_DEF.clone())).unwrap();
 
             // 插入测试数据，指针操作需要unsafe块
             unsafe {
@@ -1718,7 +1728,7 @@ fn bench_time_series_batch_insert_optimized(c: &mut Criterion) {
             allocator::reset_global_allocator().unwrap();
 
             // 创建表
-            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF)).unwrap();
+            let mut table = MemoryTable::new(Arc::new(TIME_SERIES_TABLE_DEF.clone())).unwrap();
 
             // 准备批量时间序列数据
             let mut metrics_data = vec![0u8; 116 * 50]; // 50条记录，使用vec!在堆上分配
@@ -1787,10 +1797,10 @@ fn bench_time_series_table_batch_write(c: &mut Criterion) {
 
             // 创建TimeSeriesTableDef
             let ts_table_def = TimeSeriesTableDef {
-                base: TEST_TABLE_DEF,
+                base: TEST_TABLE_DEF.clone(),
                 time_field: 0,
                 value_field: 1,
-                tag_fields: &[],
+                tag_fields: Box::new([]),
                 config: TimeSeriesConfig::DEFAULT,
             };
 
@@ -1848,10 +1858,10 @@ fn bench_time_series_table_time_range_query(c: &mut Criterion) {
 
             // 创建TimeSeriesTableDef
             let ts_table_def = TimeSeriesTableDef {
-                base: TEST_TABLE_DEF,
+                base: TEST_TABLE_DEF.clone(),
                 time_field: 0,
                 value_field: 1,
-                tag_fields: &[],
+                tag_fields: Box::new([]),
                 config: TimeSeriesConfig::DEFAULT,
             };
 

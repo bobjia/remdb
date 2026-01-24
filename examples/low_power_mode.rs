@@ -42,10 +42,12 @@ struct TestRecord {
 
 // 手动计算表所需的总内存大小
 // 记录大小：id(4字节) + name(32字节) + value(8字节) + timestamp(8字节) = 52字节
+// max_records从表定义中获取，这里直接使用已知值100
 const RECORD_SIZE: usize = 4 + 32 + 8 + 8;
-const TABLE_DATA_SIZE: usize = RECORD_SIZE * TEST_TABLE.max_records;
-const STATUS_ARRAY_SIZE: usize = core::mem::size_of::<RecordHeader>() * TEST_TABLE.max_records;
-const FREE_SLOTS_SIZE: usize = core::mem::size_of::<usize>() * TEST_TABLE.max_records;
+const MAX_RECORDS: usize = 100; // 与表定义中的值保持一致
+const TABLE_DATA_SIZE: usize = RECORD_SIZE * MAX_RECORDS;
+const STATUS_ARRAY_SIZE: usize = core::mem::size_of::<RecordHeader>() * MAX_RECORDS;
+const FREE_SLOTS_SIZE: usize = core::mem::size_of::<usize>() * MAX_RECORDS;
 const TABLE_MEM_SIZE: usize = TABLE_DATA_SIZE + STATUS_ARRAY_SIZE + FREE_SLOTS_SIZE;
 
 fn main() {

@@ -131,7 +131,7 @@ static TEST_DB_CONFIG: std::sync::LazyLock<remdb::config::DbConfig> = std::sync:
     low_power_max_records: None,
     memory_allocator: &remdb::config::DefaultMemoryAllocator,
     wal_config: WALConfig {
-        log_path: "./wal".to_string(),
+        log_path: "./wal",
         log_mode: remdb::config::LogMode::Async,
         log_prealloc_size: 0,
         log_file_size_limit: 1048576,
@@ -154,7 +154,7 @@ static TEST_DB_CONFIG: std::sync::LazyLock<remdb::config::DbConfig> = std::sync:
         replication_port: 5556,
     }),
     time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
-};
+});
 
 #[test]
 fn test_insert_ignore_functionality() {

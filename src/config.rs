@@ -60,7 +60,7 @@ pub enum LogMode {
 /// WAL日志配置
 pub struct WALConfig {
     /// 日志文件路径
-    pub log_path: String,
+    pub log_path: &'static str,
     /// 日志模式（同步/异步）
     pub log_mode: LogMode,
     /// 检查点间隔（毫秒，默认60秒）

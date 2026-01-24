@@ -9,12 +9,12 @@ static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152]; // 2MB内存，用于多�
 
 // 定义用户表结构
 // 手动定义表结构，避免使用有问题的 calculate_record_size 宏
-static users: remdb::types::TableDef = remdb::types::TableDef {
+static users: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| remdb::types::TableDef {
     id: 0,
-    name: "users",
-    fields: &[
+    name: "users".to_string(),
+    fields: vec![
         remdb::types::FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: remdb::types::DataType::UInt32,
             size: 4,
             offset: 0,
@@ -26,7 +26,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "name",
+            name: "name".to_string(),
             data_type: remdb::types::DataType::String,
             size: 32,
             offset: 4,
@@ -38,7 +38,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "email",
+            name: "email".to_string(),
             data_type: remdb::types::DataType::String,
             size: 64,
             offset: 36,
@@ -50,7 +50,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "age",
+            name: "age".to_string(),
             data_type: remdb::types::DataType::UInt8,
             size: 1,
             offset: 100,
@@ -62,7 +62,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "active",
+            name: "active".to_string(),
             data_type: remdb::types::DataType::Bool,
             size: 1,
             offset: 101,
@@ -74,7 +74,7 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "created_at",
+            name: "created_at".to_string(),
             data_type: remdb::types::DataType::Timestamp,
             size: 8,
             offset: 102,
@@ -91,15 +91,18 @@ static users: remdb::types::TableDef = remdb::types::TableDef {
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 112, // 正确的记录大小：4 + 32 + 64 + 1 + 1 + 8 = 110字节（对齐到8字节是112字节）
     max_records: 100,
-};
+    created_at: 0,
+    updated_at: 0,
+    version: 1,
+});
 
 // 定义订单表结构
-static orders: remdb::types::TableDef = remdb::types::TableDef {
+static orders: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| remdb::types::TableDef {
     id: 1,
-    name: "orders",
-    fields: &[
+    name: "orders".to_string(),
+    fields: vec![
         remdb::types::FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: remdb::types::DataType::UInt64,
             size: 8,
             offset: 0,
@@ -111,7 +114,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "user_id",
+            name: "user_id".to_string(),
             data_type: remdb::types::DataType::UInt32,
             size: 4,
             offset: 8,
@@ -123,7 +126,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "product",
+            name: "product".to_string(),
             data_type: remdb::types::DataType::String,
             size: 64,
             offset: 12,
@@ -135,7 +138,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "quantity",
+            name: "quantity".to_string(),
             data_type: remdb::types::DataType::UInt32,
             size: 4,
             offset: 76,
@@ -147,7 +150,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "amount",
+            name: "amount".to_string(),
             data_type: remdb::types::DataType::Float64,
             size: 8,
             offset: 80,
@@ -159,7 +162,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "status",
+            name: "status".to_string(),
             data_type: remdb::types::DataType::String,
             size: 16,
             offset: 88,
@@ -171,7 +174,7 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "created_at",
+            name: "created_at".to_string(),
             data_type: remdb::types::DataType::Timestamp,
             size: 8,
             offset: 104,
@@ -188,15 +191,18 @@ static orders: remdb::types::TableDef = remdb::types::TableDef {
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 112, // 正确的记录大小：8 + 4 + 64 + 4 + 8 + 16 + 8 = 112字节
     max_records: 200,
-};
+    created_at: 0,
+    updated_at: 0,
+    version: 1,
+});
 
 // 定义产品表结构
-static products: remdb::types::TableDef = remdb::types::TableDef {
+static products: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| remdb::types::TableDef {
     id: 2,
-    name: "products",
-    fields: &[
+    name: "products".to_string(),
+    fields: vec![
         remdb::types::FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: remdb::types::DataType::UInt32,
             size: 4,
             offset: 0,
@@ -208,7 +214,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "name",
+            name: "name".to_string(),
             data_type: remdb::types::DataType::String,
             size: 64,
             offset: 4,
@@ -220,7 +226,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "description",
+            name: "description".to_string(),
             data_type: remdb::types::DataType::String,
             size: 128,
             offset: 68,
@@ -232,7 +238,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "price",
+            name: "price".to_string(),
             data_type: remdb::types::DataType::Float64,
             size: 8,
             offset: 196,
@@ -244,7 +250,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "stock",
+            name: "stock".to_string(),
             data_type: remdb::types::DataType::UInt32,
             size: 4,
             offset: 204,
@@ -256,7 +262,7 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
             vector_metadata: None,
         },
         remdb::types::FieldDef {
-            name: "active",
+            name: "active".to_string(),
             data_type: remdb::types::DataType::Bool,
             size: 1,
             offset: 208,
@@ -273,7 +279,10 @@ static products: remdb::types::TableDef = remdb::types::TableDef {
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 216, // 正确的记录大小：4 + 64 + 128 + 8 + 4 + 1 = 209字节（对齐到8字节是216字节）
     max_records: 150,
-};
+    created_at: 0,
+    updated_at: 0,
+    version: 1,
+});
 
 // 定义数据库配置，包含多个表
 remdb::database!(

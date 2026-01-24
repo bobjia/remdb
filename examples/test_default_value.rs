@@ -24,7 +24,7 @@ static CONFIG: DbConfig = unsafe {
         default_max_records: 10, // 减少默认最大记录数，避免内存不足
         memory_allocator: &mut DEFAULT_ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "./wal".to_string(),
+            log_path: "./wal",
             log_mode: LogMode::Sync,
             log_prealloc_size: 1 * 1024 * 1024,
             log_file_size_limit: 16 * 1024 * 1024,
