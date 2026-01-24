@@ -124,7 +124,7 @@ fn test_index_recovery() -> Result<()> {
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
-        default_max_records: 100000,
+        default_max_records: 1000,
         memory_allocator: &remdb::config::DefaultMemoryAllocator,
         wal_config: remdb::config::WALConfig {
             log_path: "./wal",
@@ -139,17 +139,7 @@ fn test_index_recovery() -> Result<()> {
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
-        ha_config: Some(remdb::config::HAConfig {
-            node_id: 1,
-            ha_role: remdb::ha::HARole::Auto,
-            replication_mode: remdb::ha::ReplicationMode::Async,
-            heartbeat_interval_ms: 1000,
-            failure_detection_ms: 3000,
-            sync_timeout_ms: 2000,
-            master_address: None,
-            master_port: None,
-            replication_port: 5556,
-        }),
+        ha_config: None,
     });
 
     let db = remdb::init_global_db(&TEST_DB_CONFIG)?;

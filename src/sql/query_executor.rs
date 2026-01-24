@@ -56,7 +56,7 @@ fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16), Query
             "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" |
             "VARCHAR" | "CHAR" | "TEXT" |
             "BOOL" | "BOOLEAN" |
-            "TIMESTAMP" |
+            "TIMESTAMP" | "TIMESTAMPTZ" |
             "VECTOR" => Ok((base_type.to_string(), param)),
             _ => Err(QueryExecutionError::TypeMismatch),
         }
@@ -71,7 +71,7 @@ fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16), Query
             "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" |
             "VARCHAR" | "CHAR" | "TEXT" |
             "BOOL" | "BOOLEAN" |
-            "TIMESTAMP" => Ok((base_type.to_string(), 6)), // 默认精度6（微秒）
+            "TIMESTAMP" | "TIMESTAMPTZ" => Ok((base_type.to_string(), 6)), // 默认精度6（微秒）
             _ => Err(QueryExecutionError::TypeMismatch),
         }
     }
