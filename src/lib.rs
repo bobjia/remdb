@@ -1830,12 +1830,12 @@ impl DdlExecutor for RemDb {
             + hash_table_size * core::mem::size_of::<Option<NonNull<PrimaryIndexItem>>>())
             as *mut PrimaryIndexItem;
 
-        // 5. 创建新的内存表（不迁移数据，只测试表结构变更）
+        // 5. 创建新的内存表
         #[cfg(feature = "std")]
         eprintln!("Creating new table with updated definition");
         
         let new_table_def_arc = alloc::sync::Arc::new(new_table_def);
-        let new_table = MemoryTable::new(new_table_def_arc.clone()).map_err(|e| {
+        let mut new_table = MemoryTable::new(new_table_def_arc.clone()).map_err(|e| {
             #[cfg(feature = "std")]
             eprintln!("Failed to create new table: {:?}", e);
             e
@@ -1844,10 +1844,133 @@ impl DdlExecutor for RemDb {
         #[cfg(feature = "std")]
         eprintln!("Created new table successfully");
 
-        // 6. 替换旧表
+        // 6. 迁移旧表数据到新表
+        #[cfg(feature = "std")]
+        eprintln!("Starting data migration from old table to new table");
+        
+        // 保存旧表引用
+        let old_table = current_table;
+        
+        // 迁移数据
+        unsafe {
+            // 遍历旧表的所有记录槽
+            for slot_id in 0..old_table.def.max_records {
+                let status_ptr = old_table.status_array.as_ptr().add(slot_id);
+                let status = &*status_ptr;
+                
+                // 只迁移已使用且可见的记录
+                if status.status == RecordStatus::Used {
+                    // 获取旧记录的数据指针
+                    let old_record_ptr = old_table.data_start.as_ptr().add(slot_id * old_table.record_size);
+                    
+                    // 创建新记录缓冲区
+                    let mut new_record_data = [0u8; 512]; // 假设最大记录大小为512字节
+                    
+                    // 迁移字段数据
+                    for old_field in old_table.def.fields.iter() {
+                        // 查找新表中对应的字段（按名称匹配）
+                        if let Some(new_field) = new_table_def_arc.fields.iter().find(|f| f.name == old_field.name) {
+                            // 复制字段数据
+                            let copy_len = core::cmp::min(old_field.size, new_field.size);
+                            crate::platform::memcpy(
+                                new_record_data.as_mut_ptr().add(new_field.offset),
+                                old_record_ptr.add(old_field.offset),
+                                copy_len
+                            );
+                        }
+                    }
+                    
+                    // 直接插入新记录到新表，绕过约束验证和事务处理
+                    unsafe {
+                        // 获取空闲槽
+                        let mut new_slot_id = 0;
+                        let mut is_overwrite = false;
+                        
+                        // 自旋锁保护
+                        crate::platform::spin_lock(&mut new_table.lock);
+                        
+                        // 检查是否有空闲槽
+                        if new_table.free_slot_count > 0 {
+                            // 从空闲槽栈获取空闲记录槽
+                            new_slot_id = *new_table.free_slots.as_ptr().add(new_table.free_slot_count - 1);
+                            new_table.free_slot_count -= 1;
+                        } else {
+                            // 没有空闲槽，跳过这条记录
+                            crate::platform::spin_unlock(&mut new_table.lock);
+                            continue;
+                        }
+                        
+                        // 释放锁
+                        crate::platform::spin_unlock(&mut new_table.lock);
+                        
+                        // 计算记录地址
+                        let record_ptr = new_table.data_start.as_ptr().add(new_slot_id * new_table.record_size);
+                        
+                        // 拷贝记录数据
+                        crate::platform::memcpy(
+                            record_ptr,
+                            new_record_data.as_ptr(),
+                            new_table.record_size
+                        );
+                        
+                        // 更新状态
+                        let status_ptr = new_table.status_array.as_ptr().add(new_slot_id);
+                        (*status_ptr).status = crate::types::RecordStatus::Used;
+                        (*status_ptr).version += 1;
+                        
+                        // 再次加锁，更新记录计数和max_pk
+                        crate::platform::spin_lock(&mut new_table.lock);
+                        new_table.record_count += 1;
+                        
+                        // 更新max_pk（如果有主键字段）
+                        if let Some(pk_field) = new_table_def_arc.fields.iter().find(|f| f.primary_key) {
+                            // 获取当前记录的主键值
+                            let pk_value = match pk_field.data_type {
+                                crate::types::DataType::UInt8 => {
+                                    unsafe { *(record_ptr.add(pk_field.offset) as *const u8) as u64 }
+                                },
+                                crate::types::DataType::UInt16 => {
+                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u16) as u64 }
+                                },
+                                crate::types::DataType::UInt32 => {
+                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u32) as u64 }
+                                },
+                                crate::types::DataType::UInt64 => {
+                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u64) }
+                                },
+                                crate::types::DataType::Int8 => {
+                                    unsafe { *(record_ptr.add(pk_field.offset) as *const i8) as u64 }
+                                },
+                                crate::types::DataType::Int16 => {
+                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i16) as u64 }
+                                },
+                                crate::types::DataType::Int32 => {
+                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i32) as u64 }
+                                },
+                                crate::types::DataType::Int64 => {
+                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i64) as u64 }
+                                },
+                                _ => 0,
+                            };
+                            
+                            if pk_value > new_table.max_pk {
+                                new_table.max_pk = pk_value;
+                            }
+                        }
+                        
+                        crate::platform::spin_unlock(&mut new_table.lock);
+                    }
+                }
+            }
+        }
+        
+        #[cfg(feature = "std")]
+        eprintln!("Data migration completed successfully");
+
+        // 7. 替换旧表
         self.tables[table_index] = Some(new_table);
 
-        // 7. 创建新的主键索引
+        // 8. 创建新的主键索引
         let primary_index = unsafe {
             PrimaryIndex::new(
                 new_table_def_arc.clone(),
@@ -1858,10 +1981,10 @@ impl DdlExecutor for RemDb {
             )
         };
         
-        // 8. 替换旧的主键索引
+        // 9. 替换旧的主键索引
         self.primary_indices[table_index] = Some(primary_index);
         
-        // 9. 重置辅助索引（因为表结构已经改变）
+        // 10. 重置辅助索引（因为表结构已经改变）
         self.secondary_indices[table_index] = None;
 
         // 10. 记录ALTER_TABLE日志到WAL

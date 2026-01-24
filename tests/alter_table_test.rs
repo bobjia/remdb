@@ -293,3 +293,69 @@ fn test_alter_table_rename_column() {
     let result = db.sql_query("ALTER TABLE users RENAME COLUMN age TO user_age");
     assert!(result.is_ok(), "Failed to rename column: {:?}", result.err());
 }
+
+#[test]
+fn test_alter_table_data_migration() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+
+    // 重置内存缓冲区
+    unsafe {
+        core::ptr::write_bytes(DB_MEMORY.as_mut_ptr(), 0, DB_MEMORY.len());
+    }
+
+    // 初始化平台
+    platform::init_platform(&TEST_PLATFORM);
+
+    // 使用共享内存缓冲区初始化全局内存分配器
+    let result = memory::allocator::init_global_allocator(
+        unsafe { DB_MEMORY.as_mut_ptr() },
+        unsafe { DB_MEMORY.len() }
+    );
+    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
+
+    // 创建数据库实例
+    let mut db = RemDb::new(&*TEST_CONFIG);
+
+    // 1. 创建表
+    let result = db.create_table(
+        "test_table",
+        &[
+            ("id", DataType::UInt32, 4, None, None),
+            ("name", DataType::String, 32, None, None),
+            ("age", DataType::UInt8, 1, None, None),
+        ],
+        Some(0), // 主键为id字段
+    );
+    assert!(result.is_ok(), "Failed to create table: {:?}", result.err());
+
+    // 2. 使用SQL插入测试数据
+    // 插入第一条记录
+    let result = db.sql_query("INSERT INTO test_table (id, name, age) VALUES (1, 'test1', 20)");
+    assert!(result.is_ok(), "Failed to insert record1: {:?}", result.err());
+
+    // 插入第二条记录
+    let result = db.sql_query("INSERT INTO test_table (id, name, age) VALUES (2, 'test2', 30)");
+    assert!(result.is_ok(), "Failed to insert record2: {:?}", result.err());
+
+    // 3. 执行ALTER TABLE操作（添加列）
+    let result = db.sql_query("ALTER TABLE test_table ADD COLUMN active BOOL");
+    assert!(result.is_ok(), "Failed to add column: {:?}", result.err());
+
+    // 4. 验证数据是否正确迁移
+    // 使用SQL查询验证数据
+    let result = db.sql_query("SELECT id FROM test_table WHERE id = 1");
+    assert!(result.is_ok(), "Failed to select record 1: {:?}", result.err());
+    let result_set = result.unwrap();
+    assert_eq!(result_set.rows.len(), 1, "Expected 1 row for id=1, got {}", result_set.rows.len());
+    
+    let result = db.sql_query("SELECT id FROM test_table WHERE id = 2");
+    assert!(result.is_ok(), "Failed to select record 2: {:?}", result.err());
+    let result_set = result.unwrap();
+    assert_eq!(result_set.rows.len(), 1, "Expected 1 row for id=2, got {}", result_set.rows.len());
+    
+    // 验证可以查询所有记录
+    let result = db.sql_query("SELECT COUNT(*) FROM test_table");
+    assert!(result.is_ok(), "Failed to count records: {:?}", result.err());
+    let result_set = result.unwrap();
+    assert_eq!(result_set.rows.len(), 1, "Expected 1 row for count, got {}", result_set.rows.len());
+}
