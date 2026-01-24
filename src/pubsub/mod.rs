@@ -11,6 +11,7 @@ pub mod udp;
 use crate::pubsub::topics::*;
 use alloc::vec::Vec;
 use core::fmt;
+use core::sync::atomic::{AtomicBool, Ordering};
 use protocol::ProtocolFrame;
 
 // 公共错误类型
@@ -118,6 +119,8 @@ impl Default for PubSubConfig {
 
 // 全局发布/订阅实例
 static mut PUB_SUB_INSTANCE: Option<PubSub> = None;
+// 原子锁标志，用于线程安全的初始化
+static PUB_SUB_INIT_LOCK: AtomicBool = AtomicBool::new(false);
 
 // 发布/订阅系统核心结构体
 pub struct PubSub {
@@ -371,6 +374,21 @@ impl PubSub {
 /// 初始化全局发布/订阅实例
 pub fn init(config: PubSubConfig) -> Result<()> {
     unsafe {
+        // 使用原子交换实现自旋锁，确保线程安全初始化
+        while PUB_SUB_INIT_LOCK.swap(true, Ordering::Acquire) {
+            // 自旋等待锁释放
+            core::hint::spin_loop();
+        }
+
+        // 确保锁在函数结束时释放
+        struct LockGuard;
+        impl Drop for LockGuard {
+            fn drop(&mut self) {
+                PUB_SUB_INIT_LOCK.store(false, Ordering::Release);
+            }
+        }
+        let _guard = LockGuard;
+
         let pubsub_ptr = core::ptr::addr_of_mut!(PUB_SUB_INSTANCE);
         if (*pubsub_ptr).is_some() {
             // 如果已经初始化，直接返回成功
@@ -502,6 +520,21 @@ pub(crate) fn get_global_pubsub() -> Option<&'static mut PubSub> {
 /// 停止发布/订阅系统
 pub fn shutdown() -> Result<()> {
     unsafe {
+        // 使用原子交换实现自旋锁，确保线程安全关闭
+        while PUB_SUB_INIT_LOCK.swap(true, Ordering::Acquire) {
+            // 自旋等待锁释放
+            core::hint::spin_loop();
+        }
+
+        // 确保锁在函数结束时释放
+        struct LockGuard;
+        impl Drop for LockGuard {
+            fn drop(&mut self) {
+                PUB_SUB_INIT_LOCK.store(false, Ordering::Release);
+            }
+        }
+        let _guard = LockGuard;
+
         let pubsub_ptr = core::ptr::addr_of_mut!(PUB_SUB_INSTANCE);
         // Only shutdown if we have an instance
         if (*pubsub_ptr).is_some() {

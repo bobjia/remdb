@@ -12,7 +12,9 @@ impl MemoryAllocator for DefaultMemoryAllocator {
         // 实际分配内存
         #[cfg(feature = "std")]
         {
-            let mut vec = vec![0u8; size];
+            // 使用with_capacity + resize确保capacity == size
+            let mut vec = Vec::with_capacity(size);
+            vec.resize(size, 0);
             let ptr = vec.as_mut_ptr();
             // 释放vec对内存的所有权，但不释放内存本身
             std::mem::forget(vec);
@@ -30,8 +32,9 @@ impl MemoryAllocator for DefaultMemoryAllocator {
         #[cfg(feature = "std")]
         {
             unsafe {
-                let slice = core::slice::from_raw_parts_mut(ptr.as_ptr(), size);
-                let vec = Vec::from_raw_parts(slice.as_mut_ptr(), 0, size);
+                // When recreating Vec for deallocation, len should match original allocation size
+                // because we initialized all bytes with vec![0u8; size]
+                let vec = Vec::from_raw_parts(ptr.as_ptr(), size, size);
                 drop(vec);
             }
         }

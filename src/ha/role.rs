@@ -39,24 +39,10 @@ impl RoleManager {
 
     /// 初始化pubsub系统
     fn init_pubsub(&self) -> Result<()> {
-        // pubsub系统可能已经由其他组件初始化
-        // 这里尝试初始化，如果失败则忽略
-        let pubsub_config = PubSubConfig {
-            udp_mode: UdpMode::Unicast,
-            multicast_addr: None,
-            port: 5558, // 使用专门的角色变更端口
-            max_topics: 2,
-            max_subscribers_per_topic: 8,
-            buffer_size: 2048,
-            enable_nack: true,
-            retransmit_timeout: core::time::Duration::from_millis(100),
-            max_retransmits: 3,
-            heartbeat_interval: core::time::Duration::from_secs(10),
-            frame_pool_size: 64,
-        };
-
-        // 尝试初始化pubsub，如果失败则忽略（测试环境可能没有网络）
-        let _ = pubsub::init(pubsub_config);
+        // pubsub系统已经由HA管理器统一初始化，无需再次初始化
+        // 这里只做日志记录
+        #[cfg(feature = "std")]
+        eprintln!("[DEBUG] Role manager using existing pubsub system");
 
         Ok(())
     }
