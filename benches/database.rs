@@ -1901,12 +1901,229 @@ fn bench_time_series_table_time_range_query(c: &mut Criterion) {
     group.finish();
 }
 
+// 测试零拷贝读取性能
+fn bench_zero_copy_read(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 1024 * 1024; // 1MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+
+    let mut group = c.benchmark_group("zero_copy_read");
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
+
+    group.bench_function("traditional_copy", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
+
+            // 插入测试数据
+            for i in 0..100 {
+                let mut record_data = [0u8; 8];
+                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let value: f32 = i as f32 * 1.0;
+
+                // 指针操作需要unsafe块
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        &id as *const i32 as *const u8,
+                        record_data.as_mut_ptr(),
+                        4,
+                    );
+                    core::ptr::copy_nonoverlapping(
+                        &value as *const f32 as *const u8,
+                        record_data.as_mut_ptr().add(4),
+                        4,
+                    );
+
+                    table.insert(record_data.as_ptr()).unwrap();
+                }
+            }
+
+            let mut result_data = [0u8; 8];
+
+            // 传统拷贝方式查询记录，get_by_id方法是unsafe的
+            unsafe {
+                table.get_by_id(50, result_data.as_mut_ptr()).unwrap();
+                // 读取结果
+                let id = core::ptr::read(result_data.as_ptr() as *const i32);
+                let value = core::ptr::read(result_data.as_mut_ptr().add(4) as *const f32);
+                black_box((id, value));
+            }
+        })
+    });
+
+    group.bench_function("zero_copy_ref", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
+
+            // 插入测试数据
+            for i in 0..100 {
+                let mut record_data = [0u8; 8];
+                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let value: f32 = i as f32 * 1.0;
+
+                // 指针操作需要unsafe块
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        &id as *const i32 as *const u8,
+                        record_data.as_mut_ptr(),
+                        4,
+                    );
+                    core::ptr::copy_nonoverlapping(
+                        &value as *const f32 as *const u8,
+                        record_data.as_mut_ptr().add(4),
+                        4,
+                    );
+
+                    table.insert(record_data.as_ptr()).unwrap();
+                }
+            }
+
+            // 零拷贝方式查询记录，get_by_id_ref方法是安全的
+            if let Some(record_ref) = table.get_by_id_ref(50) {
+                // 直接从内存中读取，无需拷贝
+                let id = record_ref.get_i32(0).unwrap();
+                let value = record_ref.get_f32(1).unwrap();
+                black_box((id, value));
+            }
+        })
+    });
+
+    group.finish();
+}
+
+// 测试零拷贝遍历性能
+fn bench_zero_copy_iterate(c: &mut Criterion) {
+    // 初始化平台
+    init_platform(&TEST_PLATFORM);
+
+    // 初始化全局内存分配器一次，而不是每个迭代都初始化
+    const MEMORY_SIZE: usize = 1024 * 1024; // 1MB
+    let mut memory = vec![0u8; MEMORY_SIZE];
+    allocator::init_global_allocator(memory.as_mut_ptr(), MEMORY_SIZE).unwrap();
+
+    let mut group = c.benchmark_group("zero_copy_iterate");
+    group.sample_size(1000); // 提高样本数到1000，获得更准确的基准测试结果
+
+    group.bench_function("traditional_iterate", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
+
+            // 插入测试数据
+            for i in 0..100 {
+                let mut record_data = [0u8; 8];
+                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let value: f32 = i as f32 * 1.0;
+
+                // 指针操作需要unsafe块
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        &id as *const i32 as *const u8,
+                        record_data.as_mut_ptr(),
+                        4,
+                    );
+                    core::ptr::copy_nonoverlapping(
+                        &value as *const f32 as *const u8,
+                        record_data.as_mut_ptr().add(4),
+                        4,
+                    );
+
+                    table.insert(record_data.as_ptr()).unwrap();
+                }
+            }
+
+            let mut count = 0;
+            let mut sum = 0.0f32;
+
+            // 传统遍历方式，iterate方法是unsafe的
+            unsafe {
+                table
+                    .iterate(|_id, data_ptr| {
+                        let id = core::ptr::read(data_ptr as *const i32);
+                        let value = core::ptr::read(data_ptr.add(4) as *const f32);
+                        sum += value;
+                        count += 1;
+
+                        true // 继续遍历
+                    })
+                    .unwrap();
+            }
+
+            black_box((count, sum));
+        })
+    });
+
+    group.bench_function("zero_copy_scan", |b| {
+        b.iter(|| {
+            // 在每次迭代前重置内存分配器
+            allocator::reset_global_allocator().unwrap();
+
+            // 创建表
+            let mut table = MemoryTable::new(Arc::new(TEST_TABLE_DEF.clone())).unwrap();
+
+            // 插入测试数据
+            for i in 0..100 {
+                let mut record_data = [0u8; 8];
+                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let value: f32 = i as f32 * 1.0;
+
+                // 指针操作需要unsafe块
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        &id as *const i32 as *const u8,
+                        record_data.as_mut_ptr(),
+                        4,
+                    );
+                    core::ptr::copy_nonoverlapping(
+                        &value as *const f32 as *const u8,
+                        record_data.as_mut_ptr().add(4),
+                        4,
+                    );
+
+                    table.insert(record_data.as_ptr()).unwrap();
+                }
+            }
+
+            let mut count = 0;
+            let mut sum = 0.0f32;
+
+            // 零拷贝遍历方式，scan_ref方法返回一个RecordCursor，实现了Iterator trait
+            for record_ref in table.scan_ref() {
+                let id = record_ref.get_i32(0).unwrap();
+                let value = record_ref.get_f32(1).unwrap();
+                sum += value;
+                count += 1;
+            }
+
+            black_box((count, sum));
+        })
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_table_insert,
     bench_table_query,
     bench_table_update_delete,
     bench_table_field_operations,
+    bench_zero_copy_read,
+    bench_zero_copy_iterate,
     bench_time_series_insert,
     bench_time_series_query,
     bench_time_series_aggregation,
