@@ -1650,9 +1650,9 @@ impl DdlExecutor for RemDb {
         eprintln!("Executing operation: {:?}", operation);
         
         match operation {
-            AlterTableOperation::AddColumn { name, data_type, size, distance_type, default_value, constraints } => {
+            AlterTableOperation::AddColumn { ref name, data_type, size, distance_type, default_value, ref constraints } => {
                 // 检查列名是否已存在
-                if new_table_def.fields.iter().any(|f| f.name == name) {
+                if new_table_def.fields.iter().any(|f| f.name == *name) {
                     return Err(RemDbError::ConfigError);
                 }
 
@@ -1677,7 +1677,7 @@ impl DdlExecutor for RemDb {
 
                 // 创建新字段定义
                 let new_field = FieldDef {
-                    name,
+                    name: name.clone(),
                     data_type,
                     size: field_size,
                     offset: new_offset,
@@ -1703,9 +1703,9 @@ impl DdlExecutor for RemDb {
                 new_table_def.version += 1;
                 new_table_def.updated_at = crate::platform::get_timestamp_us();
             },
-            AlterTableOperation::DropColumn { name } => {
+            AlterTableOperation::DropColumn { ref name } => {
                 // 查找要删除的列
-                let field_index = new_table_def.fields.iter().position(|f| f.name == name)
+                let field_index = new_table_def.fields.iter().position(|f| f.name == *name)
                     .ok_or(RemDbError::FieldNotFound)?;
 
                 // 不能删除主键列
@@ -1731,9 +1731,9 @@ impl DdlExecutor for RemDb {
                 new_table_def.version += 1;
                 new_table_def.updated_at = crate::platform::get_timestamp_us();
             },
-            AlterTableOperation::ModifyColumn { name, data_type, size, distance_type, default_value, constraints } => {
+            AlterTableOperation::ModifyColumn { ref name, data_type, size, distance_type, default_value, ref constraints } => {
                 // 查找要修改的列
-                let field_index = new_table_def.fields.iter().position(|f| f.name == name)
+                let field_index = new_table_def.fields.iter().position(|f| f.name == *name)
                     .ok_or(RemDbError::FieldNotFound)?;
 
                 let field = &mut new_table_def.fields[field_index];
@@ -1785,18 +1785,18 @@ impl DdlExecutor for RemDb {
                 new_table_def.version += 1;
                 new_table_def.updated_at = crate::platform::get_timestamp_us();
             },
-            AlterTableOperation::RenameColumn { old_name, new_name } => {
+            AlterTableOperation::RenameColumn { ref old_name, ref new_name } => {
                 // 检查新列名是否已存在
-                if new_table_def.fields.iter().any(|f| f.name == new_name) {
+                if new_table_def.fields.iter().any(|f| f.name == *new_name) {
                     return Err(RemDbError::ConfigError);
                 }
 
                 // 查找要重命名的列
-                let field_index = new_table_def.fields.iter().position(|f| f.name == old_name)
+                let field_index = new_table_def.fields.iter().position(|f| f.name == *old_name)
                     .ok_or(RemDbError::FieldNotFound)?;
 
                 // 重命名列
-                new_table_def.fields[field_index].name = new_name;
+                new_table_def.fields[field_index].name = new_name.clone();
                 new_table_def.version += 1;
                 new_table_def.updated_at = crate::platform::get_timestamp_us();
             },
@@ -1863,6 +1863,150 @@ impl DdlExecutor for RemDb {
         
         // 9. 重置辅助索引（因为表结构已经改变）
         self.secondary_indices[table_index] = None;
+
+        // 10. 记录ALTER_TABLE日志到WAL
+        unsafe {
+            // 直接使用LogManager写入日志，而不是通过TransactionManager
+            let tx_manager = crate::transaction::get_tx_manager();
+            if let Some(log_manager) = tx_manager.get_log_manager_mut() {
+                // 序列化表结构变更信息
+                let mut log_data = [0u8; 512];
+                
+                // 写入表名
+                let name_bytes = table_name.as_bytes();
+                let name_len = core::cmp::min(name_bytes.len(), 64);
+                log_data[0] = name_len as u8;
+                log_data[1..1 + name_len].copy_from_slice(&name_bytes[..name_len]);
+                
+                // 写入操作类型
+                let op_type_code = match &operation {
+                    AlterTableOperation::AddColumn { .. } => 0,
+                    AlterTableOperation::DropColumn { .. } => 1,
+                    AlterTableOperation::ModifyColumn { .. } => 2,
+                    AlterTableOperation::RenameColumn { .. } => 3,
+                };
+                log_data[65] = op_type_code;
+                
+                // 写入表ID
+                log_data[66] = table_index as u8;
+                
+                // 根据操作类型写入详细信息
+                let mut data_size = 67;
+                match &operation {
+                    AlterTableOperation::AddColumn { ref name, ref data_type, size, ref distance_type, ref default_value, ref constraints } => {
+                        // 写入列名
+                        let name_bytes = name.as_bytes();
+                        let col_name_len = core::cmp::min(name_bytes.len(), 64);
+                        log_data[67] = col_name_len as u8;
+                        log_data[68..68 + col_name_len].copy_from_slice(&name_bytes[..col_name_len]);
+                        
+                        // 写入数据类型
+                        log_data[132] = (*data_type) as u8;
+                        
+                        // 写入大小
+                        log_data[133..135].copy_from_slice(&size.to_le_bytes());
+                        
+                        // 写入约束
+                        let mut constraint_bits = 0u8;
+                        if constraints.primary_key {
+                            constraint_bits |= 0b0001;
+                        }
+                        if constraints.not_null {
+                            constraint_bits |= 0b0010;
+                        }
+                        if constraints.unique {
+                            constraint_bits |= 0b0100;
+                        }
+                        if constraints.auto_increment {
+                            constraint_bits |= 0b1000;
+                        }
+                        log_data[135] = constraint_bits;
+                        
+                        data_size = 136;
+                    },
+                    AlterTableOperation::DropColumn { ref name } => {
+                        // 写入列名
+                        let name_bytes = name.as_bytes();
+                        let col_name_len = core::cmp::min(name_bytes.len(), 64);
+                        log_data[67] = col_name_len as u8;
+                        log_data[68..68 + col_name_len].copy_from_slice(&name_bytes[..col_name_len]);
+                        
+                        data_size = 68 + col_name_len;
+                    },
+                    AlterTableOperation::ModifyColumn { ref name, ref data_type, size, ref distance_type, ref default_value, ref constraints } => {
+                        // 写入列名
+                        let name_bytes = name.as_bytes();
+                        let col_name_len = core::cmp::min(name_bytes.len(), 64);
+                        log_data[67] = col_name_len as u8;
+                        log_data[68..68 + col_name_len].copy_from_slice(&name_bytes[..col_name_len]);
+                        
+                        // 写入数据类型
+                        log_data[132] = (*data_type) as u8;
+                        
+                        // 写入大小
+                        log_data[133..135].copy_from_slice(&size.to_le_bytes());
+                        
+                        // 写入约束
+                        let mut constraint_bits = 0u8;
+                        if constraints.primary_key {
+                            constraint_bits |= 0b0001;
+                        }
+                        if constraints.not_null {
+                            constraint_bits |= 0b0010;
+                        }
+                        if constraints.unique {
+                            constraint_bits |= 0b0100;
+                        }
+                        if constraints.auto_increment {
+                            constraint_bits |= 0b1000;
+                        }
+                        log_data[135] = constraint_bits;
+                        
+                        data_size = 136;
+                    },
+                    AlterTableOperation::RenameColumn { ref old_name, ref new_name } => {
+                        // 写入旧列名
+                        let old_name_bytes = old_name.as_bytes();
+                        let old_col_name_len = core::cmp::min(old_name_bytes.len(), 64);
+                        log_data[67] = old_col_name_len as u8;
+                        log_data[68..68 + old_col_name_len].copy_from_slice(&old_name_bytes[..old_col_name_len]);
+                        
+                        // 写入新列名
+                        let new_name_bytes = new_name.as_bytes();
+                        let new_col_name_len = core::cmp::min(new_name_bytes.len(), 64);
+                        log_data[132] = new_col_name_len as u8;
+                        log_data[133..133 + new_col_name_len].copy_from_slice(&new_name_bytes[..new_col_name_len]);
+                        
+                        data_size = 133 + new_col_name_len;
+                    },
+                }
+                
+                // 创建日志项
+                let log_item = crate::transaction::LogItem {
+                    op_type: crate::transaction::LogOperation::AlterTable,
+                    table_id: table_index as u8,
+                    record_id: 0, // ALTER TABLE操作不涉及特定记录
+                    data_size: data_size as u16,
+                    old_data: [0; 512],
+                    new_data: log_data,
+                    tx_id: 0,
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0,
+                };
+
+                // 计算校验和
+                let calculated_checksum = 
+                    crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
+
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+
+                // 写入日志
+                let _ = log_manager.write_log_item(&final_log_item);
+                // 立即刷新缓冲区，确保日志被持久化
+                let _ = log_manager.flush_buffer();
+            }
+        }
 
         Ok(())
     }

@@ -3,6 +3,7 @@ use crate::platform::{memcpy, memset};
 use crate::types::{RemDbError, Result};
 use core::default::Default;
 use core::ptr::NonNull;
+use crate::DdlExecutor;
 
 // 引入alloc模块
 extern crate alloc;
@@ -73,6 +74,8 @@ pub enum LogOperation {
     EnterLowPowerMode = 9,
     /// 退出低功耗模式
     ExitLowPowerMode = 10,
+    /// 修改表结构
+    AlterTable = 11,
 }
 
 /// 日志文件头
@@ -920,7 +923,7 @@ impl LogManager {
             // - Any valid operation type (including Insert with data)
 
             // 检查是否是有效的Insert操作
-            let is_valid_insert =
+            let is_valid_insert = 
                 log_item.op_type == LogOperation::Insert && log_item.data_size > 0;
 
             // 检查是否是有效的操作类型且有实际数据
@@ -936,6 +939,7 @@ impl LogManager {
                     | LogOperation::Abort
                     | LogOperation::EnterLowPowerMode
                     | LogOperation::ExitLowPowerMode
+                    | LogOperation::AlterTable
             );
 
             // 检查是否是可能的零初始化日志项
@@ -961,6 +965,7 @@ impl LogManager {
                     | LogOperation::CreateIndex
                     | LogOperation::EnterLowPowerMode
                     | LogOperation::ExitLowPowerMode
+                    | LogOperation::AlterTable
             ) {
                 // Invalid operation type, skip
                 continue;
@@ -998,7 +1003,7 @@ impl LogManager {
                     // 从日志中解析表名
                     let name_len = log_item.new_data[0] as usize;
                     let table_name_str = core::str::from_utf8(&log_item.new_data[1..1 + name_len])
-                        .unwrap_or("unknown");
+                        .unwrap_or_else(|_| "unknown");
                     let table_name = Box::leak(table_name_str.to_string().into_boxed_str());
 
                     // 从日志中解析字段数量（表名结束后的第一个字节：1字节长度 + 64字节表名 = 65字节）
@@ -1034,7 +1039,7 @@ impl LogManager {
                         let field_name_str = core::str::from_utf8(
                             &log_item.new_data[offset + 1..offset + 1 + max_name_len],
                         )
-                        .unwrap_or("unknown");
+                        .unwrap_or_else(|_| "unknown");
                         let field_name = Box::leak(field_name_str.to_string().into_boxed_str());
                         offset += 33; // 固定33字节字段名空间（1字节长度 + 32字节内容），与创建表时的逻辑保持一致
 
@@ -1499,19 +1504,142 @@ impl LogManager {
                     // 执行创建索引操作
                     // 从日志中解析表名和字段名
                     let table_name_len = log_item.new_data[0] as usize;
-                    let table_name =
+                    let table_name = 
                         core::str::from_utf8(&log_item.new_data[1..1 + table_name_len])
-                            .unwrap_or("unknown");
+                            .unwrap_or_else(|_| "unknown");
 
                     let field_name_len = log_item.new_data[65] as usize;
-                    let field_name =
+                    let field_name = 
                         core::str::from_utf8(&log_item.new_data[66..66 + field_name_len])
-                            .unwrap_or("unknown");
+                            .unwrap_or_else(|_| "unknown");
 
                     let index_type: crate::types::IndexType = log_item.new_data[130].into();
 
                     // 调用数据库的create_index方法
                     let _ = db.create_index(table_name, field_name, index_type);
+                }
+                LogOperation::AlterTable => {
+                    // 从日志中解析表名
+                    let table_name_len = log_item.new_data[0] as usize;
+                    let table_name = 
+                        core::str::from_utf8(&log_item.new_data[1..1 + table_name_len])
+                            .unwrap_or_else(|_| "unknown");
+
+                    // 从日志中解析操作类型
+                    let op_type = log_item.new_data[65] as usize;
+                    
+                    // 根据操作类型执行不同的恢复逻辑
+                    let alter_operation = match op_type {
+                        0 => {
+                            // AddColumn
+                            let col_name_len = log_item.new_data[67] as usize;
+                            let col_name = core::str::from_utf8(&log_item.new_data[68..68 + col_name_len])
+                                .unwrap_or_else(|_| "unknown")
+                                .to_string();
+                            
+                            let data_type: crate::types::DataType = log_item.new_data[132].into();
+                            let size = u16::from_le_bytes([log_item.new_data[133], log_item.new_data[134]]);
+                            
+                            let constraints = log_item.new_data[135];
+                            let primary_key = (constraints & 0b0001) != 0;
+                            let not_null = (constraints & 0b0010) != 0;
+                            let unique = (constraints & 0b0100) != 0;
+                            let auto_increment = (constraints & 0b1000) != 0;
+                            
+                            crate::AlterTableOperation::AddColumn {
+                                name: col_name,
+                                data_type,
+                                size,
+                                distance_type: None,
+                                default_value: None,
+                                constraints: crate::FieldConstraint {
+                                    primary_key,
+                                    not_null,
+                                    unique,
+                                    auto_increment,
+                                },
+                            }
+                        },
+                        1 => {
+                            // DropColumn
+                            let col_name_len = log_item.new_data[67] as usize;
+                            let col_name = core::str::from_utf8(&log_item.new_data[68..68 + col_name_len])
+                                .unwrap_or_else(|_| "unknown")
+                                .to_string();
+                            
+                            crate::AlterTableOperation::DropColumn {
+                                name: col_name,
+                            }
+                        },
+                        2 => {
+                            // ModifyColumn
+                            let col_name_len = log_item.new_data[67] as usize;
+                            let col_name = core::str::from_utf8(&log_item.new_data[68..68 + col_name_len])
+                                .unwrap_or_else(|_| "unknown")
+                                .to_string();
+                            
+                            let data_type: crate::types::DataType = log_item.new_data[132].into();
+                            let size = u16::from_le_bytes([log_item.new_data[133], log_item.new_data[134]]);
+                            
+                            let constraints = log_item.new_data[135];
+                            let primary_key = (constraints & 0b0001) != 0;
+                            let not_null = (constraints & 0b0010) != 0;
+                            let unique = (constraints & 0b0100) != 0;
+                            let auto_increment = (constraints & 0b1000) != 0;
+                            
+                            crate::AlterTableOperation::ModifyColumn {
+                                name: col_name,
+                                data_type,
+                                size,
+                                distance_type: None,
+                                default_value: None,
+                                constraints: crate::FieldConstraint {
+                                    primary_key,
+                                    not_null,
+                                    unique,
+                                    auto_increment,
+                                },
+                            }
+                        },
+                        3 => {
+                            // RenameColumn
+                            let old_name_len = log_item.new_data[67] as usize;
+                            let old_name = core::str::from_utf8(&log_item.new_data[68..68 + old_name_len])
+                                .unwrap_or_else(|_| "unknown")
+                                .to_string();
+                            
+                            let new_name_len = log_item.new_data[132] as usize;
+                            let new_name = core::str::from_utf8(&log_item.new_data[133..133 + new_name_len])
+                                .unwrap_or_else(|_| "unknown")
+                                .to_string();
+                            
+                            crate::AlterTableOperation::RenameColumn {
+                                old_name,
+                                new_name,
+                            }
+                        },
+                        _ => {
+                            // 未知操作类型，跳过
+                            println!(
+                                "Unknown AlterTable operation type {} for table {} from WAL - skipping",
+                                op_type, table_name
+                            );
+                            continue;
+                        }
+                    };
+                    
+                    // 执行ALTER TABLE操作
+                    if let Err(err) = DdlExecutor::alter_table(db, table_name, alter_operation) {
+                        println!(
+                            "Failed to recover AlterTable operation for table {} from WAL: {:?}",
+                            table_name, err
+                        );
+                    } else {
+                        println!(
+                            "Successfully recovered AlterTable operation for table {} from WAL",
+                            table_name
+                        );
+                    }
                 }
                 _ => continue, // 跳过非schema操作
             }
