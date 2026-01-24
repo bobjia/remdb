@@ -137,6 +137,12 @@ pub enum QueryType {
     CreateTimeSeriesTable,
     /// CREATE INDEX查询
     CreateIndex,
+    /// BEGIN TRANSACTION查询
+    BeginTransaction,
+    /// COMMIT查询
+    Commit,
+    /// ROLLBACK查询
+    Rollback,
     /// 其他查询类型（暂不支持）
     Other,
 }
@@ -382,6 +388,69 @@ impl SqlParser {
             QueryType::CreateTable => self.parse_create_table_query(),
             QueryType::CreateTimeSeriesTable => self.parse_create_table_query(),
             QueryType::CreateIndex => self.parse_create_index_query(),
+            QueryType::BeginTransaction => Ok(SqlQuery {
+                query_type: QueryType::BeginTransaction,
+                table_name: String::new(),
+                table_alias: None,
+                joins: Vec::new(),
+                columns: Vec::new(),
+                select_all: false,
+                distinct: false,
+                where_clause: None,
+                group_by: None,
+                order_by: None,
+                limit: None,
+                insert_columns: Vec::new(),
+                values: Vec::new(),
+                table_def: Vec::new(),
+                primary_key: None,
+                index_column: None,
+                index_type: None,
+                update_pairs: Vec::new(),
+                ignore_duplicates: false,
+            }),
+            QueryType::Commit => Ok(SqlQuery {
+                query_type: QueryType::Commit,
+                table_name: String::new(),
+                table_alias: None,
+                joins: Vec::new(),
+                columns: Vec::new(),
+                select_all: false,
+                distinct: false,
+                where_clause: None,
+                group_by: None,
+                order_by: None,
+                limit: None,
+                insert_columns: Vec::new(),
+                values: Vec::new(),
+                table_def: Vec::new(),
+                primary_key: None,
+                index_column: None,
+                index_type: None,
+                update_pairs: Vec::new(),
+                ignore_duplicates: false,
+            }),
+            QueryType::Rollback => Ok(SqlQuery {
+                query_type: QueryType::Rollback,
+                table_name: String::new(),
+                table_alias: None,
+                joins: Vec::new(),
+                columns: Vec::new(),
+                select_all: false,
+                distinct: false,
+                where_clause: None,
+                group_by: None,
+                order_by: None,
+                limit: None,
+                insert_columns: Vec::new(),
+                values: Vec::new(),
+                table_def: Vec::new(),
+                primary_key: None,
+                index_column: None,
+                index_type: None,
+                update_pairs: Vec::new(),
+                ignore_duplicates: false,
+            }),
             QueryType::Other => Err(QueryParseError::UnsupportedKeyword),
         }?;
 
@@ -830,6 +899,15 @@ impl SqlParser {
             } else {
                 Ok(QueryType::Other)
             }
+        } else if self.match_keyword("BEGIN") {
+            self.skip_whitespace();
+            // 支持BEGIN TRANSACTION语法
+            self.match_keyword("TRANSACTION");
+            Ok(QueryType::BeginTransaction)
+        } else if self.match_keyword("COMMIT") {
+            Ok(QueryType::Commit)
+        } else if self.match_keyword("ROLLBACK") {
+            Ok(QueryType::Rollback)
         } else {
             Ok(QueryType::Other)
         }

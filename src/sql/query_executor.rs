@@ -124,6 +124,27 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             execute_create_time_series_table_query(db, query)
         }
         crate::sql::QueryType::CreateIndex => execute_create_index_query(db, query),
+        crate::sql::QueryType::BeginTransaction => {
+            // 开始事务
+            unsafe {
+                crate::transaction::begin_transaction();
+            }
+            Ok(ResultSet::new(Vec::new()))
+        },
+        crate::sql::QueryType::Commit => {
+            // 提交事务
+            unsafe {
+                crate::transaction::commit_transaction();
+            }
+            Ok(ResultSet::new(Vec::new()))
+        },
+        crate::sql::QueryType::Rollback => {
+            // 回滚事务
+            unsafe {
+                crate::transaction::rollback_transaction();
+            }
+            Ok(ResultSet::new(Vec::new()))
+        },
         _ => Err(QueryExecutionError::InternalError),
     }
 }

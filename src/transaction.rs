@@ -1,6 +1,7 @@
 use crate::defer;
 use crate::platform::{memcpy, memset};
 use crate::types::{RemDbError, Result};
+use core::default::Default;
 use core::ptr::NonNull;
 
 // 引入alloc模块
@@ -114,6 +115,23 @@ pub struct LogItem {
     pub checksum: u32,
 }
 
+/// 为LogItem实现Default trait
+impl Default for LogItem {
+    fn default() -> Self {
+        Self {
+            op_type: LogOperation::Insert,
+            table_id: 0,
+            record_id: 0,
+            data_size: 0,
+            old_data: [0u8; 512],
+            new_data: [0u8; 512],
+            tx_id: 0,
+            timestamp: 0,
+            checksum: 0,
+        }
+    }
+}
+
 /// 日志检查点
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -148,6 +166,26 @@ pub struct Transaction {
     pub depth: u8,
     /// 自旋锁
     lock: u32,
+}
+
+/// 为Transaction实现Default trait
+impl Default for Transaction {
+    fn default() -> Self {
+        unsafe {
+            Transaction {
+                id: 0,
+                tx_type: TransactionType::ReadWrite,
+                status: TransactionStatus::Active,
+                isolation_level: IsolationLevel::RepeatableRead,
+                start_time: 0,
+                log_items: NonNull::dangling(),
+                max_log_items: 0,
+                log_item_count: 0,
+                depth: 1,
+                lock: 0,
+            }
+        }
+    }
 }
 
 /// 日志缓冲区配置
@@ -2381,14 +2419,40 @@ pub unsafe fn begin(
     )
 }
 
+/// 简化的事务开始函数，用于SQL查询
+pub unsafe fn begin_transaction() {
+    // 创建临时事务缓冲区和日志缓冲区
+    let mut tx_buffer = Transaction::default();
+    let mut log_buffer = [LogItem::default(); 1024];
+    
+    // 默认使用读写事务和可重复读隔离级别
+    let _ = TX_MANAGER.begin(
+        TransactionType::ReadWrite,
+        IsolationLevel::RepeatableRead,
+        &mut tx_buffer as *mut Transaction,
+        log_buffer.as_mut_ptr(),
+        1024,
+    );
+}
+
 /// 提交事务
 pub unsafe fn commit() -> Result<()> {
     TX_MANAGER.commit()
 }
 
+/// 简化的事务提交函数，用于SQL查询
+pub unsafe fn commit_transaction() {
+    let _ = TX_MANAGER.commit();
+}
+
 /// 回滚事务
 pub unsafe fn rollback() -> Result<()> {
     TX_MANAGER.rollback()
+}
+
+/// 简化的事务回滚函数，用于SQL查询
+pub unsafe fn rollback_transaction() {
+    let _ = TX_MANAGER.rollback();
 }
 
 /// 检查记录是否对当前事务可见（MVCC实现）
