@@ -142,14 +142,14 @@ fn test_wal_log_manager_creation() {
 
     // 创建数据库配置
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log",
+            log_path: "/tmp/test_wal.log".to_string(),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -194,14 +194,14 @@ fn test_wal_log_write_sync_mode() {
 
     // 创建同步模式的数据库配置
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log",
+            log_path: "/tmp/test_wal.log".to_string(),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -264,14 +264,14 @@ fn test_wal_log_write_async_mode() {
 
     // 创建异步模式的数据库配置
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log",
+            log_path: "/tmp/test_wal.log".to_string(),
             log_mode: LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -341,14 +341,14 @@ fn test_wal_checkpoint_mechanism() {
 
     // 创建数据库配置，使用短检查点间隔
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_checkpoint.log",
+            log_path: "/tmp/test_wal_checkpoint.log".to_string(),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 100, // 100毫秒检查点间隔
             log_file_size_limit: 16 * 1024 * 1024,
@@ -419,14 +419,14 @@ fn test_wal_log_preallocation() {
 
     // 创建带有大预分配大小的配置
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_prealloc.log",
+            log_path: "/tmp/test_wal_prealloc.log".to_string(),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -483,14 +483,14 @@ fn test_wal_different_log_modes() {
         static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
 
         let config = DbConfig {
-            tables: &[],
+            tables: vec![],
             total_memory: 1024 * 1024, // 1MB
             low_power_mode_supported: false,
             low_power_max_records: None,
             default_max_records: 1000,
             memory_allocator: &ALLOCATOR,
             wal_config: WALConfig {
-                log_path,
+                log_path: log_path.to_string(),
                 log_mode: mode,
                 checkpoint_interval_ms: 60000,
                 log_file_size_limit: 16 * 1024 * 1024,
@@ -558,14 +558,14 @@ fn test_wal_checkpoint_comprehensive() {
 
     // 创建数据库配置，使用短检查点间隔和有限的保留数量
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_checkpoint_comprehensive.log",
+            log_path: "/tmp/test_wal_checkpoint_comprehensive.log".to_string(),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 50, // 50毫秒检查点间隔，便于测试
             log_file_size_limit: 16 * 1024 * 1024,
@@ -740,14 +740,14 @@ fn test_wal_checkpoint_comprehensive() {
 
         // 创建异步模式的配置
         let async_config = DbConfig {
-            tables: &[],
+            tables: vec![],
             total_memory: 1024 * 1024,
             low_power_mode_supported: false,
             low_power_max_records: None,
             default_max_records: 1000,
             memory_allocator: &ALLOCATOR,
             wal_config: WALConfig {
-                log_path: "/tmp/test_wal_checkpoint_async.log",
+                log_path: "/tmp/test_wal_checkpoint_async.log".to_string(),
                 log_mode: LogMode::Async,
                 checkpoint_interval_ms: 50,
                 log_file_size_limit: 16 * 1024 * 1024,
@@ -818,14 +818,14 @@ fn test_wal_recovery_flow() {
 
     // 创建数据库配置（简化版，不包含tables字段）
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log",
+            log_path: "/tmp/test_wal.log".to_string(),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -1051,14 +1051,14 @@ fn test_wal_checkpoint_with_recovery() {
 
     // 创建数据库配置
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_checkpoint_recovery.log",
+            log_path: "/tmp/test_wal_checkpoint_recovery.log".to_string(),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 100, // 100毫秒检查点间隔
             log_file_size_limit: 16 * 1024 * 1024,

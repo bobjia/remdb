@@ -138,109 +138,115 @@ static TEST_MUTEX: Mutex<()> = Mutex::new(());
 static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存
 
 /// 创建测试用的DbConfig
-static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
-    tables: &[],
-    total_memory: 104857600,
-    default_max_records: 100,
-    low_power_mode_supported: false,
-    low_power_max_records: None,
-    // 添加缺少的字段
-    memory_allocator: &config::DefaultMemoryAllocator,
-    wal_config: WALConfig {
-        log_path: "./wal",
-        log_mode: config::LogMode::Async,
-        log_prealloc_size: 0,
-        log_file_size_limit: 104857600,
-        log_segment_size: 1048576,
-        checkpoint_interval_ms: 30000,
-        retained_checkpoints: 2,
-    },
-    time_series_defaults: TimeSeriesConfig::DEFAULT,
-    #[cfg(feature = "pubsub")]
-    pubsub_config: None,
-    #[cfg(feature = "ha")]
-    ha_config: Some(HAConfig {
-        node_id: 1, // 默认节点ID为1
-        ha_role: HARole::Auto,
-        replication_mode: ReplicationMode::Async,
-        heartbeat_interval_ms: 1000,
-        failure_detection_ms: 3000,
-        sync_timeout_ms: 1000,
-        master_address: None,
-        master_port: None,
-        replication_port: 5556,
-    }),
-};
+static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| {
+    config::DbConfig {
+        tables: vec![],
+        total_memory: 104857600,
+        default_max_records: 100,
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        // 添加缺少的字段
+        memory_allocator: &config::DefaultMemoryAllocator,
+        wal_config: WALConfig {
+            log_path: "./wal".to_string(),
+            log_mode: config::LogMode::Async,
+            log_prealloc_size: 0,
+            log_file_size_limit: 104857600,
+            log_segment_size: 1048576,
+            checkpoint_interval_ms: 30000,
+            retained_checkpoints: 2,
+        },
+        time_series_defaults: TimeSeriesConfig::DEFAULT,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 1000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+        }),
+    }
+});
 
 /// 创建性能测试用的DbConfig
-static PERFORMANCE_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
-    tables: &[],
-    total_memory: 104857600,
-    default_max_records: 100000,
-    low_power_mode_supported: false,
-    low_power_max_records: None,
-    // 添加缺少的字段
-    memory_allocator: &config::DefaultMemoryAllocator,
-    wal_config: WALConfig {
-        log_path: "./wal",
-        log_mode: config::LogMode::Async,
-        log_prealloc_size: 0,
-        log_file_size_limit: 104857600,
-        log_segment_size: 1048576,
-        checkpoint_interval_ms: 30000,
-        retained_checkpoints: 2,
-    },
-    time_series_defaults: TimeSeriesConfig::DEFAULT,
-    #[cfg(feature = "pubsub")]
-    pubsub_config: None,
-    #[cfg(feature = "ha")]
-    ha_config: Some(HAConfig {
-        node_id: 1, // 默认节点ID为1
-        ha_role: HARole::Auto,
-        replication_mode: ReplicationMode::Async,
-        heartbeat_interval_ms: 1000,
-        failure_detection_ms: 3000,
-        sync_timeout_ms: 1000,
-        master_address: None,
-        master_port: None,
-        replication_port: 5556,
-    }),
-};
+static PERFORMANCE_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| {
+    config::DbConfig {
+        tables: vec![],
+        total_memory: 104857600,
+        default_max_records: 100000,
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        // 添加缺少的字段
+        memory_allocator: &config::DefaultMemoryAllocator,
+        wal_config: WALConfig {
+            log_path: "./wal".to_string(),
+            log_mode: config::LogMode::Async,
+            log_prealloc_size: 0,
+            log_file_size_limit: 104857600,
+            log_segment_size: 1048576,
+            checkpoint_interval_ms: 30000,
+            retained_checkpoints: 2,
+        },
+        time_series_defaults: TimeSeriesConfig::DEFAULT,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 1000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+        }),
+    }
+});
 
 /// 创建回滚测试用的DbConfig
-static ROLLBACK_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
-    tables: &[],
-    total_memory: 104857600,
-    default_max_records: 10000,
-    low_power_mode_supported: false,
-    low_power_max_records: None,
-    // 添加缺少的字段
-    memory_allocator: &config::DefaultMemoryAllocator,
-    wal_config: WALConfig {
-        log_path: "./wal",
-        log_mode: config::LogMode::Sync,
-        log_prealloc_size: 0,
-        log_file_size_limit: 104857600,
-        log_segment_size: 1048576,
-        checkpoint_interval_ms: 30000,
-        retained_checkpoints: 2,
-    },
-    time_series_defaults: TimeSeriesConfig::DEFAULT,
-    #[cfg(feature = "pubsub")]
-    pubsub_config: None,
-    #[cfg(feature = "ha")]
-    ha_config: Some(HAConfig {
-        node_id: 1, // 默认节点ID为1
-        ha_role: HARole::Auto,
-        replication_mode: ReplicationMode::Async,
-        heartbeat_interval_ms: 1000,
-        failure_detection_ms: 3000,
-        sync_timeout_ms: 1000,
-        master_address: None,
-        master_port: None,
-        replication_port: 5556,
-    }),
-};
+static ROLLBACK_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| {
+    config::DbConfig {
+        tables: vec![],
+        total_memory: 104857600,
+        default_max_records: 10000,
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        // 添加缺少的字段
+        memory_allocator: &config::DefaultMemoryAllocator,
+        wal_config: WALConfig {
+            log_path: "./wal".to_string(),
+            log_mode: config::LogMode::Sync,
+            log_prealloc_size: 0,
+            log_file_size_limit: 104857600,
+            log_segment_size: 1048576,
+            checkpoint_interval_ms: 30000,
+            retained_checkpoints: 2,
+        },
+        time_series_defaults: TimeSeriesConfig::DEFAULT,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: Some(HAConfig {
+            node_id: 1, // 默认节点ID为1
+            ha_role: HARole::Auto,
+            replication_mode: ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 1000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+        }),
+    }
+});
 
 #[test]
 fn test_write_timeseries_batch_acid() {
@@ -259,7 +265,7 @@ fn test_write_timeseries_batch_acid() {
     remdb::reset_global_db();
 
     // 创建数据库实例
-    let mut db = RemDb::new(&TEST_DB_CONFIG);
+    let mut db = RemDb::new(&*TEST_DB_CONFIG);
     db.init().unwrap();
 
     // 创建时序表
@@ -357,7 +363,7 @@ fn test_write_timeseries_batch_performance() {
     remdb::reset_global_db();
 
     // 创建数据库实例
-    let mut db = RemDb::new(&PERFORMANCE_TEST_DB_CONFIG);
+    let mut db = RemDb::new(&*PERFORMANCE_TEST_DB_CONFIG);
     db.init().unwrap();
 
     // 创建时序表
@@ -439,7 +445,7 @@ fn test_write_timeseries_batch_rollback() {
 
     // 简化测试，只验证基本的批量写入功能
     // 创建数据库实例
-    let mut db = RemDb::new(&ROLLBACK_TEST_DB_CONFIG);
+    let mut db = RemDb::new(&*ROLLBACK_TEST_DB_CONFIG);
     db.init().unwrap();
 
     // 创建时序表

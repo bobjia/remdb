@@ -15,7 +15,7 @@ fn main() {
     println!("\n2. 创建数据库配置...");
     static ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
     static DB_CONFIG: config::DbConfig = config::DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: 64 * 1024 * 1024, // 64MB
         low_power_mode_supported: false,
         low_power_max_records: None,

@@ -28,14 +28,14 @@ static mut MEMORY: [u8; MEMORY_SIZE] = [0; MEMORY_SIZE];
 // 静态内存分配器和数据库配置
 static ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
 static CONFIG: DbConfig = DbConfig {
-    tables: &[],
+    tables: vec![],
     total_memory: MEMORY_SIZE,
     low_power_mode_supported: false,
     low_power_max_records: None,
     default_max_records: 10000,
     memory_allocator: &ALLOCATOR,
     wal_config: WALConfig {
-        log_path: "./wal",
+        log_path: "./wal".to_string(),
         log_mode: remdb::config::LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,

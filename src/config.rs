@@ -60,7 +60,7 @@ pub enum LogMode {
 /// WAL日志配置
 pub struct WALConfig {
     /// 日志文件路径
-    pub log_path: &'static str,
+    pub log_path: String,
     /// 日志模式（同步/异步）
     pub log_mode: LogMode,
     /// 检查点间隔（毫秒，默认60秒）
@@ -78,7 +78,7 @@ pub struct WALConfig {
 /// 数据库全局配置
 pub struct DbConfig {
     /// 表定义列表
-    pub tables: &'static [TableDef],
+    pub tables: Vec<TableDef>,
     /// 总内存大小
     pub total_memory: usize,
     /// 支持低功耗模式
@@ -104,7 +104,7 @@ pub struct DbConfig {
 }
 
 /// 编译时配置检查
-pub const fn validate_config(config: &DbConfig) -> bool {
+pub fn validate_config(config: &DbConfig) -> bool {
     // 检查表数量
     if config.tables.len() > 32 {
         return false;
@@ -182,11 +182,8 @@ pub const fn validate_config(config: &DbConfig) -> bool {
         }
     }
 
-    // 检查每个表（使用常量兼容的方式）
-    let mut i = 0;
-    while i < config.tables.len() {
-        let table = &config.tables[i];
-
+    // 检查每个表
+    for table in &config.tables {
         // 检查记录大小
         if table.record_size > 512 {
             return false;
@@ -210,15 +207,13 @@ pub const fn validate_config(config: &DbConfig) -> bool {
                 return false;
             }
         }
-
-        i += 1;
     }
 
     true
 }
 
 /// 计算表的内存占用
-pub const fn table_memory_usage(table: &TableDef) -> usize {
+pub fn table_memory_usage(table: &TableDef) -> usize {
     // 记录内存
     let record_memory = table.record_size * table.max_records;
 
@@ -263,7 +258,7 @@ pub const fn table_memory_usage(table: &TableDef) -> usize {
 }
 
 /// 计算数据库总内存占用
-pub const fn total_memory_usage(config: &DbConfig) -> usize {
+pub fn total_memory_usage(config: &DbConfig) -> usize {
     let mut total = 0;
     let mut i = 0;
     while i < config.tables.len() {

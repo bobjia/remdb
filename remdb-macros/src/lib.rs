@@ -374,7 +374,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         // 生成字段定义
         let field_def = quote! {
             remdb::types::FieldDef {
-                name: stringify!(#field_name),
+                name: stringify!(#field_name).to_string(),
                 data_type: #data_type,
                 size: #size_val as usize, // 确保是usize类型
                 offset: #offset as usize,  // 确保是usize类型
@@ -427,19 +427,24 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         None => quote! { None },
     };
 
-    // 生成代码：返回一个TableDef静态变量
+    // 生成代码：返回一个静态TableDef变量，使用LazyLock延迟初始化
     let output = quote! {
         #[allow(non_upper_case_globals)]
-        pub static #name: remdb::types::TableDef = remdb::types::TableDef {
-            id: 0,
-            name: stringify!(#name),
-            fields: &[#(#field_defs,)*],
-            primary_key: #primary_key_index as usize,
-            secondary_index: #secondary_index_code,
-            secondary_index_type: #index_type,
-            record_size: #record_size as usize,
-            max_records: #max_records_usize,
-        };
+        pub static #name: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| {
+            remdb::types::TableDef {
+                id: 0,
+                name: stringify!(#name).to_string(),
+                fields: vec![#(#field_defs,)*],
+                primary_key: #primary_key_index as usize,
+                secondary_index: #secondary_index_code,
+                secondary_index_type: #index_type,
+                record_size: #record_size as usize,
+                max_records: #max_records_usize,
+                version: 1,
+                created_at: 0,
+                updated_at: 0,
+            }
+        });
     };
 
     output.into()
@@ -460,49 +465,51 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         None => quote! { None },
     };
 
-    // 生成代码：返回一个DbConfig静态变量
+    // 生成代码：返回一个静态DbConfig变量，使用LazyLock延迟初始化
     let output = quote! {
         #[allow(non_upper_case_globals)]
-        pub static #name: remdb::config::DbConfig = remdb::config::DbConfig {
-            tables: &[#(#tables),*],
-            total_memory: 65536,
-            low_power_mode_supported: #low_power,
-            low_power_max_records: #low_power_max_records,
-            default_max_records: #default_max_records,
-            memory_allocator: unsafe {
-                // 使用默认的内存分配器实现，这里返回一个空指针的静态引用
-                static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
-                &mut DEFAULT_ALLOCATOR
-            },
-            // 日志相关配置
-            wal_config: remdb::config::WALConfig {
-                log_path: "wal",
-                log_mode: remdb::config::LogMode::Sync,
-                checkpoint_interval_ms: 60000, // 默认60秒
-                log_file_size_limit: 16 * 1024 * 1024, // 默认16MB
-                log_prealloc_size: 1 * 1024 * 1024, // 默认1MB预分配
-                log_segment_size: 16 * 1024 * 1024, // 默认16MB分段
-                retained_checkpoints: 3, // 保留3个检查点
-            },
-            // 时序数据默认配置
-            time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
-            // PubSub配置（可选）
-            #[cfg(feature = "pubsub")]
-            pubsub_config: None,
-            // HA相关配置（可选）
-            #[cfg(feature = "ha")]
-            ha_config: Some(remdb::ha::HAConfig {
-                node_id: 1, // 默认节点ID为1
-                ha_role: remdb::ha::HARole::Auto,
-                replication_mode: remdb::ha::ReplicationMode::Async,
-                heartbeat_interval_ms: 1000, // 默认1秒
-                failure_detection_ms: 3000, // 默认3秒
-                sync_timeout_ms: 2000, // 默认2秒
-                master_address: None,
-                master_port: None,
-                replication_port: 5556,
-            }),
-        };
+        pub static #name: std::sync::LazyLock<remdb::config::DbConfig> = std::sync::LazyLock::new(|| {
+            remdb::config::DbConfig {
+                tables: vec![#( #tables.clone(), )*],
+                total_memory: 65536,
+                low_power_mode_supported: #low_power,
+                low_power_max_records: #low_power_max_records,
+                default_max_records: #default_max_records,
+                memory_allocator: unsafe {
+                    // 使用默认的内存分配器实现，这里返回一个空指针的静态引用
+                    static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
+                    &mut DEFAULT_ALLOCATOR
+                },
+                // 日志相关配置
+                wal_config: remdb::config::WALConfig {
+                    log_path: "wal".to_string(),
+                    log_mode: remdb::config::LogMode::Sync,
+                    checkpoint_interval_ms: 60000, // 默认60秒
+                    log_file_size_limit: 16 * 1024 * 1024, // 默认16MB
+                    log_prealloc_size: 1 * 1024 * 1024, // 默认1MB预分配
+                    log_segment_size: 16 * 1024 * 1024, // 默认16MB分段
+                    retained_checkpoints: 3, // 保留3个检查点
+                },
+                // 时序数据默认配置
+                time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
+                // PubSub配置（可选）
+                #[cfg(feature = "pubsub")]
+                pubsub_config: None,
+                // HA相关配置（可选）
+                #[cfg(feature = "ha")]
+                ha_config: Some(remdb::ha::HAConfig {
+                    node_id: 1, // 默认节点ID为1
+                    ha_role: remdb::ha::HARole::Auto,
+                    replication_mode: remdb::ha::ReplicationMode::Async,
+                    heartbeat_interval_ms: 1000, // 默认1秒
+                    failure_detection_ms: 3000, // 默认3秒
+                    sync_timeout_ms: 2000, // 默认2秒
+                    master_address: None,
+                    master_port: None,
+                    replication_port: 5556,
+                }),
+            }
+        });
     };
 
     output.into()

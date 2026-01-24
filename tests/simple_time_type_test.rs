@@ -110,8 +110,8 @@ impl remdb::platform::Platform for TestPlatform {
 static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 /// 创建测试用的DbConfig
-static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
-    tables: &[],
+static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| config::DbConfig {
+    tables: vec![],
     total_memory: 104857600,
     default_max_records: 100,
     low_power_mode_supported: false,
@@ -119,7 +119,7 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     // 添加缺少的字段
     memory_allocator: &config::DefaultMemoryAllocator,
     wal_config: WALConfig {
-        log_path: "./wal",
+        log_path: "./wal".to_string(),
         log_mode: config::LogMode::Async,
         log_prealloc_size: 0,
         log_file_size_limit: 104857600,

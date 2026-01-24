@@ -373,7 +373,7 @@ impl MemoryTable {
         exclude_slot: Option<usize>,
     ) -> Result<()> {
         // 验证非空约束
-        for field in self.def.fields {
+        for field in self.def.fields.iter() {
             if field.not_null {
                 // 检查字段是否为空
                 let is_null = match field.data_type {
@@ -857,7 +857,8 @@ impl MemoryTable {
 
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
-        defer! { crate::platform::spin_unlock(&mut self.lock); }
+        let lock_ptr = &mut self.lock;
+        defer! { crate::platform::spin_unlock(lock_ptr); }
 
         // 检查是否已满
         let max_records = if self.low_power_mode {
@@ -996,8 +997,6 @@ impl MemoryTable {
         }
 
         let inserted_slot_id = slot_id;
-        let table_name = self.def.name;
-        let record_size = self.record_size;
 
         // 释放锁后发布到pubsub
         Ok(inserted_slot_id)
@@ -1052,7 +1051,8 @@ impl MemoryTable {
 
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
-        defer! { crate::platform::spin_unlock(&mut self.lock); }
+        let lock_ptr = &mut self.lock;
+        defer! { crate::platform::spin_unlock(lock_ptr); }
 
         // 计算记录地址
         let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
@@ -1221,7 +1221,7 @@ impl MemoryTable {
 
     #[cfg(feature = "pubsub")]
     unsafe fn publish_to_pubsub(&self, id: usize, record_data: *const u8, is_insert: bool) {
-        let table_name = self.def.name;
+        let table_name = &self.def.name;
         let table_topic = crate::pubsub::topics::get_table_content_topic(table_name);
 
         // 获取主题ID

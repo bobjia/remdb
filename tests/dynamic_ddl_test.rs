@@ -107,18 +107,20 @@ impl Platform for TestPlatform {
 // 静态测试平台实例
 static TEST_PLATFORM: TestPlatform = TestPlatform;
 
-// 静态配置，用于测试
-static mut DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
-static TEST_CONFIG: config::DbConfig = unsafe {
+// 静态内存分配器实例
+static DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
+
+// 静态测试配置
+static TEST_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| {
     config::DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: 1024 * 1024, // 1MB
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 100, // 减小值以避免内存不足
-        memory_allocator: &mut DEFAULT_ALLOCATOR,
+        memory_allocator: &DEFAULT_ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "./wal",
+            log_path: "./wal".to_string(),
             log_mode: config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -142,7 +144,7 @@ static TEST_CONFIG: config::DbConfig = unsafe {
             replication_port: 5556,
         }),
     }
-};
+});
 
 // 互斥锁，确保测试串行执行
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
@@ -168,8 +170,8 @@ fn test_create_table() {
         result.err()
     );
 
-    // 创建数据库实例，使用共享配置
-    let mut db = RemDb::new(&TEST_CONFIG);
+    // 创建数据库实例，使用静态配置
+    let mut db = RemDb::new(&*TEST_CONFIG);
 
     // 测试创建表
     let result = db.create_table(
@@ -191,7 +193,7 @@ fn test_create_table_invalid() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
     // 无需平台初始化，直接测试参数验证逻辑
-    let mut db = RemDb::new(&TEST_CONFIG);
+    let mut db = RemDb::new(&*TEST_CONFIG);
 
     // 测试创建空字段表（应该失败）
     let result = db.create_table("empty_table", &[], None);
@@ -230,8 +232,8 @@ fn test_create_index() {
         result.err()
     );
 
-    // 创建数据库实例，使用共享配置
-    let mut db = RemDb::new(&TEST_CONFIG);
+    // 创建数据库实例，使用静态配置
+    let mut db = RemDb::new(&*TEST_CONFIG);
 
     // 先创建表
     let result = db.create_table(

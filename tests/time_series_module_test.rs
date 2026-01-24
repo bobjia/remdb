@@ -297,15 +297,15 @@ fn test_time_series_batch_performance() {
         let _ = memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
 
         // 创建默认的DbConfig
-        static TEST_CONFIG: crate::config::DbConfig = crate::config::DbConfig {
-            tables: &[],
+        static TEST_CONFIG: std::sync::LazyLock<crate::config::DbConfig> = std::sync::LazyLock::new(|| crate::config::DbConfig {
+            tables: vec![],
             total_memory: 2097152,
             low_power_mode_supported: false,
             low_power_max_records: None,
             default_max_records: 10000,
             memory_allocator: &crate::config::DefaultMemoryAllocator,
             wal_config: crate::config::WALConfig {
-                log_path: "./wal",
+                log_path: "./wal".to_string(),
                 log_mode: crate::config::LogMode::Async,
                 checkpoint_interval_ms: 60000,
                 log_file_size_limit: 16 * 1024 * 1024,
@@ -328,8 +328,8 @@ fn test_time_series_batch_performance() {
                 master_port: None,
                 replication_port: 5556,
             }),
-        };
-        let config = &TEST_CONFIG;
+        });
+        let config = &*TEST_CONFIG;
 
         // 创建RemDb实例
         let mut db = RemDb::new(config);

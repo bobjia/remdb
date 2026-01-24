@@ -78,7 +78,7 @@ pub struct TimeSeriesTableDef {
     /// 值字段索引
     pub value_field: usize,
     /// 标签字段索引列表
-    pub tag_fields: &'static [usize],
+    pub tag_fields: Box<[usize]>,
     /// 时序数据配置
     pub config: TimeSeriesConfig,
 }
@@ -121,8 +121,8 @@ impl TimeSeriesTable {
         }
 
         // 检查标签字段的有效性
-        for &tag_field in def.tag_fields {
-            if tag_field >= def.base.fields.len() {
+        for tag_field in def.tag_fields.iter() {
+            if *tag_field >= def.base.fields.len() {
                 return Err(RemDbError::FieldNotFound);
             }
         }

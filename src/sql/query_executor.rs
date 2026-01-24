@@ -49,10 +49,31 @@ fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16), Query
             }
         }
 
-        Ok((base_type.to_string(), param))
+        // 验证基本类型是否有效
+        match base_type {
+            "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64" |
+            "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32" | "UINT64" |
+            "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" |
+            "VARCHAR" | "CHAR" | "TEXT" |
+            "BOOL" | "BOOLEAN" |
+            "TIMESTAMP" |
+            "VECTOR" => Ok((base_type.to_string(), param)),
+            _ => Err(QueryExecutionError::TypeMismatch),
+        }
     } else {
         // 没有参数，使用默认值
-        Ok((type_str.trim().to_string(), 6)) // 默认精度6（微秒）
+        let base_type = type_str.trim();
+        
+        // 验证基本类型是否有效
+        match base_type {
+            "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64" |
+            "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32" | "UINT64" |
+            "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" |
+            "VARCHAR" | "CHAR" | "TEXT" |
+            "BOOL" | "BOOLEAN" |
+            "TIMESTAMP" => Ok((base_type.to_string(), 6)), // 默认精度6（微秒）
+            _ => Err(QueryExecutionError::TypeMismatch),
+        }
     }
 }
 
@@ -124,6 +145,137 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             execute_create_time_series_table_query(db, query)
         }
         crate::sql::QueryType::CreateIndex => execute_create_index_query(db, query),
+        crate::sql::QueryType::AlterTable => {
+            // 处理ALTER TABLE语句
+            for (field1, field2, pk, not_null, unique, auto_inc, default_val) in &query.table_def {
+                if field2 == "DROP" {
+                    // 执行DROP COLUMN操作
+                    db.alter_table(
+                        &query.table_name,
+                        crate::AlterTableOperation::DropColumn { name: field1.clone() },
+                    ).map_err(|_| QueryExecutionError::InternalError)?;
+                } else if field2 != "" && field2 != "DROP" {
+                    // 检查是否是RENAME COLUMN操作
+                    // 通过检查field2是否是有效的数据类型来区分
+                    match parse_data_type_with_precision(field2) {
+                        Ok(_) => {
+                            // field2是有效的数据类型，执行ADD COLUMN或MODIFY COLUMN操作
+                            // 解析数据类型
+                            let (base_type, size) = parse_data_type_with_precision(field2)?;
+                            let data_type = match base_type.as_str() {
+                                "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64" => crate::types::DataType::Int64,
+                                "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32" | "UINT64" => crate::types::DataType::UInt64,
+                                "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" => crate::types::DataType::Float32,
+                                "VARCHAR" | "CHAR" | "TEXT" => crate::types::DataType::String,
+                                "BOOL" | "BOOLEAN" => crate::types::DataType::Bool,
+                                "TIMESTAMP" => crate::types::DataType::Timestamp,
+                                "VECTOR" => crate::types::DataType::Vector,
+                                _ => return Err(QueryExecutionError::TypeMismatch),
+                            };
+
+                            // 确定距离类型（仅适用于向量类型）
+                            let distance_type = if data_type == crate::types::DataType::Vector {
+                                // TODO: 从字段定义中解析距离类型
+                                None
+                            } else {
+                                None
+                            };
+
+                            // 构建约束条件
+                            let constraints = crate::FieldConstraint {
+                                primary_key: *pk,
+                                not_null: *not_null,
+                                unique: *unique,
+                                auto_increment: *auto_inc,
+                            };
+
+                            // 检查是ADD还是MODIFY操作
+                            let existing_table = db.tables.iter().find(|table_opt| {
+                                if let Some(table) = table_opt {
+                                    table.def.name == query.table_name
+                                } else {
+                                    false
+                                }
+                            });
+
+                            let field_exists = existing_table.map(|table_opt| {
+                                if let Some(table) = table_opt {
+                                    table.def.fields.iter().any(|f| f.name == *field1)
+                                } else {
+                                    false
+                                }
+                            }).unwrap_or(false);
+
+                            // 转换默认值类型：query_parser::Value -> types::Value
+                            let types_default_value = default_val.as_ref().map(|qp_val| {
+                                match qp_val {
+                                    crate::sql::query_parser::Value::Integer(i) => {
+                                        crate::types::Value { i64: *i }
+                                    },
+                                    crate::sql::query_parser::Value::Float(f) => {
+                                        crate::types::Value { float32: *f as f32 }
+                                    },
+                                    crate::sql::query_parser::Value::String(s) => {
+                                        let mut string_val = crate::types::Value { string: [0u8; 64] };
+                                        unsafe {
+                                            let s_bytes = s.as_bytes();
+                                            let dest = &mut string_val.string as *mut u8;
+                                            let src = s_bytes.as_ptr();
+                                            let copy_size = core::cmp::min(s_bytes.len(), 64);
+                                            core::ptr::copy_nonoverlapping(src, dest, copy_size);
+                                        }
+                                        string_val
+                                    },
+                                    crate::sql::query_parser::Value::Boolean(b) => {
+                                        crate::types::Value { bool: *b }
+                                    },
+                                    _ => crate::types::Value { i64: 0 },
+                                }
+                            });
+
+                            if field_exists {
+                                // 执行MODIFY COLUMN操作
+                                db.alter_table(
+                                    &query.table_name,
+                                    crate::AlterTableOperation::ModifyColumn {
+                                        name: field1.clone(),
+                                        data_type,
+                                        size,
+                                        distance_type,
+                                        default_value: types_default_value,
+                                        constraints,
+                                    },
+                                ).map_err(|_| QueryExecutionError::InternalError)?;
+                            } else {
+                                // 执行ADD COLUMN操作
+                                db.alter_table(
+                                    &query.table_name,
+                                    crate::AlterTableOperation::AddColumn {
+                                        name: field1.clone(),
+                                        data_type,
+                                        size,
+                                        distance_type,
+                                        default_value: types_default_value,
+                                        constraints,
+                                    },
+                                ).map_err(|_| QueryExecutionError::InternalError)?;
+                            }
+                        },
+                        Err(_) => {
+                            // field2不是有效的数据类型，执行RENAME COLUMN操作
+                            db.alter_table(
+                                &query.table_name,
+                                crate::AlterTableOperation::RenameColumn { 
+                                    old_name: field1.clone(), 
+                                    new_name: field2.clone() 
+                                },
+                            ).map_err(|_| QueryExecutionError::InternalError)?;
+                        }
+                    }
+                }
+            }
+            Ok(ResultSet::new(Vec::new()))
+        },
         crate::sql::QueryType::BeginTransaction => {
             // 开始事务
             unsafe {
@@ -1971,7 +2123,7 @@ fn evaluate_expression(
                     .def
                     .fields
                     .iter()
-                    .position(|field| field.name == actual_field_name)
+                    .position(|field| field.name == *actual_field_name)
                     .ok_or(QueryExecutionError::FieldNotFound)?;
 
                 // 返回记录中的字段值
@@ -2042,7 +2194,7 @@ fn evaluate_expression(
                             .def
                             .fields
                             .iter()
-                            .find(|field| field.name == field_name)
+                            .find(|field| field.name == *field_name)
                             .ok_or(QueryExecutionError::FieldNotFound)?
                     } else {
                         // 遍历表的所有字段，找到向量字段
@@ -4834,7 +4986,7 @@ fn validate_expression(table: &MemoryTable, expr: &Expression) -> Result<(), Que
                     .def
                     .fields
                     .iter()
-                    .any(|field| field.name == actual_field_name)
+                    .any(|field| field.name == *actual_field_name)
                 {
                     return Err(QueryExecutionError::FieldNotFound);
                 }
@@ -5103,7 +5255,7 @@ fn execute_insert_query(
                 .def
                 .fields
                 .iter()
-                .position(|field| field.name == col_name)
+                .position(|field| field.name == *col_name)
                 .ok_or(QueryExecutionError::FieldNotFound)?;
         }
     }
@@ -5141,7 +5293,7 @@ fn execute_insert_query(
                 if let Some(col_index) = query
                     .insert_columns
                     .iter()
-                    .position(|col| col == field.name)
+                    .position(|col| *col == field.name)
                 {
                     if col_index < values.len() {
                         Some(&values[col_index])
@@ -5667,7 +5819,7 @@ fn execute_update_query(
                 .def
                 .fields
                 .iter()
-                .position(|field| field.name == field_name)
+                .position(|field| field.name == *field_name)
                 .ok_or(QueryExecutionError::FieldNotFound)?;
 
             let field = &table_mut.def.fields[field_index];
@@ -6219,7 +6371,7 @@ unsafe fn evaluate_between(
                 .def
                 .fields
                 .iter()
-                .position(|field| field.name == field_name)
+                .position(|field| field.name == *field_name)
             {
                 Some(index) => index,
                 None => return false, // 字段不存在，条件不成立
@@ -6292,7 +6444,7 @@ unsafe fn evaluate_between(
         .def
         .fields
         .iter()
-        .position(|field| field.name == actual_field_name)
+        .position(|field| field.name == *actual_field_name)
     {
         Some(index) => index,
         None => return false, // 字段不存在，条件不成立
@@ -6337,7 +6489,7 @@ unsafe fn evaluate_comparison(
                 .def
                 .fields
                 .iter()
-                .position(|field| field.name == field_name)
+                .position(|field| field.name == *field_name)
             {
                 Some(index) => index,
                 None => return false, // 字段不存在，条件不成立
@@ -6419,7 +6571,7 @@ unsafe fn evaluate_comparison(
         .def
         .fields
         .iter()
-        .position(|field| field.name == actual_field_name)
+        .position(|field| field.name == *actual_field_name)
     {
         Some(index) => index,
         None => return false, // 字段不存在，条件不成立
@@ -6870,7 +7022,7 @@ unsafe fn evaluate_comparison_with_alias(
                         .def
                         .fields
                         .iter()
-                        .position(|field| field.name == right_field)
+                        .position(|field| field.name == *right_field)
                         .ok_or(QueryExecutionError::FieldNotFound)
                         .unwrap();
                     let right_field_value = &record_values[right_field_index];
@@ -6897,7 +7049,7 @@ unsafe fn evaluate_comparison_with_alias(
                     .def
                     .fields
                     .iter()
-                    .position(|field| field.name == field_name)
+                    .position(|field| field.name == *field_name)
                 {
                     Some(index) => index,
                     None => return false, // 字段不存在，条件不成立
@@ -6964,7 +7116,7 @@ unsafe fn evaluate_comparison_with_alias(
                 .def
                 .fields
                 .iter()
-                .position(|field| field.name == actual_field_name)
+                .position(|field| field.name == *actual_field_name)
             {
                 Some(index) => index,
                 None => return false, // 字段不存在，条件不成立
@@ -7009,7 +7161,7 @@ unsafe fn evaluate_between_with_alias(
                 .def
                 .fields
                 .iter()
-                .position(|field| field.name == field_name)
+                .position(|field| field.name == *field_name)
             {
                 Some(index) => index,
                 None => return false, // 字段不存在，条件不成立
@@ -7122,7 +7274,7 @@ unsafe fn evaluate_between_with_alias(
             .def
             .fields
             .iter()
-            .position(|field| field.name == actual_field_name)
+            .position(|field| field.name == *actual_field_name)
         {
             Some(index) => index,
             None => return false, // 字段不存在，条件不成立
@@ -7308,7 +7460,7 @@ fn sort_rows_with_alias(
         .def
         .fields
         .iter()
-        .position(|field| field.name == actual_field_name)
+        .position(|field| field.name == *actual_field_name)
         .ok_or(QueryExecutionError::FieldNotFound)?;
 
     let field_type = table.def.fields[field_index].data_type;
@@ -7579,7 +7731,7 @@ fn sort_rows(
         .def
         .fields
         .iter()
-        .position(|field| field.name == actual_field_name)
+        .position(|field| field.name == *actual_field_name)
         .ok_or(QueryExecutionError::FieldNotFound)?;
 
     let field_type = table.def.fields[field_index].data_type;
@@ -7590,7 +7742,7 @@ fn sort_rows(
         // 遍历表的所有字段，找到在返回列中对应的索引
         let mut sort_col_index = 0;
         for (i, field) in table.def.fields.iter().enumerate() {
-            if field.name == actual_field_name {
+            if field.name == *actual_field_name {
                 sort_col_index = i;
                 break;
             }
@@ -7739,7 +7891,7 @@ unsafe fn get_field_value(
         .def
         .fields
         .iter()
-        .position(|field| field.name == actual_field_name)
+        .position(|field| field.name == *actual_field_name)
         .ok_or(QueryExecutionError::FieldNotFound)?;
 
     let field = &table.def.fields[field_index];

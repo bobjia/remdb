@@ -27,15 +27,15 @@ fn main() {
 
     // 2. 创建静态的数据库配置
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
-    static CONFIG: DbConfig = DbConfig {
-        tables: &[],
+    static CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(|| DbConfig {
+        tables: vec![],
         total_memory: 1024 * 1024 * 10, // 10MB
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 10000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "./wal",
+            log_path: "./wal".to_string(),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,

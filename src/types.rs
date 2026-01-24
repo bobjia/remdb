@@ -3,6 +3,7 @@ use core::mem::size_of;
 
 // 引入alloc模块
 extern crate alloc;
+use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::string::ToString;
 
@@ -478,13 +479,16 @@ impl fmt::Debug for Value {
     }
 }
 
-// 手动实现Sync trait，确保Value类型可以在多线程间安全共享
+// 手动实现Send和Sync trait，确保Value类型可以在多线程间安全共享
+unsafe impl Send for Value {}
 unsafe impl Sync for Value {}
 
-// 手动实现Sync trait，确保FieldDef类型可以在多线程间安全共享
+// 手动实现Send和Sync trait，确保FieldDef类型可以在多线程间安全共享
+unsafe impl Send for FieldDef {}
 unsafe impl Sync for FieldDef {}
 
-// 手动实现Sync trait，确保TableDef类型可以在多线程间安全共享
+// 手动实现Send和Sync trait，确保TableDef类型可以在多线程间安全共享
+unsafe impl Send for TableDef {}
 unsafe impl Sync for TableDef {}
 
 /// 带类型的值
@@ -827,11 +831,10 @@ impl fmt::Debug for TypedValue {
 pub const MAX_STRING_LEN: usize = 64;
 
 /// 字段定义
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct FieldDef {
-    /// 字段名称（编译时固定）
-    pub name: &'static str,
+    /// 字段名称
+    pub name: String,
     /// 数据类型
     pub data_type: DataType,
     /// 字段大小（字节）
@@ -850,6 +853,23 @@ pub struct FieldDef {
     pub default_value: Option<Value>,
     /// 向量元数据（仅向量类型使用）
     pub vector_metadata: Option<VectorMetadata>,
+}
+
+impl Default for FieldDef {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            data_type: DataType::Int32,
+            size: 0,
+            offset: 0,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+        }
+    }
 }
 
 impl FieldDef {
@@ -954,14 +974,14 @@ impl From<u8> for IndexType {
 }
 
 /// 表定义
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct TableDef {
     /// 表ID
     pub id: u8,
     /// 表名称
-    pub name: &'static str,
+    pub name: String,
     /// 字段定义
-    pub fields: &'static [FieldDef],
+    pub fields: Vec<FieldDef>,
     /// 主键字段索引
     pub primary_key: usize,
     /// 辅助索引字段索引（可选）
@@ -972,6 +992,12 @@ pub struct TableDef {
     pub record_size: usize,
     /// 最大记录数
     pub max_records: usize,
+    /// 表结构版本号，用于跟踪表结构变更
+    pub version: u32,
+    /// 表创建时间戳
+    pub created_at: u64,
+    /// 表最后修改时间戳
+    pub updated_at: u64,
 }
 
 /// 记录状态

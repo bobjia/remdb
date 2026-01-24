@@ -22,7 +22,7 @@ pub mod types;
 // 导出核心类型
 pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};
 pub use types::{
-    DataType, DistanceType, FieldDef, IndexType, RemDbError, Result, TableDef, Value,
+    DataType, DistanceType, FieldDef, IndexType, RecordStatus, RemDbError, Result, TableDef, Value,
     VectorIndexType, VectorMetadata, MAX_STRING_LEN,
 };
 
@@ -51,7 +51,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 /// 字段约束信息
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FieldConstraint {
     /// 是否为主键
     pub primary_key: bool,
@@ -63,7 +63,39 @@ pub struct FieldConstraint {
     pub auto_increment: bool,
 }
 
-/// DDL执行器trait，定义创建表、索引和时序表的方法
+/// ALTER TABLE操作类型
+#[derive(Clone, Debug)]
+pub enum AlterTableOperation {
+    /// 添加新列
+    AddColumn {
+        name: alloc::string::String,
+        data_type: DataType,
+        size: u16,
+        distance_type: Option<DistanceType>,
+        default_value: Option<Value>,
+        constraints: FieldConstraint,
+    },
+    /// 删除列
+    DropColumn {
+        name: alloc::string::String,
+    },
+    /// 修改列
+    ModifyColumn {
+        name: alloc::string::String,
+        data_type: DataType,
+        size: u16,
+        distance_type: Option<DistanceType>,
+        default_value: Option<Value>,
+        constraints: FieldConstraint,
+    },
+    /// 重命名列
+    RenameColumn {
+        old_name: alloc::string::String,
+        new_name: alloc::string::String,
+    },
+}
+
+/// DDL执行器trait，定义创建表、索引、时序表和修改表的方法
 pub trait DdlExecutor {
     /// 创建表
     fn create_table(
@@ -72,6 +104,13 @@ pub trait DdlExecutor {
         fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)],
         constraints: Option<&[FieldConstraint]>,
         primary_key: Option<usize>,
+    ) -> Result<()>;
+
+    /// 修改表结构
+    fn alter_table(
+        &mut self,
+        table_name: &str,
+        operation: AlterTableOperation,
     ) -> Result<()>;
 
     /// 创建索引
@@ -517,13 +556,13 @@ impl RemDb {
             use std::path::Path;
 
             // 构造完整的日志文件路径：log_path目录 + remdb.wal文件名
-            let log_dir = self.config.wal_config.log_path;
+            let log_dir = self.config.wal_config.log_path.clone();
             let wal_file_path = format!("{}/remdb.wal", log_dir);
 
             // 确保日志目录存在（仅在std环境下）
             #[cfg(feature = "std")]
             {
-                let log_path = Path::new(log_dir);
+                let log_path = Path::new(&log_dir);
                 if !log_path.exists() {
                     std::fs::create_dir_all(log_path).unwrap_or(());
                 }
@@ -652,7 +691,7 @@ impl RemDb {
 
                 // 动态计算记录大小
                 let mut record_size = 0;
-                for field in table.def.fields {
+                for field in &table.def.fields {
                     record_size += field.size;
                 }
 
@@ -810,7 +849,7 @@ impl RemDb {
 
             // 动态计算记录大小
             let mut record_size = 0;
-            for field in table.def.fields {
+            for field in &table.def.fields {
                 record_size += field.size;
             }
 
@@ -1071,7 +1110,7 @@ impl DdlExecutor for RemDb {
 
             // 创建字段定义，设置默认约束
             let field_def = FieldDef {
-                name: field_name_static,
+                name: field_name_static.to_string(),
                 data_type: *data_type,
                 size: field_size,
                 offset,
@@ -1091,23 +1130,23 @@ impl DdlExecutor for RemDb {
         }
 
         // 4. 创建表定义
-        // 注意：这里我们使用Box::leak将运行时字符串转换为静态字符串
-        let table_name_static = Box::leak(name.to_string().into_boxed_str());
-        let field_defs_static = Box::leak(field_defs.into_boxed_slice());
-
+        let now = crate::platform::get_timestamp_us();
         let table_def = TableDef {
             id: self.tables.len() as u8,
-            name: table_name_static,
-            fields: field_defs_static,
+            name: name.to_string(),
+            fields: field_defs,
             primary_key: primary_key.unwrap_or(0),
             secondary_index: None,
             secondary_index_type: IndexType::SortedArray,
             record_size,
             max_records: self.config.default_max_records,
+            version: 1,
+            created_at: now,
+            updated_at: now,
         };
 
         // 5. 创建内存表
-        let table_def_arc = alloc::sync::Arc::new(table_def);
+        let table_def_arc = alloc::sync::Arc::new(table_def.clone());
         let table = MemoryTable::new(table_def_arc.clone())?;
 
         // 6. 添加到表向量
@@ -1145,7 +1184,7 @@ impl DdlExecutor for RemDb {
         #[cfg(feature = "pubsub")]
         let table_creation_msg = alloc::format!(
             "CREATE:table={},id={},fields={}",
-            table_name_static,
+            table_def.name,
             table_def.id,
             table_def.fields.len()
         );
@@ -1163,7 +1202,7 @@ impl DdlExecutor for RemDb {
                 // 序列化表定义信息
                 let mut log_data = [0u8; 512];
                 // 写入表名
-                let name_bytes = table_name_static.as_bytes();
+                let name_bytes = table_def.name.as_bytes();
                 let name_len = core::cmp::min(name_bytes.len(), 64);
                 log_data[0] = name_len as u8;
                 log_data[1..1 + name_len].copy_from_slice(&name_bytes[..name_len]);
@@ -1182,7 +1221,7 @@ impl DdlExecutor for RemDb {
                         }
 
                         // 写入字段名
-                        let field_name = field.name;
+                        let field_name = field.name.clone();
                         let field_name_bytes = field_name.as_bytes();
                         let field_name_len = core::cmp::min(field_name_bytes.len(), 32);
 
@@ -1471,13 +1510,16 @@ impl DdlExecutor for RemDb {
         // 6. 创建一个新的Arc<TableDef>，包含索引信息
         let new_def = alloc::sync::Arc::new(TableDef {
             id: table.def.id,
-            name: table.def.name,
-            fields: table.def.fields,
+            name: table.def.name.clone(),
+            fields: table.def.fields.clone(),
             primary_key: table.def.primary_key,
             secondary_index: Some(field_index),
             secondary_index_type: index_type,
             record_size: table.def.record_size,
             max_records: table.def.max_records,
+            version: table.def.version,
+            created_at: table.def.created_at,
+            updated_at: table.def.updated_at,
         });
 
         // 7. 为索引分配内存
@@ -1574,6 +1616,256 @@ impl DdlExecutor for RemDb {
         // 调用RemDb结构体的create_time_series_table方法
         RemDb::create_time_series_table(self, name, time_field, value_field, tag_fields, config)
     }
+
+    fn alter_table(
+        &mut self,
+        table_name: &str,
+        operation: AlterTableOperation,
+    ) -> Result<()> {
+        #[cfg(feature = "std")]
+        eprintln!("Starting ALTER TABLE operation on {}", table_name);
+        
+        // 1. 查找表
+        let table_index = self.tables.iter().position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == table_name
+            } else {
+                false
+            }
+        })
+        .ok_or(RemDbError::TableNotFound)?;
+        
+        #[cfg(feature = "std")]
+        eprintln!("Found table at index {}", table_index);
+
+        // 2. 获取当前表定义
+        let current_table = self.tables[table_index].as_ref().ok_or(RemDbError::TableNotFound)?;
+        let mut new_table_def = (*current_table.def).clone();
+        
+        #[cfg(feature = "std")]
+        eprintln!("Current table def: {:?}", current_table.def.name);
+
+        // 3. 根据操作类型执行相应的表结构变更
+        #[cfg(feature = "std")]
+        eprintln!("Executing operation: {:?}", operation);
+        
+        match operation {
+            AlterTableOperation::AddColumn { name, data_type, size, distance_type, default_value, constraints } => {
+                // 检查列名是否已存在
+                if new_table_def.fields.iter().any(|f| f.name == name) {
+                    return Err(RemDbError::ConfigError);
+                }
+
+                // 计算新字段的偏移量
+                let new_offset = new_table_def.record_size;
+                
+                // 计算字段大小
+                let field_size = match data_type {
+                    DataType::String => size as usize,
+                    DataType::Vector => {
+                        // 向量类型：维度 * 4字节（f32）
+                        size as usize * 4
+                    },
+                    _ => data_type.size(),
+                };
+
+                // 解析约束条件
+                let primary_key = constraints.primary_key;
+                let not_null = constraints.not_null;
+                let unique = constraints.unique;
+                let auto_increment = constraints.auto_increment;
+
+                // 创建新字段定义
+                let new_field = FieldDef {
+                    name,
+                    data_type,
+                    size: field_size,
+                    offset: new_offset,
+                    primary_key,
+                    not_null,
+                    unique,
+                    auto_increment,
+                    default_value,
+                    vector_metadata: if data_type == DataType::Vector {
+                        Some(VectorMetadata {
+                            dimension: size,
+                            distance_type: distance_type.unwrap_or(DistanceType::L2),
+                            index_type: VectorIndexType::HNSW,
+                        })
+                    } else {
+                        None
+                    },
+                };
+
+                // 更新表定义
+                new_table_def.fields.push(new_field);
+                new_table_def.record_size += field_size;
+                new_table_def.version += 1;
+                new_table_def.updated_at = crate::platform::get_timestamp_us();
+            },
+            AlterTableOperation::DropColumn { name } => {
+                // 查找要删除的列
+                let field_index = new_table_def.fields.iter().position(|f| f.name == name)
+                    .ok_or(RemDbError::FieldNotFound)?;
+
+                // 不能删除主键列
+                if new_table_def.fields[field_index].primary_key {
+                    return Err(RemDbError::ConfigError);
+                }
+
+                // 获取要删除字段的大小
+                let _field_size = new_table_def.fields[field_index].size;
+
+                // 删除字段
+                new_table_def.fields.remove(field_index);
+
+                // 更新剩余字段的偏移量
+                let mut new_offset = 0;
+                for field in &mut new_table_def.fields {
+                    field.offset = new_offset;
+                    new_offset += field.size;
+                }
+
+                // 更新记录大小
+                new_table_def.record_size = new_offset;
+                new_table_def.version += 1;
+                new_table_def.updated_at = crate::platform::get_timestamp_us();
+            },
+            AlterTableOperation::ModifyColumn { name, data_type, size, distance_type, default_value, constraints } => {
+                // 查找要修改的列
+                let field_index = new_table_def.fields.iter().position(|f| f.name == name)
+                    .ok_or(RemDbError::FieldNotFound)?;
+
+                let field = &mut new_table_def.fields[field_index];
+                let old_size = field.size;
+
+                // 计算新字段大小
+                let new_size = match data_type {
+                    DataType::String => size as usize,
+                    DataType::Vector => {
+                        // 向量类型：维度 * 4字节（f32）
+                        size as usize * 4
+                    },
+                    _ => data_type.size(),
+                };
+
+                // 更新字段定义
+                field.data_type = data_type;
+                field.size = new_size;
+                field.default_value = default_value;
+                field.primary_key = constraints.primary_key;
+                field.not_null = constraints.not_null;
+                field.unique = constraints.unique;
+                field.auto_increment = constraints.auto_increment;
+                
+                // 更新向量元数据
+                if data_type == DataType::Vector {
+                    field.vector_metadata = Some(VectorMetadata {
+                        dimension: size,
+                        distance_type: distance_type.unwrap_or(DistanceType::L2),
+                        index_type: VectorIndexType::HNSW,
+                    });
+                } else {
+                    field.vector_metadata = None;
+                }
+
+                // 如果字段大小改变，需要重新计算所有后续字段的偏移量
+                if new_size != old_size {
+                    let size_diff = new_size - old_size;
+                    
+                    // 更新后续字段的偏移量
+                    for i in field_index + 1..new_table_def.fields.len() {
+                        new_table_def.fields[i].offset += size_diff;
+                    }
+                    
+                    // 更新记录大小
+                    new_table_def.record_size += size_diff;
+                }
+
+                new_table_def.version += 1;
+                new_table_def.updated_at = crate::platform::get_timestamp_us();
+            },
+            AlterTableOperation::RenameColumn { old_name, new_name } => {
+                // 检查新列名是否已存在
+                if new_table_def.fields.iter().any(|f| f.name == new_name) {
+                    return Err(RemDbError::ConfigError);
+                }
+
+                // 查找要重命名的列
+                let field_index = new_table_def.fields.iter().position(|f| f.name == old_name)
+                    .ok_or(RemDbError::FieldNotFound)?;
+
+                // 重命名列
+                new_table_def.fields[field_index].name = new_name;
+                new_table_def.version += 1;
+                new_table_def.updated_at = crate::platform::get_timestamp_us();
+            },
+        }
+
+        // 4. 计算主键索引所需内存大小
+        #[cfg(feature = "std")]
+        eprintln!("Calculating primary index memory size");
+        
+        let hash_table_size = (new_table_def.max_records * 2).next_power_of_two(); // 哈希表大小为记录数的2倍，取最近的2的幂
+        let index_memory_size = PrimaryIndex::calculate_memory_size(&new_table_def, hash_table_size, new_table_def.max_records);
+
+        #[cfg(feature = "std")]
+        eprintln!("Hash table size: {}, index memory size: {}", hash_table_size, index_memory_size);
+
+        // 分配内存
+        #[cfg(feature = "std")]
+        eprintln!("Allocating index memory");
+        
+        let index_memory = crate::memory::allocator::alloc(index_memory_size).map_err(|e| {
+            #[cfg(feature = "std")]
+            eprintln!("Failed to allocate index memory: {:?}", e);
+            e
+        })?;
+        
+        #[cfg(feature = "std")]
+        eprintln!("Allocated index memory at {:?}", index_memory.as_ptr());
+        
+        let hash_table_start = index_memory.as_ptr() as *mut Option<NonNull<PrimaryIndexItem>>;
+        let items_start = (index_memory.as_ptr() as usize
+            + hash_table_size * core::mem::size_of::<Option<NonNull<PrimaryIndexItem>>>())
+            as *mut PrimaryIndexItem;
+
+        // 5. 创建新的内存表（不迁移数据，只测试表结构变更）
+        #[cfg(feature = "std")]
+        eprintln!("Creating new table with updated definition");
+        
+        let new_table_def_arc = alloc::sync::Arc::new(new_table_def);
+        let new_table = MemoryTable::new(new_table_def_arc.clone()).map_err(|e| {
+            #[cfg(feature = "std")]
+            eprintln!("Failed to create new table: {:?}", e);
+            e
+        })?;
+        
+        #[cfg(feature = "std")]
+        eprintln!("Created new table successfully");
+
+        // 6. 替换旧表
+        self.tables[table_index] = Some(new_table);
+
+        // 7. 创建新的主键索引
+        let primary_index = unsafe {
+            PrimaryIndex::new(
+                new_table_def_arc.clone(),
+                hash_table_start,
+                items_start,
+                hash_table_size,
+                new_table_def_arc.max_records,
+            )
+        };
+        
+        // 8. 替换旧的主键索引
+        self.primary_indices[table_index] = Some(primary_index);
+        
+        // 9. 重置辅助索引（因为表结构已经改变）
+        self.secondary_indices[table_index] = None;
+
+        Ok(())
+    }
 }
 
 impl RemDb {
@@ -1584,11 +1876,20 @@ impl RemDb {
 
     /// 执行SQL查询
     pub fn sql_query(&mut self, sql: &str) -> Result<sql::ResultSet> {
+        #[cfg(feature = "std")]
+        eprintln!("Executing SQL: {}", sql);
+        
         // 解析SQL查询
-        let query = crate::sql::parse_sql_query(sql).map_err(|_| RemDbError::InvalidSqlQuery)?;
+        let query = crate::sql::parse_sql_query(sql).map_err(|e| {
+            #[cfg(feature = "std")]
+            eprintln!("SQL Parse Error: {:?}", e);
+            RemDbError::InvalidSqlQuery
+        })?;
 
         // 执行查询
         let result_set = crate::sql::execute_query(self, &query).map_err(|err| {
+            #[cfg(feature = "std")]
+            eprintln!("SQL Execution Error: {:?}", err);
             match err {
                 crate::sql::QueryExecutionError::TableNotFound => RemDbError::TableNotFound,
                 crate::sql::QueryExecutionError::FieldNotFound => RemDbError::FieldNotFound,
@@ -1596,9 +1897,8 @@ impl RemDb {
                 crate::sql::QueryExecutionError::ConstraintsConflicts => RemDbError::DuplicateKey,
                 crate::sql::QueryExecutionError::OutOfMemory => RemDbError::OutOfMemory,
                 _ => {
-                    // 保留原始错误信息，便于调试
                     #[cfg(feature = "std")]
-                    eprintln!("SQL Execution Error: {:?}", err);
+                    eprintln!("Unhandled execution error: {:?}", err);
                     RemDbError::InternalError
                 }
             }
@@ -1663,10 +1963,10 @@ impl RemDb {
         let mut record_size = 0;
 
         // 添加时间字段（TIMESTAMP）
-        let time_field_static = Box::leak(time_field.to_string().into_boxed_str());
+        let time_field_name = time_field.to_string();
         let time_field_size = DataType::Timestamp.size();
         field_defs.push(FieldDef {
-            name: time_field_static,
+            name: time_field_name.clone(),
             data_type: DataType::Timestamp,
             size: time_field_size,
             offset,
@@ -1683,10 +1983,10 @@ impl RemDb {
         record_size += time_field_size;
 
         // 添加值字段（FLOAT64）
-        let value_field_static = Box::leak(value_field.to_string().into_boxed_str());
+        let value_field_name = value_field.to_string();
         let value_field_size = DataType::Float64.size();
         field_defs.push(FieldDef {
-            name: value_field_static,
+            name: value_field_name.clone(),
             data_type: DataType::Float64,
             size: value_field_size,
             offset,
@@ -1703,10 +2003,10 @@ impl RemDb {
         // 添加标签字段（VARCHAR）
         let mut tag_field_indices = Vec::new();
         for (i, tag_field) in tag_fields.iter().enumerate() {
-            let tag_field_static = Box::leak(tag_field.to_string().into_boxed_str());
+            let tag_field_name = tag_field.to_string();
             let tag_field_size = MAX_STRING_LEN; // VARCHAR使用最大字符串长度
             field_defs.push(FieldDef {
-                name: tag_field_static,
+                name: tag_field_name.clone(),
                 data_type: DataType::String,
                 size: tag_field_size,
                 offset,
@@ -1722,20 +2022,19 @@ impl RemDb {
             record_size += tag_field_size;
         }
 
-        // 2. 创建表定义，转换为静态引用
-        let table_name_static = Box::leak(name.to_string().into_boxed_str());
-        let field_defs_static = Box::leak(field_defs.into_boxed_slice());
-        let tag_field_indices_static = Box::leak(tag_field_indices.into_boxed_slice());
-
+        // 2. 创建表定义
         let table_def = TableDef {
             id: (self.tables.len() + self.time_series_tables.len()) as u8,
-            name: table_name_static,
-            fields: field_defs_static,
+            name: name.to_string(),
+            fields: field_defs,
             primary_key: 0, // 时间字段作为主键
             secondary_index: None,
             secondary_index_type: IndexType::SortedArray,
             record_size,
             max_records: self.config.default_max_records,
+            version: 1,
+            created_at: crate::platform::get_timestamp_us(),
+            updated_at: crate::platform::get_timestamp_us(),
         };
 
         // 3. 创建时序表定义
@@ -1743,7 +2042,7 @@ impl RemDb {
             base: table_def,
             time_field: 0,                        // 时间字段索引
             value_field: 1,                       // 值字段索引
-            tag_fields: tag_field_indices_static, // 标签字段索引列表
+            tag_fields: tag_field_indices.into_boxed_slice(), // 标签字段索引列表
             config: config.unwrap_or(time_series::TimeSeriesConfig::DEFAULT), // 时序数据配置
         };
 
@@ -2090,7 +2389,7 @@ impl RemDb {
 
                 // 添加字段定义
                 let mut fields_sql = Vec::new();
-                for field in table.def.fields {
+                for field in &table.def.fields {
                     let field_sql = format!(
                         "    {} {} {}",
                         field.name,
@@ -2153,7 +2452,7 @@ impl RemDb {
 
                 // 添加字段定义
                 let mut fields_sql = Vec::new();
-                for field in base_def.fields {
+                for field in &base_def.fields {
                     let field_sql = format!(
                         "    {} {}",
                         field.name,
@@ -2233,7 +2532,7 @@ impl RemDb {
                             let mut field_values = Vec::new();
 
                             for field in table_ref.fields.iter() {
-                                field_names.push(field.name);
+                                field_names.push(field.name.clone());
 
                                 // 获取字段值
                                 let field_ptr = record_ptr.add(field.offset);
@@ -2448,7 +2747,7 @@ impl RemDb {
 
                 // 动态计算记录大小
                 let mut record_size = 0;
-                for field in table.def.fields {
+                for field in &table.def.fields {
                     record_size += field.size;
                 }
 
@@ -2498,9 +2797,9 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
         db.init()?;
 
         // 从配置创建表
-        for table_def in config.tables {
+        for table_def in &config.tables {
             // 创建表
-            let table = MemoryTable::new(alloc::sync::Arc::new(*table_def))?;
+            let table = MemoryTable::new(alloc::sync::Arc::new(table_def.clone()))?;
             db.tables.push(Some(table));
 
             // 创建空的索引项，后续会在需要时自动创建

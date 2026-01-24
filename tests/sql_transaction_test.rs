@@ -110,12 +110,12 @@ impl Platform for TestPlatform {
 static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 // 简单的表定义用于测试
-static TEST_TABLE_DEF: TableDef = TableDef {
+static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(|| TableDef {
     id: 0,
-    name: "test_table",
-    fields: &[
+    name: "test_table".to_string(),
+    fields: vec![
         FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: DataType::UInt32,
             size: 4,
             offset: 0,
@@ -127,7 +127,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             vector_metadata: None,
         },
         FieldDef {
-            name: "value",
+            name: "value".to_string(),
             data_type: DataType::Float32,
             size: 4,
             offset: 4,
@@ -144,21 +144,24 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     secondary_index_type: IndexType::SortedArray,
     record_size: 8,
     max_records: 100,
-};
+    version: 1,
+    created_at: 0,
+    updated_at: 0,
+});
+
+// 静态内存分配器实例
+static DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
 
 // 数据库配置
-static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
-    tables: &[TEST_TABLE_DEF],
+static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| config::DbConfig {
+    tables: vec![TEST_TABLE_DEF.clone()],
     total_memory: 1024 * 1024, // 1MB
     low_power_mode_supported: false,
     low_power_max_records: None,
     default_max_records: 100000,
-    memory_allocator: unsafe {
-        static mut DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
-        &mut DEFAULT_ALLOCATOR
-    },
+    memory_allocator: &DEFAULT_ALLOCATOR,
     wal_config: WALConfig {
-        log_path: "./wal",
+        log_path: "./wal".to_string(),
         log_mode: config::LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,

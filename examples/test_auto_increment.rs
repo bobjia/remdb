@@ -15,7 +15,7 @@ fn main() {
         // 创建数据库配置
         static ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
         static CONFIG: config::DbConfig = config::DbConfig {
-            tables: &[],
+            tables: vec![],
             total_memory: 1024 * 1024,
             low_power_mode_supported: false,
             low_power_max_records: None,

@@ -251,7 +251,7 @@ fn main() {
     
     // 创建数据库配置
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: buffer.len(),
         low_power_mode_supported: false,
         low_power_max_records: None,
@@ -564,13 +564,13 @@ use remdb::config::{DbConfig, WALConfig};
 
 // 初始化数据库配置
 let config = Box::leak(Box::new(DbConfig {
-    tables: &[],
+    tables: vec![],
     total_memory: 16 * 1024 * 1024, // 16MB
     low_power_mode_supported: false,
     low_power_max_records: None,
     memory_allocator: &SimpleAllocator,
     wal_config: WALConfig {
-        log_path: "./wal",
+        log_path: "./wal".to_string(),
         log_mode: remdb::config::LogMode::Async,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,

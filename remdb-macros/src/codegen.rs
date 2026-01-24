@@ -81,22 +81,27 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
 
             time_series_table_defs_code.push(quote! {
                 #[allow(non_upper_case_globals)]
-                pub static #table_ident: remdb::time_series::TimeSeriesTableDef = remdb::time_series::TimeSeriesTableDef {
-                    base: remdb::types::TableDef {
-                        id: 0u8,
-                        name: #table_name,
-                        fields: &[#(#field_defs,)*],
-                        primary_key: #primary_key_index,
-                        secondary_index: #secondary_index,
-                        secondary_index_type: #secondary_index_type,
-                        record_size: #record_size,
-                        max_records: #max_records,
-                    },
-                    time_field: #time_field_index,
-                    value_field: #value_field_index,
-                    tag_fields: &[#(#tag_fields_code,)*],
-                    config: remdb::time_series::TimeSeriesConfig::DEFAULT,
-                };
+                pub static #table_ident: std::sync::LazyLock<remdb::time_series::TimeSeriesTableDef> = std::sync::LazyLock::new(|| {
+                    remdb::time_series::TimeSeriesTableDef {
+                        base: remdb::types::TableDef {
+                            id: 0u8,
+                            name: #table_name.to_string(),
+                            fields: vec![#(#field_defs,)*],
+                            primary_key: #primary_key_index,
+                            secondary_index: #secondary_index,
+                            secondary_index_type: #secondary_index_type,
+                            record_size: #record_size,
+                            max_records: #max_records,
+                            version: 1,
+                            created_at: 0,
+                            updated_at: 0,
+                        },
+                        time_field: #time_field_index,
+                        value_field: #value_field_index,
+                        tag_fields: &[#(#tag_fields_code,)*],
+                        config: remdb::time_series::TimeSeriesConfig::DEFAULT,
+                    }
+                });
             });
 
             time_series_table_names.push(table_ident);
@@ -109,16 +114,21 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
 
             table_defs_code.push(quote! {
                 #[allow(non_upper_case_globals)]
-                pub static #table_ident: remdb::types::TableDef = remdb::types::TableDef {
-                    id: 0u8,
-                    name: #table_name,
-                    fields: &[#(#field_defs,)*],
-                    primary_key: #primary_key_index,
-                    secondary_index: #secondary_index,
-                    secondary_index_type: #secondary_index_type,
-                    record_size: #record_size,
-                    max_records: #max_records,
-                };
+                pub static #table_ident: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| {
+                    remdb::types::TableDef {
+                        id: 0u8,
+                        name: #table_name.to_string(),
+                        fields: vec![#(#field_defs,)*],
+                        primary_key: #primary_key_index,
+                        secondary_index: #secondary_index,
+                        secondary_index_type: #secondary_index_type,
+                        record_size: #record_size,
+                        max_records: #max_records,
+                        version: 1,
+                        created_at: 0,
+                        updated_at: 0,
+                    }
+                });
             });
 
             table_names.push(table_ident);
@@ -130,44 +140,46 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
 
     let database_code = quote! {
         #[allow(non_upper_case_globals)]
-        pub static #database_ident: remdb::config::DbConfig = remdb::config::DbConfig {
-            tables: &[#(#table_names,)*],
-            total_memory: 65536,
-            low_power_mode_supported: false,
-            low_power_max_records: None,
-            default_max_records: 1000,
-            memory_allocator: unsafe {
-                static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
-                &mut DEFAULT_ALLOCATOR
-            },
-            // WAL配置
-            wal_config: remdb::config::WALConfig {
-                log_path: "wal",
-                log_mode: remdb::config::LogMode::Sync,
-                checkpoint_interval_ms: 60000,
-                log_file_size_limit: 16 * 1024 * 1024,
-                log_prealloc_size: 1 * 1024 * 1024,
-                log_segment_size: 16 * 1024 * 1024,
-                retained_checkpoints: 3,
-            },
-            // PubSub配置（可选）
-            #[cfg(feature = "pubsub")]
-            pubsub_config: None,
-            // HA相关配置（可选）
-            #[cfg(feature = "ha")]
-            ha_config: Some(remdb::ha::HAConfig {
-                ha_role: remdb::ha::HARole::Auto,
-                replication_mode: remdb::ha::ReplicationMode::Async,
-                node_id: 1,
-                heartbeat_interval_ms: 1000,
-                failure_detection_ms: 3000,
-                sync_timeout_ms: 2000,
-                master_address: None,
-                master_port: None,
-                replication_port: 5556,
-            }),
-            time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
-        };
+        pub static #database_ident: std::sync::LazyLock<remdb::config::DbConfig> = std::sync::LazyLock::new(|| {
+            remdb::config::DbConfig {
+                tables: vec![#( #table_names.clone(), )*],
+                total_memory: 65536,
+                low_power_mode_supported: false,
+                low_power_max_records: None,
+                default_max_records: 1000,
+                memory_allocator: unsafe {
+                    static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
+                    &mut DEFAULT_ALLOCATOR
+                },
+                // WAL配置
+                wal_config: remdb::config::WALConfig {
+                    log_path: "wal".to_string(),
+                    log_mode: remdb::config::LogMode::Sync,
+                    checkpoint_interval_ms: 60000,
+                    log_file_size_limit: 16 * 1024 * 1024,
+                    log_prealloc_size: 1 * 1024 * 1024,
+                    log_segment_size: 16 * 1024 * 1024,
+                    retained_checkpoints: 3,
+                },
+                // PubSub配置（可选）
+                #[cfg(feature = "pubsub")]
+                pubsub_config: None,
+                // HA相关配置（可选）
+                #[cfg(feature = "ha")]
+                ha_config: Some(remdb::ha::HAConfig {
+                    ha_role: remdb::ha::HARole::Auto,
+                    replication_mode: remdb::ha::ReplicationMode::Async,
+                    node_id: 1,
+                    heartbeat_interval_ms: 1000,
+                    failure_detection_ms: 3000,
+                    sync_timeout_ms: 2000,
+                    master_address: None,
+                    master_port: None,
+                    replication_port: 5556,
+                }),
+                time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
+            }
+        });
     };
 
     let output = quote! {
@@ -212,7 +224,7 @@ fn generate_field_defs(
 
         field_defs.push(quote! {
             remdb::types::FieldDef {
-                name: #name,
+                name: #name.to_string(),
                 data_type: #data_type,
                 size: #size,
                 offset: #offset,

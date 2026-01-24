@@ -55,7 +55,7 @@ fn main() {
 
     // 定义静态数据库配置
     static CONFIG: DbConfig = DbConfig {
-        tables: &[],                   // 空的数据库配置
+        tables: vec![],                   // 空的数据库配置
         total_memory: 4 * 1024 * 1024, // 4MB，与全局缓冲区大小一致
         low_power_mode_supported: false,
         low_power_max_records: None,

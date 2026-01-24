@@ -120,14 +120,14 @@ fn test_index_recovery() -> Result<()> {
     // 使用全局初始化函数初始化数据库
     let db = unsafe {
         remdb::init_global_db(&remdb::config::DbConfig {
-            tables: &[],
+            tables: vec![],
             total_memory: 1024 * 1024, // 1MB
             low_power_mode_supported: false,
             low_power_max_records: None,
             default_max_records: 100,
             memory_allocator: &remdb::config::DefaultMemoryAllocator {},
             wal_config: remdb::config::WALConfig {
-                log_path: "./wal",
+                log_path: "./wal".to_string(),
                 log_mode: remdb::config::LogMode::Async,
                 checkpoint_interval_ms: 60000,
                 log_file_size_limit: 16 * 1024 * 1024,

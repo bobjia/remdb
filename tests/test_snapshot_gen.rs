@@ -5,10 +5,10 @@ use remdb::types::*;
 use remdb::*;
 
 // 简单的表定义用于测试
-static TEST_TABLE_DEF: TableDef = TableDef {
+static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(|| TableDef {
     id: 0,
     name: "test_table",
-    fields: &[
+    fields: vec![
         FieldDef {
             name: "id",
             data_type: DataType::UInt32,
@@ -39,29 +39,30 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     secondary_index_type: IndexType::SortedArray,
     record_size: 8,
     max_records: 100,
-};
+    created_at: 0,
+    updated_at: 0,
+    version: 1,
+});
 
 // 数据库配置
-static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
-    tables: &[TEST_TABLE_DEF],
-    total_memory: 1024 * 1024, // 1MB
-    low_power_mode_supported: false,
-    low_power_max_records: None,
-    default_max_records: 100000,
-    memory_allocator: unsafe {
-        static mut DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator =
-            config::DefaultMemoryAllocator;
-        &mut DEFAULT_ALLOCATOR
-    },
-    wal_config: WALConfig {
-        log_path: "./wal",
-        log_mode: config::LogMode::Sync,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
-    },
+static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| {
+    static ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
+    config::DbConfig {
+        tables: vec![TEST_TABLE_DEF.clone()],
+        total_memory: 1024 * 1024, // 1MB
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        default_max_records: 100000,
+        memory_allocator: &ALLOCATOR,
+        wal_config: WALConfig {
+            log_path: "./wal".to_string(),
+            log_mode: config::LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+        },
     time_series_defaults: config::TimeSeriesConfig::DEFAULT,
     #[cfg(feature = "pubsub")]
     pubsub_config: None,

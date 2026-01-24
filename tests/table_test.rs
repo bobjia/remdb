@@ -117,12 +117,12 @@ impl Platform for TestPlatform {
 static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 // 简单的表定义用于测试
-static TEST_TABLE_DEF: TableDef = TableDef {
+static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(|| TableDef {
     id: 0,
-    name: "test_table",
-    fields: &[
+    name: "test_table".to_string(),
+    fields: vec![
         FieldDef {
-            name: "id",
+            name: "id".to_string(),
             data_type: DataType::UInt32,
             size: 4,
             offset: 0,
@@ -134,7 +134,7 @@ static TEST_TABLE_DEF: TableDef = TableDef {
             vector_metadata: None,
         },
         FieldDef {
-            name: "value",
+            name: "value".to_string(),
             data_type: DataType::Float32,
             size: 4,
             offset: 4,
@@ -151,7 +151,10 @@ static TEST_TABLE_DEF: TableDef = TableDef {
     secondary_index_type: IndexType::SortedArray,
     record_size: 8,
     max_records: 100,
-};
+    version: 1,
+    created_at: 0,
+    updated_at: 0,
+});
 
 #[test]
 fn test_table_insert_delete() {
@@ -169,7 +172,7 @@ fn test_table_insert_delete() {
         remdb::reset_global_db();
 
         // 创建表
-        let table_def = Arc::new(TEST_TABLE_DEF);
+        let table_def = Arc::new(TEST_TABLE_DEF.clone());
         let mut table = MemoryTable::new(table_def).unwrap();
 
         // 创建测试记录
@@ -228,7 +231,7 @@ fn test_table_get_field() {
         remdb::reset_global_db();
 
         // 创建表
-        let table_def = Arc::new(TEST_TABLE_DEF);
+        let table_def = Arc::new(TEST_TABLE_DEF.clone());
         let mut table = MemoryTable::new(table_def).unwrap();
 
         // 创建测试记录
@@ -282,7 +285,7 @@ fn test_table_set_field() {
         remdb::reset_global_db();
 
         // 创建表
-        let table_def = Arc::new(TEST_TABLE_DEF);
+        let table_def = Arc::new(TEST_TABLE_DEF.clone());
         let mut table = MemoryTable::new(table_def).unwrap();
 
         // 创建测试记录
@@ -339,7 +342,7 @@ fn test_table_iterate() {
         remdb::reset_global_db();
 
         // 创建表
-        let table_def = Arc::new(TEST_TABLE_DEF);
+        let table_def = Arc::new(TEST_TABLE_DEF.clone());
         let mut table = MemoryTable::new(table_def).unwrap();
 
         // 插入多条记录
@@ -384,11 +387,11 @@ fn test_table_iterate() {
 }
 
 // 小表定义用于测试
-static SMALL_TABLE_DEF: TableDef = TableDef {
+static SMALL_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(|| TableDef {
     id: 1,
-    name: "small_table",
-    fields: &[FieldDef {
-        name: "id",
+    name: "small_table".to_string(),
+    fields: vec![FieldDef {
+        name: "id".to_string(),
         data_type: DataType::UInt32,
         size: 4,
         offset: 0,
@@ -404,7 +407,10 @@ static SMALL_TABLE_DEF: TableDef = TableDef {
     secondary_index_type: IndexType::SortedArray,
     record_size: 4,
     max_records: 2,
-};
+    version: 1,
+    created_at: 0,
+    updated_at: 0,
+});
 
 #[test]
 fn test_table_full() {
@@ -422,7 +428,7 @@ fn test_table_full() {
         remdb::reset_global_db();
 
         // 创建表
-        let table_def = Arc::new(SMALL_TABLE_DEF);
+        let table_def = Arc::new(SMALL_TABLE_DEF.clone());
         let mut table = MemoryTable::new(table_def).unwrap();
 
         // 创建测试记录
@@ -481,7 +487,7 @@ fn test_not_null_constraint() {
         remdb::reset_global_db();
 
         // 创建表
-        let table_def = Arc::new(TEST_TABLE_DEF);
+        let table_def = Arc::new(TEST_TABLE_DEF.clone());
         let mut table = MemoryTable::new(table_def).unwrap();
 
         // 测试1：插入id为0的记录，应该成功，因为0是合法的整数值
@@ -505,12 +511,12 @@ fn test_not_null_constraint() {
         assert_eq!(table.record_count(), 1);
 
         // 测试2：创建一个包含不同数据类型的表定义
-        static TABLE_WITH_NULLABLE: TableDef = TableDef {
+        let table_with_nullable = TableDef {
             id: 2,
-            name: "test_nullable_table",
-            fields: &[
+            name: "test_nullable_table".to_string(),
+            fields: vec![
                 FieldDef {
-                    name: "id",
+                    name: "id".to_string(),
                     data_type: DataType::UInt32,
                     size: 4,
                     offset: 0,
@@ -522,7 +528,7 @@ fn test_not_null_constraint() {
                     vector_metadata: None,
                 },
                 FieldDef {
-                    name: "name",
+                    name: "name".to_string(),
                     data_type: DataType::String,
                     size: 16,
                     offset: 4,
@@ -534,7 +540,7 @@ fn test_not_null_constraint() {
                     vector_metadata: None,
                 },
                 FieldDef {
-                    name: "value_float",
+                    name: "value_float".to_string(),
                     data_type: DataType::Float32,
                     size: 4,
                     offset: 20,
@@ -546,7 +552,7 @@ fn test_not_null_constraint() {
                     vector_metadata: None,
                 },
                 FieldDef {
-                    name: "value_int",
+                    name: "value_int".to_string(),
                     data_type: DataType::Int32,
                     size: 4,
                     offset: 24,
@@ -563,9 +569,12 @@ fn test_not_null_constraint() {
             secondary_index_type: IndexType::SortedArray,
             record_size: 28,
             max_records: 100,
+            version: 1,
+            created_at: 0,
+            updated_at: 0,
         };
 
-        let table_def2 = Arc::new(TABLE_WITH_NULLABLE);
+        let table_def2 = Arc::new(table_with_nullable);
         let mut table2 = MemoryTable::new(table_def2).unwrap();
 
         // 测试3：尝试插入null字符串字段，应该失败
@@ -676,45 +685,45 @@ fn test_table_record_ref_and_scan_ref() {
         // 重置全局数据库实例，确保测试之间的隔离
         remdb::reset_global_db();
 
-        let fields: &'static [FieldDef] = Box::leak(
-            vec![
-                FieldDef {
-                    name: "id",
-                    data_type: DataType::UInt32,
-                    size: 4,
-                    offset: 0,
-                    primary_key: true,
-                    not_null: true,
-                    unique: true,
-                    auto_increment: true,
-                    default_value: None,
-                    vector_metadata: None,
-                },
-                FieldDef {
-                    name: "name",
-                    data_type: DataType::String,
-                    size: 8,
-                    offset: 4,
-                    primary_key: false,
-                    not_null: false,
-                    unique: false,
-                    auto_increment: false,
-                    default_value: None,
-                    vector_metadata: None,
-                },
-            ]
-            .into_boxed_slice(),
-        );
+        let fields = vec![
+            FieldDef {
+                name: "id".to_string(),
+                data_type: DataType::UInt32,
+                size: 4,
+                offset: 0,
+                primary_key: true,
+                not_null: true,
+                unique: true,
+                auto_increment: true,
+                default_value: None,
+                vector_metadata: None,
+            },
+            FieldDef {
+                name: "name".to_string(),
+                data_type: DataType::String,
+                size: 8,
+                offset: 4,
+                primary_key: false,
+                not_null: false,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+                vector_metadata: None,
+            },
+        ];
 
         let table_def = TableDef {
             id: 3,
-            name: "ref_table",
+            name: "ref_table".to_string(),
             fields,
             primary_key: 0,
             secondary_index: None,
             secondary_index_type: IndexType::SortedArray,
             record_size: 12,
             max_records: 10,
+            version: 1,
+            created_at: 0,
+            updated_at: 0,
         };
 
         let table_def = Arc::new(table_def);

@@ -1080,6 +1080,377 @@ ALTER TABLE users DROP CONSTRAINT username_unique;
    - DDL操作内存开销 < 操作数据的10%
    - 无内存泄漏（通过24小时压力测试）
 
+---
+
+#### **US-216：轻量级JSON数据类型与路径查询**
+
+**作为** 工业物联网和嵌入式应用开发者，**我希望** 在内存数据库中支持高效的JSON数据类型，**以便于** 存储和处理设备配置、动态标签、非结构化传感器数据等半结构化信息，同时保持嵌入式环境下的性能和内存效率。
+
+---
+
+**验收条件：**
+
+**1. JSON列定义与存储**
+
+- 支持在CREATE TABLE语句中定义JSON类型列：
+  ```sql
+  CREATE TABLE device_configs (
+      id INTEGER PRIMARY KEY,
+      device_id INTEGER NOT NULL,
+      config JSON NOT NULL,          -- JSON类型列
+      tags JSON,                     -- 可为NULL的JSON列
+      created_at TIMESTAMP NOT NULL,
+      updated_at TIMESTAMP NOT NULL
+  );
+  ```
+
+- **存储格式优化**：
+  - 默认使用**MessagePack**二进制格式存储，相比文本JSON减少30-50%空间
+  - 提供可选的**CBOR**（Concise Binary Object Representation）格式
+  - 内联存储：< 64字节的JSON直接内联在记录中
+  - 外部存储：> 64字节的JSON存储在专用JSON内存池中
+
+- **内存布局**：
+  ```rust
+  // 内部表示
+  enum JsonStorage {
+      Inline([u8; 64]),           // 内联存储
+      External {                   // 外部存储
+          pool_id: u8,             // 内存池ID
+          offset: u32,             // 偏移量
+          length: u32,             // 长度
+      },
+      Null,                        // NULL值
+  }
+  ```
+
+**2. JSON数据操作API**
+
+**a) 插入与更新**：
+```sql
+-- 插入JSON数据
+INSERT INTO device_configs (id, device_id, config, tags, created_at, updated_at)
+VALUES (1, 1001, 
+        '{"sampling_rate": 1000, "thresholds": {"temp": 85.0, "vibration": 0.5}}',
+        '{"location": "cell-1", "criticality": "high"}',
+        NOW(), NOW());
+
+-- 更新整个JSON列
+UPDATE device_configs 
+SET config = '{"sampling_rate": 2000, "thresholds": {"temp": 90.0}}'
+WHERE id = 1;
+
+-- 部分更新（JSON Merge Patch）
+UPDATE device_configs 
+SET config = json_merge_patch(config, '{"thresholds": {"temp": 95.0}}')
+WHERE id = 1;
+```
+
+**b) 路径查询与提取**：
+```sql
+-- 提取标量值
+SELECT 
+    id,
+    json_extract(config, '$.sampling_rate') as rate,
+    json_extract(config, '$.thresholds.temp') as temp_threshold
+FROM device_configs
+WHERE device_id = 1001;
+
+-- 提取JSON片段
+SELECT 
+    json_extract(config, '$.thresholds') as thresholds_json
+FROM device_configs;
+
+-- 路径存在性检查
+SELECT id
+FROM device_configs
+WHERE json_has(config, '$.thresholds.temp') = 1;
+```
+
+**3. JSON路径表达式支持**
+
+- **完整路径语法**：
+  ```
+  $               -- 根对象
+  $.key           -- 对象键访问
+  $[0]            -- 数组索引访问
+  $[*]            -- 数组通配符
+  $.key[*].sub    -- 嵌套通配符
+  $.key[0:5]      -- 数组切片
+  $.key[?(@ > 10)]-- 过滤表达式（可选）
+  ```
+
+- **编译时路径优化**：频繁使用的路径在编译时预编译为访问计划
+
+**4. JSON索引支持**
+
+**a) 虚拟生成列索引**：
+```sql
+-- 在JSON路径上创建虚拟列并索引
+ALTER TABLE device_configs 
+ADD COLUMN temp_threshold FLOAT 
+GENERATED ALWAYS AS (json_extract(config, '$.thresholds.temp'));
+
+CREATE INDEX idx_temp_threshold ON device_configs(temp_threshold);
+```
+
+**b) JSON路径索引**（有限支持）：
+```sql
+-- 在特定JSON路径上创建索引
+CREATE INDEX idx_config_sampling 
+ON device_configs(json_extract(config, '$.sampling_rate'));
+
+-- 支持多路径复合索引（最多3个路径）
+CREATE INDEX idx_config_thresholds 
+ON device_configs(
+    json_extract(config, '$.thresholds.temp'),
+    json_extract(config, '$.thresholds.vibration')
+);
+```
+
+**5. 与向量数据集成**（US-601增强）
+
+```sql
+-- JSON中的向量数组作为向量字段
+CREATE TABLE device_features (
+    id INTEGER PRIMARY KEY,
+    device_id INTEGER NOT NULL,
+    features JSON NOT NULL,  -- 包含向量数组
+    vector VECTOR(128) GENERATED ALWAYS AS (
+        json_extract_vector(features, '$.embedding')
+    )
+);
+
+-- 混合查询：JSON过滤 + 向量搜索
+SELECT * FROM device_features
+WHERE json_extract(features, '$.device_type') = 'motor'
+AND VECTOR_SIMILAR(vector, @query_vector) < 0.2;
+```
+
+**6. 内存管理优化**（与US-104集成）
+
+- **专用JSON内存池**：预分配固定大小的JSON存储块（4KB/块）
+- **内存碎片控制**：使用slab分配器减少碎片
+- **引用计数**：JSON对象可被多个记录共享（只读场景）
+- **大小限制**：
+  - 单JSON文档最大：16KB（嵌入式环境）
+  - 嵌套深度最大：16层
+  - 总JSON内存使用可配置上限
+
+**7. 事务与并发**（与US-205集成）
+
+- **MVCC for JSON**：JSON修改创建新版本，旧版本由GC回收
+- **部分更新优化**：只修改的路径创建新版本，未修改部分共享
+- **锁粒度**：JSON对象级细粒度锁（读不阻塞写不同路径）
+
+**8. 序列化/反序列化优化**
+
+- **零拷贝访问**：json_extract返回原始存储的引用（只读）
+- **延迟解析**：只有访问的路径才被解析
+- **结构共享**：修改操作尽量复用未修改部分
+- **SIMD加速**：使用SIMD指令加速JSON解析（ARM NEON支持）
+
+**9. JSON函数集**
+
+```sql
+-- 构造函数
+json_object('key1', value1, 'key2', value2)
+json_array(value1, value2, value3)
+
+-- 查询函数
+json_extract(json_doc, path) → value
+json_extract_text(json_doc, path) → TEXT
+json_extract_int(json_doc, path) → INTEGER
+json_extract_float(json_doc, path) → FLOAT
+json_extract_vector(json_doc, path) → VECTOR
+
+-- 存在性检查
+json_has(json_doc, path) → BOOLEAN
+json_type(json_doc, path) → TEXT  -- 'object', 'array', 'number', 'string', 'boolean', 'null'
+
+-- 修改函数
+json_set(json_doc, path, value) → JSON
+json_insert(json_doc, path, value) → JSON
+json_replace(json_doc, path, value) → JSON
+json_remove(json_doc, path) → JSON
+json_merge_patch(json_doc, patch) → JSON
+
+-- 聚合函数
+json_group_object(key, value) → JSON  -- 聚合多行为JSON对象
+json_group_array(value) → JSON        -- 聚合多行为JSON数组
+
+-- 验证函数
+json_valid(json_text) → BOOLEAN
+json_schema_valid(schema, json_doc) → BOOLEAN  -- 可选，JSON Schema验证
+```
+
+**10. 嵌入式环境特殊优化**
+
+- **无堆分配模式**：所有JSON操作使用预分配内存池
+- **确定性内存使用**：JSON操作最大内存使用可预测
+- **快速路径**：常见操作（如读取顶层字段）有专门优化路径
+- **ARM Cortex-M优化**：Thumb2指令集优化版本
+
+**11. 与编译期DDL集成**（US-210扩展）
+
+```rust
+// Rust过程宏支持JSON列
+#[derive(MemdbTable)]
+#[memdb_schema(ddl = "
+    CREATE TABLE device_configs (
+        id INTEGER PRIMARY KEY,
+        config JSON NOT NULL,
+        tags JSON
+    );
+")]
+struct DeviceConfigs;
+
+// 自动生成类型安全的JSON访问方法
+let config: JsonValue = table.get_json("config");
+let sampling_rate: i32 = config.get_i32("sampling_rate").unwrap_or_default();
+
+// 编译时验证JSON Schema（可选）
+#[memdb_schema(ddl = "...", json_schema = "config_schema.json")]
+struct DeviceConfigs;
+```
+
+**12. 性能指标**
+
+- **插入性能**：1KB JSON插入延迟 < 200μs（STM32F4 @ 168MHz）
+- **查询性能**：json_extract(顶层字段)延迟 < 50μs
+- **路径查询**：嵌套3层路径查询延迟 < 150μs
+- **内存效率**：存储开销 < 原始文本JSON的60%
+- **更新性能**：部分更新延迟 < 全量更新的30%
+
+**13. 持久化支持**（US-107/201扩展）
+
+- **WAL日志优化**：JSON部分更新只记录差异
+- **快照压缩**：JSON数据在快照中使用字典压缩
+- **版本回滚**：支持JSON的MVCC版本回滚
+
+**14. 监控与诊断**
+
+```sql
+-- JSON列统计信息
+SELECT 
+    table_name,
+    column_name,
+    json_column_stats(json_column) as stats
+FROM __system_json_columns;
+
+-- 示例统计信息
+{
+  "total_documents": 1000,
+  "total_size_bytes": 1024000,
+  "avg_size_bytes": 1024,
+  "avg_depth": 3.2,
+  "key_distribution": {"sampling_rate": 1000, "thresholds": 1000},
+  "type_distribution": {"object": 800, "array": 200}
+}
+```
+
+**技术约束与限制**
+
+1. **一期限制**：
+   - 不支持JSON全文索引
+   - 不支持递归路径查询
+   - JSON Schema验证为可选功能
+   - 数组操作仅限于简单索引访问
+
+2. **内存约束**：
+   - 单个JSON文档最大16KB（可配置）
+   - 最大嵌套深度16层
+   - 键名最大长度64字节
+
+3. **嵌入式特殊考虑**：
+   - 无浮点硬件时，JSON浮点数使用定点数模拟
+   - 支持禁用JSON完整功能，只保留基础路径查询
+
+**测试场景**
+
+1. **功能正确性**：
+   - JSON往返测试：插入→查询→验证一致性
+   - 路径查询嵌套测试：10层嵌套路径访问
+   - 并发修改测试：多线程同时修改同一JSON不同路径
+
+2. **性能基准**：
+   - 与SQLite JSON1扩展性能对比
+   - 不同大小JSON文档的CRUD性能
+   - 内存碎片化测试（24小时连续运行）
+
+3. **边缘案例**：
+   - 损坏JSON数据处理
+   - 内存不足时的优雅降级
+   - 最大限制测试（16KB文档，16层嵌套）
+
+4. **集成测试**：
+   - 与向量搜索混合查询
+   - 与时序数据联合查询
+   - 事务中的JSON操作原子性
+
+**依赖关系**
+
+- **强依赖**：
+  - US-101（内存存储）：基础存储引擎
+  - US-104（内存管理）：JSON专用内存池
+  
+- **重要集成**：
+  - US-210（编译期DDL）：JSON类型安全
+  - US-601（向量数据）：JSON向量提取
+  - US-205（MVCC）：JSON并发控制
+  
+- **可选增强**：
+  - US-406（时序查询）：JSON路径上的时序聚合
+  - US-613（分数融合）：JSON字段参与分数计算
+
+**实施阶段**
+
+**阶段1（基础JSON）**：
+- 二进制JSON存储（MessagePack）
+- 基本路径查询（json_extract）
+- 内联/外部存储策略
+
+**阶段2（完整功能）**：
+- JSON索引支持
+- 部分更新（json_set, json_merge_patch）
+- 事务支持与MVCC
+
+**阶段3（高级优化）**：
+- SIMD加速解析
+- 与向量数据深度集成
+- JSON Schema验证
+
+**风险与缓解**
+
+| 风险         | 可能性 | 影响 | 缓解措施              |
+| ------------ | ------ | ---- | --------------------- |
+| 内存碎片     | 中     | 高   | 专用内存池 + 定期整理 |
+| 解析性能     | 高     | 中   | 懒解析 + SIMD优化     |
+| 嵌套深度爆炸 | 低     | 高   | 深度限制 + 栈保护     |
+| 二进制兼容性 | 中     | 中   | 版本化存储格式        |
+
+**成功指标**
+
+1. **功能性**：
+   - 支持标准JSON路径查询语法
+   - JSON列与现有类型系统无缝集成
+
+2. **性能**：
+   - JSON操作额外开销 < 相同数据文本操作的50%
+   - 路径查询延迟满足嵌入式实时要求
+
+3. **资源效率**：
+   - 存储空间 < 文本JSON的70%
+   - 内存使用可预测且有限
+
+4. **开发者体验**：
+   - API直观易用，与SQL标准兼容
+   - 错误信息清晰，调试方便
+
+---
+
+**将此用户故事放置在阶段二（核心优化）中，作为US-210（编译期DDL）的扩展，为嵌入式应用提供灵活的半结构化数据处理能力，同时保持嵌入式数据库的确定性和高性能特点。**
+
 
 ### **阶段三：高级功能**
 

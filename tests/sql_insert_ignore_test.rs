@@ -123,15 +123,15 @@ impl platform::Platform for TestPlatform {
 static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 // 定义自定义数据库配置
-static TEST_DB_CONFIG: remdb::config::DbConfig = remdb::config::DbConfig {
-    tables: &[],
+static TEST_DB_CONFIG: std::sync::LazyLock<remdb::config::DbConfig> = std::sync::LazyLock::new(|| remdb::config::DbConfig {
+    tables: vec![],
     total_memory: 2097152,    // 2MB
     default_max_records: 100, // 降低默认记录数，减少内存需求
     low_power_mode_supported: false,
     low_power_max_records: None,
     memory_allocator: &remdb::config::DefaultMemoryAllocator,
     wal_config: WALConfig {
-        log_path: "./wal",
+        log_path: "./wal".to_string(),
         log_mode: remdb::config::LogMode::Async,
         log_prealloc_size: 0,
         log_file_size_limit: 1048576,

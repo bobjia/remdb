@@ -114,79 +114,85 @@ impl Platform for TestPlatform {
 static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 // 简单的表定义用于测试
-static TEST_TABLE_DEF: TableDef = TableDef {
-    id: 0,
-    name: "test_table",
-    fields: &[
-        FieldDef {
-            name: "id",
-            data_type: DataType::UInt32,
-            size: 4,
-            offset: 0,
-            primary_key: true,
-            not_null: true,
-            unique: true,
-            auto_increment: true,
-            default_value: None,
-            vector_metadata: None,
-        },
-        FieldDef {
-            name: "value",
-            data_type: DataType::Float32,
-            size: 4,
-            offset: 4,
-            primary_key: false,
-            not_null: false,
-            unique: false,
-            auto_increment: false,
-            default_value: None,
-            vector_metadata: None,
-        },
-    ],
-    primary_key: 0,
-    secondary_index: None,
-    secondary_index_type: IndexType::SortedArray,
-    record_size: 8,
-    max_records: 100,
-};
+fn create_test_table_def() -> TableDef {
+    TableDef {
+        id: 0,
+        name: "test_table".to_string(),
+        fields: vec![
+            FieldDef {
+                name: "id".to_string(),
+                data_type: DataType::UInt32,
+                size: 4,
+                offset: 0,
+                primary_key: true,
+                not_null: true,
+                unique: true,
+                auto_increment: true,
+                default_value: None,
+                vector_metadata: None,
+            },
+            FieldDef {
+                name: "value".to_string(),
+                data_type: DataType::Float32,
+                size: 4,
+                offset: 4,
+                primary_key: false,
+                not_null: false,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+                vector_metadata: None,
+            },
+        ],
+        primary_key: 0,
+        secondary_index: None,
+        secondary_index_type: IndexType::SortedArray,
+        record_size: 8,
+        max_records: 100,
+        version: 1,
+        created_at: 0,
+        updated_at: 0,
+    }
+}
+
+// 静态内存分配器实例
+static DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
 
 // 数据库配置
-static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
-    tables: &[TEST_TABLE_DEF],
-    total_memory: 1024 * 1024, // 1MB
-    low_power_mode_supported: false,
-    low_power_max_records: None,
-    default_max_records: 100000,
-    memory_allocator: unsafe {
-        static mut DEFAULT_ALLOCATOR: config::DefaultMemoryAllocator =
-            config::DefaultMemoryAllocator;
-        &mut DEFAULT_ALLOCATOR
-    },
-    wal_config: WALConfig {
-        log_path: "./wal",
-        log_mode: config::LogMode::Sync,
-        checkpoint_interval_ms: 60000,
-        log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
-        log_segment_size: 16 * 1024 * 1024,
-        retained_checkpoints: 3,
-    },
-    time_series_defaults: time_series::TimeSeriesConfig::DEFAULT,
-    #[cfg(feature = "pubsub")]
-    pubsub_config: None,
-    #[cfg(feature = "ha")]
-    ha_config: Some(config::HAConfig {
-        node_id: 1,
-        ha_role: remdb::ha::HARole::Auto,
-        replication_mode: remdb::ha::ReplicationMode::Async,
-        heartbeat_interval_ms: 1000,
-        failure_detection_ms: 3000,
-        sync_timeout_ms: 2000,
-        master_address: None,
-        master_port: None,
-        replication_port: 5556,
-    }),
-};
+static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| {
+    config::DbConfig {
+        tables: vec![create_test_table_def()],
+        total_memory: 1024 * 1024, // 1MB
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        default_max_records: 100000,
+        memory_allocator: &DEFAULT_ALLOCATOR,
+        wal_config: WALConfig {
+            log_path: "./wal".to_string(),
+            log_mode: config::LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 1 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 3,
+        },
+        time_series_defaults: time_series::TimeSeriesConfig::DEFAULT,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: Some(config::HAConfig {
+            node_id: 1,
+            ha_role: remdb::ha::HARole::Auto,
+            replication_mode: remdb::ha::ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 2000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+        }),
+    }
+});
 
 // 静态缓冲区用于测试
 static mut TABLES_BUFFER: [Option<MemoryTable>; 1] = [None];

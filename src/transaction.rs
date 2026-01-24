@@ -200,7 +200,7 @@ pub struct LogBufferConfig {
 /// 日志管理器
 pub struct LogManager {
     /// 日志文件路径
-    log_path: &'static str,
+    log_path: String,
     /// 日志文件句柄
     log_handle: crate::platform::FileHandle,
     /// 日志头
@@ -259,7 +259,7 @@ impl LogManager {
     /// 创建新的日志管理器
     pub unsafe fn new(config: &crate::config::DbConfig) -> Result<Self> {
         // 构造完整的日志文件路径：log_path目录 + remdb.wal文件名
-        let log_dir = config.wal_config.log_path;
+        let log_dir = &config.wal_config.log_path;
 
         // 在no_std环境下使用alloc::format宏
         use alloc::format;
@@ -271,7 +271,7 @@ impl LogManager {
             use std::fs;
             use std::path::Path;
 
-            let log_path = Path::new(log_dir);
+            let log_path = Path::new(&log_dir);
             if !log_path.exists() {
                 fs::create_dir_all(log_path).unwrap_or(());
             }
@@ -289,7 +289,7 @@ impl LogManager {
         let now_ms = now / 1000;
 
         let mut manager = LogManager {
-            log_path: config.wal_config.log_path,
+            log_path: config.wal_config.log_path.clone(),
             log_handle,
             header: LogHeader {
                 magic: 0x4C4F474D, // 'LOGM'
@@ -1332,7 +1332,7 @@ impl LogManager {
 
                         // 创建字段定义
                         let field_def = crate::types::FieldDef {
-                            name: field_name,
+                            name: field_name.to_string(),
                             data_type,
                             size: field_size,
                             offset: 0, // 偏移量会在表创建时计算
@@ -1397,18 +1397,21 @@ impl LogManager {
                     }
 
                     // 将字段定义转换为静态切片
-                    let field_defs_static = Box::leak(Box::new(fields));
+
 
                     // 创建表定义
                     let table_def = crate::types::TableDef {
                         id: log_item.table_id,
-                        name: table_name,
-                        fields: field_defs_static,
-                        primary_key: primary_key,
+                        name: table_name.to_string(),
+                        fields: fields,
+                        primary_key: primary_key as usize,
                         secondary_index: None,
                         secondary_index_type: crate::types::IndexType::SortedArray,
                         record_size: record_size,
                         max_records: max_records,
+                        version: 1u32,
+                        created_at: crate::platform::get_timestamp_us(),
+                        updated_at: crate::platform::get_timestamp_us(),
                     };
 
                     // 直接实现从TableDef创建表的逻辑
@@ -1431,7 +1434,7 @@ impl LogManager {
                         }
 
                         // 创建内存表
-                        let table_def_arc = alloc::sync::Arc::new(table_def);
+                        let table_def_arc = alloc::sync::Arc::new(table_def.clone());
                         match crate::table::MemoryTable::new(table_def_arc.clone()) {
                             Ok(table) => {
                                 // 添加到表向量

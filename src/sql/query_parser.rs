@@ -137,6 +137,8 @@ pub enum QueryType {
     CreateTimeSeriesTable,
     /// CREATE INDEX查询
     CreateIndex,
+    /// ALTER TABLE查询
+    AlterTable,
     /// BEGIN TRANSACTION查询
     BeginTransaction,
     /// COMMIT查询
@@ -388,6 +390,7 @@ impl SqlParser {
             QueryType::CreateTable => self.parse_create_table_query(),
             QueryType::CreateTimeSeriesTable => self.parse_create_table_query(),
             QueryType::CreateIndex => self.parse_create_index_query(),
+            QueryType::AlterTable => self.parse_alter_table_query(),
             QueryType::BeginTransaction => Ok(SqlQuery {
                 query_type: QueryType::BeginTransaction,
                 table_name: String::new(),
@@ -871,6 +874,137 @@ impl SqlParser {
         })
     }
 
+    /// 解析ALTER TABLE查询
+    fn parse_alter_table_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析表名
+        self.skip_whitespace();
+        let table_name = self.parse_identifier()?;
+
+        // 解析ALTER TABLE操作
+        self.skip_whitespace();
+
+        // 初始化字段定义列表
+        let mut table_def = Vec::new();
+
+        // 解析操作类型
+        if self.match_keyword("ADD") {
+            self.skip_whitespace();
+            if self.match_keyword("COLUMN") {
+                self.skip_whitespace();
+            }
+
+            // 解析字段定义
+            let field_def = self.parse_column_definition()?;
+            table_def.push(field_def);
+        } else if self.match_keyword("DROP") {
+            self.skip_whitespace();
+            if self.match_keyword("COLUMN") {
+                self.skip_whitespace();
+            }
+
+            // 解析要删除的字段名
+            let field_name = self.parse_identifier()?;
+            // 使用特殊标记表示DROP COLUMN操作
+            table_def.push((field_name, "DROP".to_string(), false, false, false, false, None));
+        } else if self.match_keyword("MODIFY") {
+            self.skip_whitespace();
+            if self.match_keyword("COLUMN") {
+                self.skip_whitespace();
+            }
+
+            // 解析字段定义
+            let field_def = self.parse_column_definition()?;
+            table_def.push(field_def);
+        } else if self.match_keyword("RENAME") {
+            self.skip_whitespace();
+            if self.match_keyword("COLUMN") {
+                self.skip_whitespace();
+            }
+
+            // 解析旧字段名
+            let old_name = self.parse_identifier()?;
+
+            self.skip_whitespace();
+            self.expect_keyword("TO")?;
+
+            self.skip_whitespace();
+            // 解析新字段名
+            let new_name = self.parse_identifier()?;
+            // 使用特殊标记表示RENAME COLUMN操作
+            table_def.push((old_name, new_name, false, false, false, false, None));
+        } else {
+            return Err(QueryParseError::UnsupportedKeyword);
+        }
+
+        Ok(SqlQuery {
+            query_type: QueryType::AlterTable,
+            table_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def,
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+        })
+    }
+
+    /// 解析列定义
+    fn parse_column_definition(&mut self) -> Result<(String, String, bool, bool, bool, bool, Option<Value>), QueryParseError> {
+        let field_name = self.parse_identifier()?;
+
+        self.skip_whitespace();
+        // 解析数据类型，支持复杂类型如 VARCHAR(255), INT UNSIGNED
+        let data_type = self.parse_data_type()?.to_uppercase();
+
+        // 初始化约束标志
+        let mut is_primary_key = false;
+        let mut is_not_null = false;
+        let mut is_unique = false;
+        let mut is_auto_increment = false;
+        let mut default_value: Option<Value> = None;
+
+        // 检查约束条件
+        loop {
+            self.skip_whitespace();
+
+            if self.match_keyword("PRIMARY") {
+                self.skip_whitespace();
+                self.expect_keyword("KEY")?;
+                is_primary_key = true;
+            } else if self.match_keyword("NOT") {
+                self.skip_whitespace();
+                self.expect_keyword("NULL")?;
+                is_not_null = true;
+            } else if self.match_keyword("UNIQUE") {
+                is_unique = true;
+            } else if self.match_keyword("AUTOINCREMENT")
+                || self.match_keyword("AUTO_INCREMENT")
+            {
+                is_auto_increment = true;
+            } else if self.match_keyword("DEFAULT") {
+                self.skip_whitespace();
+                let value = self.parse_value()?;
+                default_value = Some(value);
+            } else {
+                // 没有更多约束
+                break;
+            }
+        }
+
+        Ok((field_name, data_type, is_primary_key, is_not_null, is_unique, is_auto_increment, default_value))
+    }
+
     /// 解析查询类型
     fn parse_query_type(&mut self) -> Result<QueryType, QueryParseError> {
         if self.match_keyword("SELECT") {
@@ -896,6 +1030,13 @@ impl SqlParser {
                 Ok(QueryType::CreateTable)
             } else if self.match_keyword("INDEX") {
                 Ok(QueryType::CreateIndex)
+            } else {
+                Ok(QueryType::Other)
+            }
+        } else if self.match_keyword("ALTER") {
+            self.skip_whitespace();
+            if self.match_keyword("TABLE") {
+                Ok(QueryType::AlterTable)
             } else {
                 Ok(QueryType::Other)
             }

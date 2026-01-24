@@ -32,7 +32,7 @@ fn main() -> Result<()> {
 
     // 定义数据库配置
     let config = Box::leak(Box::new(DbConfig {
-        tables: &[],                    // 空的数据库配置
+        tables: vec![],                    // 空的数据库配置
         total_memory: 16 * 1024 * 1024, // 16MB，与全局缓冲区大小一致
         low_power_mode_supported: false,
         low_power_max_records: None,

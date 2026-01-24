@@ -8,53 +8,58 @@ use remdb::{init_global_db, AnySecondaryIndex, PrimaryIndex};
 use std::time::Instant;
 
 // 定义一个用于性能测试的大表，max_records设置为100,000（测试插入80,000条，占80%容量）
-static LARGE_TABLE_DEF: TableDef = TableDef {
-    id: 0,
-    name: "large_table",
-    fields: &[
-        FieldDef {
-            name: "id",
-            data_type: DataType::UInt32,
-            size: 4,
-            offset: 0,
-            primary_key: true,
-            not_null: true,
-            unique: true,
-            auto_increment: true,
-            default_value: None,
-            vector_metadata: None,
-        },
-        FieldDef {
-            name: "value",
-            data_type: DataType::Float32,
-            size: 4,
-            offset: 4,
-            primary_key: false,
-            not_null: false,
-            unique: false,
-            auto_increment: false,
-            default_value: None,
-            vector_metadata: None,
-        },
-        FieldDef {
-            name: "name",
-            data_type: DataType::String,
-            size: 32,
-            offset: 8,
-            primary_key: false,
-            not_null: false,
-            unique: false,
-            auto_increment: false,
-            default_value: None,
-            vector_metadata: None,
-        },
-    ],
-    primary_key: 0,
-    secondary_index: None,
-    secondary_index_type: IndexType::SortedArray,
-    record_size: 4 + 4 + 32, // 40字节记录
-    max_records: 100000,
-};
+fn create_large_table_def() -> TableDef {
+    TableDef {
+        id: 0,
+        name: "large_table".to_string(),
+        fields: vec![
+            FieldDef {
+                name: "id".to_string(),
+                data_type: DataType::UInt32,
+                size: 4,
+                offset: 0,
+                primary_key: true,
+                not_null: true,
+                unique: true,
+                auto_increment: true,
+                default_value: None,
+                vector_metadata: None,
+            },
+            FieldDef {
+                name: "value".to_string(),
+                data_type: DataType::Float32,
+                size: 4,
+                offset: 4,
+                primary_key: false,
+                not_null: false,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+                vector_metadata: None,
+            },
+            FieldDef {
+                name: "name".to_string(),
+                data_type: DataType::String,
+                size: 32,
+                offset: 8,
+                primary_key: false,
+                not_null: false,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+                vector_metadata: None,
+            },
+        ],
+        primary_key: 0,
+        secondary_index: None,
+        secondary_index_type: IndexType::SortedArray,
+        record_size: 4 + 4 + 32, // 40字节记录
+        max_records: 100000,
+        version: 1,
+        created_at: 0,
+        updated_at: 0,
+    }
+}
 
 // 简单的测试平台实现
 struct TestPlatform;
@@ -161,10 +166,11 @@ static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 #[test]
 fn test_large_table_performance() {
+    let large_table_def = create_large_table_def();
     println!("=== 大表性能测试开始 ===");
-    println!("表定义: {}", LARGE_TABLE_DEF.name);
-    println!("记录大小: {} 字节", LARGE_TABLE_DEF.record_size);
-    println!("最大记录数: {}", LARGE_TABLE_DEF.max_records);
+    println!("表定义: {}", large_table_def.name);
+    println!("记录大小: {} 字节", large_table_def.record_size);
+    println!("最大记录数: {}", large_table_def.max_records);
     println!("目标测试记录数: {} (80%容量)", 80000);
 
     // 初始化平台
@@ -173,18 +179,17 @@ fn test_large_table_performance() {
     }
 
     // 创建数据库配置
-    static DB_CONFIG: DbConfig = DbConfig {
-        tables: &[LARGE_TABLE_DEF],
+    static DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
+    
+    let db_config = DbConfig {
+        tables: vec![create_large_table_def()],
         total_memory: 500_000_000, // 500MB
         low_power_mode_supported: false,
         low_power_max_records: Some(10000),
         default_max_records: 100000,
-        memory_allocator: unsafe {
-            static mut DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
-            &mut DEFAULT_ALLOCATOR
-        },
+        memory_allocator: &DEFAULT_ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "./wal",
+            log_path: "./wal".to_string(),
             log_mode: remdb::config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -211,16 +216,16 @@ fn test_large_table_performance() {
 
     unsafe {
         // 预分配内存缓冲区并初始化全局分配器
-        let mut memory_buffer = Vec::with_capacity(DB_CONFIG.total_memory);
-        memory_buffer.set_len(DB_CONFIG.total_memory);
+        let mut memory_buffer = Vec::with_capacity(db_config.total_memory);
+        memory_buffer.set_len(db_config.total_memory);
         remdb::memory::allocator::init_global_allocator(
             memory_buffer.as_mut_ptr(),
-            DB_CONFIG.total_memory,
+            db_config.total_memory,
         )
         .unwrap();
 
         // 初始化数据库实例
-        let db = init_global_db(&DB_CONFIG).unwrap();
+        let db = init_global_db(&db_config).unwrap();
 
         // 输出初始监控指标
         println!("\n初始监控指标:");

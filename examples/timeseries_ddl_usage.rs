@@ -37,7 +37,7 @@ fn main() {
 
     // 创建并存储数据库配置
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: memory.len(),
         low_power_mode_supported: false,
         low_power_max_records: None,
