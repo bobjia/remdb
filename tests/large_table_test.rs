@@ -182,7 +182,7 @@ fn test_large_table_performance() {
     static DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
     static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(|| DbConfig {
         tables: vec![create_large_table_def()],
-        total_memory: 500_000_000, // 500MB
+        total_memory: 100_000_000, // 100MB，减小内存大小以避免内存分配失败
         low_power_mode_supported: false,
         low_power_max_records: Some(10000),
         default_max_records: 100000,
@@ -215,8 +215,8 @@ fn test_large_table_performance() {
 
     unsafe {
         // 预分配内存缓冲区并初始化全局分配器
-        let mut memory_buffer = Vec::with_capacity(TEST_DB_CONFIG.total_memory);
-        memory_buffer.set_len(TEST_DB_CONFIG.total_memory);
+        // 使用安全的内存初始化方式，创建一个全零的Vec
+        let mut memory_buffer = vec![0u8; TEST_DB_CONFIG.total_memory];
         remdb::memory::allocator::init_global_allocator(
             memory_buffer.as_mut_ptr(),
             TEST_DB_CONFIG.total_memory,
@@ -234,8 +234,8 @@ fn test_large_table_performance() {
         println!("\n1. 插入80,000条记录...");
         let start_time = Instant::now();
 
-        // 获取large_table（系统表在索引0，large_table在索引1）
-        let table = db.get_table_mut(1).unwrap();
+        // 获取large_table（用户表在索引0，系统表在索引1）
+        let table = db.get_table_mut(0).unwrap();
         let mut inserted_ids = Vec::with_capacity(80000);
         for i in 0..80000 {
             let mut record_data = [0u8; 40]; // 40字节记录
@@ -291,8 +291,8 @@ fn test_large_table_performance() {
         println!("\n2. 查询性能测试（10,000条随机记录）...");
         let start_time = Instant::now();
 
-        // 获取表引用（large_table在索引1）
-        let table = db.get_table_mut(1).unwrap();
+        // 获取表引用（large_table在索引0）
+        let table = db.get_table_mut(0).unwrap();
 
         let mut query_success = 0;
         for _ in 0..10000 {
@@ -330,8 +330,8 @@ fn test_large_table_performance() {
         println!("\n3. 删除性能测试（10,000条记录）...");
         let start_time = Instant::now();
 
-        // 获取表引用（large_table在索引1）
-        let table = db.get_table_mut(1).unwrap();
+        // 获取表引用（large_table在索引0）
+        let table = db.get_table_mut(0).unwrap();
         let mut delete_success = 0;
         let mut deleted_ids = Vec::with_capacity(10000);
         for i in 0..10000 {
@@ -364,8 +364,8 @@ fn test_large_table_performance() {
         println!("\n4. 插入性能测试（10,000条新记录）...");
         let start_time = Instant::now();
 
-        // 获取表引用（large_table在索引1）
-        let table = db.get_table_mut(1).unwrap();
+        // 获取表引用（large_table在索引0）
+        let table = db.get_table_mut(0).unwrap();
         let mut insert_success = 0;
         for i in 80000..90000 {
             let mut record_data = [0u8; 40];

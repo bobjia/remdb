@@ -3132,7 +3132,6 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
     unsafe {
         // 无论是否已经初始化过，都创建一个新的数据库实例
         let mut db = RemDb::new(config);
-        db.init()?;
 
         // 从配置创建表
         for table_def in &config.tables {
@@ -3144,6 +3143,9 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
             db.primary_indices.push(None);
             db.secondary_indices.push(None);
         }
+
+        // 初始化数据库（包括系统表）
+        db.init()?;
 
         // 将新的数据库实例赋值给 DB_INSTANCE
         DB_INSTANCE = Some(db);

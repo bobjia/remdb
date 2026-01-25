@@ -272,7 +272,7 @@ fn test_sql_query() {
 
     // 测试SQL查询
 
-    // 调试信息：打印表名和字段名
+    // 调试信息：打印TEST_TABLE表名和字段名
     let table = unsafe { db.get_table_mut(0).unwrap() };
     println!("表名: {}", table.def.name);
     println!("记录大小: {}", table.def.record_size);
@@ -282,7 +282,7 @@ fn test_sql_query() {
             i, field.name, field.size, field.offset
         );
     }
-
+    
     // 调试：手动遍历表记录
     println!("=== 手动遍历表记录 ===");
     let mut count = 0;

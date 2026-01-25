@@ -547,19 +547,12 @@ pub union Value {
 // 手动实现Clone trait，因为Rust不支持为union类型自动派生Clone
 impl Clone for Value {
     fn clone(&self) -> Self {
-        // 创建一个新的Value实例，初始化为0
-        let mut new_value = Value { u64: 0 };
-        
-        // 由于我们不知道当前的Value类型，我们需要安全地复制所有可能的字段
+        // 对于union，我们需要复制整个内存区域
         // 这是安全的，因为我们只是复制原始数据，不涉及指针解引用
+        // 对于指针类型，我们只是复制指针值，不涉及所有权转移
         unsafe {
-            // 复制所有可能的字段
-            // 对于基本类型，这是安全的
-            // 对于指针类型，我们只是复制指针值，不涉及所有权转移
-            new_value.u64 = self.u64;
+            core::mem::transmute_copy(self)
         }
-        
-        new_value
     }
 }
 
