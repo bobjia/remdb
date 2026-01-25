@@ -835,8 +835,12 @@ impl LogManager {
 
         // 使用文件大小来计算实际的日志记录数，避免依赖可能过时的header.record_count
         let log_item_size = core::mem::size_of::<LogItem>();
-        let log_region_size =
-            file_size - (core::mem::size_of::<LogHeader>() + core::mem::size_of::<LogCheckpoint>());
+        let header_and_checkpoint_size = core::mem::size_of::<LogHeader>() + core::mem::size_of::<LogCheckpoint>();
+        let log_region_size = if file_size > header_and_checkpoint_size {
+            file_size - header_and_checkpoint_size
+        } else {
+            0
+        };
         let total_records = if log_item_size > 0 {
             // 确保不超过文件大小，并且只处理完整的日志项
             log_region_size / log_item_size
@@ -2117,20 +2121,21 @@ impl TransactionManager {
             }
         };
 
+        // 保存当前事务指针并清除current_tx，确保无论后续操作是否成功，current_tx都被重置
+        let mut tx_ptr = tx;
+        self.current_tx = None;
+
         // 解锁以允许日志写入
         crate::platform::spin_unlock(&mut self.lock);
 
         // 提交事务日志项
-        tx.as_mut().commit_log_item()?;
+        tx_ptr.as_mut().commit_log_item()?;
 
         // 重新获取锁来更新事务状态
         crate::platform::spin_lock(&mut self.lock);
 
         // 更新事务状态
-        tx.as_mut().status = TransactionStatus::Committed;
-
-        // 清除当前事务
-        self.current_tx = None;
+        tx_ptr.as_mut().status = TransactionStatus::Committed;
 
         // 解锁
         crate::platform::spin_unlock(&mut self.lock);
@@ -2152,12 +2157,16 @@ impl TransactionManager {
             }
         };
 
+        // 保存当前事务指针并清除current_tx，确保无论后续操作是否成功，current_tx都被重置
+        let mut tx_ptr = tx;
+        self.current_tx = None;
+
         // 解锁以允许回滚操作
         crate::platform::spin_unlock(&mut self.lock);
 
         // 执行实际的回滚操作：遍历日志项，按相反顺序撤销操作
-        for i in (0..tx.as_mut().log_item_count).rev() {
-            let log_item = &tx.as_mut().log_items.as_ptr().add(i).as_ref().unwrap();
+        for i in (0..tx_ptr.as_mut().log_item_count).rev() {
+            let log_item = &tx_ptr.as_mut().log_items.as_ptr().add(i).as_ref().unwrap();
 
             // 获取数据库实例
             let db = crate::get_global_db().ok_or(RemDbError::InternalError)?;
@@ -2299,16 +2308,7 @@ impl TransactionManager {
         }
 
         // 更新事务状态为回滚中
-        tx.as_mut().status = TransactionStatus::RolledBack;
-
-        // 重新获取锁来清除当前事务
-        crate::platform::spin_lock(&mut self.lock);
-
-        // 清除当前事务
-        self.current_tx = None;
-
-        // 解锁
-        crate::platform::spin_unlock(&mut self.lock);
+        tx_ptr.as_mut().status = TransactionStatus::RolledBack;
 
         Ok(())
     }
@@ -2356,6 +2356,12 @@ impl TransactionManager {
 
     /// 重置事务管理器状态
     pub fn reset(&mut self) {
+        // 先重置锁状态，防止上一次测试中锁未正确释放导致死锁
+        unsafe {
+            core::sync::atomic::AtomicU32::from_ptr(&mut self.lock as *mut u32)
+                .store(0, core::sync::atomic::Ordering::Release);
+        }
+        
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
 

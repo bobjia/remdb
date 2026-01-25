@@ -12,8 +12,8 @@ use crate::sql::query_parser::{
 use crate::sql::{
     ComparisonCondition, ComparisonOperator, Condition, OrderByClause, ResultSet, SqlQuery,
 };
+use crate::types::{DataType, DistanceType, TypedValue, VectorIndexType, VectorMetadata};
 use crate::{
-    types::{DataType, TypedValue},
     DdlExecutor, IndexType, MemoryTable, RemDb, RemDbError, TableDef, TimeSeriesTable, Value,
     MAX_STRING_LEN,
 };
@@ -1749,7 +1749,7 @@ fn execute_select_join_query(
                             DataType::Vector => TypedValue {
                                 value_type: DataType::Vector,
                                 value: Value {
-                                    vector: std::ptr::null(),
+                                    u64: 0,
                                 },
                             },
                         };

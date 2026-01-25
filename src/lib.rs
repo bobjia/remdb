@@ -1867,16 +1867,36 @@ impl DdlExecutor for RemDb {
                     let mut new_record_data = [0u8; 512]; // 假设最大记录大小为512字节
                     
                     // 迁移字段数据
-                    for old_field in old_table.def.fields.iter() {
-                        // 查找新表中对应的字段（按名称匹配）
-                        if let Some(new_field) = new_table_def_arc.fields.iter().find(|f| f.name == old_field.name) {
-                            // 复制字段数据
-                            let copy_len = core::cmp::min(old_field.size, new_field.size);
-                            crate::platform::memcpy(
-                                new_record_data.as_mut_ptr().add(new_field.offset),
-                                old_record_ptr.add(old_field.offset),
-                                copy_len
-                            );
+                    match &operation {
+                        AlterTableOperation::RenameColumn { .. } => {
+                            // For RenameColumn, match fields by position since only the name changes
+                            for (i, old_field) in old_table.def.fields.iter().enumerate() {
+                                if i < new_table_def_arc.fields.len() {
+                                    let new_field = &new_table_def_arc.fields[i];
+                                    // 复制字段数据
+                                    let copy_len = core::cmp::min(old_field.size, new_field.size);
+                                    crate::platform::memcpy(
+                                        new_record_data.as_mut_ptr().add(new_field.offset),
+                                        old_record_ptr.add(old_field.offset),
+                                        copy_len
+                                    );
+                                }
+                            }
+                        },
+                        _ => {
+                            // For other operations, match fields by name
+                            for old_field in old_table.def.fields.iter() {
+                                // 查找新表中对应的字段（按名称匹配）
+                                if let Some(new_field) = new_table_def_arc.fields.iter().find(|f| f.name == old_field.name) {
+                                    // 复制字段数据
+                                    let copy_len = core::cmp::min(old_field.size, new_field.size);
+                                    crate::platform::memcpy(
+                                        new_record_data.as_mut_ptr().add(new_field.offset),
+                                        old_record_ptr.add(old_field.offset),
+                                        copy_len
+                                    );
+                                }
+                            }
                         }
                     }
                     
@@ -1971,7 +1991,7 @@ impl DdlExecutor for RemDb {
         self.tables[table_index] = Some(new_table);
 
         // 8. 创建新的主键索引
-        let primary_index = unsafe {
+        let mut primary_index = unsafe {
             PrimaryIndex::new(
                 new_table_def_arc.clone(),
                 hash_table_start,
@@ -1980,6 +2000,36 @@ impl DdlExecutor for RemDb {
                 new_table_def_arc.max_records,
             )
         };
+        
+        // 8.1 Populate the primary index with migrated data
+        let new_table = self.tables[table_index].as_mut().unwrap();
+        unsafe {
+            // Find primary key field
+            if let Some(pk_field) = new_table_def_arc.fields.iter().find(|f| f.primary_key) {
+                // Iterate through all records in the new table
+                for slot_id in 0..new_table_def_arc.max_records {
+                    let status_ptr = new_table.status_array.as_ptr().add(slot_id);
+                    let status = &*status_ptr;
+                    
+                    // Only process used records
+                    if status.status == RecordStatus::Used {
+                        let record_ptr = new_table.data_start.as_ptr().add(slot_id * new_table.record_size);
+                        let pk_ptr = record_ptr.add(pk_field.offset);
+                        
+                        // Insert into primary index
+                        primary_index.insert(
+                            pk_ptr,
+                            pk_field.size,
+                            slot_id as u16
+                        ).map_err(|e| {
+                            #[cfg(feature = "std")]
+                            eprintln!("Failed to insert into primary index: {:?}", e);
+                            e
+                        })?;
+                    }
+                }
+            }
+        }
         
         // 9. 替换旧的主键索引
         self.primary_indices[table_index] = Some(primary_index);

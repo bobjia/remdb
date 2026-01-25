@@ -5,3 +5,4 @@ target/*
 wal/*
 *.log
 .idea/*
+.vscode/*

@@ -2203,8 +2203,12 @@ impl SqlParser {
                     .map_err(|_| QueryParseError::InvalidValue)?;
                 Ok(Value::Integer(int_value))
             }
+        } else if self.peek_char().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
+            // 标识符（字段名、表名等）
+            let identifier = self.parse_identifier()?;
+            Ok(Value::Identifier(identifier))
         } else {
-            // 简化处理：只处理基本类型的值，不处理标识符或函数调用
+            // 简化处理：只处理基本类型的值，不处理函数调用
             // 避免与其他函数形成循环调用，导致无限递归
             return Err(QueryParseError::InvalidValue);
         }

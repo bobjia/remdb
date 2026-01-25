@@ -144,6 +144,24 @@ pub fn init_platform(platform: &'static dyn Platform) {
     PLATFORM.set(platform).ok();
 }
 
+/// 重置平台抽象层（仅用于测试）
+#[cfg(test)]
+pub fn reset_platform() {
+    // 使用unsafe代码重置OnceLock，仅在测试中使用
+    unsafe {
+        // 重置initialized标志
+        #[cfg(not(feature = "std"))]
+        {
+            let platform_ptr = &PLATFORM as *const OnceLock<&'static dyn Platform> as *mut OnceLock<&'static dyn Platform>;
+            (*platform_ptr).initialized.store(false, core::sync::atomic::Ordering::Release);
+            // 清空数据
+            *(*platform_ptr).data.get() = None;
+        }
+        // 在std环境下，我们无法直接重置OnceLock，所以不做任何操作
+        // 测试代码应该适应这一限制
+    }
+}
+
 /// 获取当前时间戳（毫秒）
 pub fn get_timestamp() -> u64 {
     if let Some(platform) = PLATFORM.get() {

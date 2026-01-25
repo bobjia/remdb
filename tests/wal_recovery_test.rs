@@ -2,6 +2,7 @@ use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig,
 use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
 use remdb::transaction::set_low_power_mode;
 use remdb::{init_global_db, reset_global_db, RemDb};
+use serial_test::serial;
 
 // 测试用Platform实现
 struct TestPlatform;
@@ -107,8 +108,6 @@ impl Platform for TestPlatform {
         0
     }
 }
-
-static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 // 定义测试配置
 static TEST_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| remdb::types::TableDef {
@@ -298,17 +297,29 @@ static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(
     time_series_defaults: TimeSeriesConfig::DEFAULT,
 });
 
-// 使用静态内存缓冲区，确保它不会在函数返回时被释放
-static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152];
+// 为每个测试用例创建独立的平台实例
+static TEST_PLATFORM_1: TestPlatform = TestPlatform;
+static TEST_PLATFORM_2: TestPlatform = TestPlatform;
+
+// 为每个测试用例创建独立的静态内存缓冲区，确保它们不会在函数返回时被释放
+static mut DB_MEMORY_1: [u8; 2097152] = [0u8; 2097152];
+static mut DB_MEMORY_2: [u8; 2097152] = [0u8; 2097152];
 
 #[test]
+#[serial]
 fn test_wal_recovery_no_overwrite() {
-    // 初始化平台抽象层
-    init_platform(&TEST_PLATFORM);
+    // 初始化平台抽象层（使用第一个测试用例的平台实例）
+    init_platform(&TEST_PLATFORM_1);
 
-    // 初始化内存分配器
+    // 重置全局内存分配器，确保测试之间的隔离
+    remdb::memory::allocator::reset_global_allocator().unwrap();
+    
+    // 零初始化内存缓冲区，确保测试之间的完全隔离
     unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
+        core::ptr::write_bytes(DB_MEMORY_1.as_mut_ptr(), 0, DB_MEMORY_1.len());
+        
+        // 初始化内存分配器
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY_1.as_mut_ptr(), DB_MEMORY_1.len())
             .unwrap();
     }
 
@@ -374,15 +385,21 @@ fn test_wal_recovery_no_overwrite() {
     println!("WAL recovery test passed: New data inserted without overwriting existing records!");
 }
 
-// Use serial_test attribute to run tests sequentially
 #[test]
+#[serial]
 fn test_wal_recovery_alter_table() {
-    // 初始化平台抽象层
-    init_platform(&TEST_PLATFORM);
+    // 初始化平台抽象层（使用第二个测试用例的平台实例）
+    init_platform(&TEST_PLATFORM_2);
 
-    // 初始化内存分配器
+    // 重置全局内存分配器，确保测试之间的隔离
+    remdb::memory::allocator::reset_global_allocator().unwrap();
+    
+    // 零初始化内存缓冲区，确保测试之间的完全隔离
     unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
+        core::ptr::write_bytes(DB_MEMORY_2.as_mut_ptr(), 0, DB_MEMORY_2.len());
+        
+        // 初始化内存分配器
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY_2.as_mut_ptr(), DB_MEMORY_2.len())
             .unwrap();
     }
 
