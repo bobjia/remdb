@@ -1636,6 +1636,11 @@ impl DdlExecutor for RemDb {
         #[cfg(feature = "std")]
         eprintln!("Starting ALTER TABLE operation on {}", table_name);
         
+        // 检查是否为系统表，系统表不允许ALTER操作
+        if crate::system_tables::is_system_table(table_name) {
+            return Err(RemDbError::ConfigError);
+        }
+        
         // 1. 查找表
         let table_index = self.tables.iter().position(|table_opt| {
             if let Some(table) = table_opt {

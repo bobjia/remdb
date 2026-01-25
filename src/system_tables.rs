@@ -288,7 +288,7 @@ pub unsafe fn refresh_config_cache() -> Result<()> {
 
 /// 检查系统表是否为系统表
 pub fn is_system_table(table_name: &str) -> bool {
-    table_name == SYSTEM_CONFIG_TABLE
+    table_name.starts_with("__remdb_system")
 }
 
 /// 获取向量字段大小（考虑压缩）
