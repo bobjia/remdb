@@ -365,6 +365,9 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     dimension: #dim,
                     distance_type: remdb::types::DistanceType::L2,
                     index_type: remdb::types::VectorIndexType::HNSW,
+                    compression_enabled: false,
+                    compression_scheme: 0,
+                    compression_level: 3,
                 })
             }
         } else {

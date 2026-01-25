@@ -181,7 +181,7 @@ impl StaticAllocator {
                 // 如果块太大，分割成两个块
                 if block_mut.size >= aligned_size + MemoryBlock::SIZE + 8 {
                     unsafe {
-                        let new_block_size = block_mut.size - total_size;
+                        let new_block_size = block_mut.size - aligned_size - MemoryBlock::SIZE;
                         let new_block_ptr =
                             (block.as_ptr() as usize + total_size) as *mut MemoryBlock;
 

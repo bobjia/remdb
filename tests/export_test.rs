@@ -121,65 +121,9 @@ fn test_export_data() {
     // 使用init_global_db函数初始化数据库
     let db = init_global_db(&TEST_DB).unwrap();
 
-    // 获取表
-    let table_id = 0;
-    let table = db.get_table_mut(table_id).unwrap();
-
-    // 添加调试信息
-    println!("DEBUG: TEST_TABLE.record_size = {}", TEST_TABLE.record_size);
-    println!("DEBUG: Number of fields = {}", TEST_TABLE.fields.len());
-    for (i, field) in TEST_TABLE.fields.iter().enumerate() {
-        println!(
-            "DEBUG: Field {} - name: {}, offset: {}, size: {}",
-            i, field.name, field.offset, field.size
-        );
-    }
-
-    // 插入测试数据，使用动态内存分配避免栈溢出
-    let mut record1 = Vec::with_capacity(TEST_TABLE.record_size);
-    record1.resize(TEST_TABLE.record_size, 0);
-    println!(
-        "DEBUG: record1 len = {}, capacity = {}",
-        record1.len(),
-        record1.capacity()
-    );
-
-    // 直接使用具体的偏移量值，避免运行时计算错误
-    unsafe {
-        // id: 1 at offset 0
-        let id_ptr = record1.as_mut_ptr() as *mut i32;
-        *id_ptr = 1;
-        println!("DEBUG: Set id = 1");
-
-        // name: "Test User" at offset 4 (i32是4字节)
-        let name_ptr = record1.as_mut_ptr().add(4) as *mut u8;
-        let name = "Test User";
-        for (i, &c) in name.as_bytes().iter().enumerate() {
-            if i < 32 {
-                // name field size is 32
-                *name_ptr.add(i) = c;
-            }
-        }
-        println!("DEBUG: Set name = Test User");
-
-        // age: 25 at offset 36 (4 + 32)
-        let age_ptr = record1.as_mut_ptr().add(36) as *mut i8;
-        *age_ptr = 25;
-        println!("DEBUG: Set age = 25");
-
-        // active: true at offset 37 (36 + 1)
-        let active_ptr = record1.as_mut_ptr().add(37) as *mut u8;
-        *active_ptr = 1;
-        println!("DEBUG: Set active = true");
-
-        // created_at: 1234567890 at offset 40 (37 + 1 + 2 padding for alignment)
-        let created_at_ptr = record1.as_mut_ptr().add(40) as *mut u64;
-        *created_at_ptr = 1234567890;
-        println!("DEBUG: Set created_at = 1234567890");
-    }
-
-    // 插入记录
-    let _ = table.insert(record1.as_ptr());
+    // 使用SQL INSERT语句插入测试数据，避免直接访问表
+    let result = db.sql_query("INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (1, 'Test User', 25, true, 1234567890)");
+    assert!(result.is_ok(), "插入测试数据应该成功");
 
     // 导出数据到文件
     let data_path = "test_data.sql";

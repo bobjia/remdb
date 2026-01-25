@@ -837,8 +837,8 @@ impl MemoryTable {
                 memcpy(str_value.as_mut_ptr(), field_ptr, size);
                 Value { string: str_value }
             }
-            DataType::Vector => Value {
-                vector: field_ptr as *const f32,
+            DataType::Vector => {
+                Value { vector: field_ptr as *const f32 }
             },
         };
 
@@ -1373,8 +1373,16 @@ impl MemoryTable {
                 *(field_ptr as *mut crate::types::db_interval) = value.interval;
             }
             crate::types::DataType::Vector => {
-                // 复制vector数据到字段位置
-                memcpy(field_ptr, value.vector as *const u8, field.size);
+                // 获取向量维度
+                let vector_metadata = field.vector_metadata.as_ref().unwrap();
+                let dimension = vector_metadata.dimension as usize;
+                
+                // 压缩向量数据后写入
+                crate::compression::compress_vector(
+                    value.vector,
+                    dimension,
+                    field_ptr
+                );
             }
         }
 

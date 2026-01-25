@@ -1334,6 +1334,9 @@ impl LogManager {
                                 dimension: vector_dimension,
                                 distance_type: crate::types::DistanceType::L2, // 默认L2距离
                                 index_type: crate::types::VectorIndexType::HNSW, // 默认HNSW索引
+                                compression_enabled: false, // 默认不启用压缩
+                                compression_scheme: 0, // 默认无压缩
+                                compression_level: 3, // 默认压缩级别
                             })
                         } else {
                             None

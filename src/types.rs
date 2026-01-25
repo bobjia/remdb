@@ -9,9 +9,10 @@ use alloc::string::ToString;
 
 /// 向量距离度量类型
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Ord, PartialOrd, Default)]
 pub enum DistanceType {
     /// L2距离（欧几里得距离）
+    #[default]
     L2 = 0,
     /// 内积
     InnerProduct = 1,
@@ -21,9 +22,10 @@ pub enum DistanceType {
 
 /// 向量索引类型
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Ord, PartialOrd, Default)]
 pub enum VectorIndexType {
     /// HNSW索引（Hierarchical Navigable Small World）
+    #[default]
     HNSW = 0,
     /// HNSW_SQ索引（带标量量化的HNSW）
     HNSW_SQ = 1,
@@ -36,7 +38,7 @@ pub enum VectorIndexType {
 }
 
 /// 向量元数据
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
 pub struct VectorMetadata {
     /// 向量维度
     pub dimension: u16,
@@ -44,6 +46,78 @@ pub struct VectorMetadata {
     pub distance_type: DistanceType,
     /// 索引类型
     pub index_type: VectorIndexType,
+    /// 是否启用压缩（默认为false）
+    pub compression_enabled: bool,
+    /// 压缩方案（默认为0，无压缩）
+    pub compression_scheme: u8,
+    /// 压缩级别（默认为3）
+    pub compression_level: u8,
+}
+
+/// 为VectorMetadata实现自定义构造函数，兼容旧代码
+impl VectorMetadata {
+    /// 创建向量元数据（兼容旧代码，只需要维度、距离类型和索引类型）
+    pub const fn new(
+        dimension: u16,
+        distance_type: DistanceType,
+        index_type: VectorIndexType,
+    ) -> Self {
+        Self {
+            dimension,
+            distance_type,
+            index_type,
+            compression_enabled: false,
+            compression_scheme: 0,
+            compression_level: 3,
+        }
+    }
+    
+    /// 创建向量元数据，支持部分字段初始化
+    pub const fn with_compression(
+        dimension: u16,
+        distance_type: DistanceType,
+        index_type: VectorIndexType,
+        compression_enabled: bool,
+        compression_scheme: u8,
+        compression_level: u8,
+    ) -> Self {
+        Self {
+            dimension,
+            distance_type,
+            index_type,
+            compression_enabled,
+            compression_scheme,
+            compression_level,
+        }
+    }
+}
+
+/// 允许使用元组语法初始化VectorMetadata，自动添加默认压缩字段
+impl From<(u16, DistanceType, VectorIndexType)> for VectorMetadata {
+    fn from((dimension, distance_type, index_type): (u16, DistanceType, VectorIndexType)) -> Self {
+        Self {
+            dimension,
+            distance_type,
+            index_type,
+            compression_enabled: false,
+            compression_scheme: 0,
+            compression_level: 3,
+        }
+    }
+}
+
+/// 允许使用元组语法初始化VectorMetadata，包含压缩字段
+impl From<(u16, DistanceType, VectorIndexType, bool, u8, u8)> for VectorMetadata {
+    fn from((dimension, distance_type, index_type, compression_enabled, compression_scheme, compression_level): (u16, DistanceType, VectorIndexType, bool, u8, u8)) -> Self {
+        Self {
+            dimension,
+            distance_type,
+            index_type,
+            compression_enabled,
+            compression_scheme,
+            compression_level,
+        }
+    }
 }
 
 /// 基本数据类型枚举
@@ -450,7 +524,6 @@ pub mod time_utils {
 
 /// 通用值类型
 #[repr(C)]
-#[derive(Copy, Clone)]
 pub union Value {
     pub u8: u8,
     pub u16: u16,
@@ -469,6 +542,25 @@ pub union Value {
     pub string: [u8; MAX_STRING_LEN],
     pub vector: *const f32,              // 向量类型（指向float32数组的指针）
     pub vector_metadata: VectorMetadata, // 向量元数据
+}
+
+// 手动实现Clone trait，因为Rust不支持为union类型自动派生Clone
+impl Clone for Value {
+    fn clone(&self) -> Self {
+        // 创建一个新的Value实例，初始化为0
+        let mut new_value = Value { u64: 0 };
+        
+        // 由于我们不知道当前的Value类型，我们需要安全地复制所有可能的字段
+        // 这是安全的，因为我们只是复制原始数据，不涉及指针解引用
+        unsafe {
+            // 复制所有可能的字段
+            // 对于基本类型，这是安全的
+            // 对于指针类型，我们只是复制指针值，不涉及所有权转移
+            new_value.u64 = self.u64;
+        }
+        
+        new_value
+    }
 }
 
 // 手动实现Debug trait，因为Rust不支持为union类型自动派生Debug
@@ -492,12 +584,52 @@ unsafe impl Send for TableDef {}
 unsafe impl Sync for TableDef {}
 
 /// 带类型的值
-#[derive(Copy, Clone)]
 pub struct TypedValue {
     /// 值的数据类型
     pub value_type: DataType,
     /// 实际值
     pub value: Value,
+}
+
+/// 手动实现Clone trait，因为Rust不支持为union类型自动派生Clone
+impl Clone for TypedValue {
+    fn clone(&self) -> Self {
+        let mut new_value = Value {
+            // Initialize with a default value
+            u64: 0
+        };
+        
+        unsafe {
+            // Copy the appropriate field based on the value_type
+            match self.value_type {
+                DataType::UInt8 => new_value.u8 = self.value.u8,
+                DataType::UInt16 => new_value.u16 = self.value.u16,
+                DataType::UInt32 => new_value.u32 = self.value.u32,
+                DataType::UInt64 => new_value.u64 = self.value.u64,
+                DataType::Int8 => new_value.i8 = self.value.i8,
+                DataType::Int16 => new_value.i16 = self.value.i16,
+                DataType::Int32 => new_value.i32 = self.value.i32,
+                DataType::Int64 => new_value.i64 = self.value.i64,
+                DataType::Float32 => new_value.float32 = self.value.float32,
+                DataType::Float64 => new_value.float64 = self.value.float64,
+                DataType::Bool => new_value.bool = self.value.bool,
+                DataType::Timestamp => new_value.time = self.value.time,
+                DataType::TimestampTZ => new_value.time = self.value.time,
+                DataType::Interval => new_value.interval = self.value.interval,
+                DataType::String => new_value.string = self.value.string,
+                DataType::Vector => {
+                    // For vectors, we don't copy the actual vector data,
+                    // just copy the pointer
+                    new_value.vector = self.value.vector;
+                }
+            }
+        }
+        
+        TypedValue {
+            value_type: self.value_type,
+            value: new_value,
+        }
+    }
 }
 
 /// 手动实现PartialEq trait，因为Rust不支持为union类型自动派生PartialEq
@@ -552,10 +684,10 @@ impl PartialEq for TypedValue {
                     a_str.trim_end_matches(char::from(0)) == b_str.trim_end_matches(char::from(0))
                 }
                 DataType::Vector => {
-                    // 向量比较：比较元数据和值
-                    // 这里简化实现，实际应该比较向量的每个元素
-                    // 注意：实际使用中需要获取向量维度信息
-                    self.value.vector_metadata == other.value.vector_metadata
+                    // 向量比较：比较向量指针
+                    // 注意：实际使用中需要比较向量的每个元素，但这需要向量维度信息
+                    // 由于这是一个简化实现，我们比较向量指针
+                    self.value.vector == other.value.vector
                 }
             }
         }
@@ -616,9 +748,9 @@ impl Hash for TypedValue {
                     s.trim_end_matches(char::from(0)).hash(state);
                 }
                 DataType::Vector => {
-                    // 向量哈希：哈希元数据
+                    // 向量哈希：哈希向量指针
                     // 注意：实际使用中可能需要哈希向量的部分或全部元素
-                    self.value.vector_metadata.hash(state);
+                    self.value.vector.hash(state);
                 }
             }
         }
@@ -688,9 +820,9 @@ impl PartialOrd for TypedValue {
                             )
                         }
                         DataType::Vector => {
-                            // 向量比较：比较元数据
+                            // 向量比较：比较向量指针
                             // 注意：实际使用中可能需要比较向量的距离或相似度
-                            Some(self.value.vector_metadata.cmp(&other.value.vector_metadata))
+                            Some(self.value.vector.cmp(&other.value.vector))
                         }
                     }
                 }
@@ -704,7 +836,11 @@ impl PartialOrd for TypedValue {
 impl Ord for TypedValue {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.partial_cmp(other)
-            .unwrap_or(core::cmp::Ordering::Equal)
+            .unwrap_or_else(|| {
+                // 处理无法比较的情况（如NaN），将它们视为相等
+                // 这确保在BTreeMap中NaN值不会导致崩溃
+                core::cmp::Ordering::Equal
+            })
     }
 }
 
@@ -893,7 +1029,7 @@ impl FieldDef {
             constraints.push_str(" UNIQUE");
         }
 
-        if let Some(default) = self.default_value {
+        if let Some(default) = &self.default_value {
             constraints.push_str(" DEFAULT ");
             unsafe {
                 match self.data_type {

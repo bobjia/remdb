@@ -234,8 +234,8 @@ fn test_large_table_performance() {
         println!("\n1. 插入80,000条记录...");
         let start_time = Instant::now();
 
-        // 获取表引用
-        let table = db.get_table_mut(0).unwrap();
+        // 获取large_table（系统表在索引0，large_table在索引1）
+        let table = db.get_table_mut(1).unwrap();
         let mut inserted_ids = Vec::with_capacity(80000);
         for i in 0..80000 {
             let mut record_data = [0u8; 40]; // 40字节记录
@@ -291,8 +291,8 @@ fn test_large_table_performance() {
         println!("\n2. 查询性能测试（10,000条随机记录）...");
         let start_time = Instant::now();
 
-        // 获取表引用
-        let table = db.get_table_mut(0).unwrap();
+        // 获取表引用（large_table在索引1）
+        let table = db.get_table_mut(1).unwrap();
 
         let mut query_success = 0;
         for _ in 0..10000 {
@@ -330,8 +330,8 @@ fn test_large_table_performance() {
         println!("\n3. 删除性能测试（10,000条记录）...");
         let start_time = Instant::now();
 
-        // 获取表引用
-        let table = db.get_table_mut(0).unwrap();
+        // 获取表引用（large_table在索引1）
+        let table = db.get_table_mut(1).unwrap();
         let mut delete_success = 0;
         let mut deleted_ids = Vec::with_capacity(10000);
         for i in 0..10000 {
@@ -364,8 +364,8 @@ fn test_large_table_performance() {
         println!("\n4. 插入性能测试（10,000条新记录）...");
         let start_time = Instant::now();
 
-        // 获取表引用
-        let table = db.get_table_mut(0).unwrap();
+        // 获取表引用（large_table在索引1）
+        let table = db.get_table_mut(1).unwrap();
         let mut insert_success = 0;
         for i in 80000..90000 {
             let mut record_data = [0u8; 40];

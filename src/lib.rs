@@ -4,6 +4,7 @@ use crate::table::Defer;
 use core::ptr::NonNull;
 
 // 导出公共API
+pub mod compression;
 pub mod config;
 #[cfg(feature = "ha")]
 pub mod ha;
@@ -18,13 +19,14 @@ pub mod table;
 pub mod time_series;
 pub mod transaction;
 pub mod types;
+pub mod system_tables;
 
 // 导出核心类型
 pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};
-pub use types::{
-    DataType, DistanceType, FieldDef, IndexType, RecordStatus, RemDbError, Result, TableDef, Value,
-    VectorIndexType, VectorMetadata, MAX_STRING_LEN,
+pub use types::{    DataType, DistanceType, FieldDef, IndexType, RecordStatus, RemDbError, Result, TableDef, Value,    VectorIndexType, VectorMetadata, MAX_STRING_LEN,
 };
+pub use compression::CompressionScheme;
+pub use system_tables::{init_system_tables, get_vector_compression_config};
 
 pub use index::{
     AnySecondaryIndex, BTreeIndex, IndexStats, PrimaryIndex, PrimaryIndexItem, SecondaryIndex,
@@ -38,9 +40,7 @@ pub use time_series::{
 pub use transaction::{Transaction, TransactionType};
 
 // 重新导出宏
-pub use remdb_macros::database;
-pub use remdb_macros::table;
-pub use remdb_macros::MemdbTable;
+pub use remdb_macros::{database, table, MemdbTable};
 
 // 引入alloc模块
 extern crate alloc;
@@ -587,6 +587,11 @@ impl RemDb {
             }
         }
 
+        // 初始化系统表
+        unsafe {
+            crate::system_tables::init_system_tables(self)?;
+        }
+
         // 初始化HA管理器
         #[cfg(feature = "ha")]
         if let Err(_e) = crate::ha::init(self.config) {
@@ -1062,8 +1067,8 @@ impl DdlExecutor for RemDb {
             let field_size = match data_type {
                 DataType::String => MAX_STRING_LEN,
                 DataType::Vector => {
-                    // 向量类型：维度 * 4字节（f32）
-                    *dimension as usize * 4
+                    // 向量类型：根据压缩配置计算大小
+                    crate::system_tables::get_vector_field_size(*dimension)
                 }
                 _ => data_type.size(),
             };
@@ -1097,12 +1102,18 @@ impl DdlExecutor for RemDb {
             // 主键必须是唯一的，覆盖用户设置
             let final_unique = is_primary_key || constraint.unique;
 
+            // 获取当前向量压缩配置
+            let compression_config = crate::system_tables::get_vector_compression_config();
+            
             // 创建向量元数据（仅向量类型需要）
             let vector_metadata = if *data_type == DataType::Vector {
                 Some(VectorMetadata {
                     dimension: *dimension,
                     distance_type: distance_type.unwrap_or(DistanceType::L2),
                     index_type: VectorIndexType::HNSW, // 默认使用HNSW索引
+                    compression_enabled: compression_config.vector_compression_enabled,
+                    compression_scheme: compression_config.vector_compression_scheme as u8,
+                    compression_level: compression_config.vector_compression_level,
                 })
             } else {
                 None
@@ -1118,7 +1129,7 @@ impl DdlExecutor for RemDb {
                 not_null: final_not_null,          // 应用非空约束
                 unique: final_unique,              // 应用唯一约束
                 auto_increment: is_auto_increment, // 应用自增约束
-                default_value: *default_value,     // 设置字段默认值
+                default_value: default_value.clone(),     // 设置字段默认值
                 vector_metadata,                   // 设置向量元数据
             };
 
@@ -1278,7 +1289,7 @@ impl DdlExecutor for RemDb {
                         offset += 1;
 
                     // 写入默认值（如果有）
-                    if let Some(default_value) = field.default_value {
+                    if let Some(default_value) = &field.default_value {
                         // 根据数据类型写入默认值，添加完善的边界检查
                         match field.data_type {
                             // 向量类型
@@ -1650,7 +1661,7 @@ impl DdlExecutor for RemDb {
         eprintln!("Executing operation: {:?}", operation);
         
         match operation {
-            AlterTableOperation::AddColumn { ref name, data_type, size, distance_type, default_value, ref constraints } => {
+            AlterTableOperation::AddColumn { ref name, data_type, size, distance_type, ref default_value, ref constraints } => {
                 // 检查列名是否已存在
                 if new_table_def.fields.iter().any(|f| f.name == *name) {
                     return Err(RemDbError::ConfigError);
@@ -1685,12 +1696,15 @@ impl DdlExecutor for RemDb {
                     not_null,
                     unique,
                     auto_increment,
-                    default_value,
+                    default_value: default_value.clone(),
                     vector_metadata: if data_type == DataType::Vector {
                         Some(VectorMetadata {
                             dimension: size,
                             distance_type: distance_type.unwrap_or(DistanceType::L2),
                             index_type: VectorIndexType::HNSW,
+                            compression_enabled: false,
+                            compression_scheme: 0,
+                            compression_level: 3,
                         })
                     } else {
                         None
@@ -1731,7 +1745,7 @@ impl DdlExecutor for RemDb {
                 new_table_def.version += 1;
                 new_table_def.updated_at = crate::platform::get_timestamp_us();
             },
-            AlterTableOperation::ModifyColumn { ref name, data_type, size, distance_type, default_value, ref constraints } => {
+            AlterTableOperation::ModifyColumn { ref name, data_type, size, distance_type, ref default_value, ref constraints } => {
                 // 查找要修改的列
                 let field_index = new_table_def.fields.iter().position(|f| f.name == *name)
                     .ok_or(RemDbError::FieldNotFound)?;
@@ -1752,7 +1766,7 @@ impl DdlExecutor for RemDb {
                 // 更新字段定义
                 field.data_type = data_type;
                 field.size = new_size;
-                field.default_value = default_value;
+                field.default_value = default_value.clone();
                 field.primary_key = constraints.primary_key;
                 field.not_null = constraints.not_null;
                 field.unique = constraints.unique;
@@ -1764,6 +1778,9 @@ impl DdlExecutor for RemDb {
                         dimension: size,
                         distance_type: distance_type.unwrap_or(DistanceType::L2),
                         index_type: VectorIndexType::HNSW,
+                        compression_enabled: false,
+                        compression_scheme: 0,
+                        compression_level: 3,
                     });
                 } else {
                     field.vector_metadata = None;
@@ -2830,6 +2847,10 @@ impl RemDb {
         // 遍历所有表
         for table_id in 0..self.tables.len() {
             if let Some(table) = &self.tables[table_id] {
+                // 跳过系统表
+                if table.def.name.starts_with("__remdb_") {
+                    continue;
+                }
                 // 遍历表中的所有记录
                 let table_ref = table.def.clone();
 

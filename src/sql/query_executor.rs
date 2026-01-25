@@ -4618,17 +4618,92 @@ fn process_group_by_query(
 ) -> Result<(), QueryExecutionError> {
     use alloc::collections::BTreeMap;
 
-    // 创建分组映射：group_key -> Vec<record_values>
+    // 定义安全的分组键类型
+    struct GroupKey {
+        // 使用u64数组作为分组键，每个u64代表一个分组字段的哈希值
+        // 这样可以避免直接比较TypedValue
+        values: Vec<u64>,
+    }
+    
+    // 实现必要的trait for GroupKey
+    impl PartialEq for GroupKey {
+        fn eq(&self, other: &Self) -> bool {
+            self.values == other.values
+        }
+    }
+    
+    impl Eq for GroupKey {}
+    
+    impl PartialOrd for GroupKey {
+        fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+            self.values.partial_cmp(&other.values)
+        }
+    }
+    
+    impl Ord for GroupKey {
+        fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+            self.values.cmp(&other.values)
+        }
+    }
+    
+    impl Clone for GroupKey {
+        fn clone(&self) -> Self {
+            GroupKey {
+                values: self.values.clone(),
+            }
+        }
+    }
+
+    // 创建分组映射：GroupKey -> Vec<record_values>
     let mut groups = BTreeMap::new();
+    
+    // 简单的哈希函数，用于生成分组键
+    fn hash_typed_value(value: &TypedValue) -> u64 {
+        unsafe {
+            match value.value_type {
+                DataType::UInt8 => value.value.u8 as u64,
+                DataType::UInt16 => value.value.u16 as u64,
+                DataType::UInt32 => value.value.u32 as u64,
+                DataType::UInt64 => value.value.u64,
+                DataType::Int8 => value.value.i8 as u64,
+                DataType::Int16 => value.value.i16 as u64,
+                DataType::Int32 => value.value.i32 as u64,
+                DataType::Int64 => value.value.i64 as u64,
+                DataType::Float32 => value.value.float32.to_bits() as u64,
+                DataType::Float64 => value.value.float64.to_bits(),
+                DataType::Bool => value.value.bool as u64,
+                DataType::Timestamp => value.value.time.value as u64,
+                DataType::TimestampTZ => (value.value.time.value as u64) ^ (value.value.time.tz_offset as u64),
+                DataType::Interval => value.value.interval.value as u64,
+                DataType::String => {
+                    // 简单的字符串哈希
+                    let s = core::str::from_utf8(&value.value.string).unwrap_or("");
+                    let trimmed = s.trim_end_matches(char::from(0));
+                    let mut hash = 0u64;
+                    for c in trimmed.chars() {
+                        hash = hash.wrapping_mul(31).wrapping_add(c as u64);
+                    }
+                    hash
+                },
+                DataType::Vector => value.value.vector as u64,
+            }
+        }
+    }
 
     // 将行数据分组
     for record_values in rows_to_process {
         // 评估每个分组表达式，生成分组键
-        let mut group_key = Vec::new();
+        let mut key_values = Vec::new();
         for expr in &group_by.expressions {
             let value = evaluate_expression(table, record_values, expr)?;
-            group_key.push(value);
+            let hash = hash_typed_value(&value);
+            key_values.push(hash);
         }
+        
+        // 创建安全的分组键
+        let group_key = GroupKey {
+            values: key_values,
+        };
 
         // 将记录添加到对应的分组中
         groups
@@ -4638,7 +4713,7 @@ fn process_group_by_query(
     }
 
     // 处理每个分组
-    for (group_key, group_rows) in groups {
+    for (_, group_rows) in groups {
         // 为当前分组创建结果行
         let mut row_data = Vec::with_capacity(columns.len());
 
@@ -5457,7 +5532,7 @@ fn execute_insert_query(
                     field.size,
                     &expr,
                 )?;
-            } else if let Some(default_value) = field.default_value {
+            } else if let Some(default_value) = &field.default_value {
                 // 使用字段默认值
                 // 直接写入默认值，因为default_value是types::Value类型
                 unsafe {
@@ -5548,12 +5623,15 @@ fn execute_insert_query(
                             );
                         }
                         DataType::Vector => {
-                            // 写入向量数据
-                            // 将目标指针转换为*mut f32类型，第三个参数是元素数量（field.size / 4，因为每个f32是4字节）
-                            core::ptr::copy_nonoverlapping(
+                            // 写入向量数据（考虑压缩）
+                            let vector_metadata = field.vector_metadata.as_ref().unwrap();
+                            let dimension = vector_metadata.dimension as usize;
+                            
+                            // 压缩向量数据后写入
+                            crate::compression::compress_vector(
                                 default_value.vector,
-                                record_data.as_mut_ptr().add(field.offset) as *mut f32,
-                                field.size / 4,
+                                dimension,
+                                record_data.as_mut_ptr().add(field.offset)
                             );
                         }
                     }
@@ -5632,6 +5710,13 @@ fn execute_insert_query(
     if !has_active_tx {
         unsafe {
             crate::transaction::commit().map_err(|_| QueryExecutionError::InternalError)?;
+        }
+    }
+
+    // 如果更新的是系统配置表，刷新配置缓存
+    if query.table_name == crate::system_tables::SYSTEM_CONFIG_TABLE {
+        unsafe {
+            crate::system_tables::refresh_config_cache().unwrap_or(());
         }
     }
 

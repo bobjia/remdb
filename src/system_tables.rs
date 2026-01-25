@@ -1,0 +1,304 @@
+use crate::platform::{memcpy, memset};
+use crate::table::MemoryTable;
+use crate::types::{DataType, FieldDef, RemDbError, Result, TableDef, Value};
+use alloc::string::String;
+use alloc::sync::Arc;
+use core::ptr::NonNull;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+// 系统表名称
+pub const SYSTEM_CONFIG_TABLE: &str = "__remdb_system_config";
+
+// 配置项缓存
+static mut CONFIG_CACHE: Option<ConfigCache> = None;
+
+/// 配置项缓存结构
+#[derive(Clone)]
+pub struct ConfigCache {
+    /// 全局向量压缩开关
+    pub vector_compression_enabled: bool,
+    /// 向量压缩方案（0=不压缩, 1=float16, 2=zstd）
+    pub vector_compression_scheme: u8,
+    /// 压缩级别（1-9）
+    pub vector_compression_level: u8,
+}
+
+/// 压缩方案常量
+pub const COMPRESSION_NONE: u8 = 0;
+pub const COMPRESSION_FLOAT16: u8 = 1;
+pub const COMPRESSION_ZSTD: u8 = 2;
+
+/// 初始化系统表
+pub unsafe fn init_system_tables(db: &mut crate::RemDb) -> Result<()> {
+    // 检查系统表是否已存在
+    let system_table_exists = db.tables.iter().any(|table_opt| {
+        table_opt.as_ref().map(|table| table.def.name == SYSTEM_CONFIG_TABLE).unwrap_or(false)
+    });
+    
+    if !system_table_exists {
+        // 创建系统配置表
+        create_system_config_table(db)?;
+        // 插入默认配置
+        insert_default_configs(db)?;
+    }
+    
+    // 初始化配置缓存
+    load_config_cache(db)?;
+    
+    Ok(())
+}
+
+/// 创建系统配置表
+unsafe fn create_system_config_table(db: &mut crate::RemDb) -> Result<()> {
+    // 直接创建TableDef，使用较小的max_records值
+    let now = crate::platform::get_timestamp_us();
+    
+    // 定义字段
+    let mut offset = 0;
+    let record_size = 64 + 256 + 128 + 8 + 8; // 计算系统表记录大小
+    
+    // 创建字段定义
+    let fields = vec![
+        crate::types::FieldDef {
+            name: "config_key".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 64,
+            offset: 0,
+            primary_key: true,
+            not_null: true,
+            unique: true,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "config_value".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 256,
+            offset: 64,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "description".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 128,
+            offset: 64 + 256,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "updated_at".to_string(),
+            data_type: crate::types::DataType::Timestamp,
+            size: 8,
+            offset: 64 + 256 + 128,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "created_at".to_string(),
+            data_type: crate::types::DataType::Timestamp,
+            size: 8,
+            offset: 64 + 256 + 128 + 8,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+        },
+    ];
+    
+    // 创建表定义，使用较小的max_records值
+    let table_def = crate::types::TableDef {
+        id: (db.tables.len() + 1) as u8, // 系统表ID从1开始
+        name: SYSTEM_CONFIG_TABLE.to_string(),
+        fields,
+        primary_key: 0, // 主键是config_key字段
+        secondary_index: None,
+        secondary_index_type: crate::types::IndexType::SortedArray,
+        record_size,
+        max_records: 100, // 系统表只需要少量记录
+        version: 1,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    // 创建MemoryTable
+    let table = crate::table::MemoryTable::new(alloc::sync::Arc::new(table_def))?;
+    
+    // 添加到数据库
+    db.tables.push(Some(table));
+    db.primary_indices.push(None);
+    db.secondary_indices.push(None);
+    
+    Ok(())
+}
+
+/// 插入默认配置
+unsafe fn insert_default_configs(db: &mut crate::RemDb) -> Result<()> {
+    // 获取系统表索引
+    let table_id = db.tables.iter()
+        .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_CONFIG_TABLE).unwrap_or(false))
+        .ok_or(RemDbError::TableNotFound)?;
+    
+    let table = db.get_table_mut(table_id)?;
+    
+    // 获取当前时间戳
+    let now = crate::platform::get_timestamp_us();
+    let timestamp_value = Value {
+        time: crate::types::db_timestamp {
+            value: now as i64,
+            tz_offset: 0,
+            precision: 6, // 微秒级
+            flags: 0,
+        }
+    };
+    
+    // 默认配置项
+    let default_configs = [
+        ("vector_compression_enabled", "false", "全局向量压缩开关"),
+        ("vector_compression_scheme", "none", "向量压缩方案：none=不压缩, float16=float16, zstd=ZSTD"),
+        ("vector_compression_level", "3", "压缩级别（1-9）"),
+    ];
+    
+    for (key, value, desc) in default_configs {
+        // 构建记录数据
+        let mut record_data = [0u8; 64 + 256 + 128 + 8 + 8]; // 总字段大小
+        let mut offset = 0;
+        
+        // 写入config_key
+        memset(record_data.as_mut_ptr().add(offset), 0, 64);
+        let key_bytes = key.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), key_bytes.as_ptr(), key_bytes.len());
+        offset += 64;
+        
+        // 写入config_value
+        memset(record_data.as_mut_ptr().add(offset), 0, 256);
+        let value_bytes = value.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), value_bytes.as_ptr(), value_bytes.len());
+        offset += 256;
+        
+        // 写入description
+        memset(record_data.as_mut_ptr().add(offset), 0, 128);
+        let desc_bytes = desc.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), desc_bytes.as_ptr(), desc_bytes.len());
+        offset += 128;
+        
+        // 写入updated_at
+        memcpy(record_data.as_mut_ptr().add(offset), &now as *const u64 as *const u8, 8);
+        offset += 8;
+        
+        // 写入created_at
+        memcpy(record_data.as_mut_ptr().add(offset), &now as *const u64 as *const u8, 8);
+        
+        // 插入记录
+        table.insert(record_data.as_ptr())?;
+    }
+    
+    Ok(())
+}
+
+/// 加载配置缓存
+pub unsafe fn load_config_cache(db: &crate::RemDb) -> Result<()> {
+    // 查找系统表
+    let table_id = db.tables.iter()
+        .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_CONFIG_TABLE).unwrap_or(false))
+        .ok_or(RemDbError::TableNotFound)?;
+    
+    let table = db.get_table(table_id)?;
+    
+    // 初始化默认配置
+    let mut enabled = false;
+    let mut scheme = COMPRESSION_NONE;
+    let mut level = 3u8;
+    
+    // 扫描系统表获取配置
+    let mut cursor = table.scan_ref();
+    while let Some(record) = cursor.next() {
+        // 获取config_key
+        let config_key = record.get_str(0).unwrap_or("");
+        
+        match config_key {
+            "vector_compression_enabled" => {
+                let value = record.get_str(1).unwrap_or("false");
+                enabled = value == "true";
+            },
+            "vector_compression_scheme" => {
+                let value = record.get_str(1).unwrap_or("none");
+                scheme = match value {
+                    "none" => COMPRESSION_NONE,
+                    "float16" => COMPRESSION_FLOAT16,
+                    "zstd" => COMPRESSION_ZSTD,
+                    _ => COMPRESSION_NONE,
+                };
+            },
+            "vector_compression_level" => {
+                let value = record.get_str(1).unwrap_or("3");
+                level = value.parse().unwrap_or(3);
+            },
+            _ => {},
+        }
+    }
+    
+    // 更新配置缓存
+    CONFIG_CACHE = Some(ConfigCache {
+        vector_compression_enabled: enabled,
+        vector_compression_scheme: scheme,
+        vector_compression_level: level,
+    });
+    
+    Ok(())
+}
+
+/// 获取当前向量压缩配置
+pub fn get_vector_compression_config() -> ConfigCache {
+    unsafe {
+        // 如果缓存已初始化，返回缓存的配置，否则返回默认配置
+        CONFIG_CACHE.as_ref().cloned().unwrap_or_else(|| {
+            // 返回默认配置的副本，而不是引用
+            ConfigCache {
+                vector_compression_enabled: false,
+                vector_compression_scheme: COMPRESSION_NONE,
+                vector_compression_level: 3,
+            }
+        })
+    }
+}
+
+/// 刷新配置缓存
+pub unsafe fn refresh_config_cache() -> Result<()> {
+    if let Some(db) = crate::get_global_db() {
+        load_config_cache(db)?;
+    }
+    Ok(())
+}
+
+/// 检查系统表是否为系统表
+pub fn is_system_table(table_name: &str) -> bool {
+    table_name == SYSTEM_CONFIG_TABLE
+}
+
+/// 获取向量字段大小（考虑压缩）
+pub fn get_vector_field_size(dimension: u16) -> usize {
+    let config = get_vector_compression_config();
+    
+    match config.vector_compression_scheme {
+        COMPRESSION_NONE => dimension as usize * 4, // float32: 4字节/维度
+        COMPRESSION_FLOAT16 => dimension as usize * 2, // float16: 2字节/维度
+        COMPRESSION_ZSTD => dimension as usize * 4 + 4, // ZSTD: 原始大小 + 4字节压缩大小
+        _ => dimension as usize * 4, // 默认不压缩
+    }
+}
