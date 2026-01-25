@@ -18,6 +18,7 @@ pub enum RemDbDataType {
     Bool = 6,
     Timestamp = 7,
     String = 8,
+    Vector = 9,
 }
 
 impl From<RemDbDataType> for DataType {
@@ -32,6 +33,7 @@ impl From<RemDbDataType> for DataType {
             RemDbDataType::Bool => DataType::Bool,
             RemDbDataType::Timestamp => DataType::Timestamp,
             RemDbDataType::String => DataType::String,
+            RemDbDataType::Vector => DataType::Vector,
         }
     }
 }
@@ -51,6 +53,7 @@ pub union RemDbValue {
     pub bool: u8,
     pub timestamp: u64,
     pub string: [u8; REMDB_MAX_STRING_LEN],
+    pub vector: *const f32,
 }
 
 impl From<Value> for RemDbValue {
@@ -103,7 +106,7 @@ impl From<&FieldDef> for RemDbFieldDef {
                 DataType::TimestampTZ => RemDbDataType::Timestamp, // 映射为Timestamp
                 DataType::String => RemDbDataType::String,
                 DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
-                DataType::Vector => RemDbDataType::UInt64,   // 映射为UInt64
+                DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
             },
             size: rust_field.size,
             offset: rust_field.offset,
@@ -336,6 +339,7 @@ impl From<crate::types::TypedValue> for RemDbTypedValue {
                     crate::DataType::TimestampTZ => RemDbDataType::Timestamp, // 映射为Timestamp
                     crate::DataType::String => RemDbDataType::String,
                     crate::DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
+                    crate::DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
                 },
                 value: rust_value.value.into(),
             }
@@ -1899,6 +1903,291 @@ pub unsafe extern "C" fn remdb_execute_query(
             (*c_result_set).rows_count = rust_result_set.rows.len();
 
             *result_set = c_result_set;
+    RemDbError::Success
+}
+Err(e) => e.into(),
+}
+}
+
+// 向量索引相关C API函数声明
+
+/// C API: 向量索引类型枚举
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum RemDbVectorIndexType {
+    HNSW = 0,
+    HNSW_SQ = 1,
+    HNSW_BQ = 2,
+    IVF = 3,          // IVF_FLAT
+    IVF_PQ = 4,
+}
+
+/// C API: 向量距离度量类型枚举
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum RemDbDistanceType {
+    L2 = 0,
+    InnerProduct = 1,
+    Cosine = 2,
+}
+
+/// C API: 向量元数据配置
+#[repr(C)]
+pub struct RemDbVectorMetadata {
+    pub dimension: u16,
+    pub distance_type: RemDbDistanceType,
+    pub index_type: RemDbVectorIndexType,
+    pub compression_enabled: u8,
+    pub compression_scheme: u8,
+    pub compression_level: u8,
+    pub hnsw_m: u8,
+    pub hnsw_ef_construction: u32,
+    pub hnsw_ef_search: u32,
+    pub ivf_nlist: u32,
+    pub ivf_nprobe: u32,
+}
+
+/// C API: 初始化索引构建线程池
+#[no_mangle]
+pub unsafe extern "C" fn remdb_init_index_build_thread_pool(
+    thread_count: u32,
+) -> RemDbError {
+    crate::index::builder::init_index_build_thread_pool(thread_count as usize);
+    RemDbError::Success
+}
+
+/// C API: 创建向量索引
+#[no_mangle]
+pub unsafe extern "C" fn remdb_create_vector_index(
+    handle: RemDbHandle,
+    table_name: *const u8,
+    field_name: *const u8,
+    metadata: *const RemDbVectorMetadata,
+) -> RemDbError {
+    if handle.is_null() || table_name.is_null() || field_name.is_null() || metadata.is_null() {
+        return RemDbError::ConfigError;
+    }
+
+    let db = &mut *handle;
+    let table_name_str = c_str_to_rust(table_name);
+    let field_name_str = c_str_to_rust(field_name);
+    let c_meta = &*metadata;
+
+    // 转换为Rust向量元数据
+    let rust_meta = crate::types::VectorMetadata {
+        dimension: c_meta.dimension,
+        distance_type: match c_meta.distance_type {
+            RemDbDistanceType::L2 => crate::types::DistanceType::L2,
+            RemDbDistanceType::InnerProduct => crate::types::DistanceType::InnerProduct,
+            RemDbDistanceType::Cosine => crate::types::DistanceType::Cosine,
+        },
+        index_type: match c_meta.index_type {
+            RemDbVectorIndexType::HNSW => crate::types::VectorIndexType::HNSW,
+            RemDbVectorIndexType::HNSW_SQ => crate::types::VectorIndexType::HNSW_SQ,
+            RemDbVectorIndexType::HNSW_BQ => crate::types::VectorIndexType::HNSW_BQ,
+            RemDbVectorIndexType::IVF => crate::types::VectorIndexType::IVF, // IVF_FLAT
+            RemDbVectorIndexType::IVF_PQ => crate::types::VectorIndexType::IVF_PQ,
+        },
+        compression_enabled: c_meta.compression_enabled != 0,
+        compression_scheme: c_meta.compression_scheme,
+        compression_level: c_meta.compression_level,
+        hnsw_m: c_meta.hnsw_m,
+        hnsw_ef_construction: c_meta.hnsw_ef_construction,
+        hnsw_ef_search: c_meta.hnsw_ef_search,
+        ivf_nlist: c_meta.ivf_nlist,
+        ivf_nprobe: c_meta.ivf_nprobe,
+    };
+
+    // 使用SQL API创建向量索引
+    let sql = alloc::format!(
+        "CREATE INDEX ON {} ({}) WITH DIMENSION={}, DISTANCE={:?}, INDEX_TYPE={:?}",
+        table_name_str,
+        field_name_str,
+        rust_meta.dimension,
+        rust_meta.distance_type,
+        rust_meta.index_type
+    );
+
+    match db.sql_query(&sql) {
+        Ok(_) => RemDbError::Success,
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 向量相似度搜索
+#[no_mangle]
+pub unsafe extern "C" fn remdb_vector_search(
+    handle: RemDbHandle,
+    table_name: *const u8,
+    field_name: *const u8,
+    query_vector: *const f32,
+    vector_dim: u16,
+    k: u32,
+    results: *mut *mut u32, // 返回匹配的记录ID数组
+    distances: *mut *mut f32, // 返回距离数组
+    result_count: *mut u32, // 实际返回的结果数量
+) -> RemDbError {
+    if handle.is_null() || table_name.is_null() || field_name.is_null() || query_vector.is_null() || 
+       results.is_null() || distances.is_null() || result_count.is_null() {
+        return RemDbError::ConfigError;
+    }
+
+    let db = &mut *handle;
+    let table_name_str = c_str_to_rust(table_name);
+    let field_name_str = c_str_to_rust(field_name);
+
+    // 使用SQL API执行向量搜索
+    let sql = alloc::format!(
+        "SELECT id, VECTOR_DISTANCE({}, ?) as distance FROM {} ORDER BY distance LIMIT {}",
+        field_name_str,
+        table_name_str,
+        k
+    );
+
+    // 注意：此处简化实现，实际应该支持参数化查询
+    match db.sql_query(&sql) {
+        Ok(rust_result_set) => {
+            let actual_count = rust_result_set.rows.len();
+            *result_count = actual_count as u32;
+
+            if actual_count > 0 {
+                // 分配内存存储结果
+                let result_ids = alloc::alloc::alloc(
+                    alloc::alloc::Layout::array::<u32>(actual_count).unwrap(),
+                ) as *mut u32;
+                let result_distances = alloc::alloc::alloc(
+                    alloc::alloc::Layout::array::<f32>(actual_count).unwrap(),
+                ) as *mut f32;
+
+                if result_ids.is_null() || result_distances.is_null() {
+                    if !result_ids.is_null() {
+                        alloc::alloc::dealloc(
+                            result_ids as *mut u8,
+                            alloc::alloc::Layout::array::<u32>(actual_count).unwrap(),
+                        );
+                    }
+                    if !result_distances.is_null() {
+                        alloc::alloc::dealloc(
+                            result_distances as *mut u8,
+                            alloc::alloc::Layout::array::<f32>(actual_count).unwrap(),
+                        );
+                    }
+                    return RemDbError::OutOfMemory;
+                }
+
+                // 提取结果
+                for i in 0..actual_count {
+                    let row = &rust_result_set.rows[i];
+                    if row.values.len() >= 2 {
+                        // 假设第一列为id，第二列为distance
+                        let id_value = &row.values[0];
+                        let distance_value = &row.values[1];
+
+                        // 提取id值
+                        if let crate::types::DataType::UInt32 | 
+                           crate::types::DataType::Int32 | 
+                           crate::types::DataType::UInt64 | 
+                           crate::types::DataType::Int64 = id_value.value_type {
+                            *result_ids.offset(i as isize) = unsafe { id_value.value.u32 };
+                        } else {
+                            *result_ids.offset(i as isize) = 0;
+                        }
+
+                        // 提取distance值
+                        if let crate::types::DataType::Float32 | 
+                           crate::types::DataType::Float64 = distance_value.value_type {
+                            *result_distances.offset(i as isize) = unsafe { distance_value.value.float32 };
+                        } else {
+                            *result_distances.offset(i as isize) = 0.0;
+                        }
+                    }
+                }
+
+                *results = result_ids;
+                *distances = result_distances;
+            }
+
+            RemDbError::Success
+        }
+        Err(e) => e.into(),
+    }
+}
+
+/// C API: 释放向量搜索结果内存
+#[no_mangle]
+pub unsafe extern "C" fn remdb_free_vector_search_results(
+    results: *mut u32,
+    distances: *mut f32,
+    count: u32,
+) -> RemDbError {
+    if !results.is_null() {
+        alloc::alloc::dealloc(
+            results as *mut u8,
+            alloc::alloc::Layout::array::<u32>(count as usize).unwrap(),
+        );
+    }
+
+    if !distances.is_null() {
+        alloc::alloc::dealloc(
+            distances as *mut u8,
+            alloc::alloc::Layout::array::<f32>(count as usize).unwrap(),
+        );
+    }
+
+    RemDbError::Success
+}
+
+/// C API: 获取索引构建状态
+#[no_mangle]
+pub unsafe extern "C" fn remdb_get_index_build_status(
+    handle: RemDbHandle,
+    table_name: *const u8,
+    field_name: *const u8,
+    is_building: *mut u8,
+    progress: *mut u32, // 0-100
+) -> RemDbError {
+    if handle.is_null() || table_name.is_null() || field_name.is_null() || 
+       is_building.is_null() || progress.is_null() {
+        return RemDbError::ConfigError;
+    }
+
+    let db = &*handle;
+    let table_name_str = c_str_to_rust(table_name);
+    let field_name_str = c_str_to_rust(field_name);
+
+    // 使用SQL API查询索引构建状态
+    let sql = alloc::format!(
+        "SHOW INDEX BUILD STATUS ON {} FOR {}",
+        table_name_str,
+        field_name_str
+    );
+
+    match db.sql_query(&sql) {
+        Ok(rust_result_set) => {
+            if rust_result_set.rows.len() > 0 {
+                let row = &rust_result_set.rows[0];
+                if row.values.len() >= 2 {
+                    // 假设第一列为is_building，第二列为progress
+                    let building_value = &row.values[0];
+                    let progress_value = &row.values[1];
+
+                    // 提取is_building值
+                    if let crate::types::DataType::Bool = building_value.value_type {
+                        *is_building = unsafe { building_value.value.bool as u8 };
+                    } else {
+                        *is_building = 0;
+                    }
+
+                    // 提取progress值
+                    if let crate::types::DataType::UInt32 | 
+                       crate::types::DataType::Int32 = progress_value.value_type {
+                        *progress = unsafe { progress_value.value.u32 };
+                    } else {
+                        *progress = 0;
+                    }
+                }
+            }
+
             RemDbError::Success
         }
         Err(e) => e.into(),
@@ -1993,6 +2282,8 @@ pub unsafe extern "C" fn remdb_batch_insert_record(
         let record = *records.offset(i as isize);
 
         // 转换单条记录的字段值
+
+
         let mut field_value_vec = Vec::with_capacity(values_per_record);
         for j in 0..values_per_record {
             let value = *record.offset(j as isize);
