@@ -320,7 +320,6 @@ CREATE TABLE table_name (
     column2 datatype [constraints],
     ...
 );
-```
 
 #### 支持的约束
 
@@ -330,7 +329,47 @@ CREATE TABLE table_name (
 - `AUTOINCREMENT`/`AUTO_INCREMENT`：自增约束
 - `DEFAULT value`：默认值约束
 
+### 2.5.1 动态表结构管理
+
+RemDB支持动态表结构管理，允许在表创建后添加或修改列。
+
+#### ALTER TABLE语句
+
+**语法**：
+```sql
+ALTER TABLE table_name 
+    ADD COLUMN column_name datatype [constraints] | 
+    MODIFY COLUMN column_name datatype [constraints] | 
+    DROP COLUMN column_name;
+```
+
+**说明**：
+- `ADD COLUMN`：添加新列到表中
+- `MODIFY COLUMN`：修改现有列的类型或约束
+- `DROP COLUMN`：从表中删除列
+
 #### 示例
+
+```sql
+-- 添加新列到现有表
+ALTER TABLE users ADD COLUMN phone TEXT;
+
+-- 修改现有列的数据类型
+ALTER TABLE users MODIFY COLUMN age INTEGER;
+
+-- 从表中删除列
+ALTER TABLE users DROP COLUMN email;
+
+-- 添加带有默认值约束的新列
+ALTER TABLE products ADD COLUMN in_stock BOOLEAN DEFAULT false;
+
+-- 添加带有非空约束的新列
+ALTER TABLE orders ADD COLUMN shipping_address TEXT NOT NULL;
+```
+
+动态表结构管理允许用户根据业务需求的变化灵活调整表结构，无需重新创建表和迁移数据。
+
+#### 创建表示例
 
 ```sql
 CREATE TABLE users (
@@ -356,12 +395,19 @@ CREATE TABLE products (
     price REAL,
     created_at TIMESTAMP
 );
+
+-- 创建带向量压缩的表
+CREATE TABLE compressed_vectors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vec VECTOR(128) WITH DISTANCE=COSINE, COMPRESSION=PQ,
+    meta TEXT
+);
 ```
 
 ### 2.6 CREATE INDEX语句
 
 ```sql
-CREATE INDEX index_name ON table_name (column) [USING index_type] [WITH (parameter=value, ...)];
+CREATE INDEX index_name ON table_name (column) [USING index_type] [WITH (parameter=value, ...)] [ONLINE | OFFLINE];
 ```
 
 #### 示例
@@ -372,13 +418,129 @@ CREATE INDEX idx_users_age ON users (age);
 CREATE INDEX idx_users_name ON users (name) USING BTREE;
 
 -- 创建向量索引 - HNSW
-CREATE INDEX idx_vectors_vec ON vectors (vec) USING HNSW WITH (M=16, ef_construction=200);
+CREATE INDEX idx_vectors_vec ON vectors (vec) USING HNSW WITH (M=16, ef_construction=200, ef_search=100, DISTANCE=L2) ONLINE;
 
 -- 创建向量索引 - IVF_PQ
-CREATE INDEX idx_products_embedding ON products (embedding) USING IVF_PQ WITH (nlist=128, nprobe=8);
+CREATE INDEX idx_products_embedding ON products (embedding) USING IVF_PQ WITH (nlist=128, nprobe=8, M=8, nbits=8) ONLINE;
+
+-- 创建向量索引 - IVF_FLAT
+CREATE INDEX idx_vectors_ivf_flat ON vectors (vec) USING IVF_FLAT WITH (nlist=128, nprobe=16, DISTANCE=L2) ONLINE;
+
+-- 离线创建向量索引
+CREATE INDEX idx_vectors_offline ON vectors (vec) USING HNSW WITH (M=16, ef_construction=200) OFFLINE;
+
+-- 创建带有持久化的索引
+CREATE INDEX idx_users_persistent ON users (name) USING BTREE WITH (STORAGE=DISK);
 
 -- 创建向量索引 - 指定距离度量
 CREATE INDEX idx_vectors_cosine ON vectors (vec) USING HNSW WITH (DISTANCE=COSINE);
+```
+
+#### 生产级索引特性
+
+RemDB支持生产级索引特性，包括在线索引创建、索引构建状态监控、索引持久化等。
+
+##### 索引参数
+
+**标量索引参数**：
+| 参数 | 说明 | 默认值 | 适用索引类型 |
+|------|------|--------|--------------|
+| `STORAGE` | 索引存储位置 | `MEMORY` | 所有索引类型 |
+| `COMPRESSION` | 索引压缩类型 | `NONE` | 所有索引类型 |
+
+**向量索引参数**：
+| 参数 | 说明 | 默认值 | 适用索引类型 |
+|------|------|--------|--------------|
+| `DISTANCE` | 距离度量类型 | `L2` | 所有向量索引 |
+| `M` | HNSW算法的M参数（每个节点的最大邻居数） | 16 | HNSW、HNSW_SQ、HNSW_BQ |
+| `ef_construction` | HNSW构建时的ef参数 | 200 | HNSW、HNSW_SQ、HNSW_BQ |
+| `ef_search` | HNSW搜索时的ef参数 | 100 | HNSW、HNSW_SQ、HNSW_BQ |
+| `nlist` | IVF算法的簇数量 | 128 | IVF、IVF_FLAT、IVF_PQ |
+| `nprobe` | IVF搜索时检查的簇数量 | 8 | IVF、IVF_FLAT、IVF_PQ |
+| `M` | PQ算法的子向量数量 | 8 | IVF_PQ |
+| `nbits` | PQ算法的量化位数 | 8 | IVF_PQ |
+
+### 2.6.1 索引构建状态监控
+
+RemDB支持监控索引构建的进度和状态。
+
+#### SHOW INDEX BUILD STATUS语句
+
+**语法**：
+```sql
+SHOW INDEX BUILD STATUS [FOR index_name] [FOR table_name];
+```
+
+**说明**：
+- 不带参数：显示所有正在构建的索引状态
+- `FOR index_name`：显示指定索引的构建状态
+- `FOR table_name`：显示指定表上所有正在构建的索引状态
+
+**返回结果**：
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `index_name` | TEXT | 索引名称 |
+| `table_name` | TEXT | 表名称 |
+| `column_name` | TEXT | 索引列名称 |
+| `index_type` | TEXT | 索引类型 |
+| `status` | TEXT | 构建状态：PENDING、RUNNING、COMPLETED、FAILED |
+| `progress` | INTEGER | 构建进度（0-100） |
+| `elapsed_time` | INTEGER | 已运行时间（毫秒） |
+| `estimated_time` | INTEGER | 估计剩余时间（毫秒） |
+| `row_count` | INTEGER | 已处理的行数 |
+
+#### 示例
+
+```sql
+-- 显示所有正在构建的索引状态
+SHOW INDEX BUILD STATUS;
+
+-- 显示指定索引的构建状态
+SHOW INDEX BUILD STATUS FOR idx_vectors_vec;
+
+-- 显示指定表上所有正在构建的索引状态
+SHOW INDEX BUILD STATUS FOR vectors;
+```
+
+### 2.6.2 索引持久化
+
+RemDB支持索引持久化，将索引数据存储到磁盘，提高系统重启后的恢复速度。
+
+**语法**：
+```sql
+CREATE INDEX index_name ON table_name (column) USING index_type WITH (STORAGE=DISK);
+```
+
+**说明**：
+- `STORAGE=DISK`：将索引数据持久化到磁盘
+- `STORAGE=MEMORY`：索引仅存储在内存中（默认）
+
+索引持久化可以通过以下方式配置：
+
+1. **创建时指定**：在CREATE INDEX语句中使用WITH (STORAGE=DISK)参数
+2. **全局配置**：在数据库配置中设置默认索引存储位置
+
+### 2.6.3 索引重建
+
+RemDB支持索引重建，用于优化索引结构或修复损坏的索引。
+
+**语法**：
+```sql
+REINDEX index_name [ONLINE | OFFLINE];
+```
+
+**说明**：
+- 重建索引会重新构建索引结构，优化索引性能
+- 支持ONLINE和OFFLINE模式
+
+#### 示例
+
+```sql
+-- 在线重建索引
+REINDEX idx_vectors_vec ONLINE;
+
+-- 离线重建索引
+REINDEX idx_users_age OFFLINE;
 ```
 
 ### 2.7 DESCRIBE TABLE语句
@@ -691,6 +853,7 @@ RemDB支持以下索引类型：
 | HNSW_SQ | 向量索引 | 带标量量化的HNSW索引，支持L2、IP、余弦相似度 |
 | HNSW_BQ | 向量索引 | 带二值量化的HNSW索引，支持L2、IP、余弦相似度 |
 | IVF | 向量索引 | 倒排文件索引，支持L2、IP、余弦相似度 |
+| IVF_FLAT | 向量索引 | 带扁平量化的IVF索引，支持L2、IP、余弦相似度 |
 | IVF_PQ | 向量索引 | 带乘积量化的IVF索引，支持L2、IP、余弦相似度 |
 
 ### 3.2 索引功能
@@ -721,6 +884,9 @@ CREATE INDEX idx_vectors_bq ON vectors (vec) USING HNSW_BQ WITH (M=16, ef_constr
 
 -- 创建向量索引 - IVF
 CREATE INDEX idx_vectors_ivf ON vectors (vec) USING IVF WITH (nlist=128, DISTANCE=L2);
+
+-- 创建向量索引 - IVF_FLAT
+CREATE INDEX idx_vectors_ivf_flat ON vectors (vec) USING IVF_FLAT WITH (nlist=128, nprobe=16, DISTANCE=COSINE);
 
 -- 创建向量索引 - IVF_PQ
 CREATE INDEX idx_vectors_ivfpq ON vectors (vec) USING IVF_PQ WITH (nlist=128, nprobe=8, M=8, nbits=8);
@@ -871,7 +1037,7 @@ SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609
 
 向量是RemDB支持的基础数据类型，与INT、STRING等类型同等地位。
 
-**语法**：`VECTOR(dim) [WITH DISTANCE=distance_type]`
+**语法**：`VECTOR(dim) [WITH DISTANCE=distance_type] [WITH COMPRESSION=compression_type]`
 
 **参数说明**：
 - `dim`：向量维度，支持1-4096
@@ -879,6 +1045,13 @@ SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609
   - `L2`：欧几里得距离（默认）
   - `IP`：内积
   - `COSINE`：余弦相似度
+- `compression_type`：向量压缩类型，可选值：
+  - `NONE`：无压缩（默认）
+  - `SQ`：标量量化，将浮点向量压缩为8位整数
+  - `PQ`：乘积量化，将高维向量分解为多个低维子向量并分别量化
+  - `BQ`：二值量化，将向量压缩为二进制表示
+
+向量压缩可以显著减少存储需求和提高搜索性能，同时保持较高的搜索质量。不同的压缩类型适合不同的应用场景，用户可以根据实际需求选择合适的压缩方式。
 
 ### 6.2 向量操作符
 
@@ -1068,12 +1241,17 @@ LIMIT 5;
 11. 向量维度必须在创建表时指定，不支持动态修改
 12. 向量索引列最大维度为1024
 13. 默认采用NULL first比较模式，对NULL值进行排序时会将其放至最前，建议查询时加上NOT NULL条件
+14. 向量压缩类型可以在创建表时指定，支持SQ、PQ、BQ和NONE
+15. 动态表结构修改（ALTER TABLE）会导致表数据重建，可能影响性能
+16. 在线索引创建不会阻塞表的读写操作，但索引构建速度会比离线创建慢
+17. 索引持久化会增加存储需求，但可以提高系统重启后的恢复速度
+18. 向量搜索性能受索引类型和参数配置影响，建议根据实际数据特性调整参数
 
 ## 8. 不支持的SQL特性
 
 - 子查询
 
-- DROP TABLE和ALTER TABLE
+- DROP TABLE
 - 视图和存储过程
 - 外键约束
 - LIKE运算符

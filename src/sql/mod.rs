@@ -3,7 +3,7 @@
 //! 该模块提供SQL查询支持，允许用户使用标准SQL语法查询数据库中的数据。
 
 mod query_executor;
-mod query_parser;
+pub mod query_parser;
 mod result_set;
 
 pub use query_executor::{execute_query, QueryExecutionError};

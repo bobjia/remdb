@@ -145,6 +145,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             execute_create_time_series_table_query(db, query)
         }
         crate::sql::QueryType::CreateIndex => execute_create_index_query(db, query),
+        crate::sql::QueryType::ShowIndexBuildStatus => execute_show_index_build_status_query(db, query),
         crate::sql::QueryType::AlterTable => {
             // 处理ALTER TABLE语句
             for (field1, field2, pk, not_null, unique, auto_inc, default_val) in &query.table_def {
@@ -4571,6 +4572,119 @@ fn execute_create_table_query(
 }
 
 /// 执行CREATE INDEX查询
+/// 执行SHOW INDEX BUILD STATUS查询
+fn execute_show_index_build_status_query(
+    _db: &mut RemDb,
+    _query: &SqlQuery,
+) -> Result<ResultSet, QueryExecutionError> {
+    // 获取索引构建线程池
+    let thread_pool = crate::index::builder::get_index_build_thread_pool()
+        .map_err(|_| QueryExecutionError::InternalError)?;
+    
+    // 获取所有索引构建状态
+    let status_list = thread_pool.get_build_status(None);
+    
+    // 创建结果集
+    let columns = alloc::vec![
+        "task_id".to_string(),
+        "table_name".to_string(),
+        "column_name".to_string(),
+        "index_type".to_string(),
+        "state".to_string(),
+        "progress".to_string(),
+        "processed_rows".to_string(),
+        "total_rows".to_string(),
+        "elapsed_time".to_string(),
+    ];
+    
+    let mut result_set = ResultSet::new(columns);
+    
+    // 遍历所有状态，添加到结果集
+    for status_arc in status_list {
+        let status = status_arc.lock().unwrap();
+        
+        // 转换状态为字符串
+        let state_str = status.get_state_str();
+        
+        // 创建行数据
+        let row = alloc::vec![
+            TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: status.id as u64 },
+            },
+            TypedValue {
+                value_type: DataType::String,
+                value: Value { 
+                    string: { 
+                        let mut s = [0u8; 64];
+                        let bytes = status.table_name.as_bytes();
+                        let len = core::cmp::min(bytes.len(), 64);
+                        s[..len].copy_from_slice(&bytes[..len]);
+                        s
+                    } 
+                },
+            },
+            TypedValue {
+                value_type: DataType::String,
+                value: Value { 
+                    string: { 
+                        let mut s = [0u8; 64];
+                        let bytes = status.column_name.as_bytes();
+                        let len = core::cmp::min(bytes.len(), 64);
+                        s[..len].copy_from_slice(&bytes[..len]);
+                        s
+                    } 
+                },
+            },
+            TypedValue {
+                value_type: DataType::String,
+                value: Value { 
+                    string: { 
+                        let mut s = [0u8; 64];
+                        let bytes = status.index_type.as_bytes();
+                        let len = core::cmp::min(bytes.len(), 64);
+                        s[..len].copy_from_slice(&bytes[..len]);
+                        s
+                    } 
+                },
+            },
+            TypedValue {
+                value_type: DataType::String,
+                value: Value { 
+                    string: { 
+                        let mut s = [0u8; 64];
+                        let bytes = state_str.as_bytes();
+                        let len = core::cmp::min(bytes.len(), 64);
+                        s[..len].copy_from_slice(&bytes[..len]);
+                        s
+                    } 
+                },
+            },
+            TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: status.progress.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+            },
+            TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: status.processed_rows.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+            },
+            TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: status.total_rows.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+            },
+            TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: status.elapsed_time.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+            },
+        ];
+        
+        result_set.add_row(row);
+    }
+    
+    Ok(result_set)
+}
+
+/// 执行CREATE INDEX查询
 fn execute_create_index_query(
     db: &mut RemDb,
     query: &SqlQuery,
@@ -4585,24 +4699,69 @@ fn execute_create_index_query(
         _ => IndexType::BTree, // 默认值
     };
 
-    // 调用DdlExecutor的create_index方法
     let field_name = query
         .index_column
         .as_ref()
         .ok_or(QueryExecutionError::InvalidCondition)?;
-    db.create_index(&query.table_name, field_name, index_type)
-        .map_err(|e| match e {
-            RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
-            RemDbError::FieldNotFound => QueryExecutionError::FieldNotFound,
-            _ => QueryExecutionError::InternalError,
-        })?;
 
-    // 创建结果集，返回成功消息
-    let columns = alloc::vec!["status".to_string()];
+    // 构建索引类型映射
+    // 注意：这里不需要 sql_index_type，因为我们直接使用 IndexBuildParams
+    // let sql_index_type = match query.index_type.as_deref() {
+    //     Some("HNSW") => crate::sql::query_parser::IndexType::HNSW,
+    //     Some("IVF") => crate::sql::query_parser::IndexType::IVF,
+    //     _ => crate::sql::query_parser::IndexType::BTree, // 默认值
+    // };
+
+    // 解析索引构建参数
+    let mut params = crate::index::builder::IndexBuildParams::default();
+    params.index_type = index_type;
+    params.online = query.index_online;
+    
+    // 解析向量索引类型和参数
+    if index_type == IndexType::Vector {
+        // 设置向量索引类型
+        params.vector_index_type = match query.index_type.as_deref() {
+            Some("HNSW") => Some(crate::types::VectorIndexType::HNSW),
+            Some("IVF") => Some(crate::types::VectorIndexType::IVF),
+            _ => Some(crate::types::VectorIndexType::HNSW), // 默认值
+        };
+        
+        // 解析HNSW参数
+        if let Some(m) = query.index_params.get("M") {
+            params.hnsw_m = m.parse().ok();
+        }
+        if let Some(efc) = query.index_params.get("EF_CONSTRUCTION") {
+            params.hnsw_ef_construction = efc.parse().ok();
+        }
+        if let Some(efs) = query.index_params.get("EF_SEARCH") {
+            params.hnsw_ef_search = efs.parse().ok();
+        }
+        
+        // 解析IVF参数
+        if let Some(nlist) = query.index_params.get("NLIST") {
+            params.ivf_nlist = nlist.parse().ok();
+        }
+        if let Some(nprobe) = query.index_params.get("NPROBE") {
+            params.ivf_nprobe = nprobe.parse().ok();
+        }
+    }
+
+    // 提交索引构建任务到线程池
+    let task_id = crate::index::builder::get_index_build_thread_pool()
+        .map_err(|_| QueryExecutionError::InternalError)?
+        .submit_task(
+            query.table_name.clone(),
+            field_name.clone(),
+            crate::sql::query_parser::IndexType::BTree, // 使用默认值，实际索引类型由params指定
+            params,
+        );
+
+    // 创建结果集，返回任务ID
+    let columns = alloc::vec!["task_id".to_string()];
     let mut result_set = ResultSet::new(columns);
     result_set.add_row(alloc::vec![TypedValue {
-        value_type: DataType::String,
-        value: Value { string: [b'0'; 64] },
+        value_type: DataType::UInt64,
+        value: Value { u64: task_id as u64 },
     }]);
 
     Ok(result_set)

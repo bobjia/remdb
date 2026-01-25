@@ -3,6 +3,7 @@
 //! 该模块负责将SQL查询字符串解析为结构化的查询对象。
 
 use alloc::boxed::Box;
+use std::collections::HashMap;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -112,10 +113,38 @@ pub struct SqlQuery {
     pub index_column: Option<String>,
     /// 索引类型（用于CREATE INDEX）
     pub index_type: Option<String>,
+    /// 索引参数（用于CREATE INDEX WITH子句）
+    pub index_params: HashMap<String, String>,
+    /// 索引构建模式（ONLINE/OFFLINE）
+    pub index_online: bool,
     /// 更新的字段值对（用于UPDATE）：(字段名, 新值表达式)
     pub update_pairs: Vec<(String, Expression)>,
     /// 是否忽略重复键
     pub ignore_duplicates: bool,
+}
+
+/// 索引类型枚举（用于CREATE INDEX语句）
+#[derive(Debug, Clone, PartialEq)]
+pub enum IndexType {
+    /// B-Tree索引
+    BTree,
+    /// HNSW向量索引
+    HNSW,
+    /// IVF_FLAT向量索引
+    IVF,
+    /// 默认索引类型
+    Default,
+}
+
+impl std::fmt::Display for IndexType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IndexType::BTree => write!(f, "BTree"),
+            IndexType::HNSW => write!(f, "HNSW"),
+            IndexType::IVF => write!(f, "IVF"),
+            IndexType::Default => write!(f, "Default"),
+        }
+    }
 }
 
 /// 查询类型
@@ -145,6 +174,8 @@ pub enum QueryType {
     Commit,
     /// ROLLBACK查询
     Rollback,
+    /// SHOW INDEX BUILD STATUS查询
+    ShowIndexBuildStatus,
     /// 其他查询类型（暂不支持）
     Other,
 }
@@ -392,7 +423,7 @@ impl SqlParser {
             QueryType::CreateIndex => self.parse_create_index_query(),
             QueryType::AlterTable => self.parse_alter_table_query(),
             QueryType::BeginTransaction => Ok(SqlQuery {
-                query_type: QueryType::BeginTransaction,
+                query_type,
                 table_name: String::new(),
                 table_alias: None,
                 joins: Vec::new(),
@@ -409,6 +440,8 @@ impl SqlParser {
                 primary_key: None,
                 index_column: None,
                 index_type: None,
+                index_params: HashMap::new(),
+                index_online: true,
                 update_pairs: Vec::new(),
                 ignore_duplicates: false,
             }),
@@ -430,6 +463,8 @@ impl SqlParser {
                 primary_key: None,
                 index_column: None,
                 index_type: None,
+                index_params: HashMap::new(),
+                index_online: true,
                 update_pairs: Vec::new(),
                 ignore_duplicates: false,
             }),
@@ -451,6 +486,31 @@ impl SqlParser {
                 primary_key: None,
                 index_column: None,
                 index_type: None,
+                index_params: HashMap::new(),
+                index_online: true,
+                update_pairs: Vec::new(),
+                ignore_duplicates: false,
+            }),
+            QueryType::ShowIndexBuildStatus => Ok(SqlQuery {
+                query_type: QueryType::ShowIndexBuildStatus,
+                table_name: String::new(),
+                table_alias: None,
+                joins: Vec::new(),
+                columns: Vec::new(),
+                select_all: false,
+                distinct: false,
+                where_clause: None,
+                group_by: None,
+                order_by: None,
+                limit: None,
+                insert_columns: Vec::new(),
+                values: Vec::new(),
+                table_def: Vec::new(),
+                primary_key: None,
+                index_column: None,
+                index_type: None,
+                index_params: HashMap::new(),
+                index_online: true,
                 update_pairs: Vec::new(),
                 ignore_duplicates: false,
             }),
@@ -518,6 +578,8 @@ impl SqlParser {
             primary_key: None,
             index_column: None,
             index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
             update_pairs,
             ignore_duplicates: false,
         })
@@ -551,6 +613,8 @@ impl SqlParser {
             primary_key: None,
             index_column: None,
             index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
         })
@@ -601,6 +665,8 @@ impl SqlParser {
             primary_key: None,
             index_column: None,
             index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates,
         })
@@ -706,6 +772,8 @@ impl SqlParser {
             primary_key: None,
             index_column: None,
             index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
         })
@@ -812,6 +880,8 @@ impl SqlParser {
             primary_key,
             index_column: None,
             index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
         })
@@ -851,6 +921,55 @@ impl SqlParser {
             index_type = Some(self.parse_identifier()?.to_uppercase());
         }
 
+        // 解析索引参数（可选）
+        let mut index_params = HashMap::new();
+        self.skip_whitespace();
+        if self.match_keyword("WITH") {
+            self.skip_whitespace();
+            self.expect_char('(')?;
+            
+            // 解析参数列表
+            loop {
+                self.skip_whitespace();
+                let param_name = self.parse_identifier()?.to_uppercase();
+                
+                self.skip_whitespace();
+                self.expect_char('=')?;
+                
+                self.skip_whitespace();
+                let param_value = self.parse_value()?;
+                let value_str = match param_value {
+                    Value::String(s) => s,
+                    Value::Identifier(id) => id,
+                    Value::Integer(i) => i.to_string(),
+                    Value::Float(f) => f.to_string(),
+                    Value::Boolean(b) => b.to_string(),
+                    _ => return Err(QueryParseError::InvalidValue),
+                };
+                
+                index_params.insert(param_name, value_str);
+                
+                self.skip_whitespace();
+                if self.match_char(',') {
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            
+            self.skip_whitespace();
+            self.expect_char(')')?;
+        }
+
+        // 解析构建模式（ONLINE/OFFLINE，可选）
+        let mut index_online = true; // 默认在线构建
+        self.skip_whitespace();
+        if self.match_keyword("ONLINE") {
+            index_online = true;
+        } else if self.match_keyword("OFFLINE") {
+            index_online = false;
+        }
+
         Ok(SqlQuery {
             query_type: QueryType::CreateIndex,
             table_name,
@@ -869,6 +988,8 @@ impl SqlParser {
             primary_key: None,
             index_column: Some(index_column),
             index_type,
+            index_params,
+            index_online,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
         })
@@ -954,6 +1075,8 @@ impl SqlParser {
             primary_key: None,
             index_column: None,
             index_type: None,
+            index_params: std::collections::HashMap::new(),
+            index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
         })
@@ -1049,6 +1172,23 @@ impl SqlParser {
             Ok(QueryType::Commit)
         } else if self.match_keyword("ROLLBACK") {
             Ok(QueryType::Rollback)
+        } else if self.match_keyword("SHOW") {
+            self.skip_whitespace();
+            if self.match_keyword("INDEX") {
+                self.skip_whitespace();
+                if self.match_keyword("BUILD") {
+                    self.skip_whitespace();
+                    if self.match_keyword("STATUS") {
+                        Ok(QueryType::ShowIndexBuildStatus)
+                    } else {
+                        Ok(QueryType::Other)
+                    }
+                } else {
+                    Ok(QueryType::Other)
+                }
+            } else {
+                Ok(QueryType::Other)
+            }
         } else {
             Ok(QueryType::Other)
         }
@@ -1092,6 +1232,8 @@ impl SqlParser {
             primary_key: None,
             index_column: None,
             index_type: None,
+            index_params: std::collections::HashMap::new(),
+            index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
         })

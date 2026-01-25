@@ -1114,6 +1114,11 @@ impl DdlExecutor for RemDb {
                     compression_enabled: compression_config.vector_compression_enabled,
                     compression_scheme: compression_config.vector_compression_scheme as u8,
                     compression_level: compression_config.vector_compression_level,
+                    hnsw_m: 16,
+                    hnsw_ef_construction: 200,
+                    hnsw_ef_search: 128,
+                    ivf_nlist: 1024,
+                    ivf_nprobe: 16,
                 })
             } else {
                 None
@@ -1710,6 +1715,11 @@ impl DdlExecutor for RemDb {
                             compression_enabled: false,
                             compression_scheme: 0,
                             compression_level: 3,
+                            hnsw_m: 16,
+                            hnsw_ef_construction: 200,
+                            hnsw_ef_search: 128,
+                            ivf_nlist: 1024,
+                            ivf_nprobe: 16,
                         })
                     } else {
                         None
@@ -1786,6 +1796,11 @@ impl DdlExecutor for RemDb {
                         compression_enabled: false,
                         compression_scheme: 0,
                         compression_level: 3,
+                        hnsw_m: 16,
+                        hnsw_ef_construction: 200,
+                        hnsw_ef_search: 128,
+                        ivf_nlist: 1024,
+                        ivf_nprobe: 16,
                     });
                 } else {
                     field.vector_metadata = None;

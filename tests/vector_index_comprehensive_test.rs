@@ -218,6 +218,11 @@ fn test_vector_index_delete_operation() {
 
     println!("成功插入 {} 条向量数据用于删除测试", test_data.len());
 
+    // 初始化索引构建线程池
+    println!("初始化索引构建线程池");
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
+
     // 测试1: 创建向量索引
     println!("测试1: 创建向量索引");
     let result = db.sql_query("CREATE INDEX vector_idx ON VECTOR_TABLE_2D (vector) USING HNSW");
@@ -391,6 +396,11 @@ fn test_vector_index_different_dimensions() {
     }
 
     println!("成功插入 {} 条5维向量数据用于维度测试", test_vectors.len());
+
+    // 初始化索引构建线程池
+    println!("初始化索引构建线程池");
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
 
     // 测试1: 创建5维向量索引
     println!("测试1: 创建5维向量索引");

@@ -204,6 +204,10 @@ fn test_ivf_variants_basic_functionality() {
 
         println!("成功插入 50 条向量数据用于 {} 测试", ivf_type);
 
+        // 初始化索引构建线程池
+        crate::index::builder::init_index_build_thread_pool(2);
+        println!("索引构建线程池初始化成功");
+
         // 测试1: 创建IVF变体索引
         println!("测试1: 创建 {} 索引", ivf_type);
         let create_query = format!(
@@ -299,6 +303,10 @@ fn test_ivf_variants_with_different_data_sizes() {
             }
 
             println!("成功插入 {} 条向量数据", data_size);
+
+            // 初始化索引构建线程池
+            crate::index::builder::init_index_build_thread_pool(2);
+            println!("索引构建线程池初始化成功");
 
             // 创建索引
             let create_query = format!(
@@ -427,6 +435,10 @@ fn test_ivf_variants_comparison() {
             table.insert(&record as *const _ as *const u8).unwrap();
         }
 
+        // 初始化索引构建线程池
+        crate::index::builder::init_index_build_thread_pool(2);
+        println!("索引构建线程池初始化成功");
+
         // 创建索引
         let create_query = format!(
             "CREATE INDEX ivf_{}_cluster_idx ON IVF_VARIANTS_TABLE (vector) USING {}",
@@ -521,9 +533,13 @@ fn test_ivf_variants_distance_algorithms() {
 
             println!("成功插入测试数据");
 
+            // 初始化索引构建线程池
+            crate::index::builder::init_index_build_thread_pool(2);
+            println!("索引构建线程池初始化成功");
+
             // 测试1: 创建带距离算法的IVF变体索引
             println!("测试1: 创建带 {} 距离的 {} 索引", distance_alg, ivf_type);
-            let create_query = format!("CREATE INDEX ivf_{}_{}_idx ON IVF_VARIANTS_TABLE (vector) USING {} WITH DISTANCE={}", 
+            let create_query = format!("CREATE INDEX ivf_{}_{}_idx ON IVF_VARIANTS_TABLE (vector) USING {} WITH (DISTANCE={})", 
                                      ivf_type.to_lowercase(), distance_alg.to_lowercase(), ivf_type, distance_alg);
             let result = db.sql_query(&create_query);
             assert!(

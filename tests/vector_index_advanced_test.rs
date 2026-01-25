@@ -193,6 +193,11 @@ fn test_vector_index_simple_update() {
     assert!(insert_id < config.tables[0].max_records);
     println!("成功插入 1 条初始向量数据");
 
+    // 初始化索引构建线程池
+    println!("初始化索引构建线程池");
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
+
     // 创建向量索引
     println!("创建初始向量索引");
     let result = db.sql_query(
@@ -260,6 +265,11 @@ fn test_vector_index_simple_config() {
     }
 
     println!("成功插入 2 条测试数据");
+
+    // 初始化索引构建线程池
+    println!("初始化索引构建线程池");
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
 
     // 测试1: 创建基本HNSW索引（不使用配置参数）
     println!("测试1: 创建基本HNSW索引");
@@ -330,6 +340,11 @@ fn test_vector_index_simple_boundary() {
         .unwrap();
     assert!(insert_id < config.tables[0].max_records);
     println!("成功插入单个向量数据");
+
+    // 初始化索引构建线程池
+    println!("初始化索引构建线程池");
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
 
     // 创建索引
     let result = db.sql_query(
@@ -404,9 +419,14 @@ fn test_vector_index_multiple_distance_algorithms() {
 
     println!("成功插入 {} 条测试数据", test_vectors.len());
 
+    // 初始化索引构建线程池
+    println!("初始化索引构建线程池");
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
+
     // 测试1: 使用L2距离算法创建索引
     println!("测试1: 使用 L2 距离算法创建索引");
-    let query = "CREATE INDEX vector_l2_alg_idx ON VECTOR_ADVANCED_TABLE (vector) USING HNSW WITH DISTANCE=L2";
+    let query = "CREATE INDEX vector_l2_alg_idx ON VECTOR_ADVANCED_TABLE (vector) USING HNSW WITH (DISTANCE=L2)";
     let result = db.sql_query(query);
     assert!(result.is_ok(), "使用 L2 距离算法创建索引应该成功");
     println!("成功使用 L2 距离算法创建索引");
@@ -473,6 +493,11 @@ fn test_vector_index_simple_dimension() {
     }
 
     println!("成功插入 3 条向量数据");
+
+    // 初始化索引构建线程池
+    println!("初始化索引构建线程池");
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
 
     // 测试1: 创建向量索引
     println!("测试1: 创建向量索引");

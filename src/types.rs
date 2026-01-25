@@ -52,6 +52,16 @@ pub struct VectorMetadata {
     pub compression_scheme: u8,
     /// 压缩级别（默认为3）
     pub compression_level: u8,
+    /// HNSW参数：每个节点的最大连接数
+    pub hnsw_m: u8,
+    /// HNSW参数：构建索引时的候选列表大小
+    pub hnsw_ef_construction: u32,
+    /// HNSW参数：搜索时的候选列表大小
+    pub hnsw_ef_search: u32,
+    /// IVF参数：聚类中心数量
+    pub ivf_nlist: u32,
+    /// IVF参数：搜索时检查的聚类中心数量
+    pub ivf_nprobe: u32,
 }
 
 /// 为VectorMetadata实现自定义构造函数，兼容旧代码
@@ -69,6 +79,13 @@ impl VectorMetadata {
             compression_enabled: false,
             compression_scheme: 0,
             compression_level: 3,
+            // HNSW默认参数
+            hnsw_m: 16,
+            hnsw_ef_construction: 200,
+            hnsw_ef_search: 128,
+            // IVF默认参数
+            ivf_nlist: 1024,
+            ivf_nprobe: 16,
         }
     }
     
@@ -88,6 +105,42 @@ impl VectorMetadata {
             compression_enabled,
             compression_scheme,
             compression_level,
+            // HNSW默认参数
+            hnsw_m: 16,
+            hnsw_ef_construction: 200,
+            hnsw_ef_search: 128,
+            // IVF默认参数
+            ivf_nlist: 1024,
+            ivf_nprobe: 16,
+        }
+    }
+    
+    /// 创建向量元数据，支持完整参数初始化
+    pub const fn with_all_params(
+        dimension: u16,
+        distance_type: DistanceType,
+        index_type: VectorIndexType,
+        compression_enabled: bool,
+        compression_scheme: u8,
+        compression_level: u8,
+        hnsw_m: u8,
+        hnsw_ef_construction: u32,
+        hnsw_ef_search: u32,
+        ivf_nlist: u32,
+        ivf_nprobe: u32,
+    ) -> Self {
+        Self {
+            dimension,
+            distance_type,
+            index_type,
+            compression_enabled,
+            compression_scheme,
+            compression_level,
+            hnsw_m,
+            hnsw_ef_construction,
+            hnsw_ef_search,
+            ivf_nlist,
+            ivf_nprobe,
         }
     }
 }
@@ -102,6 +155,13 @@ impl From<(u16, DistanceType, VectorIndexType)> for VectorMetadata {
             compression_enabled: false,
             compression_scheme: 0,
             compression_level: 3,
+            // HNSW默认参数
+            hnsw_m: 16,
+            hnsw_ef_construction: 200,
+            hnsw_ef_search: 128,
+            // IVF默认参数
+            ivf_nlist: 1024,
+            ivf_nprobe: 16,
         }
     }
 }
@@ -116,6 +176,32 @@ impl From<(u16, DistanceType, VectorIndexType, bool, u8, u8)> for VectorMetadata
             compression_enabled,
             compression_scheme,
             compression_level,
+            // HNSW默认参数
+            hnsw_m: 16,
+            hnsw_ef_construction: 200,
+            hnsw_ef_search: 128,
+            // IVF默认参数
+            ivf_nlist: 1024,
+            ivf_nprobe: 16,
+        }
+    }
+}
+
+/// 允许使用元组语法初始化VectorMetadata，包含完整参数
+impl From<(u16, DistanceType, VectorIndexType, bool, u8, u8, u8, u32, u32, u32, u32)> for VectorMetadata {
+    fn from((dimension, distance_type, index_type, compression_enabled, compression_scheme, compression_level, hnsw_m, hnsw_ef_construction, hnsw_ef_search, ivf_nlist, ivf_nprobe): (u16, DistanceType, VectorIndexType, bool, u8, u8, u8, u32, u32, u32, u32)) -> Self {
+        Self {
+            dimension,
+            distance_type,
+            index_type,
+            compression_enabled,
+            compression_scheme,
+            compression_level,
+            hnsw_m,
+            hnsw_ef_construction,
+            hnsw_ef_search,
+            ivf_nlist,
+            ivf_nprobe,
         }
     }
 }

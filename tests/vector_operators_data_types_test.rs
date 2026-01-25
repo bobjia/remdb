@@ -200,6 +200,9 @@ fn test_vector_operators_with_scalars() {
 
     // 测试1: 创建向量索引
     println!("测试1: 创建向量索引");
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     let result =
         db.sql_query("CREATE INDEX vector_3d_idx ON VECTOR_OPERATORS_TABLE (vector_3d) USING HNSW");
     assert!(result.is_ok(), "创建3D向量索引应该成功");
@@ -303,6 +306,9 @@ fn test_vector_operators_with_array_literals() {
     println!("成功插入 5 条测试数据");
 
     // 创建向量索引
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     db.sql_query(
         "CREATE INDEX vector_3d_array_idx ON VECTOR_OPERATORS_TABLE (vector_3d) USING HNSW",
     )
@@ -490,6 +496,9 @@ fn test_vector_operators_boundary_cases() {
     println!("成功插入边界情况测试数据");
 
     // 创建向量索引
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     db.sql_query(
         "CREATE INDEX vector_3d_boundary_idx ON VECTOR_OPERATORS_TABLE (vector_3d) USING HNSW",
     )
@@ -594,6 +603,9 @@ fn test_vector_operators_in_different_contexts() {
     println!("成功插入 10 条测试数据");
 
     // 创建向量索引
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     db.sql_query(
         "CREATE INDEX vector_3d_context_idx ON VECTOR_OPERATORS_TABLE (vector_3d) USING HNSW",
     )
@@ -715,6 +727,9 @@ fn test_vector_operators_multiple_vectors() {
     println!("成功插入 5 条测试数据");
 
     // 创建向量索引
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     db.sql_query(
         "CREATE INDEX vector_3d_multi_idx ON VECTOR_OPERATORS_TABLE (vector_3d) USING HNSW",
     )

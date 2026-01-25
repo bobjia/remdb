@@ -259,6 +259,13 @@ static TEST_VECTOR_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::syn
                 compression_enabled: false,
                 compression_scheme: 0,
                 compression_level: 3,
+                // HNSW默认参数
+                hnsw_m: 16,
+                hnsw_ef_construction: 200,
+                hnsw_ef_search: 128,
+                // IVF默认参数
+                ivf_nlist: 1024,
+                ivf_nprobe: 16,
             }),
         },
     ],

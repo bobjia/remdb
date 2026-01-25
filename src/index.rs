@@ -1,6 +1,4 @@
-use crate::platform::{memcpy, memset};
-use crate::types::{DataType, DistanceType, IndexType, RemDbError, Result, TableDef};
-use core::ptr::NonNull;
+pub mod builder; mod hnsw; mod ivf; use crate::platform::{memcpy, memset}; use crate::types::{DataType, DistanceType, IndexType, RemDbError, Result, TableDef, VectorIndexType}; use core::ptr::NonNull;
 
 /// B-Tree阶数（每个节点的最大键数量）
 const BTREE_ORDER: usize = 4; // 阶数为4的B-Tree
@@ -386,6 +384,16 @@ struct VectorIndexItem {
     record_id: u16,
 }
 
+/// 向量索引实现类型
+enum VectorIndexImpl {
+    /// 线性搜索索引（默认）    
+    LinearSearch,
+    /// HNSW索引    
+    HNSW(Option<hnsw::HNSWIndex>),
+    /// IVF_FLAT索引    
+    IVFFlat(Option<ivf::IVFIndex>),
+}
+
 /// 向量索引
 pub struct VectorIndex {
     /// 表定义
@@ -398,6 +406,8 @@ pub struct VectorIndex {
     distance_type: DistanceType,
     /// 向量维度
     dimension: u16,
+    /// 向量索引类型
+    vector_index_type: VectorIndexType,
     /// 向量索引项列表
     items: *mut VectorIndexItem,
     /// 向量数据存储
@@ -408,6 +418,8 @@ pub struct VectorIndex {
     item_count: usize,
     /// 当前向量数量
     vector_count: usize,
+    /// 索引实现
+    index_impl: VectorIndexImpl,
 }
 
 impl VectorIndex {
@@ -420,6 +432,7 @@ impl VectorIndex {
         // 获取向量维度和距离类型
         let mut dimension = 0;
         let mut distance_type = DistanceType::L2;
+        let mut vector_index_type = VectorIndexType::HNSW;
 
         // 验证是否有有效的辅助索引字段
         let secondary_index = def.secondary_index.ok_or(RemDbError::TypeMismatch)?;
@@ -441,15 +454,18 @@ impl VectorIndex {
         }
 
         let vector_meta = match &field.vector_metadata {
-            Some(meta) => meta,
+            Some(meta) => {
+                dimension = meta.dimension;
+                distance_type = meta.distance_type;
+                vector_index_type = meta.index_type;
+                meta
+            },
             None => {
                 #[cfg(feature = "std")]
                 eprintln!("TypeMismatch: field.vector_metadata is None");
                 return Err(RemDbError::TypeMismatch);
             }
         };
-        dimension = vector_meta.dimension;
-        distance_type = vector_meta.distance_type;
 
         // 验证向量维度有效
         if dimension == 0 || dimension > 1024 {
@@ -461,7 +477,7 @@ impl VectorIndex {
         // 计算内存布局
         let items_size = max_items * core::mem::size_of::<VectorIndexItem>();
         let vectors_size = max_items * dimension as usize * core::mem::size_of::<f32>();
-
+        
         // 初始化索引项数组
         let items = memory_start as *mut VectorIndexItem;
         // 使用安全的方式初始化索引项数组
@@ -480,6 +496,25 @@ impl VectorIndex {
             let vec_ptr = unsafe { vectors.add(i) };
             *vec_ptr = 0.0;
         }
+        
+        // 初始化索引实现
+        let index_impl = match vector_index_type {
+            VectorIndexType::HNSW | VectorIndexType::HNSW_SQ | VectorIndexType::HNSW_BQ => {
+                // 创建HNSW索引
+                let hnsw_memory = (memory_start.add(items_size + vectors_size)) as *mut u8;
+                let hnsw_index = hnsw::HNSWIndex::new(*vector_meta, vectors, hnsw_memory, max_items)?;
+                VectorIndexImpl::HNSW(Some(hnsw_index))
+            },
+            VectorIndexType::IVF | VectorIndexType::IVF_PQ => {
+                // 创建IVF_FLAT索引
+                let ivf_index = ivf::IVFIndex::new(*vector_meta, vectors, vector_meta.ivf_nlist, vector_meta.ivf_nprobe)?;
+                VectorIndexImpl::IVFFlat(Some(ivf_index))
+            },
+            _ => {
+                // 默认使用线性搜索
+                VectorIndexImpl::LinearSearch
+            }
+        };
 
         Ok(VectorIndex {
             def,
@@ -487,11 +522,13 @@ impl VectorIndex {
             lock: 0,
             distance_type,
             dimension,
+            vector_index_type,
             items,
             vectors,
             max_items,
             item_count: 0,
             vector_count: 0,
+            index_impl,
         })
     }
 
@@ -528,6 +565,303 @@ impl VectorIndex {
 
     /// 计算两个向量之间的距离
     unsafe fn calculate_distance(&self, vec1: *const f32, vec2: *const f32) -> f32 {
+        match self.distance_type {
+            DistanceType::L2 => {
+                // L2距离（欧几里得距离）
+                let mut sum = 0.0;
+                for i in 0..self.dimension {
+                    let diff = *vec1.add(i as usize) - *vec2.add(i as usize);
+                    sum += diff * diff;
+                }
+                sum.sqrt()
+            }
+            DistanceType::InnerProduct => {
+                // 内积
+                let mut sum = 0.0;
+                for i in 0..self.dimension {
+                    sum += *vec1.add(i as usize) * *vec2.add(i as usize);
+                }
+                sum
+            }
+            DistanceType::Cosine => {
+                // 余弦相似度
+                let mut dot = 0.0;
+                let mut norm1 = 0.0;
+                let mut norm2 = 0.0;
+                
+                for i in 0..self.dimension {
+                    let v1 = *vec1.add(i as usize);
+                    let v2 = *vec2.add(i as usize);
+                    dot += v1 * v2;
+                    norm1 += v1 * v1;
+                    norm2 += v2 * v2;
+                }
+                
+                let norm1 = norm1.sqrt();
+                let norm2 = norm2.sqrt();
+                
+                if norm1 == 0.0 || norm2 == 0.0 {
+                    0.0
+                } else {
+                    dot / (norm1 * norm2)
+                }
+            }
+        }
+    }
+    
+    /// 保存索引到磁盘
+    #[cfg(feature = "std")]
+    pub fn save(&self, file_path: &str) -> Result<()> {
+        use std::fs::File;
+        use std::io::{Write, Error as IoError};
+        
+        // 打开文件用于写入
+        let mut file = File::create(file_path)
+            .map_err(|_| RemDbError::FileIoError)?;
+        
+        // 保存索引元数据
+        // 写入索引类型
+        file.write_all(&[self.vector_index_type as u8])
+            .map_err(|_| RemDbError::FileIoError)?;
+        // 写入距离类型
+        file.write_all(&[self.distance_type as u8])
+            .map_err(|_| RemDbError::FileIoError)?;
+        // 写入向量维度
+        file.write_all(&self.dimension.to_le_bytes())
+            .map_err(|_| RemDbError::FileIoError)?;
+        // 写入最大项数量
+        file.write_all(&self.max_items.to_le_bytes())
+            .map_err(|_| RemDbError::FileIoError)?;
+        // 写入当前项数量
+        file.write_all(&self.item_count.to_le_bytes())
+            .map_err(|_| RemDbError::FileIoError)?;
+        // 写入当前向量数量
+        file.write_all(&self.vector_count.to_le_bytes())
+            .map_err(|_| RemDbError::FileIoError)?;
+        
+        // 保存索引项
+        unsafe {
+            for i in 0..self.item_count {
+                let item = self.items.add(i).read();
+                // 写入向量偏移量
+                file.write_all(&item.vector_offset.to_le_bytes())
+                    .map_err(|_| RemDbError::FileIoError)?;
+                // 写入记录ID
+                file.write_all(&item.record_id.to_le_bytes())
+                    .map_err(|_| RemDbError::FileIoError)?;
+            }
+        }
+        
+        // 保存向量数据
+        unsafe {
+            let vector_size = self.vector_count * self.dimension as usize;
+            let vec_slice = core::slice::from_raw_parts(self.vectors, vector_size);
+            let vec_bytes = unsafe {
+                core::slice::from_raw_parts(
+                    vec_slice.as_ptr() as *const u8,
+                    vector_size * core::mem::size_of::<f32>()
+                )
+            };
+            file.write_all(vec_bytes)
+                .map_err(|_| RemDbError::FileIoError)?;
+        }
+        
+        // 保存具体索引实现数据
+        match &self.index_impl {
+            VectorIndexImpl::HNSW(Some(hnsw_index)) => {
+                hnsw_index.save(&mut file)?;
+            }
+            VectorIndexImpl::IVFFlat(Some(ivf_index)) => {
+                ivf_index.save(&mut file)?;
+            }
+            _ => {
+                // 线性搜索不需要保存额外数据
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// 从磁盘加载索引
+    #[cfg(feature = "std")]
+    pub unsafe fn load(
+        def: alloc::sync::Arc<TableDef>,
+        file_path: &str,
+        memory_start: *mut u8,
+    ) -> Result<Self> {
+        use std::fs::File;
+        use std::io::{Read, Error as IoError};
+        
+        // 打开文件用于读取
+        let mut file = File::open(file_path)
+            .map_err(|_| RemDbError::FileIoError)?;
+        
+        // 读取索引元数据
+        // 读取索引类型
+        let mut index_type_byte = [0u8; 1];
+        file.read_exact(&mut index_type_byte)
+            .map_err(|_| RemDbError::FileIoError)?;
+        let vector_index_type = match index_type_byte[0] {
+            0 => VectorIndexType::HNSW,
+            1 => VectorIndexType::HNSW_SQ,
+            2 => VectorIndexType::HNSW_BQ,
+            3 => VectorIndexType::IVF,
+            4 => VectorIndexType::IVF_PQ,
+            _ => VectorIndexType::HNSW, // 默认值
+        };
+        
+        // 读取距离类型
+        let mut distance_type_byte = [0u8; 1];
+        file.read_exact(&mut distance_type_byte)
+            .map_err(|_| RemDbError::FileIoError)?;
+        let distance_type = match distance_type_byte[0] {
+                0 => DistanceType::L2,
+                1 => DistanceType::InnerProduct,
+                2 => DistanceType::Cosine,
+                _ => DistanceType::L2, // 默认值
+            };
+        
+        // 读取向量维度
+        let mut dimension_bytes = [0u8; 2];
+        file.read_exact(&mut dimension_bytes)
+            .map_err(|_| RemDbError::FileIoError)?;
+        let dimension = u16::from_le_bytes(dimension_bytes);
+        
+        // 读取最大项数量
+        let mut max_items_bytes = [0u8; 8];
+        file.read_exact(&mut max_items_bytes)
+            .map_err(|_| RemDbError::FileIoError)?;
+        let max_items = usize::from_le_bytes(max_items_bytes);
+        
+        // 读取当前项数量
+        let mut item_count_bytes = [0u8; 8];
+        file.read_exact(&mut item_count_bytes)
+            .map_err(|_| RemDbError::FileIoError)?;
+        let item_count = usize::from_le_bytes(item_count_bytes);
+        
+        // 读取当前向量数量
+        let mut vector_count_bytes = [0u8; 8];
+        file.read_exact(&mut vector_count_bytes)
+            .map_err(|_| RemDbError::FileIoError)?;
+        let vector_count = usize::from_le_bytes(vector_count_bytes);
+        
+        // 计算内存布局
+        let items_size = max_items * core::mem::size_of::<VectorIndexItem>();
+        let vectors_size = max_items * dimension as usize * core::mem::size_of::<f32>();
+        
+        // 初始化索引项数组
+        let items = memory_start as *mut VectorIndexItem;
+        
+        // 读取索引项
+        for i in 0..item_count {
+            let mut item = VectorIndexItem {
+                vector_offset: 0,
+                record_id: 0,
+            };
+            
+            // 读取向量偏移量
+            let mut offset_bytes = [0u8; 8];
+            file.read_exact(&mut offset_bytes)
+                .map_err(|_| RemDbError::FileIoError)?;
+            item.vector_offset = usize::from_le_bytes(offset_bytes);
+            
+            // 读取记录ID
+            let mut record_id_bytes = [0u8; 2];
+            file.read_exact(&mut record_id_bytes)
+                .map_err(|_| RemDbError::FileIoError)?;
+            item.record_id = u16::from_le_bytes(record_id_bytes);
+            
+            // 保存到内存
+            *items.add(i) = item;
+        }
+        
+        // 初始化向量数据数组
+        let vectors = (memory_start.add(items_size)) as *mut f32;
+        
+        // 读取向量数据
+        let vector_size = vector_count * dimension as usize;
+        let vec_slice = core::slice::from_raw_parts_mut(vectors, vector_size);
+        let vec_bytes = unsafe {
+            core::slice::from_raw_parts_mut(
+                vec_slice.as_mut_ptr() as *mut u8,
+                vector_size * core::mem::size_of::<f32>()
+            )
+        };
+        file.read_exact(vec_bytes)
+            .map_err(|_| RemDbError::FileIoError)?;
+        
+        // 加载具体索引实现
+        let index_impl = match vector_index_type {
+            VectorIndexType::HNSW | VectorIndexType::HNSW_SQ | VectorIndexType::HNSW_BQ => {
+                // 加载HNSW索引
+                let hnsw_memory = (memory_start.add(items_size + vectors_size)) as *mut u8;
+                let vector_meta = crate::types::VectorMetadata {
+                    dimension,
+                    distance_type,
+                    index_type: vector_index_type,
+                    compression_enabled: false,
+                    compression_scheme: 0,
+                    compression_level: 3,
+                    hnsw_m: 16, // 默认值，实际值会从文件加载
+                    hnsw_ef_construction: 200, // 默认值，实际值会从文件加载
+                    hnsw_ef_search: 100, // 默认值，实际值会从文件加载
+                    ivf_nlist: 100, // 默认值，实际值会从文件加载
+                    ivf_nprobe: 10, // 默认值，实际值会从文件加载
+                };
+                let hnsw_index = hnsw::HNSWIndex::load(
+                    vector_meta,
+                    vectors,
+                    hnsw_memory,
+                    max_items,
+                    &mut file
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                VectorIndexImpl::HNSW(Some(hnsw_index))
+            }
+            VectorIndexType::IVF | VectorIndexType::IVF_PQ => {
+                // 加载IVF索引
+                let vector_meta = crate::types::VectorMetadata {
+                    dimension,
+                    distance_type,
+                    index_type: vector_index_type,
+                    compression_enabled: false,
+                    compression_scheme: 0,
+                    compression_level: 3,
+                    hnsw_m: 16, // 默认值
+                    hnsw_ef_construction: 200, // 默认值
+                    hnsw_ef_search: 100, // 默认值
+                    ivf_nlist: 100, // 默认值，实际值会从文件加载
+                    ivf_nprobe: 10, // 默认值，实际值会从文件加载
+                };
+                let ivf_index = ivf::IVFIndex::load(
+                    vector_meta,
+                    vectors,
+                    &mut file
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                VectorIndexImpl::IVFFlat(Some(ivf_index))
+            }
+            _ => VectorIndexImpl::LinearSearch,
+        };
+        
+        Ok(VectorIndex {
+            def,
+            stats: IndexStats::default(),
+            lock: 0,
+            distance_type,
+            dimension,
+            vector_index_type,
+            items,
+            vectors,
+            max_items,
+            item_count,
+            vector_count,
+            index_impl,
+        })
+    }
+    
+    /// 计算两个向量之间的距离（旧实现，保留用于兼容性）
+    unsafe fn calculate_distance_old(&self, vec1: *const f32, vec2: *const f32) -> f32 {
         match self.distance_type {
             DistanceType::L2 => {
                 // L2距离（欧几里得距离）
@@ -613,12 +947,26 @@ impl VectorIndex {
         self.stats.item_count += 1;
         self.stats.size +=
             core::mem::size_of::<VectorIndexItem>() + vec_len * core::mem::size_of::<f32>();
+        
+        // 根据索引类型插入到相应的索引实现中
+        match &mut self.index_impl {
+            VectorIndexImpl::HNSW(Some(hnsw_index)) => {
+                hnsw_index.insert(start_offset, record_id)?;
+            },
+            VectorIndexImpl::IVFFlat(Some(ivf_index)) => {
+                ivf_index.insert(start_offset, record_id)?;
+            },
+            _ => {
+                // 线性搜索不需要额外操作
+            }
+        }
 
         crate::platform::spin_unlock(&mut self.lock);
+
         Ok(())
     }
 
-    /// 根据向量查找记录ID（简单线性搜索）
+    /// 根据向量查找记录ID（支持多种索引类型）
     pub unsafe fn find(&mut self, key: *const u8, key_size: usize) -> Result<u16> {
         // 更新统计信息
         self.stats.access_count += 1;
@@ -660,31 +1008,59 @@ impl VectorIndex {
             // 直接使用key作为f32指针
             query_vec = key as *const f32;
         }
+        
+        // 根据索引类型使用相应的搜索方法
+        let result = match &self.index_impl {
+            VectorIndexImpl::HNSW(Some(hnsw_index)) => {
+                // 使用HNSW搜索
+                let results = hnsw_index.search(query_vec, 1)?;
+                if let Some((_, record_id)) = results.first() {
+                    Ok(*record_id)
+                } else {
+                    Err(RemDbError::RecordNotFound)
+                }
+            },
+            VectorIndexImpl::IVFFlat(Some(ivf_index)) => {
+                // 使用IVF_FLAT搜索
+                let results = ivf_index.search(query_vec, 1)?;
+                if let Some((_, record_id)) = results.first() {
+                    Ok(*record_id)
+                } else {
+                    Err(RemDbError::RecordNotFound)
+                }
+            },
+            _ => {
+                // 线性搜索查找最相似的向量
+                let mut min_distance = f32::MAX;
+                let mut best_record_id = 0;
+                let mut found = false;
 
-        let mut min_distance = f32::MAX;
-        let mut best_record_id = 0;
-        let mut found = false;
+                for i in 0..self.item_count {
+                    let item_ptr = self.items.add(i);
+                    let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
+                    let distance = self.calculate_distance(query_vec, vec_ptr);
+                    if distance < min_distance {
+                        min_distance = distance;
+                        best_record_id = (*item_ptr).record_id;
+                        found = true;
+                    }
+                }
 
-        // 线性搜索查找最相似的向量
-        for i in 0..self.item_count {
-            let item_ptr = self.items.add(i);
-            let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
-            let distance = self.calculate_distance(query_vec, vec_ptr);
-            if distance < min_distance {
-                min_distance = distance;
-                best_record_id = (*item_ptr).record_id;
-                found = true;
+                if found {
+                    Ok(best_record_id)
+                } else {
+                    Err(RemDbError::RecordNotFound)
+                }
             }
-        }
+        };
 
         crate::platform::spin_unlock(&mut self.lock);
 
-        if found {
+        if result.is_ok() {
             self.stats.hit_count += 1;
-            Ok(best_record_id)
-        } else {
-            Err(RemDbError::RecordNotFound)
         }
+
+        result
     }
 
     /// 向量范围查询

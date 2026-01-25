@@ -198,6 +198,9 @@ fn test_vector_index_hnsw_sq() {
 
     // 测试1: 创建HNSW_SQ索引
     println!("测试1: 创建HNSW_SQ索引");
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     let result = db
         .sql_query("CREATE INDEX vector_hnsw_sq_idx ON VECTOR_TYPES_TABLE (vector) USING HNSW_SQ");
     if result.is_ok() {
@@ -268,6 +271,9 @@ fn test_vector_index_hnsw_bq() {
 
     // 测试1: 创建HNSW_BQ索引
     println!("测试1: 创建HNSW_BQ索引");
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     let result = db
         .sql_query("CREATE INDEX vector_hnsw_bq_idx ON VECTOR_TYPES_TABLE (vector) USING HNSW_BQ");
     if result.is_ok() {
@@ -338,6 +344,9 @@ fn test_vector_index_ivf() {
 
     // 测试1: 创建IVF索引
     println!("测试1: 创建IVF索引");
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     let result =
         db.sql_query("CREATE INDEX vector_ivf_idx ON VECTOR_TYPES_TABLE (vector) USING IVF");
     if result.is_ok() {
@@ -408,6 +417,9 @@ fn test_vector_index_ivf_pq() {
 
     // 测试1: 创建IVF_PQ索引
     println!("测试1: 创建IVF_PQ索引");
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     let result =
         db.sql_query("CREATE INDEX vector_ivf_pq_idx ON VECTOR_TYPES_TABLE (vector) USING IVF_PQ");
     if result.is_ok() {
@@ -467,6 +479,9 @@ fn test_vector_index_multiple_types() {
         assert!(insert_id < config.tables[0].max_records);
     }
 
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     let result1 =
         db1.sql_query("CREATE INDEX vector_hnsw_idx ON VECTOR_TYPES_TABLE (vector) USING HNSW");
     println!(
@@ -500,6 +515,9 @@ fn test_vector_index_multiple_types() {
         assert!(insert_id < config.tables[0].max_records);
     }
 
+    // 初始化索引构建线程池
+    crate::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功");
     let result2 = db2
         .sql_query("CREATE INDEX vector_hnsw_sq_idx ON VECTOR_TYPES_TABLE (vector) USING HNSW_SQ");
     println!(

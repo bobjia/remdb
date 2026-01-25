@@ -33,7 +33,7 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **Vector Database Support**:
   - Native vector data type: `VECTOR(dimension)`
   - Support for multiple distance metrics: L2 (Euclidean), IP (Inner Product), COSINE (Cosine Similarity)
-  - Multiple vector index types: HNSW, HNSW_SQ (with scalar quantization), HNSW_BQ (with binary quantization), IVF, IVF_PQ (with product quantization)
+  - Multiple vector index types: HNSW, HNSW_SQ (with scalar quantization), HNSW_BQ (with binary quantization), IVF, IVF_FLAT (with flat quantization), IVF_PQ (with product quantization)
   - Vector similarity search: Support for L2 distance `<->`, inner product `<#>`, cosine similarity `<=>` operators
   - Hybrid search: Support for combining vector search with scalar filtering
 - **Time Series Database Support**:

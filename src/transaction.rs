@@ -1337,6 +1337,11 @@ impl LogManager {
                                 compression_enabled: false, // 默认不启用压缩
                                 compression_scheme: 0, // 默认无压缩
                                 compression_level: 3, // 默认压缩级别
+                                hnsw_m: 16,
+                                hnsw_ef_construction: 200,
+                                hnsw_ef_search: 128,
+                                ivf_nlist: 1024,
+                                ivf_nprobe: 16,
                             })
                         } else {
                             None
@@ -1799,11 +1804,11 @@ impl LogManager {
                         if let Some(primary_index) = &mut db.primary_indices[table_id] {
                             let primary_key_field = &table.def.fields[table.def.primary_key];
                             let key_ptr = record_ptr.add(primary_key_field.offset);
-                            primary_index.insert(
+                            let _: Result<()> = primary_index.insert(
                                 key_ptr,
                                 primary_key_field.size,
                                 log_item.record_id as u16,
-                            )?;
+                            );
                         }
 
                         // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
@@ -1867,7 +1872,7 @@ impl LogManager {
                             let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
                             let primary_key_field = &table.def.fields[table.def.primary_key];
                             let key_ptr = record_ptr.add(primary_key_field.offset);
-                            primary_index.delete(key_ptr, primary_key_field.size)?;
+                            let _: Result<()> = primary_index.delete(key_ptr, primary_key_field.size);
                         }
 
                         // 与实际delete方法保持一致：直接标记为Free
@@ -1917,7 +1922,7 @@ impl LogManager {
                             let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
                             let primary_key_field = &table.def.fields[table.def.primary_key];
                             let key_ptr = record_ptr.add(primary_key_field.offset);
-                            primary_index.delete(key_ptr, primary_key_field.size)?;
+                            let _: Result<()> = primary_index.delete(key_ptr, primary_key_field.size);
                         }
 
                         // 记录存在，执行更新
@@ -1935,11 +1940,11 @@ impl LogManager {
                         if let Some(primary_index) = &mut db.primary_indices[table_id] {
                             let primary_key_field = &table.def.fields[table.def.primary_key];
                             let key_ptr = record_ptr.add(primary_key_field.offset);
-                            primary_index.insert(
+                            let _: Result<()> = primary_index.insert(
                                 key_ptr,
                                 primary_key_field.size,
                                 log_item.record_id as u16,
-                            )?;
+                            );
                         }
                     }
                 }
@@ -2190,8 +2195,7 @@ impl TransactionManager {
                                     let primary_key_field =
                                         &table.def.fields[table.def.primary_key];
                                     let key_ptr = record_ptr.add(primary_key_field.offset);
-                                    let _: Result<()> =
-                                        primary_index.delete(key_ptr, primary_key_field.size);
+                                    let _: Result<()> = primary_index.delete(key_ptr, primary_key_field.size);
                                 }
 
                                 // 标记记录为空闲
