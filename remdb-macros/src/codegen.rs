@@ -143,10 +143,10 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
         pub static #database_ident: std::sync::LazyLock<remdb::config::DbConfig> = std::sync::LazyLock::new(|| {
             remdb::config::DbConfig {
                 tables: vec![#( #table_names.clone(), )*],
-                total_memory: 65536,
+                total_memory: 1024 * 1024, // 1MB
                 low_power_mode_supported: false,
                 low_power_max_records: None,
-                default_max_records: 1000,
+                default_max_records: 100, // 减少默认记录数以避免内存不足
                 memory_allocator: unsafe {
                     static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
                     &mut DEFAULT_ALLOCATOR

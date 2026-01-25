@@ -28,7 +28,7 @@ struct Database;
 // SensorData结构体将由MemdbTable宏自动生成
 
 // 定义内存缓冲区
-static mut DB_MEMORY: [u8; 262144] = [0u8; 262144]; // 足够的内存缓冲区大小
+static mut DB_MEMORY: [u8; 2 * 1024 * 1024] = [0u8; 2 * 1024 * 1024]; // 2MB 内存缓冲区大小，足够使用
 
 fn main() {
     println!("=== remdb DDL Full Example ===");
