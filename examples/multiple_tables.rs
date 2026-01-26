@@ -86,8 +86,8 @@ static users: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock:
             vector_metadata: None,
         },
     ],
-    primary_key: 0,
-    secondary_index: Some(1),
+    primary_key: vec![0],
+    secondary_index: Some(vec![1]),
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 112, // 正确的记录大小：4 + 32 + 64 + 1 + 1 + 8 = 110字节（对齐到8字节是112字节）
     max_records: 100,
@@ -186,8 +186,8 @@ static orders: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock
             vector_metadata: None,
         },
     ],
-    primary_key: 0,
-    secondary_index: Some(1),
+    primary_key: vec![0],
+    secondary_index: Some(vec![1]),
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 112, // 正确的记录大小：8 + 4 + 64 + 4 + 8 + 16 + 8 = 112字节
     max_records: 200,
@@ -274,8 +274,8 @@ static products: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLo
             vector_metadata: None,
         },
     ],
-    primary_key: 0,
-    secondary_index: Some(1),
+    primary_key: vec![0],
+    secondary_index: Some(vec![1]),
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 216, // 正确的记录大小：4 + 64 + 128 + 8 + 4 + 1 = 209字节（对齐到8字节是216字节）
     max_records: 150,

@@ -53,7 +53,7 @@ fn main() {
     // 获取user表元数据
     let user_table = &DATABASE.tables[0];
     println!("   User table name: {}", user_table.name);
-    println!("   User table primary key: {}", user_table.primary_key);
+    println!("   User table primary key: {:?}", user_table.primary_key);
     println!(
         "   User table secondary index: {:?}",
         user_table.secondary_index
@@ -67,7 +67,7 @@ fn main() {
     let product_table = &DATABASE.tables[1];
     println!("   Product table name: {}", product_table.name);
     println!(
-        "   Product table primary key: {}",
+        "   Product table primary key: {:?}",
         product_table.primary_key
     );
     println!(

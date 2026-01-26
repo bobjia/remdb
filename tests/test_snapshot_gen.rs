@@ -34,7 +34,7 @@ static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(
             vector_metadata: None,
         },
     ],
-    primary_key: 0,
+    primary_key: vec![0],
     secondary_index: None,
     secondary_index_type: IndexType::SortedArray,
     record_size: 8,

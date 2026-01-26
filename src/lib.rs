@@ -103,7 +103,7 @@ pub trait DdlExecutor {
         name: &str,
         fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)],
         constraints: Option<&[FieldConstraint]>,
-        primary_key: Option<usize>,
+        primary_key: Option<Vec<usize>>,
     ) -> Result<()>;
 
     /// 修改表结构
@@ -918,35 +918,39 @@ impl RemDb {
 
                 // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
                 let record_ptr = unsafe { table.get_record_ptr_mut(i) };
-                let primary_key_field = &table.def.fields[table.def.primary_key];
-                let new_pk = unsafe {
-                    let key_ptr = record_ptr.add(primary_key_field.offset);
-                    match primary_key_field.data_type {
-                        crate::types::DataType::UInt8 => *(key_ptr as *const u8) as u64,
-                        crate::types::DataType::UInt16 => {
-                            core::ptr::read_unaligned(key_ptr as *const u16) as u64
+                if table.def.primary_key.len() == 1 {
+                    let pk_col_idx = table.def.primary_key[0];
+                    let primary_key_field = &table.def.fields[pk_col_idx];
+                    let new_pk = unsafe {
+                        let key_ptr = record_ptr.add(primary_key_field.offset);
+                        match primary_key_field.data_type {
+                            crate::types::DataType::UInt8 => *(key_ptr as *const u8) as u64,
+                            crate::types::DataType::UInt16 => {
+                                core::ptr::read_unaligned(key_ptr as *const u16) as u64
+                            },
+                            crate::types::DataType::UInt32 => {
+                                core::ptr::read_unaligned(key_ptr as *const u32) as u64
+                            },
+                            crate::types::DataType::UInt64 => {
+                                core::ptr::read_unaligned(key_ptr as *const u64)
+                            },
+                            crate::types::DataType::Int8 => *(key_ptr as *const i8) as u64,
+                            crate::types::DataType::Int16 => {
+                                core::ptr::read_unaligned(key_ptr as *const i16) as u64
+                            },
+                            crate::types::DataType::Int32 => {
+                                core::ptr::read_unaligned(key_ptr as *const i32) as u64
+                            },
+                            crate::types::DataType::Int64 => {
+                                core::ptr::read_unaligned(key_ptr as *const i64) as u64
+                            },
+                            _ => 0,
                         }
-                        crate::types::DataType::UInt32 => {
-                            core::ptr::read_unaligned(key_ptr as *const u32) as u64
-                        }
-                        crate::types::DataType::UInt64 => {
-                            core::ptr::read_unaligned(key_ptr as *const u64)
-                        }
-                        crate::types::DataType::Int8 => *(key_ptr as *const i8) as u64,
-                        crate::types::DataType::Int16 => {
-                            core::ptr::read_unaligned(key_ptr as *const i16) as u64
-                        }
-                        crate::types::DataType::Int32 => {
-                            core::ptr::read_unaligned(key_ptr as *const i32) as u64
-                        }
-                        crate::types::DataType::Int64 => {
-                            core::ptr::read_unaligned(key_ptr as *const i64) as u64
-                        }
-                        _ => 0,
+                    };
+
+                    if new_pk > table.max_pk {
+                        table.max_pk = new_pk;
                     }
-                };
-                if new_pk > table.max_pk {
-                    table.max_pk = new_pk;
                 }
             }
         }
@@ -1031,7 +1035,7 @@ impl DdlExecutor for RemDb {
         name: &str,
         fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)],
         constraints: Option<&[FieldConstraint]>,
-        primary_key: Option<usize>,
+        primary_key: Option<Vec<usize>>,
     ) -> Result<()> {
         // 1. 检查字段数量是否合法
         if fields.is_empty() {
@@ -1039,9 +1043,11 @@ impl DdlExecutor for RemDb {
         }
 
         // 2. 检查主键索引是否合法
-        if let Some(pk_index) = primary_key {
-            if pk_index >= fields.len() {
-                return Err(RemDbError::ConfigError);
+        if let Some(pk_indices) = &primary_key {
+            for &pk_index in pk_indices {
+                if pk_index >= fields.len() {
+                    return Err(RemDbError::ConfigError);
+                }
             }
         }
 
@@ -1077,7 +1083,7 @@ impl DdlExecutor for RemDb {
             let field_name_static = Box::leak(field_name.to_string().into_boxed_str());
 
             // 检查是否为自增主键
-            let is_primary_key = primary_key == Some(i);
+            let is_primary_key = primary_key.as_ref().map(|pk| pk.contains(&i)).unwrap_or(false);
 
             // 获取字段约束信息
             let default_constraint = FieldConstraint {
@@ -1151,7 +1157,7 @@ impl DdlExecutor for RemDb {
             id: self.tables.len() as u8,
             name: name.to_string(),
             fields: field_defs,
-            primary_key: primary_key.unwrap_or(0),
+            primary_key: primary_key.unwrap_or_default(),
             secondary_index: None,
             secondary_index_type: IndexType::SortedArray,
             record_size,
@@ -1224,11 +1230,17 @@ impl DdlExecutor for RemDb {
                 log_data[1..1 + name_len].copy_from_slice(&name_bytes[..name_len]);
                 // 写入字段数量
                 log_data[65] = table_def.fields.len() as u8;
-                // 写入主键索引
-                log_data[66] = table_def.primary_key as u8;
+                // 写入主键字段数量
+                log_data[66] = table_def.primary_key.len() as u8;
+                // 写入主键索引列表
+                for (i, &pk_col) in table_def.primary_key.iter().enumerate() {
+                    if i + 67 < log_data.len() {
+                        log_data[67 + i] = pk_col as u8;
+                    }
+                }
 
                 // 写入字段定义信息
-                    let mut offset = 67;
+                    let mut offset = 67 + table_def.primary_key.len();
                     for (_i, field) in table_def.fields.iter().enumerate() {
                         // 检查缓冲区是否有足够空间写入基础字段信息
                         // 基础信息：1字节长度 + 32字节名字 + 1字节类型 + 1字节约束 + 1字节默认值标志 + 2字节向量维度 = 38字节
@@ -1528,8 +1540,8 @@ impl DdlExecutor for RemDb {
             id: table.def.id,
             name: table.def.name.clone(),
             fields: table.def.fields.clone(),
-            primary_key: table.def.primary_key,
-            secondary_index: Some(field_index),
+            primary_key: table.def.primary_key.clone(),
+            secondary_index: Some(vec![field_index]),
             secondary_index_type: index_type,
             record_size: table.def.record_size,
             max_records: table.def.max_records,
@@ -2041,8 +2053,8 @@ impl DdlExecutor for RemDb {
         // 8.1 Populate the primary index with migrated data
         let new_table = self.tables[table_index].as_mut().unwrap();
         unsafe {
-            // Find primary key field
-            if let Some(pk_field) = new_table_def_arc.fields.iter().find(|f| f.primary_key) {
+            // Check if table has primary key
+            if !new_table_def_arc.primary_key.is_empty() {
                 // Iterate through all records in the new table
                 for slot_id in 0..new_table_def_arc.max_records {
                     let status_ptr = new_table.status_array.as_ptr().add(slot_id);
@@ -2051,12 +2063,10 @@ impl DdlExecutor for RemDb {
                     // Only process used records
                     if status.status == RecordStatus::Used {
                         let record_ptr = new_table.data_start.as_ptr().add(slot_id * new_table.record_size);
-                        let pk_ptr = record_ptr.add(pk_field.offset);
                         
-                        // Insert into primary index
-                        primary_index.insert(
-                            pk_ptr,
-                            pk_field.size,
+                        // Insert into primary index using composite key method
+                        primary_index.insert_composite(
+                            record_ptr,
                             slot_id as u16
                         ).map_err(|e| {
                             #[cfg(feature = "std")]
@@ -2295,7 +2305,7 @@ impl RemDb {
         &mut self,
         table_name: &str,
         fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)],
-        primary_key: Option<usize>,
+        primary_key: Option<Vec<usize>>,
     ) -> Result<()> {
         // 调用已有的DdlExecutor实现，不传递约束信息
         DdlExecutor::create_table(self, table_name, fields, None, primary_key)
@@ -2381,7 +2391,7 @@ impl RemDb {
             id: (self.tables.len() + self.time_series_tables.len()) as u8,
             name: name.to_string(),
             fields: field_defs,
-            primary_key: 0, // 时间字段作为主键
+            primary_key: vec![0], // 时间字段作为主键
             secondary_index: None,
             secondary_index_type: IndexType::SortedArray,
             record_size,
@@ -2762,30 +2772,45 @@ impl RemDb {
                     .map_err(|_| RemDbError::FileIoError)?;
 
                 // 生成CREATE INDEX语句（如果有辅助索引）
-                if let Some(secondary_index) = table.def.secondary_index {
-                    if secondary_index < table.def.fields.len() {
-                        let index_field = &table.def.fields[secondary_index];
-                        let index_name =
-                            format!("idx_{}_{}", table.def.name.to_lowercase(), index_field.name);
-                        let index_type = match table.def.secondary_index_type {
-                            IndexType::Hash => "hash",
-                            IndexType::SortedArray => "sortedarray",
-                            IndexType::BTree => "btree",
-                            IndexType::TTree => "ttree",
-                            IndexType::Vector => "vector",
-                        };
+                if let Some(secondary_index) = &table.def.secondary_index {
+                    if !secondary_index.is_empty() {
+                        let index_fields = secondary_index.iter()
+                            .filter(|&&idx| idx < table.def.fields.len())
+                            .map(|&idx| &table.def.fields[idx])
+                            .collect::<Vec<_>>();
+                        
+                        if !index_fields.is_empty() {
+                            let field_names = index_fields.iter()
+                                .map(|f| f.name.clone())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            
+                            let index_name = format!(
+                                "idx_{}_{}", 
+                                table.def.name.to_lowercase(), 
+                                field_names.replace(", ", "_")
+                            );
+                            
+                            let index_type = match table.def.secondary_index_type {
+                                IndexType::Hash => "hash",
+                                IndexType::SortedArray => "sortedarray",
+                                IndexType::BTree => "btree",
+                                IndexType::TTree => "ttree",
+                                IndexType::Vector => "vector",
+                            };
 
-                        let create_index_sql = format!(
-                            "CREATE INDEX {} ON {} USING {} ({});\n\n",
-                            index_name,
-                            table.def.name.to_lowercase(),
-                            index_type,
-                            index_field.name
-                        );
+                            let create_index_sql = format!(
+                                "CREATE INDEX {} ON {} USING {} ({});\n\n",
+                                index_name,
+                                table.def.name.to_lowercase(),
+                                index_type,
+                                field_names
+                            );
 
-                        // 写入CREATE INDEX语句
-                        file.write_all(create_index_sql.as_bytes())
-                            .map_err(|_| RemDbError::FileIoError)?;
+                            // 写入CREATE INDEX语句
+                            file.write_all(create_index_sql.as_bytes())
+                                .map_err(|_| RemDbError::FileIoError)?;
+                        }
                     }
                 }
             }

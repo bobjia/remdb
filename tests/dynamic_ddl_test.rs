@@ -182,7 +182,7 @@ fn test_create_table() {
             ("age", DataType::UInt8, 1, None, None),
             ("active", DataType::Bool, 1, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
 
     assert!(result.is_ok(), "Failed to create table: {:?}", result.err());
@@ -206,7 +206,7 @@ fn test_create_table_invalid() {
     let result = db.create_table(
         "invalid_pk_table",
         &[("id", DataType::UInt32, 4, None, None)],
-        Some(1), // 主键索引超出范围
+        Some(vec![1]), // 主键索引超出范围
     );
     assert!(
         result.is_err(),
@@ -244,7 +244,7 @@ fn test_create_index() {
             ("price", DataType::Float32, 4, None, None),
             ("category", DataType::String, 32, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
     assert!(result.is_ok(), "Failed to create table: {:?}", result.err());
 
@@ -266,7 +266,7 @@ fn test_create_index() {
             ("amount", DataType::Float64, 8, None, None),
             ("created_at", DataType::Timestamp, 8, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
     assert!(
         result.is_ok(),
@@ -291,7 +291,7 @@ fn test_create_index() {
             ("amount", DataType::Float64, 8, None, None),
             ("created_at", DataType::Timestamp, 8, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
     assert!(
         result.is_ok(),
@@ -339,7 +339,7 @@ fn test_describe_table() {
             ("salary", DataType::Float64, 8, None, None),
             ("active", DataType::Bool, 1, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
     assert!(result.is_ok(), "Failed to create table: {:?}", result.err());
 
@@ -674,7 +674,7 @@ fn test_ddl_export_with_time_series() {
             ("name", DataType::String, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
     assert!(
         result.is_ok(),

@@ -1451,6 +1451,470 @@ FROM __system_json_columns;
 
 **将此用户故事放置在阶段二（核心优化）中，作为US-210（编译期DDL）的扩展，为嵌入式应用提供灵活的半结构化数据处理能力，同时保持嵌入式数据库的确定性和高性能特点。**
 
+#### **US-217：嵌入式优化的复合主键与组合索引**
+
+**作为** 工业物联网和时序数据应用开发者，**我希望** 数据库支持复合主键（多列主键）和组合索引，**以便于** 高效地存储和查询具有多维度标识的数据（如设备ID+指标ID+时间戳），同时保持嵌入式环境下的性能和内存效率。
+
+---
+
+**验收条件：**
+
+**1. 复合主键定义语法**
+
+- 支持在CREATE TABLE中定义复合主键：
+
+  ```sql
+  -- 基础语法
+  CREATE TABLE sensor_readings (
+      device_id INTEGER NOT NULL,
+      metric_id INTEGER NOT NULL,  -- 温度、压力等指标类型
+      timestamp TIMESTAMP NOT NULL,
+      value DOUBLE NOT NULL,
+      quality TINYINT DEFAULT 100,
+      PRIMARY KEY (device_id, metric_id, timestamp)  -- 复合主键
+  );
+  
+  -- 内联语法（与SQLite兼容）
+  CREATE TABLE sensor_readings (
+      device_id INTEGER NOT NULL,
+      metric_id INTEGER NOT NULL,
+      timestamp TIMESTAMP NOT NULL,
+      value DOUBLE NOT NULL,
+      PRIMARY KEY (device_id, metric_id, timestamp)
+  );
+  
+  -- 命名约束语法
+  CREATE TABLE sensor_readings (
+      device_id INTEGER NOT NULL,
+      metric_id INTEGER NOT NULL,
+      timestamp TIMESTAMP NOT NULL,
+      value DOUBLE NOT NULL,
+      CONSTRAINT pk_sensor_readings 
+          PRIMARY KEY (device_id, metric_id, timestamp)
+  );
+  ```
+
+**2. 复合主键存储优化**
+
+- **紧凑的键编码**：复合键编码为紧凑的二进制格式
+
+  ```rust
+  // 复合键的内部表示
+  struct CompositeKey {
+      // 键组件按定义顺序存储
+      components: Vec<KeyComponent>,
+      // 编码后的二进制表示（变长编码）
+      encoded: Vec<u8>,
+      // 哈希值用于快速比较
+      hash: u64,
+  }
+  
+  // 键组件的变长编码策略
+  enum KeyComponent {
+      Null,           // NULL值（主键列不允许，但索引允许）
+      Int8(i8),       // 1字节整数
+      Int16(i16),     // 2字节整数
+      Int32(i32),     // 4字节整数
+      Int64(i64),     // 8字节整数
+      Float32(f32),   // 4字节浮点
+      Float64(f64),   // 8字节浮点
+      Timestamp(i64), // 时间戳
+      String(&str),   // 字符串（前缀压缩）
+      Blob(&[u8]),    // 二进制数据
+  }
+  ```
+
+- **键编码规则**：
+
+  - 整数类型：使用变长编码（Varint）
+  - 浮点数：IEEE 754二进制格式
+  - 字符串：前缀压缩 + 长度前缀
+  - 时间戳：毫秒级UNIX时间戳
+  - 最大键长度：256字节（可配置）
+
+- **内存布局优化**：
+
+  ```rust
+  // 基于复合键的存储布局
+  struct CompositeKeyIndex {
+      // 主键列数
+      key_columns: u8,
+      // 每列的类型和偏移量
+      column_info: Vec<ColumnInfo>,
+      // 编码后的键值对存储
+      entries: BTreeMap<Vec<u8>, RecordPointer>,
+  }
+  
+  // 支持两种存储布局：
+  // 1. 平铺布局：所有列连续存储（默认）
+  // 2. 分离布局：主键列与数据列分离存储（可选）
+  ```
+
+**3. 组合索引支持**
+
+```sql
+-- 复合主键自动创建主键索引
+-- 主键索引是特殊的组合索引
+
+-- 辅助组合索引
+CREATE INDEX idx_device_metric ON sensor_readings(device_id, metric_id);
+
+-- 包含排序方向的组合索引
+CREATE INDEX idx_metric_timestamp ON sensor_readings(metric_id, timestamp DESC);
+
+-- 部分索引（可选，过滤部分数据）
+CREATE INDEX idx_active_devices ON sensor_readings(device_id, timestamp)
+WHERE device_status = 'active';
+
+-- 覆盖索引（包含非键列）
+CREATE INDEX idx_query_covering ON sensor_readings(device_id, metric_id, timestamp)
+INCLUDE (value, quality);
+```
+
+**4. 查询优化与最左前缀原则**
+
+- **最左前缀匹配**：查询条件必须包含复合索引的最左列才能使用索引
+
+  ```sql
+  -- 有效使用索引的查询
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001;  -- 使用主键索引的最左列
+  
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001 AND metric_id = 2;  -- 使用前两列
+  
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001 AND metric_id = 2 AND timestamp > '2024-01-01';
+  
+  -- 无法使用索引的查询（缺少最左列）
+  SELECT * FROM sensor_readings WHERE metric_id = 2;  -- 无法使用主键索引
+  
+  -- 部分使用索引的查询
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001 AND timestamp > '2024-01-01';  -- 只使用device_id列
+  ```
+
+- **查询计划优化**：
+
+  ```sql
+  -- 显示查询执行计划
+  EXPLAIN QUERY PLAN
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001 AND metric_id = 2;
+  
+  -- 预期输出：
+  -- SEARCH TABLE sensor_readings USING INDEX pk_sensor_readings (device_id=? AND metric_id=?)
+  ```
+
+**5. 范围查询与排序优化**
+
+- **高效的范围扫描**：
+
+  ```sql
+  -- 时间范围查询（使用复合主键）
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001 
+    AND metric_id = 2 
+    AND timestamp BETWEEN '2024-01-01 00:00:00' AND '2024-01-01 23:59:59'
+  ORDER BY timestamp;  -- 自动按索引顺序返回，无需额外排序
+  
+  -- 多设备批量查询
+  SELECT * FROM sensor_readings 
+  WHERE device_id IN (1001, 1002, 1003)
+    AND metric_id = 2
+    AND timestamp > '2024-01-01'
+  ORDER BY device_id, timestamp;
+  ```
+
+- **排序优化**：
+
+  ```sql
+  -- 利用索引避免排序
+  SELECT device_id, metric_id, AVG(value) as avg_value
+  FROM sensor_readings 
+  WHERE timestamp BETWEEN '2024-01-01' AND '2024-01-31'
+  GROUP BY device_id, metric_id
+  ORDER BY device_id, metric_id;  -- 与主键顺序一致，无需额外排序
+  ```
+
+**6. 复合主键的CRUD操作**
+
+```sql
+-- 插入（必须提供所有主键列）
+INSERT INTO sensor_readings (device_id, metric_id, timestamp, value, quality)
+VALUES (1001, 2, '2024-01-01 10:00:00', 23.5, 100);
+
+-- 批量插入优化
+INSERT INTO sensor_readings (device_id, metric_id, timestamp, value)
+VALUES 
+  (1001, 2, '2024-01-01 10:00:00', 23.5),
+  (1001, 2, '2024-01-01 10:00:01', 23.6),
+  (1001, 2, '2024-01-01 10:00:02', 23.7);
+
+-- 更新（必须通过完整主键或范围）
+UPDATE sensor_readings 
+SET value = 24.0, quality = 95
+WHERE device_id = 1001 
+  AND metric_id = 2 
+  AND timestamp = '2024-01-01 10:00:00';
+
+-- 删除
+DELETE FROM sensor_readings 
+WHERE device_id = 1001 
+  AND metric_id = 2 
+  AND timestamp < '2024-01-01';
+```
+
+**7. 与现有索引类型集成**
+
+- **复合哈希索引**：用于等值查询
+
+  ```rust
+  struct CompositeHashIndex {
+      // 多列哈希组合
+      fn hash_key(&self, columns: &[KeyComponent]) -> u64 {
+          let mut hasher = MetroHash::new();
+          for col in columns {
+              col.hash(&mut hasher);
+          }
+          hasher.finish()
+      }
+  }
+  ```
+
+- **复合B+树索引**：用于范围查询和排序
+
+- **复合T-Tree索引**：用于内存中频繁更新的场景
+
+**8. 与MVCC集成**（US-213）
+
+- **版本化的复合键**：每个版本包含完整的主键信息
+- **并发控制**：复合主键上的行级锁
+- **垃圾回收**：旧版本的复合键记录清理
+
+```rust
+struct VersionedCompositeKey {
+    key: CompositeKey,
+    version: TransactionId,
+    next_version: Option<Box<VersionedCompositeKey>>,  // 版本链
+}
+```
+
+**9. 嵌入式优化**
+
+- **编译时确定的最大列数**：复合主键最多支持8列（可配置）
+- **内存预分配**：键编码缓冲区预分配
+- **快速路径**：常见组合（如INT+INT+TIMESTAMP）有专门优化
+- **ARM Cortex-M优化**：使用整数指令集加速键比较
+
+```c
+// ARM Thumb2优化的键比较
+int compare_composite_key_thumb2(const uint8_t* key1, const uint8_t* key2) {
+    // 内联汇编优化关键路径
+    asm volatile(
+        "ldmia %1!, {r2, r3, r4} \n"  // 加载key1
+        "ldmia %2!, {r5, r6, r7} \n"  // 加载key2
+        "cmp r2, r5 \n"
+        "bne 1f \n"
+        "cmp r3, r6 \n"
+        "bne 1f \n"
+        "cmp r4, r7 \n"
+        "1: \n"
+        : "+r"(key1), "+r"(key2)
+        :
+        : "r2", "r3", "r4", "r5", "r6", "r7", "cc"
+    );
+}
+```
+
+**10. 复合外键支持**（可选扩展）
+
+```sql
+-- 复合外键（如果支持外键）
+CREATE TABLE device_alerts (
+    alert_id INTEGER PRIMARY KEY,
+    device_id INTEGER NOT NULL,
+    metric_id INTEGER NOT NULL,
+    alert_time TIMESTAMP NOT NULL,
+    FOREIGN KEY (device_id, metric_id) 
+        REFERENCES device_metrics(device_id, metric_id)
+);
+```
+
+**11. 性能指标**
+
+- **插入性能**：复合主键插入 vs 单列主键，性能差异 < 20%
+- **查询性能**：
+  - 等值查询（完整主键）：< 100μs
+  - 范围查询（最左前缀）：< 500μs（1000条记录）
+  - 部分键查询：性能随匹配列数线性变化
+- **内存开销**：
+  - 每个复合键额外开销：4-16字节（取决于列数）
+  - 索引内存：不超过数据大小的40%
+
+**12. 监控与诊断**
+
+```sql
+-- 复合索引使用统计
+SELECT 
+    index_name,
+    key_columns,
+    equality_lookups,
+    range_scans,
+    avg_lookup_time_ms,
+    index_size_kb
+FROM __system_composite_index_stats
+WHERE table_name = 'sensor_readings';
+
+-- 索引推荐
+SELECT * FROM index_recommendations
+WHERE recommendation_type = 'composite_index';
+/*
+示例输出：
+| 表名 | 推荐列 | 预期收益 | 当前查询 |
+|------|--------|----------|----------|
+| sensor_readings | (device_id, metric_type) | 查询加速5x | SELECT * WHERE device_id=? |
+*/
+```
+
+**13. 迁移与兼容性**
+
+- **从单列主键迁移**：
+
+  ```sql
+  -- 添加复合主键（需要数据迁移）
+  ALTER TABLE sensor_readings 
+  DROP PRIMARY KEY,
+  ADD PRIMARY KEY (device_id, metric_id, timestamp);
+  ```
+
+- **向后兼容**：现有单列主键表继续工作
+
+- **升级工具**：提供复合主键迁移工具
+
+**技术约束**
+
+1. **最大限制**：
+   - 复合主键最大列数：8列（编译时可配置）
+   - 复合索引最大列数：8列
+   - 复合键最大总长度：256字节
+
+2. **类型限制**：
+   - 主键列不允许NULL值
+   - 支持类型：整数、浮点、字符串、时间戳、BLOB（有限制）
+   - JSON类型不能作为主键列
+
+3. **嵌入式限制**：
+   - 内存受限环境下，复合键列数建议≤4
+   - 字符串主键列在嵌入式环境中建议定长或短字符串
+
+**实施细节**
+
+**键编码方案**
+
+```rust
+// 复合键编码示例
+fn encode_composite_key(columns: &[KeyComponent]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(32);
+    
+    for (i, col) in columns.iter().enumerate() {
+        // 列分隔符（类型+长度）
+        buf.push(col.type_code());
+        
+        match col {
+            KeyComponent::Int32(val) => {
+                buf.extend_from_slice(&val.to_varint_bytes());
+            }
+            KeyComponent::String(s) => {
+                // 字符串：长度前缀 + 内容
+                let bytes = s.as_bytes();
+                buf.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+                buf.extend_from_slice(bytes);
+            }
+            KeyComponent::Timestamp(ts) => {
+                // 时间戳：毫秒级
+                buf.extend_from_slice(&ts.to_le_bytes());
+            }
+            // 其他类型...
+        }
+    }
+    
+    buf
+}
+```
+
+**索引结构**
+
+```rust
+// 复合B+树索引
+struct CompositeBPlusTree {
+    order: usize,  // 树阶数
+    root: BPlusTreeNode,
+    
+    // 插入时保持键顺序
+    fn insert(&mut self, key: CompositeKey, value: RecordPointer) {
+        // 1. 编码键
+        let encoded = key.encode();
+        
+        // 2. 查找插入位置
+        let (node, position) = self.find_insert_position(&encoded);
+        
+        // 3. 插入并可能分裂
+        self.insert_into_node(node, encoded, value, position);
+    }
+}
+
+// 支持部分键查询
+fn search_partial(&self, prefix: &[KeyComponent]) -> Vec<RecordPointer> {
+    // 使用最左前缀匹配
+    // 1. 编码前缀
+    // 2. 在B+树中查找第一个匹配前缀的键
+    // 3. 遍历所有匹配前缀的键
+}
+```
+
+**测试场景**
+
+1. **功能正确性测试**：
+   - 插入重复复合主键应失败
+   - 部分主键查询返回正确结果
+   - 范围查询边界条件测试
+   - 并发插入同设备不同时间戳数据
+
+2. **性能基准测试**：
+   - 复合主键 vs 单列主键插入性能对比
+   - 不同列数复合键的查询性能
+   - 范围查询随数据量增长的性能变化
+   - 内存使用与键列数的关系
+
+3. **压力测试**：
+   - 高并发插入（1000个设备，每设备10000个点）
+   - 长时间运行（24小时）的复合主键表
+   - 内存不足时的优雅降级
+
+4. **恢复测试**：
+   - 复合主键表的崩溃恢复
+   - WAL重放复合键操作
+   - 从备份恢复复合主键表
+
+**依赖关系**
+
+- **强依赖**：
+  - US-101（内存表存储）：基础存储引擎
+  - US-102（简单索引机制）：索引基础
+
+- **重要集成**：
+  - US-107（WAL）：复合主键操作的持久化
+  - US-205（ACID事务）：复合主键的事务保证
+  - US-404（时序数据）：与时间序列复合主键优化
+
+- **协同优化**：
+  - US-210（编译期DDL）：复合主键的类型安全
+  - US-212（高级索引）：复合索引的多种类型支持
+
+---
+
+**将此用户故事放置在阶段一（MVP）或阶段二（核心优化）早期，作为基础索引功能的扩展。复合主键是时序数据、物联网等场景的核心需求，应尽早实现以支持实际应用场景。**
 
 ### **阶段三：高级功能**
 

@@ -198,14 +198,14 @@ fn generate_field_defs(
 ) -> (
     Vec<proc_macro2::TokenStream>,
     usize,
-    usize,
+    proc_macro2::TokenStream,
     proc_macro2::TokenStream,
     proc_macro2::TokenStream,
 ) {
     let mut field_defs = vec![];
     let mut offset = 0;
-    let mut primary_key_index = 0;
-    let mut secondary_index = None;
+    let mut primary_key_indices = vec![];
+    let mut secondary_index_indices = vec![];
     let mut secondary_index_type = quote!(remdb::types::IndexType::BTree);
 
     for (i, col) in columns.iter().enumerate() {
@@ -238,34 +238,43 @@ fn generate_field_defs(
         });
 
         if col.primary_key {
-            primary_key_index = i;
-        }
-
-        // 检查是否有索引
-        if let Some(index) = indices.first() {
-            if index.field == *name {
-                secondary_index = Some(i);
-                secondary_index_type = match index.index_type.to_lowercase().as_str() {
-                    "hash" => quote!(remdb::types::IndexType::Hash),
-                    "sortedarray" => quote!(remdb::types::IndexType::SortedArray),
-                    "ttree" => quote!(remdb::types::IndexType::TTree),
-                    _ => quote!(remdb::types::IndexType::BTree),
-                };
-            }
+            primary_key_indices.push(i);
         }
 
         offset += size;
     }
 
-    let secondary_index_code = match secondary_index {
-        Some(index) => quote!(Some(#index)),
-        None => quote!(None),
+    // 处理索引
+    for index in indices {
+        if let Some(col_index) = columns.iter().position(|col| col.name == index.field) {
+            secondary_index_indices.push(col_index);
+            secondary_index_type = match index.index_type.to_lowercase().as_str() {
+                "hash" => quote!(remdb::types::IndexType::Hash),
+                "sortedarray" => quote!(remdb::types::IndexType::SortedArray),
+                "ttree" => quote!(remdb::types::IndexType::TTree),
+                _ => quote!(remdb::types::IndexType::BTree),
+            };
+        }
+    }
+
+    // 生成primary_key代码
+    let primary_key_code = if !primary_key_indices.is_empty() {
+        quote!(vec![#(#primary_key_indices),*])
+    } else {
+        quote!(vec![0]) // 默认第一个字段为主键
+    };
+
+    // 生成secondary_index代码
+    let secondary_index_code = if !secondary_index_indices.is_empty() {
+        quote!(Some(vec![#(#secondary_index_indices),*]))
+    } else {
+        quote!(None)
     };
 
     (
         field_defs,
         offset,
-        primary_key_index,
+        primary_key_code,
         secondary_index_code,
         secondary_index_type,
     )

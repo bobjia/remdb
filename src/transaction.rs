@@ -1421,7 +1421,7 @@ impl LogManager {
                         id: log_item.table_id,
                         name: table_name.to_string(),
                         fields: fields,
-                        primary_key: primary_key as usize,
+                        primary_key: vec![primary_key as usize],
                         secondary_index: None,
                         secondary_index_type: crate::types::IndexType::SortedArray,
                         record_size: record_size,
@@ -1802,45 +1802,46 @@ impl LogManager {
 
                         // 更新主键索引
                         if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                            let primary_key_field = &table.def.fields[table.def.primary_key];
-                            let key_ptr = record_ptr.add(primary_key_field.offset);
-                            let _: Result<()> = primary_index.insert(
-                                key_ptr,
-                                primary_key_field.size,
+                            // 使用复合键插入方法
+                            let _: Result<()> = primary_index.insert_composite(
+                                record_ptr,
                                 log_item.record_id as u16,
                             );
                         }
 
                         // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
-                        let primary_key_field = &table.def.fields[table.def.primary_key];
-                        let key_ptr = record_ptr.add(primary_key_field.offset);
-                        let new_pk = match primary_key_field.data_type {
-                            crate::types::DataType::UInt8 => {
-                                (unsafe { *(key_ptr as *const u8) }) as u64
+                        // 对于复合主键，只考虑第一个主键字段
+                        if !table.def.primary_key.is_empty() {
+                            let primary_key_field = &table.def.fields[table.def.primary_key[0]];
+                            let key_ptr = record_ptr.add(primary_key_field.offset);
+                            let new_pk = match primary_key_field.data_type {
+                                crate::types::DataType::UInt8 => {
+                                    (unsafe { *(key_ptr as *const u8) }) as u64
+                                }
+                                crate::types::DataType::UInt16 => {
+                                    (unsafe { *(key_ptr as *const u16) }) as u64
+                                }
+                                crate::types::DataType::UInt32 => {
+                                    (unsafe { *(key_ptr as *const u32) }) as u64
+                                }
+                                crate::types::DataType::UInt64 => unsafe { *(key_ptr as *const u64) },
+                                crate::types::DataType::Int8 => {
+                                    (unsafe { *(key_ptr as *const i8) }) as u64
+                                }
+                                crate::types::DataType::Int16 => {
+                                    (unsafe { *(key_ptr as *const i16) }) as u64
+                                }
+                                crate::types::DataType::Int32 => {
+                                    (unsafe { *(key_ptr as *const i32) }) as u64
+                                }
+                                crate::types::DataType::Int64 => {
+                                    (unsafe { *(key_ptr as *const i64) }) as u64
+                                }
+                                _ => 0,
+                            };
+                            if new_pk > table.max_pk {
+                                table.max_pk = new_pk;
                             }
-                            crate::types::DataType::UInt16 => {
-                                (unsafe { *(key_ptr as *const u16) }) as u64
-                            }
-                            crate::types::DataType::UInt32 => {
-                                (unsafe { *(key_ptr as *const u32) }) as u64
-                            }
-                            crate::types::DataType::UInt64 => unsafe { *(key_ptr as *const u64) },
-                            crate::types::DataType::Int8 => {
-                                (unsafe { *(key_ptr as *const i8) }) as u64
-                            }
-                            crate::types::DataType::Int16 => {
-                                (unsafe { *(key_ptr as *const i16) }) as u64
-                            }
-                            crate::types::DataType::Int32 => {
-                                (unsafe { *(key_ptr as *const i32) }) as u64
-                            }
-                            crate::types::DataType::Int64 => {
-                                (unsafe { *(key_ptr as *const i64) }) as u64
-                            }
-                            _ => 0,
-                        };
-                        if new_pk > table.max_pk {
-                            table.max_pk = new_pk;
                         }
                     }
                 }
@@ -1870,9 +1871,7 @@ impl LogManager {
                         // 从主键索引中删除
                         if let Some(primary_index) = &mut db.primary_indices[table_id] {
                             let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                            let primary_key_field = &table.def.fields[table.def.primary_key];
-                            let key_ptr = record_ptr.add(primary_key_field.offset);
-                            let _: Result<()> = primary_index.delete(key_ptr, primary_key_field.size);
+                            let _: Result<()> = primary_index.delete_composite(record_ptr);
                         }
 
                         // 与实际delete方法保持一致：直接标记为Free
@@ -1920,9 +1919,7 @@ impl LogManager {
                         // 从主键索引中删除旧记录
                         if let Some(primary_index) = &mut db.primary_indices[table_id] {
                             let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                            let primary_key_field = &table.def.fields[table.def.primary_key];
-                            let key_ptr = record_ptr.add(primary_key_field.offset);
-                            let _: Result<()> = primary_index.delete(key_ptr, primary_key_field.size);
+                            let _: Result<()> = primary_index.delete_composite(record_ptr);
                         }
 
                         // 记录存在，执行更新
@@ -1938,11 +1935,8 @@ impl LogManager {
 
                         // 将新记录插入到主键索引中
                         if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                            let primary_key_field = &table.def.fields[table.def.primary_key];
-                            let key_ptr = record_ptr.add(primary_key_field.offset);
-                            let _: Result<()> = primary_index.insert(
-                                key_ptr,
-                                primary_key_field.size,
+                            let _: Result<()> = primary_index.insert_composite(
+                                record_ptr,
                                 log_item.record_id as u16,
                             );
                         }
@@ -2192,10 +2186,8 @@ impl TransactionManager {
                                 if let Some(primary_index) = &mut db.primary_indices[table_id] {
                                     let record_ptr =
                                         table.get_record_ptr_mut(log_item.record_id as usize);
-                                    let primary_key_field =
-                                        &table.def.fields[table.def.primary_key];
-                                    let key_ptr = record_ptr.add(primary_key_field.offset);
-                                    let _: Result<()> = primary_index.delete(key_ptr, primary_key_field.size);
+                                    // 使用复合键删除方法
+                                    primary_index.delete_composite(record_ptr);
                                 }
 
                                 // 标记记录为空闲
@@ -2247,12 +2239,8 @@ impl TransactionManager {
 
                                 // 更新主键索引
                                 if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                                    let primary_key_field =
-                                        &table.def.fields[table.def.primary_key];
-                                    let key_ptr = record_ptr.add(primary_key_field.offset);
-                                    let _: Result<()> = primary_index.insert(
-                                        key_ptr,
-                                        primary_key_field.size,
+                                    let _: Result<()> = primary_index.insert_composite(
+                                        record_ptr,
                                         log_item.record_id as u16,
                                     );
                                 }
@@ -2272,11 +2260,7 @@ impl TransactionManager {
                                 if let Some(primary_index) = &mut db.primary_indices[table_id] {
                                     let record_ptr =
                                         table.get_record_ptr_mut(log_item.record_id as usize);
-                                    let primary_key_field =
-                                        &table.def.fields[table.def.primary_key];
-                                    let key_ptr = record_ptr.add(primary_key_field.offset);
-                                    let _: Result<()> =
-                                        primary_index.delete(key_ptr, primary_key_field.size);
+                                    let _: Result<()> = primary_index.delete_composite(record_ptr);
                                 }
 
                                 // 恢复旧数据
@@ -2294,12 +2278,8 @@ impl TransactionManager {
 
                                 // 将恢复后的数据插入到主键索引中
                                 if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                                    let primary_key_field =
-                                        &table.def.fields[table.def.primary_key];
-                                    let key_ptr = record_ptr.add(primary_key_field.offset);
-                                    let _: Result<()> = primary_index.insert(
-                                        key_ptr,
-                                        primary_key_field.size,
+                                    let _: Result<()> = primary_index.insert_composite(
+                                        record_ptr,
                                         log_item.record_id as u16,
                                     );
                                 }

@@ -4536,21 +4536,26 @@ fn execute_create_table_query(
         field_constraints.push(field_constraint);
     }
 
-    // 查找主键字段索引
-    let primary_key_index = query.primary_key.as_ref().and_then(|pk| {
-        query
-            .table_def
+    // 查找主键字段索引列表，支持复合主键
+    let primary_key_indices = query.primary_key.as_ref().map(|pk_fields| {
+        pk_fields
             .iter()
-            .position(|(name, _, _, _, _, _, _)| name == pk)
+            .filter_map(|pk_field| {
+                query
+                    .table_def
+                    .iter()
+                    .position(|(name, _, _, _, _, _, _)| name == pk_field)
+            })
+            .collect()
     });
 
-    // 调用DdlExecutor::create_table方法，支持约束
+    // 调用DdlExecutor::create_table方法，支持约束和复合主键
     DdlExecutor::create_table(
         db,
         &query.table_name,
         &fields,
         Some(&field_constraints),
-        primary_key_index,
+        primary_key_indices,
     )
     .map_err(|e| match e {
         RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
@@ -5309,8 +5314,7 @@ fn execute_describe_query(
     for i in 0..table_def.fields.len() {
         let field = &table_def.fields[i];
         // 确定是否为主键
-        let is_primary_key = table_def.primary_key < table_def.fields.len()
-            && table_def.fields[table_def.primary_key].name == field.name;
+        let is_primary_key = table_def.primary_key.contains(&i);
         let key_str = if is_primary_key {
             "PRI"
         } else if field.unique {

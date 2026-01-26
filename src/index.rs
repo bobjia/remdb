@@ -39,7 +39,7 @@ pub struct PrimaryIndexItem {
     /// 键大小
     pub key_size: u8,
     /// 键数据
-    pub key_data: [u8; 64], // 最大键大小64字节
+    pub key_data: [u8; 128], // 最大键大小128字节，支持复合键
 }
 
 /// 辅助索引项
@@ -51,7 +51,7 @@ pub struct SecondaryIndexItem {
     /// 记录ID
     pub record_id: u16,
     /// 键数据
-    pub key_data: [u8; 64], // 最大键大小64字节
+    pub key_data: [u8; 128], // 最大键大小128字节，支持复合键
 }
 
 impl Default for SecondaryIndexItem {
@@ -59,7 +59,7 @@ impl Default for SecondaryIndexItem {
         SecondaryIndexItem {
             key_size: 0,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         }
     }
 }
@@ -67,11 +67,11 @@ impl Default for SecondaryIndexItem {
 /// B-Tree节点结构
 #[repr(C)]
 pub struct BTreeNode {
-    /// 节点类型（内部节点/叶子节点）
+    /// 节点类型（内部节点或叶子节点）
     pub is_leaf: bool,
     /// 当前键数量
     pub key_count: u8,
-    /// 键数据（每个键64字节）
+    /// 键数据（每个键4字节）
     pub keys: [SecondaryIndexItem; BTREE_ORDER],
     /// 子节点指针（仅内部节点使用）
     pub children: [Option<NonNull<BTreeNode>>; BTREE_ORDER + 1],
@@ -100,7 +100,7 @@ pub struct BTreeIndex {
 pub struct TTreeNode {
     /// 当前键数量
     pub key_count: u8,
-    /// 键数据（每个键64字节）
+    /// 键数据（每个键4字节）
     pub keys: [SecondaryIndexItem; TTREE_ORDER],
     /// 左子节点
     pub left: Option<NonNull<TTreeNode>>,
@@ -132,11 +132,11 @@ pub struct TTreeIndex {
 pub struct PrimaryIndex {
     /// 表定义
     def: alloc::sync::Arc<TableDef>,
-    /// 哈希表数组
+    /// 哈希表数据
     hash_table: NonNull<Option<NonNull<PrimaryIndexItem>>>,
     /// 哈希表大小
     hash_table_size: usize,
-    /// 索引项数组
+    /// 索引项数据
     items: NonNull<PrimaryIndexItem>,
     /// 可用索引项指针
     free_items: Option<NonNull<PrimaryIndexItem>>,
@@ -144,6 +144,82 @@ pub struct PrimaryIndex {
     stats: IndexStats,
     /// 自旋锁
     lock: u32,
+}
+
+/// 复合键编码辅助函数
+/// 将多个字段值编码为单一字节数组
+unsafe fn encode_composite_key(
+    record_ptr: *const u8,
+    primary_key_fields: &[&crate::types::FieldDef],
+) -> (Vec<u8>, usize) {
+    let mut encoded_key = Vec::new();
+    
+    for field in primary_key_fields {
+        let field_ptr = record_ptr.add(field.offset);
+        match field.data_type {
+            crate::types::DataType::UInt8 => {
+                let value = core::ptr::read_unaligned(field_ptr as *const u8);
+                encoded_key.extend_from_slice(&value.to_le_bytes());
+            },
+            crate::types::DataType::UInt16 => {
+                let value = core::ptr::read_unaligned(field_ptr as *const u16);
+                encoded_key.extend_from_slice(&value.to_le_bytes());
+            },
+            crate::types::DataType::UInt32 => {
+                let value = core::ptr::read_unaligned(field_ptr as *const u32);
+                encoded_key.extend_from_slice(&value.to_le_bytes());
+            },
+            crate::types::DataType::UInt64 => {
+                let value = core::ptr::read_unaligned(field_ptr as *const u64);
+                encoded_key.extend_from_slice(&value.to_le_bytes());
+            },
+            crate::types::DataType::Int8 => {
+                let value = core::ptr::read_unaligned(field_ptr as *const i8);
+                encoded_key.extend_from_slice(&value.to_le_bytes());
+            },
+            crate::types::DataType::Int16 => {
+                let value = core::ptr::read_unaligned(field_ptr as *const i16);
+                encoded_key.extend_from_slice(&value.to_le_bytes());
+            },
+            crate::types::DataType::Int32 => {
+                let value = core::ptr::read_unaligned(field_ptr as *const i32);
+                encoded_key.extend_from_slice(&value.to_le_bytes());
+            },
+            crate::types::DataType::Int64 => {
+                let value = core::ptr::read_unaligned(field_ptr as *const i64);
+                encoded_key.extend_from_slice(&value.to_le_bytes());
+            },
+            crate::types::DataType::Float32 => {
+                let value = core::ptr::read_unaligned(field_ptr as *const f32);
+                encoded_key.extend_from_slice(&value.to_le_bytes());
+            },
+            crate::types::DataType::Float64 => {
+                let value = core::ptr::read_unaligned(field_ptr as *const f64);
+                encoded_key.extend_from_slice(&value.to_le_bytes());
+            },
+            crate::types::DataType::Bool => {
+                let value = core::ptr::read_unaligned(field_ptr as *const bool);
+                encoded_key.push(value as u8);
+            },
+            crate::types::DataType::Timestamp => {
+                let value = core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp);
+                encoded_key.extend_from_slice(&value.value.to_le_bytes());
+            },
+            crate::types::DataType::String => {
+                // 字符串类型：编码为长度前缀 + 内容
+                let str_slice = core::slice::from_raw_parts(field_ptr, field.size);
+                let str_len = str_slice.iter().position(|&c| c == 0).unwrap_or(field.size);
+                encoded_key.push(str_len as u8);
+                encoded_key.extend_from_slice(&str_slice[0..str_len]);
+            },
+            _ => {
+                // 其他类型暂不支持作为主键
+            }
+        }
+    }
+    
+    let len = encoded_key.len();
+    (encoded_key, len)
 }
 
 impl PrimaryIndex {
@@ -170,7 +246,7 @@ impl PrimaryIndex {
             (*item_ptr).next = free_items;
             (*item_ptr).record_id = 0;
             (*item_ptr).key_size = 0;
-            memset((*item_ptr).key_data.as_mut_ptr(), 0, 64);
+            memset((*item_ptr).key_data.as_mut_ptr(), 0, 128);
             free_items = Some(NonNull::new_unchecked(item_ptr));
         }
 
@@ -228,7 +304,7 @@ impl PrimaryIndex {
         crate::platform::spin_lock(&mut self.lock);
 
         // 检查键大小
-        if key_size > 64 {
+        if key_size > 128 {
             crate::platform::spin_unlock(&mut self.lock);
             return Err(RemDbError::UnsupportedOperation);
         }
@@ -247,7 +323,7 @@ impl PrimaryIndex {
             }
         };
 
-        // 设置索引项
+        // 设置索引�?
         let item_mut = item.as_mut();
         item_mut.record_id = record_id;
         item_mut.key_size = key_size as u8;
@@ -257,7 +333,7 @@ impl PrimaryIndex {
         let hash = self.hash_key(key, key_size);
         let slot_ptr = self.hash_table.as_ptr().add(hash);
 
-        // 插入到哈希表槽位的头部
+        // 插入到哈希表槽位的头�?
         item_mut.next = *slot_ptr;
         *slot_ptr = Some(item);
 
@@ -268,12 +344,27 @@ impl PrimaryIndex {
         Ok(())
     }
 
+    /// 插入复合主键索引�?
+    pub unsafe fn insert_composite(&mut self, record_ptr: *const u8, record_id: u16) -> Result<()> {
+        // 获取主键字段列表
+        let primary_key_fields: Vec<&crate::types::FieldDef> = self.def.primary_key
+            .iter()
+            .map(|&idx| &self.def.fields[idx])
+            .collect();
+        
+        // 编码复合键
+        let (encoded_key, key_size) = encode_composite_key(record_ptr, &primary_key_fields);
+        
+        // 调用普通插入方法
+        self.insert(encoded_key.as_ptr(), key_size, record_id)
+    }
+
     /// 根据键查找记录ID
     pub unsafe fn find(&mut self, key: *const u8, key_size: usize) -> Result<u16> {
         // 更新统计信息
         self.stats.access_count += 1;
 
-        // 计算哈希值
+        // 计算哈希�?
         let hash = self.hash_key(key, key_size);
         let slot_ptr = self.hash_table.as_ptr().add(hash);
 
@@ -305,25 +396,40 @@ impl PrimaryIndex {
         Err(RemDbError::RecordNotFound)
     }
 
-    /// 删除索引项
+    /// 根据记录指针查找复合主键对应的记录ID
+    pub unsafe fn find_composite(&mut self, record_ptr: *const u8) -> Result<u16> {
+        // 获取主键字段列表
+        let primary_key_fields: Vec<&crate::types::FieldDef> = self.def.primary_key
+            .iter()
+            .map(|&idx| &self.def.fields[idx])
+            .collect();
+        
+        // 编码复合�?
+        let (encoded_key, key_size) = encode_composite_key(record_ptr, &primary_key_fields);
+        
+        // 调用普通查找方�?
+        self.find(encoded_key.as_ptr(), key_size)
+    }
+
+    /// 删除索引�?
     pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
         // 增加索引删除计数
         crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
-        // 计算哈希值
+        // 计算哈希�?
         let hash = self.hash_key(key, key_size);
         let slot_ptr = self.hash_table.as_ptr().add(hash);
 
-        // 遍历链表查找并删除
+        // 遍历链表查找并删�?
         let mut current = *slot_ptr;
         let mut prev: Option<NonNull<PrimaryIndexItem>> = None;
 
         while let Some(mut item) = current {
             let item_ref = item.as_ref();
 
-            // 比较键
+            // 比较�?
             if item_ref.key_size == key_size as u8 {
                 let mut match_found = true;
                 for i in 0..key_size {
@@ -341,7 +447,7 @@ impl PrimaryIndex {
                         *slot_ptr = item_ref.next;
                     }
 
-                    // 归还到空闲列表
+                    // 归还到空闲列�?
                     let item_mut = item.as_mut();
                     item_mut.next = self.free_items;
                     self.free_items = Some(item);
@@ -362,6 +468,21 @@ impl PrimaryIndex {
         Err(RemDbError::RecordNotFound)
     }
 
+    /// 根据记录指针删除复合主键索引�?
+    pub unsafe fn delete_composite(&mut self, record_ptr: *const u8) -> Result<()> {
+        // 获取主键字段列表
+        let primary_key_fields: Vec<&crate::types::FieldDef> = self.def.primary_key
+            .iter()
+            .map(|&idx| &self.def.fields[idx])
+            .collect();
+        
+        // 编码复合�?
+        let (encoded_key, key_size) = encode_composite_key(record_ptr, &primary_key_fields);
+        
+        // 调用普通删除方�?
+        self.delete(encoded_key.as_ptr(), key_size)
+    }
+
     /// 获取索引统计信息
     pub fn stats(&self) -> &IndexStats {
         &self.stats
@@ -374,11 +495,11 @@ impl PrimaryIndex {
     }
 }
 
-/// 辅助索引枚举（用于封装不同类型的辅助索引）
-/// 向量索引项
+/// 辅助索引枚举（用于封装不同类型的辅助索引�?
+/// 向量索引�?
 #[derive(Copy, Clone)]
 struct VectorIndexItem {
-    /// 向量在vectors数组中的起始偏移量
+    /// 向量在vectors数组中的起始偏移�?
     vector_offset: usize,
     /// 记录ID
     record_id: u16,
@@ -386,7 +507,7 @@ struct VectorIndexItem {
 
 /// 向量索引实现类型
 enum VectorIndexImpl {
-    /// 线性搜索索引（默认）    
+    /// 线性搜索索引（默认�?   
     LinearSearch,
     /// HNSW索引    
     HNSW(Option<hnsw::HNSWIndex>),
@@ -396,11 +517,11 @@ enum VectorIndexImpl {
 
 /// 向量索引
 pub struct VectorIndex {
-    /// 表定义
+    /// 表定�?
     def: alloc::sync::Arc<TableDef>,
     /// 索引统计信息
     stats: IndexStats,
-    /// 自旋锁
+    /// 自旋�?
     lock: u32,
     /// 距离度量类型
     distance_type: DistanceType,
@@ -408,13 +529,13 @@ pub struct VectorIndex {
     dimension: u16,
     /// 向量索引类型
     vector_index_type: VectorIndexType,
-    /// 向量索引项列表
+    /// 向量索引项列�?
     items: *mut VectorIndexItem,
     /// 向量数据存储
     vectors: *mut f32,
     /// 最大项数量
     max_items: usize,
-    /// 当前项数量
+    /// 当前项数�?
     item_count: usize,
     /// 当前向量数量
     vector_count: usize,
@@ -429,13 +550,17 @@ impl VectorIndex {
         memory_start: *mut u8,
         max_items: usize,
     ) -> Result<Self> {
-        // 获取向量维度和距离类型
+        // 获取向量维度和距离类�?
         let mut dimension = 0;
         let mut distance_type = DistanceType::L2;
         let mut vector_index_type = VectorIndexType::HNSW;
 
         // 验证是否有有效的辅助索引字段
-        let secondary_index = def.secondary_index.ok_or(RemDbError::TypeMismatch)?;
+        let secondary_index = def.secondary_index.as_ref().ok_or(RemDbError::TypeMismatch)?;
+        if secondary_index.len() != 1 {
+            return Err(RemDbError::TypeMismatch);
+        }
+        let secondary_index = secondary_index[0];
         if secondary_index >= def.fields.len() {
             return Err(RemDbError::TypeMismatch);
         }
@@ -480,7 +605,7 @@ impl VectorIndex {
         
         // 初始化索引项数组
         let items = memory_start as *mut VectorIndexItem;
-        // 使用安全的方式初始化索引项数组
+        // 使用安全的方式初始化索引项数�?
         for i in 0..max_items {
             let item_ptr = unsafe { items.add(i) };
             *item_ptr = VectorIndexItem {
@@ -489,7 +614,7 @@ impl VectorIndex {
             };
         }
 
-        // 初始化向量数据数组
+        // 初始化向量数据数�?
         let vectors = (memory_start.add(items_size)) as *mut f32;
         // 使用安全的方式初始化向量数据数组
         for i in 0..(max_items * dimension as usize) {
@@ -497,7 +622,7 @@ impl VectorIndex {
             *vec_ptr = 0.0;
         }
         
-        // 初始化索引实现
+        // 初始化索引实�?
         let index_impl = match vector_index_type {
             VectorIndexType::HNSW | VectorIndexType::HNSW_SQ | VectorIndexType::HNSW_BQ => {
                 // 创建HNSW索引
@@ -511,7 +636,7 @@ impl VectorIndex {
                 VectorIndexImpl::IVFFlat(Some(ivf_index))
             },
             _ => {
-                // 默认使用线性搜索
+                // 默认使用线性搜�?
                 VectorIndexImpl::LinearSearch
             }
         };
@@ -532,27 +657,32 @@ impl VectorIndex {
         })
     }
 
-    /// 计算向量索引所需的内存大小
+    /// 计算向量索引所需的内存大�?
     pub fn calculate_memory_size(def: &TableDef, max_items: usize) -> usize {
         // 获取向量维度
-        let dimension = match def.secondary_index {
-            Some(secondary_index) if secondary_index < def.fields.len() => {
-                let field = &def.fields[secondary_index];
-                if field.data_type == DataType::Vector {
-                    if let Some(vector_meta) = &field.vector_metadata {
-                        vector_meta.dimension
+        let dimension = match def.secondary_index.as_ref() {
+            Some(secondary_index) if !secondary_index.is_empty() => {
+                let secondary_index = secondary_index[0];
+                if secondary_index < def.fields.len() {
+                    let field = &def.fields[secondary_index];
+                    if field.data_type == DataType::Vector {
+                        if let Some(vector_meta) = &field.vector_metadata {
+                            vector_meta.dimension
+                        } else {
+                            // 向量字段必须有元数据，否则返回合理的默认值避免内存分配失�?
+                            128 // 默认维度，避免返�?
+                        }
                     } else {
-                        // 向量字段必须有元数据，否则返回合理的默认值避免内存分配失败
-                        128 // 默认维度，避免返回0
+                        128 // 非向量字段作为向量索引使用默认维�?
                     }
                 } else {
-                    128 // 非向量字段作为向量索引使用默认维度
+                    128 // 默认维度
                 }
             }
             _ => 128, // 默认维度
         };
 
-        // 确保维度至少为1，避免除以0或分配0内存
+        // 确保维度至少�?，避免除�?或分�?内存
         let dimension = core::cmp::max(dimension, 1);
 
         // 计算内存大小：索引项 + 向量数据
@@ -563,7 +693,7 @@ impl VectorIndex {
         core::cmp::max(items_size + vectors_size, 1)
     }
 
-    /// 计算两个向量之间的距离
+    /// 计算两个向量之间的距�?
     unsafe fn calculate_distance(&self, vec1: *const f32, vec2: *const f32) -> f32 {
         match self.distance_type {
             DistanceType::L2 => {
@@ -584,7 +714,7 @@ impl VectorIndex {
                 sum
             }
             DistanceType::Cosine => {
-                // 余弦相似度
+                // 余弦相似�?
                 let mut dot = 0.0;
                 let mut norm1 = 0.0;
                 let mut norm2 = 0.0;
@@ -609,7 +739,7 @@ impl VectorIndex {
         }
     }
     
-    /// 保存索引到磁盘
+    /// 保存索引到磁�?
     #[cfg(feature = "std")]
     pub fn save(&self, file_path: &str) -> Result<()> {
         use std::fs::File;
@@ -619,7 +749,7 @@ impl VectorIndex {
         let mut file = File::create(file_path)
             .map_err(|_| RemDbError::FileIoError)?;
         
-        // 保存索引元数据
+        // 保存索引元数�?
         // 写入索引类型
         file.write_all(&[self.vector_index_type as u8])
             .map_err(|_| RemDbError::FileIoError)?;
@@ -632,18 +762,18 @@ impl VectorIndex {
         // 写入最大项数量
         file.write_all(&self.max_items.to_le_bytes())
             .map_err(|_| RemDbError::FileIoError)?;
-        // 写入当前项数量
+        // 写入当前项数�?
         file.write_all(&self.item_count.to_le_bytes())
             .map_err(|_| RemDbError::FileIoError)?;
         // 写入当前向量数量
         file.write_all(&self.vector_count.to_le_bytes())
             .map_err(|_| RemDbError::FileIoError)?;
         
-        // 保存索引项
+        // 保存索引�?
         unsafe {
             for i in 0..self.item_count {
                 let item = self.items.add(i).read();
-                // 写入向量偏移量
+                // 写入向量偏移�?
                 file.write_all(&item.vector_offset.to_le_bytes())
                     .map_err(|_| RemDbError::FileIoError)?;
                 // 写入记录ID
@@ -675,14 +805,14 @@ impl VectorIndex {
                 ivf_index.save(&mut file)?;
             }
             _ => {
-                // 线性搜索不需要保存额外数据
+                // 线性搜索不需要保存额外数�?
             }
         }
         
         Ok(())
     }
     
-    /// 从磁盘加载索引
+    /// 从磁盘加载索�?
     #[cfg(feature = "std")]
     pub unsafe fn load(
         def: alloc::sync::Arc<TableDef>,
@@ -696,7 +826,7 @@ impl VectorIndex {
         let mut file = File::open(file_path)
             .map_err(|_| RemDbError::FileIoError)?;
         
-        // 读取索引元数据
+        // 读取索引元数�?
         // 读取索引类型
         let mut index_type_byte = [0u8; 1];
         file.read_exact(&mut index_type_byte)
@@ -707,7 +837,7 @@ impl VectorIndex {
             2 => VectorIndexType::HNSW_BQ,
             3 => VectorIndexType::IVF,
             4 => VectorIndexType::IVF_PQ,
-            _ => VectorIndexType::HNSW, // 默认值
+            _ => VectorIndexType::HNSW, // 默认�?
         };
         
         // 读取距离类型
@@ -718,7 +848,7 @@ impl VectorIndex {
                 0 => DistanceType::L2,
                 1 => DistanceType::InnerProduct,
                 2 => DistanceType::Cosine,
-                _ => DistanceType::L2, // 默认值
+                _ => DistanceType::L2, // 默认�?
             };
         
         // 读取向量维度
@@ -733,7 +863,7 @@ impl VectorIndex {
             .map_err(|_| RemDbError::FileIoError)?;
         let max_items = usize::from_le_bytes(max_items_bytes);
         
-        // 读取当前项数量
+        // 读取当前项数�?
         let mut item_count_bytes = [0u8; 8];
         file.read_exact(&mut item_count_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
@@ -752,14 +882,14 @@ impl VectorIndex {
         // 初始化索引项数组
         let items = memory_start as *mut VectorIndexItem;
         
-        // 读取索引项
+        // 读取索引�?
         for i in 0..item_count {
             let mut item = VectorIndexItem {
                 vector_offset: 0,
                 record_id: 0,
             };
             
-            // 读取向量偏移量
+            // 读取向量偏移�?
             let mut offset_bytes = [0u8; 8];
             file.read_exact(&mut offset_bytes)
                 .map_err(|_| RemDbError::FileIoError)?;
@@ -771,11 +901,11 @@ impl VectorIndex {
                 .map_err(|_| RemDbError::FileIoError)?;
             item.record_id = u16::from_le_bytes(record_id_bytes);
             
-            // 保存到内存
+            // 保存到内�?
             *items.add(i) = item;
         }
         
-        // 初始化向量数据数组
+        // 初始化向量数据数�?
         let vectors = (memory_start.add(items_size)) as *mut f32;
         
         // 读取向量数据
@@ -802,11 +932,11 @@ impl VectorIndex {
                     compression_enabled: false,
                     compression_scheme: 0,
                     compression_level: 3,
-                    hnsw_m: 16, // 默认值，实际值会从文件加载
-                    hnsw_ef_construction: 200, // 默认值，实际值会从文件加载
-                    hnsw_ef_search: 100, // 默认值，实际值会从文件加载
-                    ivf_nlist: 100, // 默认值，实际值会从文件加载
-                    ivf_nprobe: 10, // 默认值，实际值会从文件加载
+                    hnsw_m: 16, // 默认值，实际值会从文件加�?
+                    hnsw_ef_construction: 200, // 默认值，实际值会从文件加�?
+                    hnsw_ef_search: 100, // 默认值，实际值会从文件加�?
+                    ivf_nlist: 100, // 默认值，实际值会从文件加�?
+                    ivf_nprobe: 10, // 默认值，实际值会从文件加�?
                 };
                 let hnsw_index = hnsw::HNSWIndex::load(
                     vector_meta,
@@ -827,11 +957,11 @@ impl VectorIndex {
                     compression_enabled: false,
                     compression_scheme: 0,
                     compression_level: 3,
-                    hnsw_m: 16, // 默认值
-                    hnsw_ef_construction: 200, // 默认值
-                    hnsw_ef_search: 100, // 默认值
-                    ivf_nlist: 100, // 默认值，实际值会从文件加载
-                    ivf_nprobe: 10, // 默认值，实际值会从文件加载
+                    hnsw_m: 16, // 默认�?
+                    hnsw_ef_construction: 200, // 默认�?
+                    hnsw_ef_search: 100, // 默认�?
+                    ivf_nlist: 100, // 默认值，实际值会从文件加�?
+                    ivf_nprobe: 10, // 默认值，实际值会从文件加�?
                 };
                 let ivf_index = ivf::IVFIndex::load(
                     vector_meta,
@@ -881,7 +1011,7 @@ impl VectorIndex {
                 -sum // 返回负数，因为内积越大相似度越高
             }
             DistanceType::Cosine => {
-                // 余弦相似度
+                // 余弦相似�?
                 let mut dot = 0.0;
                 let mut norm1 = 0.0;
                 let mut norm2 = 0.0;
@@ -898,31 +1028,31 @@ impl VectorIndex {
                 let norm2 = norm2.sqrt();
 
                 if norm1 == 0.0 || norm2 == 0.0 {
-                    -1.0 // 相似度最低
+                    -1.0 // 相似度最�?
                 } else {
-                    -(dot / (norm1 * norm2)) // 返回负数，因为余弦相似度越大相似度越高
+                    -(dot / (norm1 * norm2)) // 返回负数，因为余弦相似度越大相似度越�?
                 }
             }
         }
     }
 
-    /// 插入向量索引项
+    /// 插入向量索引�?
     pub unsafe fn insert(
         &mut self,
         key: *const u8,
         _key_size: usize,
         record_id: u16,
     ) -> Result<()> {
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
-        // 检查是否有足够的空间
+        // 检查是否有足够的空�?
         if self.item_count >= self.max_items {
             crate::platform::spin_unlock(&mut self.lock);
             return Err(RemDbError::OutOfMemory);
         }
 
-        // 复制向量数据到预分配的存储
+        // 复制向量数据到预分配的存�?
         let vec_ptr = key as *const f32;
         let vec_len = self.dimension as usize;
         let start_offset = self.vector_count * vec_len;
@@ -932,14 +1062,14 @@ impl VectorIndex {
             *self.vectors.add(start_offset + i) = *vec_ptr.add(i);
         }
 
-        // 创建索引项
+        // 创建索引�?
         let item_ptr = self.items.add(self.item_count);
         *item_ptr = VectorIndexItem {
             vector_offset: start_offset,
             record_id,
         };
 
-        // 更新计数（确保item_count和vector_count始终同步）
+        // 更新计数（确保item_count和vector_count始终同步�?
         self.item_count += 1;
         self.vector_count = self.item_count;
 
@@ -948,7 +1078,7 @@ impl VectorIndex {
         self.stats.size +=
             core::mem::size_of::<VectorIndexItem>() + vec_len * core::mem::size_of::<f32>();
         
-        // 根据索引类型插入到相应的索引实现中
+        // 根据索引类型插入到相应的索引实现�?
         match &mut self.index_impl {
             VectorIndexImpl::HNSW(Some(hnsw_index)) => {
                 hnsw_index.insert(start_offset, record_id)?;
@@ -957,7 +1087,7 @@ impl VectorIndex {
                 ivf_index.insert(start_offset, record_id)?;
             },
             _ => {
-                // 线性搜索不需要额外操作
+                // 线性搜索不需要额外操�?
             }
         }
 
@@ -971,7 +1101,7 @@ impl VectorIndex {
         // 更新统计信息
         self.stats.access_count += 1;
 
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
         // 解析查询向量
@@ -981,17 +1111,17 @@ impl VectorIndex {
 
         // 检查key是否是指向字符串的指针（向量字面量）
         if key_size > 4 && *key == b'[' {
-            // 解析向量字面量 [x1, x2, ..., xn]
+            // 解析向量字面�?[x1, x2, ..., xn]
             let vec_str = core::str::from_utf8(core::slice::from_raw_parts(key, key_size))
                 .map_err(|_| RemDbError::TypeMismatch)?;
 
             // 移除首尾的方括号
             let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
 
-            // 分割逗号，得到每个元素的字符串
+            // 分割逗号，得到每个元素的字符�?
             let elements: Vec<&str> = vec_str.split(',').map(|s| s.trim()).collect();
 
-            // 检查维度是否匹配
+            // 检查维度是否匹�?
             if elements.len() != vec_len {
                 crate::platform::spin_unlock(&mut self.lock);
                 return Err(RemDbError::TypeMismatch);
@@ -1009,7 +1139,7 @@ impl VectorIndex {
             query_vec = key as *const f32;
         }
         
-        // 根据索引类型使用相应的搜索方法
+        // 根据索引类型使用相应的搜索方�?
         let result = match &self.index_impl {
             VectorIndexImpl::HNSW(Some(hnsw_index)) => {
                 // 使用HNSW搜索
@@ -1030,7 +1160,7 @@ impl VectorIndex {
                 }
             },
             _ => {
-                // 线性搜索查找最相似的向量
+                // 线性搜索查找最相似的向�?
                 let mut min_distance = f32::MAX;
                 let mut best_record_id = 0;
                 let mut found = false;
@@ -1074,7 +1204,7 @@ impl VectorIndex {
         // 更新统计信息
         self.stats.access_count += 1;
 
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
         // 解析查询向量
@@ -1084,7 +1214,7 @@ impl VectorIndex {
 
         // 检查key是否是指向字符串的指针（向量字面量）
         if _start_key_size > 4 && *start_key == b'[' {
-            // 解析向量字面量 [x1, x2, ..., xn]
+            // 解析向量字面�?[x1, x2, ..., xn]
             let vec_str =
                 core::str::from_utf8(core::slice::from_raw_parts(start_key, _start_key_size))
                     .map_err(|_| RemDbError::TypeMismatch)?;
@@ -1092,10 +1222,10 @@ impl VectorIndex {
             // 移除首尾的方括号
             let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
 
-            // 分割逗号，得到每个元素的字符串
+            // 分割逗号，得到每个元素的字符�?
             let elements: Vec<&str> = vec_str.split(',').map(|s| s.trim()).collect();
 
-            // 检查维度是否匹配
+            // 检查维度是否匹�?
             if elements.len() != vec_len {
                 crate::platform::spin_unlock(&mut self.lock);
                 return Err(RemDbError::TypeMismatch);
@@ -1117,9 +1247,9 @@ impl VectorIndex {
         let range_value: f32;
         if _end_key_size > 4 && *end_key == b'[' {
             // 解析向量字面量的距离（这种情况不常见，主要用于测试）
-            range_value = 1000.0; // 默认大值，返回所有向量
+            range_value = 1000.0; // 默认大值，返回所有向�?
         } else {
-            // end_key是距离阈值的指针，正确转换并读取该值
+            // end_key是距离阈值的指针，正确转换并读取该�?
             range_value = *(end_key as *const f32);
         }
 
@@ -1129,7 +1259,7 @@ impl VectorIndex {
             let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
             let distance = self.calculate_distance(vec_ptr, query_vec);
 
-            // 检查向量是否在范围内
+            // 检查向量是否在范围�?
             if distance <= range_value {
                 crate::platform::spin_unlock(&mut self.lock);
                 self.stats.hit_count += 1;
@@ -1142,7 +1272,7 @@ impl VectorIndex {
         Err(RemDbError::RecordNotFound)
     }
 
-    /// 向量范围查询（返回所有匹配项）
+    /// 向量范围查询（返回所有匹配项�?
     pub unsafe fn find_range_all(
         &mut self,
         start_key: *const u8,
@@ -1160,7 +1290,7 @@ impl VectorIndex {
             return Err(RemDbError::UnsupportedOperation);
         }
 
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
         // 解析查询向量
@@ -1170,7 +1300,7 @@ impl VectorIndex {
 
         // 检查key是否是指向字符串的指针（向量字面量）
         if _start_key_size > 4 && *start_key == b'[' {
-            // 解析向量字面量 [x1, x2, ..., xn]
+            // 解析向量字面�?[x1, x2, ..., xn]
             let vec_str =
                 core::str::from_utf8(core::slice::from_raw_parts(start_key, _start_key_size))
                     .map_err(|_| RemDbError::TypeMismatch)?;
@@ -1178,10 +1308,10 @@ impl VectorIndex {
             // 移除首尾的方括号
             let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
 
-            // 分割逗号，得到每个元素的字符串
+            // 分割逗号，得到每个元素的字符�?
             let elements: Vec<&str> = vec_str.split(',').map(|s| s.trim()).collect();
 
-            // 检查维度是否匹配
+            // 检查维度是否匹�?
             if elements.len() != vec_len {
                 crate::platform::spin_unlock(&mut self.lock);
                 return Err(RemDbError::TypeMismatch);
@@ -1203,16 +1333,16 @@ impl VectorIndex {
         let range_value: f32;
         if _end_key_size > 4 && *end_key == b'[' {
             // 解析向量字面量的距离（这种情况不常见，主要用于测试）
-            range_value = 1000.0; // 默认大值，返回所有向量
+            range_value = 1000.0; // 默认大值，返回所有向�?
         } else {
-            // end_key是距离阈值的指针，正确转换并读取该值
+            // end_key是距离阈值的指针，正确转换并读取该�?
             range_value = *(end_key as *const f32);
         }
 
         // 直接在输出缓冲区中存储结果，避免使用Vec
         let mut match_count = 0;
 
-        // 实现真正的范围查询：返回所有距离小于等于range_value的向量
+        // 实现真正的范围查询：返回所有距离小于等于range_value的向�?
         for i in 0..self.item_count {
             if match_count >= max_records {
                 break;
@@ -1222,7 +1352,7 @@ impl VectorIndex {
             let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
             let distance = self.calculate_distance(query_vec, vec_ptr);
 
-            // 检查距离是否在范围内
+            // 检查距离是否在范围�?
             if distance <= range_value {
                 *out_record_ids.add(match_count) = (*item_ptr).record_id;
                 match_count += 1;
@@ -1238,9 +1368,9 @@ impl VectorIndex {
         Ok(match_count)
     }
 
-    /// 删除向量索引项
+    /// 删除向量索引�?
     pub unsafe fn delete(&mut self, key: *const u8, _key_size: usize) -> Result<()> {
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
         let query_vec = key as *const f32;
@@ -1266,29 +1396,29 @@ impl VectorIndex {
         }
 
         if let Some(idx) = found_idx {
-            // 获取要删除向量的偏移量
+            // 获取要删除向量的偏移�?
             let deleted_item_ptr = self.items.add(idx);
             let deleted_offset = (*deleted_item_ptr).vector_offset;
 
-            // 实际删除逻辑：将最后一个元素移动到被删除位置
+            // 实际删除逻辑：将最后一个元素移动到被删除位�?
             if idx < self.item_count - 1 {
                 // 获取最后一个元素和其向量偏移量
                 let last_item_ptr = self.items.add(self.item_count - 1);
                 let last_offset = (*last_item_ptr).vector_offset;
 
-                // 复制最后一个元素的向量数据到被删除向量的位置
+                // 复制最后一个元素的向量数据到被删除向量的位�?
                 let src_vec_ptr = self.vectors.add(last_offset);
                 let dst_vec_ptr = self.vectors.add(deleted_offset);
                 for i in 0..vec_len {
                     *dst_vec_ptr.add(i) = *src_vec_ptr.add(i);
                 }
 
-                // 复制最后一个元素到被删除位置，并更新其向量偏移量
+                // 复制最后一个元素到被删除位置，并更新其向量偏移�?
                 *deleted_item_ptr = *last_item_ptr;
                 (*deleted_item_ptr).vector_offset = deleted_offset;
             }
 
-            // 更新计数（item_count和vector_count必须保持同步）
+            // 更新计数（item_count和vector_count必须保持同步�?
             self.item_count -= 1;
             self.vector_count = self.item_count; // 确保vector_count与item_count同步
 
@@ -1357,7 +1487,7 @@ impl AnySecondaryIndex {
         }
     }
 
-    /// 计算辅助索引所需的内存大小
+    /// 计算辅助索引所需的内存大�?
     pub fn calculate_memory_size(def: &TableDef, max_items: usize) -> usize {
         match def.secondary_index_type {
             IndexType::SortedArray => SecondaryIndex::calculate_memory_size(max_items),
@@ -1368,7 +1498,7 @@ impl AnySecondaryIndex {
         }
     }
 
-    /// 插入索引项
+    /// 插入索引�?
     pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
         match self {
             AnySecondaryIndex::SortedArray(index) => index.insert(key, key_size, record_id),
@@ -1388,7 +1518,7 @@ impl AnySecondaryIndex {
         }
     }
 
-    /// 范围查询（返回第一个匹配项）
+    /// 范围查询（返回第一个匹配项�?
     pub unsafe fn find_range(
         &mut self,
         start_key: *const u8,
@@ -1412,7 +1542,7 @@ impl AnySecondaryIndex {
         }
     }
 
-    /// 范围查询（返回所有匹配项）
+    /// 范围查询（返回所有匹配项�?
     pub unsafe fn find_range_all(
         &mut self,
         start_key: *const u8,
@@ -1458,7 +1588,7 @@ impl AnySecondaryIndex {
         }
     }
 
-    /// 删除索引项
+    /// 删除索引�?
     pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
         match self {
             AnySecondaryIndex::SortedArray(index) => index.delete(key, key_size),
@@ -1491,17 +1621,17 @@ impl AnySecondaryIndex {
 
 /// 辅助有序索引
 pub struct SecondaryIndex {
-    /// 表定义
+    /// 表定�?
     def: alloc::sync::Arc<TableDef>,
-    /// 索引项数组
+    /// 索引项数�?
     items: NonNull<SecondaryIndexItem>,
-    /// 当前项数量
+    /// 当前项数�?
     item_count: usize,
     /// 最大项数量
     max_items: usize,
     /// 索引统计信息
     stats: IndexStats,
-    /// 自旋锁
+    /// 自旋�?
     lock: u32,
 }
 
@@ -1529,23 +1659,23 @@ impl SecondaryIndex {
         }
     }
 
-    /// 计算辅助索引所需的内存大小
+    /// 计算辅助索引所需的内存大�?
     pub const fn calculate_memory_size(max_items: usize) -> usize {
         max_items * core::mem::size_of::<SecondaryIndexItem>()
     }
 
-    /// 比较两个索引项
+    /// 比较两个索引�?
     fn compare_items(
         &self,
         item1: &SecondaryIndexItem,
         item2: &SecondaryIndexItem,
     ) -> core::cmp::Ordering {
-        // 比较键大小
+        // 比较键大�?
         if item1.key_size != item2.key_size {
             return item1.key_size.cmp(&item2.key_size);
         }
 
-        // 比较键数据
+        // 比较键数�?
         let key_size = item1.key_size as usize;
         for i in 0..key_size {
             if item1.key_data[i] != item2.key_data[i] {
@@ -1557,7 +1687,7 @@ impl SecondaryIndex {
         item1.record_id.cmp(&item2.record_id)
     }
 
-    /// 二分查找索引项
+    /// 二分查找索引�?
     fn binary_search(&self, key: *const u8, key_size: usize) -> Result<usize> {
         if self.item_count == 0 {
             return Err(RemDbError::RecordNotFound);
@@ -1570,7 +1700,7 @@ impl SecondaryIndex {
             let mid = (low + high) / 2;
             let mid_item = unsafe { &*self.items.as_ptr().add(mid) };
 
-            // 比较键
+            // 比较�?
             let cmp = if mid_item.key_size != key_size as u8 {
                 mid_item.key_size.cmp(&(key_size as u8))
             } else {
@@ -1613,14 +1743,14 @@ impl SecondaryIndex {
         Err(RemDbError::RecordNotFound)
     }
 
-    /// 插入索引项
+    /// 插入索引�?
     pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
         // 增加索引插入计数
         crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
-        // 检查是否已满
+        // 检查是否已�?
         if self.item_count >= self.max_items {
             crate::platform::spin_unlock(&mut self.lock);
             return Err(RemDbError::OutOfMemory);
@@ -1636,7 +1766,7 @@ impl SecondaryIndex {
         let new_item = SecondaryIndexItem {
             key_size: key_size as u8,
             record_id,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(new_item.key_data.as_ptr() as *mut u8, key, key_size);
 
@@ -1659,7 +1789,7 @@ impl SecondaryIndex {
                         low = mid + 1;
                     }
                     core::cmp::Ordering::Equal => {
-                        // 插入到相等元素后面
+                        // 插入到相等元素后�?
                         insert_pos = mid + 1;
                         low = mid + 1;
                     }
@@ -1704,16 +1834,16 @@ impl SecondaryIndex {
         }
     }
 
-    /// 删除索引项
+    /// 删除索引�?
     pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
         // 增加索引删除计数
         crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
         let result = match self.binary_search(key, key_size) {
             Ok(index) => {
-                // 移动后续项覆盖被删除项
+                // 移动后续项覆盖被删除�?
                 if index < self.item_count - 1 {
                     let dest_ptr = self.items.as_ptr().add(index);
                     let src_ptr = self.items.as_ptr().add(index + 1);
@@ -1722,7 +1852,7 @@ impl SecondaryIndex {
                     memcpy(dest_ptr as *mut u8, src_ptr as *const u8, move_size);
                 }
 
-                // 清空最后一项
+                // 清空最后一�?
                 let last_ptr = self.items.as_ptr().add(self.item_count - 1);
                 memset(
                     last_ptr as *mut u8,
@@ -1743,7 +1873,7 @@ impl SecondaryIndex {
         result
     }
 
-    /// 范围查询（返回第一个匹配项）
+    /// 范围查询（返回第一个匹配项�?
     pub unsafe fn find_range(
         &mut self,
         start_key: *const u8,
@@ -1759,11 +1889,11 @@ impl SecondaryIndex {
         let mut low = 0;
         let mut high = self.item_count - 1;
 
-        // 创建临时索引项用于比较
+        // 创建临时索引项用于比�?
         let start_item = SecondaryIndexItem {
             key_size: start_key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(
             start_item.key_data.as_ptr() as *mut u8,
@@ -1793,11 +1923,11 @@ impl SecondaryIndex {
             let key_size = item.key_size as usize;
 
             if key_size > end_key_size {
-                // 键大小大于end_key，超出范围
+                // 键大小大于end_key，超出范�?
                 break;
             }
 
-            // 比较键数据
+            // 比较键数�?
             let min_size = core::cmp::min(key_size, end_key_size);
             let mut all_equal = true;
 
@@ -1830,7 +1960,7 @@ impl SecondaryIndex {
         Err(RemDbError::RecordNotFound)
     }
 
-    /// 范围查询（返回所有匹配项）
+    /// 范围查询（返回所有匹配项�?
     pub unsafe fn find_range_all(
         &mut self,
         start_key: *const u8,
@@ -1848,7 +1978,7 @@ impl SecondaryIndex {
             return Err(RemDbError::UnsupportedOperation);
         }
 
-        // 如果没有记录，直接返回
+        // 如果没有记录，直接返�?
         if self.item_count == 0 {
             return Ok(0);
         }
@@ -1858,11 +1988,11 @@ impl SecondaryIndex {
         let mut low = 0;
         let mut high = self.item_count - 1;
 
-        // 创建临时索引项用于比较
+        // 创建临时索引项用于比�?
         let start_item = SecondaryIndexItem {
             key_size: start_key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(
             start_item.key_data.as_ptr() as *mut u8,
@@ -1897,11 +2027,11 @@ impl SecondaryIndex {
             let key_size = item.key_size as usize;
 
             if key_size > end_key_size {
-                // 键大小大于end_key，超出范围
+                // 键大小大于end_key，超出范�?
                 break;
             }
 
-            // 比较键数据
+            // 比较键数�?
             let min_size = core::cmp::min(key_size, end_key_size);
             let mut all_equal = true;
 
@@ -1950,7 +2080,7 @@ impl SecondaryIndex {
         self.stats.hit_count = 0;
     }
 
-    /// 获取当前项数量
+    /// 获取当前项数�?
     pub fn item_count(&self) -> usize {
         self.item_count
     }
@@ -1977,7 +2107,7 @@ impl BTreeIndex {
             let node_ptr = nodes.as_ptr().add(i);
             let mut node_mut = &mut *node_ptr;
 
-            // 初始化节点
+            // 初始化节�?
             node_mut.is_leaf = true;
             node_mut.key_count = 0;
 
@@ -1993,9 +2123,9 @@ impl BTreeIndex {
                 node_mut.children[j] = None;
             }
 
-            // 添加到空闲列表
+            // 添加到空闲列�?
             // 使用第一个键的key_data字段作为下一个节点的指针
-            // 由于key_data是64字节，足够存储一个指针
+            // 由于key_data�?4字节，足够存储一个指�?
             let next_ptr = free_nodes
                 .map(|p: NonNull<BTreeNode>| p.as_ptr() as u64)
                 .unwrap_or(0);
@@ -2023,12 +2153,12 @@ impl BTreeIndex {
         }
     }
 
-    /// 计算B-Tree索引所需的内存大小
+    /// 计算B-Tree索引所需的内存大�?
     pub const fn calculate_memory_size(max_nodes: usize) -> usize {
         max_nodes * core::mem::size_of::<BTreeNode>()
     }
 
-    /// 从空闲列表获取一个节点
+    /// 从空闲列表获取一个节�?
     unsafe fn allocate_node(&mut self) -> Option<NonNull<BTreeNode>> {
         let node_ptr = self.free_nodes?;
         let mut node_mut = &mut *node_ptr.as_ptr();
@@ -2066,7 +2196,7 @@ impl BTreeIndex {
         Some(node_ptr)
     }
 
-    /// 释放节点到空闲列表
+    /// 释放节点到空闲列�?
     unsafe fn free_node(&mut self, node_ptr: NonNull<BTreeNode>) {
         let node_mut = &mut *node_ptr.as_ptr();
 
@@ -2082,18 +2212,18 @@ impl BTreeIndex {
         self.free_nodes = Some(node_ptr);
     }
 
-    /// 比较两个索引项
+    /// 比较两个索引�?
     fn compare_items(
         &self,
         item1: &SecondaryIndexItem,
         item2: &SecondaryIndexItem,
     ) -> core::cmp::Ordering {
-        // 比较键大小
+        // 比较键大�?
         if item1.key_size != item2.key_size {
             return item1.key_size.cmp(&item2.key_size);
         }
 
-        // 比较键数据
+        // 比较键数�?
         let key_size = item1.key_size as usize;
         for i in 0..key_size {
             if item1.key_data[i] != item2.key_data[i] {
@@ -2116,7 +2246,7 @@ impl BTreeIndex {
         pos
     }
 
-    /// 分割满节点
+    /// 分割满节�?
     unsafe fn split_child(
         &mut self,
         mut parent: NonNull<BTreeNode>,
@@ -2126,26 +2256,26 @@ impl BTreeIndex {
         let parent_mut = parent.as_mut();
         let child_mut = child.as_mut();
 
-        // 创建新节点
+        // 创建新节�?
         let mut new_node = self.allocate_node().expect("Out of memory for B-Tree node");
         let new_node_mut = new_node.as_mut();
 
         new_node_mut.is_leaf = child_mut.is_leaf;
         new_node_mut.key_count = (BTREE_ORDER / 2) as u8;
 
-        // 复制后半部分键到新节点
+        // 复制后半部分键到新节�?
         for i in 0..(BTREE_ORDER / 2) {
             new_node_mut.keys[i] = child_mut.keys[i + (BTREE_ORDER / 2) + 1];
         }
 
-        // 如果是内部节点，复制后半部分子节点
+        // 如果是内部节点，复制后半部分子节�?
         if !child_mut.is_leaf {
             for i in 0..(BTREE_ORDER / 2 + 1) {
                 new_node_mut.children[i] = child_mut.children[i + (BTREE_ORDER / 2) + 1];
             }
         }
 
-        // 更新原节点的键数量
+        // 更新原节点的键数�?
         child_mut.key_count = (BTREE_ORDER / 2) as u8;
 
         // 移动父节点的键和子节点指针，为新节点腾出空间
@@ -2166,7 +2296,7 @@ impl BTreeIndex {
         let mut pos = self.find_key_position(node_mut, &key);
 
         if node_mut.is_leaf {
-            // 叶子节点，直接插入
+            // 叶子节点，直接插�?
             for i in (pos..node_mut.key_count as usize).rev() {
                 node_mut.keys[i + 1] = node_mut.keys[i];
             }
@@ -2177,11 +2307,11 @@ impl BTreeIndex {
             // 内部节点，递归插入
             let child = node_mut.children[pos].expect("Child node not found");
 
-            // 如果子节点已满，先分割
+            // 如果子节点已满，先分�?
             if child.as_ref().key_count == BTREE_ORDER as u8 {
                 self.split_child(node, pos, child);
 
-                // 检查中间键是否大于当前键
+                // 检查中间键是否大于当前�?
                 if self.compare_items(&node_mut.keys[pos], &key) == core::cmp::Ordering::Less {
                     pos += 1;
                 }
@@ -2194,11 +2324,11 @@ impl BTreeIndex {
         }
     }
 
-    /// 插入索引项
+    /// 插入索引�?
     pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
         // 增加索引插入计数
         crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
         // 检查键大小
@@ -2207,11 +2337,11 @@ impl BTreeIndex {
             return Err(RemDbError::UnsupportedOperation);
         }
 
-        // 创建索引项
+        // 创建索引�?
         let mut new_item = SecondaryIndexItem {
             key_size: key_size as u8,
             record_id,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(new_item.key_data.as_mut_ptr(), key, key_size);
 
@@ -2228,7 +2358,7 @@ impl BTreeIndex {
         } else {
             let mut root = self.root.expect("Root node unexpectedly None");
 
-            // 如果根节点已满，分裂根节点
+            // 如果根节点已满，分裂根节�?
             if root.as_ref().key_count == BTREE_ORDER as u8 {
                 let mut new_root = self
                     .allocate_node()
@@ -2262,11 +2392,11 @@ impl BTreeIndex {
             return Err(RemDbError::UnsupportedOperation);
         }
 
-        // 创建临时索引项用于比较
+        // 创建临时索引项用于比�?
         let mut search_item = SecondaryIndexItem {
             key_size: key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(search_item.key_data.as_mut_ptr(), key, key_size);
 
@@ -2275,7 +2405,7 @@ impl BTreeIndex {
             let node_ref = node.as_ref();
             let mut pos = 0;
 
-            // 查找键位置
+            // 查找键位�?
             while pos < node_ref.key_count as usize
                 && self.compare_items(&node_ref.keys[pos], &search_item)
                     == core::cmp::Ordering::Less
@@ -2293,19 +2423,19 @@ impl BTreeIndex {
                 }
             }
 
-            // 如果是叶子节点，未找到
+            // 如果是叶子节点，未找�?
             if node_ref.is_leaf {
                 break;
             }
 
-            // 继续搜索子节点
+            // 继续搜索子节�?
             current = node_ref.children[pos];
         }
 
         Err(RemDbError::RecordNotFound)
     }
 
-    /// 范围查询（返回第一个匹配项）
+    /// 范围查询（返回第一个匹配项�?
     pub unsafe fn find_range(
         &mut self,
         start_key: *const u8,
@@ -2319,18 +2449,18 @@ impl BTreeIndex {
         // 实现范围查询逻辑
         // 简化实现：找到起始位置后，遍历直到找到第一个匹配项
 
-        // 创建临时索引项用于比较
+        // 创建临时索引项用于比�?
         let mut start_item = SecondaryIndexItem {
             key_size: start_key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(start_item.key_data.as_mut_ptr(), start_key, start_key_size);
 
         let mut end_item = SecondaryIndexItem {
             key_size: end_key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(end_item.key_data.as_mut_ptr(), end_key, end_key_size);
 
@@ -2361,7 +2491,7 @@ impl BTreeIndex {
             current = node_ref.children[pos];
         }
 
-        // 从栈中回溯，查找匹配项
+        // 从栈中回溯，查找匹配�?
         while stack_size > 0 {
             stack_size -= 1;
             let node = stack[stack_size].expect("Stack underflow");
@@ -2380,12 +2510,12 @@ impl BTreeIndex {
             for i in start_pos..node_ref.key_count as usize {
                 let key = &node_ref.keys[i];
 
-                // 检查是否在范围内
+                // 检查是否在范围�?
                 if self.compare_items(key, &end_item) == core::cmp::Ordering::Greater {
-                    continue; // 超出范围，继续查找下一个节点
+                    continue; // 超出范围，继续查找下一个节�?
                 }
 
-                // 找到匹配项
+                // 找到匹配�?
                 self.stats.hit_count += 1;
                 return Ok(key.record_id);
             }
@@ -2396,16 +2526,16 @@ impl BTreeIndex {
                 while let Some(child_node) = child {
                     let child_ref = child_node.as_ref();
 
-                    // 遍历子节点的键
+                    // 遍历子节点的�?
                     for i in 0..child_ref.key_count as usize {
                         let key = &child_ref.keys[i];
 
-                        // 检查是否在范围内
+                        // 检查是否在范围�?
                         if self.compare_items(key, &end_item) == core::cmp::Ordering::Greater {
-                            break; // 超出范围，结束搜索
+                            break; // 超出范围，结束搜�?
                         }
 
-                        // 找到匹配项
+                        // 找到匹配�?
                         self.stats.hit_count += 1;
                         return Ok(key.record_id);
                     }
@@ -2424,7 +2554,7 @@ impl BTreeIndex {
         Err(RemDbError::RecordNotFound)
     }
 
-    /// 范围查询（返回所有匹配项）
+    /// 范围查询（返回所有匹配项�?
     pub unsafe fn find_range_all(
         &mut self,
         start_key: *const u8,
@@ -2442,18 +2572,18 @@ impl BTreeIndex {
             return Err(RemDbError::UnsupportedOperation);
         }
 
-        // 创建临时索引项用于比较
+        // 创建临时索引项用于比�?
         let mut start_item = SecondaryIndexItem {
             key_size: start_key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(start_item.key_data.as_mut_ptr(), start_key, start_key_size);
 
         let mut end_item = SecondaryIndexItem {
             key_size: end_key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(end_item.key_data.as_mut_ptr(), end_key, end_key_size);
 
@@ -2508,12 +2638,12 @@ impl BTreeIndex {
 
                 let key = &node_ref.keys[i];
 
-                // 检查是否在范围内
+                // 检查是否在范围�?
                 if self.compare_items(key, &end_item) == core::cmp::Ordering::Greater {
-                    continue; // 超出范围，继续查找下一个节点
+                    continue; // 超出范围，继续查找下一个节�?
                 }
 
-                // 添加到结果
+                // 添加到结�?
                 *out_record_ids.add(match_count) = key.record_id;
                 match_count += 1;
             }
@@ -2524,7 +2654,7 @@ impl BTreeIndex {
                 while let Some(child_node) = child {
                     let child_ref = child_node.as_ref();
 
-                    // 遍历子节点的键
+                    // 遍历子节点的�?
                     for i in 0..child_ref.key_count as usize {
                         if match_count >= max_records {
                             break;
@@ -2532,12 +2662,12 @@ impl BTreeIndex {
 
                         let key = &child_ref.keys[i];
 
-                        // 检查是否在范围内
+                        // 检查是否在范围�?
                         if self.compare_items(key, &end_item) == core::cmp::Ordering::Greater {
-                            break; // 超出范围，结束搜索
+                            break; // 超出范围，结束搜�?
                         }
 
-                        // 添加到结果
+                        // 添加到结�?
                         *out_record_ids.add(match_count) = key.record_id;
                         match_count += 1;
                     }
@@ -2561,16 +2691,16 @@ impl BTreeIndex {
         Ok(match_count)
     }
 
-    /// 删除索引项
+    /// 删除索引�?
     pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
         // 增加索引删除计数
         crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
         // 简化实现：暂不支持删除操作
-        // 完整的B-Tree删除实现比较复杂，需要处理多种情况
-        // 包括合并节点、借键等
+        // 完整的B-Tree删除实现比较复杂，需要处理多种情�?
+        // 包括合并节点、借键�?
 
         crate::platform::spin_unlock(&mut self.lock);
         Err(RemDbError::UnsupportedOperation)
@@ -2604,7 +2734,7 @@ impl TTreeIndex {
             let node_ptr = nodes.as_ptr().add(i);
             let mut node_mut = &mut *node_ptr;
 
-            // 初始化节点
+            // 初始化节�?
             node_mut.key_count = 0;
 
             // 初始化键
@@ -2619,7 +2749,7 @@ impl TTreeIndex {
             node_mut.middle = None;
             node_mut.right = None;
 
-            // 添加到空闲列表
+            // 添加到空闲列�?
             // 使用第一个键的key_data字段作为下一个节点的指针
             let next_ptr = free_nodes
                 .map(|p: NonNull<TTreeNode>| p.as_ptr() as u64)
@@ -2648,12 +2778,12 @@ impl TTreeIndex {
         }
     }
 
-    /// 计算T-Tree索引所需的内存大小
+    /// 计算T-Tree索引所需的内存大�?
     pub const fn calculate_memory_size(max_nodes: usize) -> usize {
         max_nodes * core::mem::size_of::<TTreeNode>()
     }
 
-    /// 从空闲列表获取一个节点
+    /// 从空闲列表获取一个节�?
     unsafe fn allocate_node(&mut self) -> Option<NonNull<TTreeNode>> {
         let node_ptr = self.free_nodes?;
         let mut node_mut = &mut *node_ptr.as_ptr();
@@ -2690,7 +2820,7 @@ impl TTreeIndex {
         Some(node_ptr)
     }
 
-    /// 释放节点到空闲列表
+    /// 释放节点到空闲列�?
     unsafe fn free_node(&mut self, node_ptr: NonNull<TTreeNode>) {
         let node_mut = &mut *node_ptr.as_ptr();
 
@@ -2706,18 +2836,18 @@ impl TTreeIndex {
         self.free_nodes = Some(node_ptr);
     }
 
-    /// 比较两个索引项
+    /// 比较两个索引�?
     fn compare_items(
         &self,
         item1: &SecondaryIndexItem,
         item2: &SecondaryIndexItem,
     ) -> core::cmp::Ordering {
-        // 比较键大小
+        // 比较键大�?
         if item1.key_size != item2.key_size {
             return item1.key_size.cmp(&item2.key_size);
         }
 
-        // 比较键数据
+        // 比较键数�?
         let key_size = item1.key_size as usize;
         for i in 0..key_size {
             if item1.key_data[i] != item2.key_data[i] {
@@ -2764,11 +2894,11 @@ impl TTreeIndex {
         self.stats.item_count += 1;
     }
 
-    /// 插入索引项
+    /// 插入索引�?
     pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
         // 增加索引插入计数
         crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
         // 检查键大小
@@ -2777,11 +2907,11 @@ impl TTreeIndex {
             return Err(RemDbError::UnsupportedOperation);
         }
 
-        // 创建索引项
+        // 创建索引�?
         let mut new_item = SecondaryIndexItem {
             key_size: key_size as u8,
             record_id,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(new_item.key_data.as_mut_ptr(), key, key_size);
 
@@ -2798,7 +2928,7 @@ impl TTreeIndex {
         } else {
             let mut root = self.root.expect("Root node unexpectedly None");
 
-            // 如果根节点已满，需要分裂
+            // 如果根节点已满，需要分�?
             if root.as_ref().key_count == TTREE_ORDER as u8 {
                 // 简化实现：创建新根节点，将原根节点作为左子节点
                 let mut new_root = self
@@ -2806,7 +2936,7 @@ impl TTreeIndex {
                     .expect("Out of memory for new T-Tree root");
                 let new_root_mut = new_root.as_mut();
 
-                // 将新键插入到适当的位置
+                // 将新键插入到适当的位�?
                 let mut keys = [SecondaryIndexItem::default(); TTREE_ORDER + 1];
 
                 // 复制原根节点的键
@@ -2818,7 +2948,7 @@ impl TTreeIndex {
                 let mut inserted = false;
                 for i in 0..TTREE_ORDER {
                     if self.compare_items(&keys[i], &new_item) == core::cmp::Ordering::Greater {
-                        // 移动后续键
+                        // 移动后续�?
                         for j in (i..TTREE_ORDER).rev() {
                             keys[j + 1] = keys[j];
                         }
@@ -2838,7 +2968,7 @@ impl TTreeIndex {
                     .expect("Out of memory for T-Tree right node");
                 let right_mut = right_node.as_mut();
 
-                // 分配键到左右子节点
+                // 分配键到左右子节�?
                 let mid = (TTREE_ORDER + 1) / 2;
 
                 // 更新原根节点（左子节点）
@@ -2862,7 +2992,7 @@ impl TTreeIndex {
 
                 self.root = Some(new_root);
             } else {
-                // 递归插入到适当的子树
+                // 递归插入到适当的子�?
                 self.insert_recursive(root, new_item);
             }
         }
@@ -2871,7 +3001,7 @@ impl TTreeIndex {
         Ok(())
     }
 
-    /// 递归插入索引项
+    /// 递归插入索引�?
     unsafe fn insert_recursive(&mut self, mut node: NonNull<TTreeNode>, key: SecondaryIndexItem) {
         let node_mut = node.as_mut();
 
@@ -2894,12 +3024,12 @@ impl TTreeIndex {
         };
 
         if let Some(mut child_node) = *child {
-            // 子节点存在
+            // 子节点存�?
             if child_node.as_ref().key_count == TTREE_ORDER as u8 {
-                // 子节点已满，需要分裂
+                // 子节点已满，需要分�?
                 let mut keys = [SecondaryIndexItem::default(); TTREE_ORDER + 1];
 
-                // 复制子节点的键
+                // 复制子节点的�?
                 for i in 0..TTREE_ORDER {
                     keys[i] = child_node.as_ref().keys[i];
                 }
@@ -2908,7 +3038,7 @@ impl TTreeIndex {
                 let mut inserted = false;
                 for i in 0..TTREE_ORDER {
                     if self.compare_items(&keys[i], &key) == core::cmp::Ordering::Greater {
-                        // 移动后续键
+                        // 移动后续�?
                         for j in (i..TTREE_ORDER).rev() {
                             keys[j + 1] = keys[j];
                         }
@@ -2928,7 +3058,7 @@ impl TTreeIndex {
                     .expect("Out of memory for T-Tree new right node");
                 let new_right_mut = new_right.as_mut();
 
-                // 分配键到左右子节点
+                // 分配键到左右子节�?
                 let mid = (TTREE_ORDER + 1) / 2;
 
                 // 更新原子节点（左子节点）
@@ -2938,20 +3068,20 @@ impl TTreeIndex {
                     child_mut.keys[i] = keys[i];
                 }
 
-                // 更新新右子节点
+                // 更新新右子节�?
                 new_right_mut.key_count = ((TTREE_ORDER + 1) - mid) as u8;
                 for i in 0..new_right_mut.key_count as usize {
                     new_right_mut.keys[i] = keys[mid + i];
                 }
 
-                // 将中间键提升到当前节点
+                // 将中间键提升到当前节�?
                 let promoted_key = keys[mid - 1];
 
-                // 插入提升的键到当前节点
+                // 插入提升的键到当前节�?
                 self.insert_into_node(node, promoted_key);
 
-                // 更新子节点指针
-                // 简化实现：根据提升键的位置更新子节点
+                // 更新子节点指�?
+                // 简化实现：根据提升键的位置更新子节�?
                 let (promoted_pos, _) = self.find_key_position(node_mut, &promoted_key);
 
                 if promoted_pos == 0 {
@@ -2972,8 +3102,8 @@ impl TTreeIndex {
             if node_mut.key_count < TTREE_ORDER as u8 {
                 self.insert_into_node(node, key);
             } else {
-                // 节点已满，需要分裂
-                // 简化实现：创建新节点
+                // 节点已满，需要分�?
+                // 简化实现：创建新节�?
                 let mut new_node = self
                     .allocate_node()
                     .expect("Out of memory for T-Tree new node");
@@ -2991,7 +3121,7 @@ impl TTreeIndex {
                 let mut inserted = false;
                 for i in 0..TTREE_ORDER {
                     if self.compare_items(&keys[i], &key) == core::cmp::Ordering::Greater {
-                        // 移动后续键
+                        // 移动后续�?
                         for j in (i..TTREE_ORDER).rev() {
                             keys[j + 1] = keys[j];
                         }
@@ -3014,13 +3144,13 @@ impl TTreeIndex {
                     node_mut.keys[i] = keys[i];
                 }
 
-                // 更新新节点
+                // 更新新节�?
                 new_node_mut.key_count = ((TTREE_ORDER + 1) - mid) as u8;
                 for i in 0..new_node_mut.key_count as usize {
                     new_node_mut.keys[i] = keys[mid + i];
                 }
 
-                // 更新子节点指针
+                // 更新子节点指�?
                 if pos == 0 {
                     node_mut.left = Some(new_node);
                 } else if pos < node_mut.key_count as usize {
@@ -3042,11 +3172,11 @@ impl TTreeIndex {
             return Err(RemDbError::UnsupportedOperation);
         }
 
-        // 创建临时索引项用于比较
+        // 创建临时索引项用于比�?
         let mut search_item = SecondaryIndexItem {
             key_size: key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(search_item.key_data.as_mut_ptr(), key, key_size);
 
@@ -3054,7 +3184,7 @@ impl TTreeIndex {
         while let Some(node) = current {
             let node_ref = node.as_ref();
 
-            // 查找键位置
+            // 查找键位�?
             let (pos, cmp) = self.find_key_position(node_ref, &search_item);
 
             if cmp == core::cmp::Ordering::Equal {
@@ -3076,7 +3206,7 @@ impl TTreeIndex {
         Err(RemDbError::RecordNotFound)
     }
 
-    /// 范围查询（返回第一个匹配项）
+    /// 范围查询（返回第一个匹配项�?
     pub unsafe fn find_range(
         &mut self,
         start_key: *const u8,
@@ -3087,18 +3217,18 @@ impl TTreeIndex {
         // 更新统计信息
         self.stats.access_count += 1;
 
-        // 创建临时索引项用于比较
+        // 创建临时索引项用于比�?
         let mut start_item = SecondaryIndexItem {
             key_size: start_key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(start_item.key_data.as_mut_ptr(), start_key, start_key_size);
 
         let mut end_item = SecondaryIndexItem {
             key_size: end_key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(end_item.key_data.as_mut_ptr(), end_key, end_key_size);
 
@@ -3107,7 +3237,7 @@ impl TTreeIndex {
         let mut stack_size = 0;
         let mut current = self.root;
 
-        // 遍历到最左节点
+        // 遍历到最左节�?
         while let Some(node) = current {
             stack[stack_size] = Some(node);
             stack_size += 1;
@@ -3120,11 +3250,11 @@ impl TTreeIndex {
             let node = stack[stack_size].expect("Stack underflow");
             let node_ref = node.as_ref();
 
-            // 检查当前节点的键
+            // 检查当前节点的�?
             for i in 0..node_ref.key_count as usize {
                 let key = &node_ref.keys[i];
 
-                // 检查是否在范围内
+                // 检查是否在范围�?
                 if self.compare_items(key, &start_item) != core::cmp::Ordering::Less
                     && self.compare_items(key, &end_item) != core::cmp::Ordering::Greater
                 {
@@ -3133,13 +3263,13 @@ impl TTreeIndex {
                     return Ok(key.record_id);
                 }
 
-                // 如果已经超出范围，结束搜索
+                // 如果已经超出范围，结束搜�?
                 if self.compare_items(key, &end_item) == core::cmp::Ordering::Greater {
                     break;
                 }
             }
 
-            // 遍历右子树
+            // 遍历右子�?
             let mut child = node_ref.right;
             while let Some(child_node) = child {
                 stack[stack_size] = Some(child_node);
@@ -3151,7 +3281,7 @@ impl TTreeIndex {
         Err(RemDbError::RecordNotFound)
     }
 
-    /// 范围查询（返回所有匹配项）
+    /// 范围查询（返回所有匹配项�?
     pub unsafe fn find_range_all(
         &mut self,
         start_key: *const u8,
@@ -3169,18 +3299,18 @@ impl TTreeIndex {
             return Err(RemDbError::UnsupportedOperation);
         }
 
-        // 创建临时索引项用于比较
+        // 创建临时索引项用于比�?
         let mut start_item = SecondaryIndexItem {
             key_size: start_key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(start_item.key_data.as_mut_ptr(), start_key, start_key_size);
 
         let mut end_item = SecondaryIndexItem {
             key_size: end_key_size as u8,
             record_id: 0,
-            key_data: [0u8; 64],
+            key_data: [0u8; 128],
         };
         memcpy(end_item.key_data.as_mut_ptr(), end_key, end_key_size);
 
@@ -3189,7 +3319,7 @@ impl TTreeIndex {
         let mut stack_size = 0;
         let mut current = self.root;
 
-        // 遍历到最左节点
+        // 遍历到最左节�?
         while let Some(node) = current {
             stack[stack_size] = Some(node);
             stack_size += 1;
@@ -3202,7 +3332,7 @@ impl TTreeIndex {
             let node = stack[stack_size].expect("Stack underflow");
             let node_ref = node.as_ref();
 
-            // 检查当前节点的键
+            // 检查当前节点的�?
             for i in 0..node_ref.key_count as usize {
                 if match_count >= max_records {
                     break;
@@ -3210,22 +3340,22 @@ impl TTreeIndex {
 
                 let key = &node_ref.keys[i];
 
-                // 检查是否在范围内
+                // 检查是否在范围�?
                 if self.compare_items(key, &start_item) != core::cmp::Ordering::Less
                     && self.compare_items(key, &end_item) != core::cmp::Ordering::Greater
                 {
-                    // 添加到结果
+                    // 添加到结�?
                     *out_record_ids.add(match_count) = key.record_id;
                     match_count += 1;
                 }
 
-                // 如果已经超出范围，结束搜索
+                // 如果已经超出范围，结束搜�?
                 if self.compare_items(key, &end_item) == core::cmp::Ordering::Greater {
                     break;
                 }
             }
 
-            // 遍历右子树
+            // 遍历右子�?
             let mut child = node_ref.right;
             while let Some(child_node) = child {
                 stack[stack_size] = Some(child_node);
@@ -3242,15 +3372,15 @@ impl TTreeIndex {
         Ok(match_count)
     }
 
-    /// 删除索引项
+    /// 删除索引�?
     pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
         // 增加索引删除计数
         crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
-        // 自旋锁保护
+        // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
         // 简化实现：暂不支持删除操作
-        // 完整的T-Tree删除实现比较复杂，需要处理多种情况
+        // 完整的T-Tree删除实现比较复杂，需要处理多种情�?
 
         crate::platform::spin_unlock(&mut self.lock);
         Err(RemDbError::UnsupportedOperation)

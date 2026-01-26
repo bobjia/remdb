@@ -72,7 +72,7 @@ struct IndexBuildTask {
     /// 表名
     table_name: String,
     /// 字段名
-    column_name: String,
+    column_name: Vec<String>,
     /// 索引类型
     sql_index_type: SqlIndexType,
     /// 索引构建参数
@@ -232,7 +232,7 @@ impl IndexBuildThreadPool {
     pub fn submit_task(
         &self, 
         table_name: String, 
-        column_name: String, 
+        column_name: Vec<String>, 
         sql_index_type: SqlIndexType,
         params: IndexBuildParams,
     ) -> IndexBuildTaskId {
@@ -242,7 +242,7 @@ impl IndexBuildThreadPool {
         let status = Arc::new(Mutex::new(IndexBuildStatus::new(
             task_id,
             table_name.clone(),
-            column_name.clone(),
+            column_name.join(", "),
             sql_index_type.to_string(),
         )));
         

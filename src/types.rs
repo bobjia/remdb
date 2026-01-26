@@ -1197,10 +1197,10 @@ pub struct TableDef {
     pub name: String,
     /// 字段定义
     pub fields: Vec<FieldDef>,
-    /// 主键字段索引
-    pub primary_key: usize,
-    /// 辅助索引字段索引（可选）
-    pub secondary_index: Option<usize>,
+    /// 主键字段索引列表（复合主键）
+    pub primary_key: Vec<usize>,
+    /// 辅助索引字段索引列表（复合索引）
+    pub secondary_index: Option<Vec<usize>>,
     /// 辅助索引类型
     pub secondary_index_type: IndexType,
     /// 单条记录大小

@@ -319,11 +319,12 @@ CREATE TABLE table_name (
     column1 datatype [constraints],
     column2 datatype [constraints],
     ...
+    [PRIMARY KEY (column1, column2, ...)]
 );
 
 #### 支持的约束
 
-- `PRIMARY KEY`：主键约束
+- `PRIMARY KEY`：主键约束，支持单列主键和复合主键
 - `NOT NULL`：非空约束
 - `UNIQUE`：唯一约束
 - `AUTOINCREMENT`/`AUTO_INCREMENT`：自增约束
@@ -402,12 +403,21 @@ CREATE TABLE compressed_vectors (
     vec VECTOR(128) WITH DISTANCE=COSINE, COMPRESSION=PQ,
     meta TEXT
 );
+
+-- 创建带有复合主键的表
+CREATE TABLE metrics (
+    device_id INTEGER NOT NULL,
+    metric_id INTEGER NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    value REAL NOT NULL,
+    PRIMARY KEY (device_id, metric_id, timestamp)
+);
 ```
 
 ### 2.6 CREATE INDEX语句
 
 ```sql
-CREATE INDEX index_name ON table_name (column) [USING index_type] [WITH (parameter=value, ...)] [ONLINE | OFFLINE];
+CREATE INDEX index_name ON table_name (column1, column2, ...) [USING index_type] [WITH (parameter=value, ...)] [ONLINE | OFFLINE];
 ```
 
 #### 示例
@@ -434,6 +444,10 @@ CREATE INDEX idx_users_persistent ON users (name) USING BTREE WITH (STORAGE=DISK
 
 -- 创建向量索引 - 指定距离度量
 CREATE INDEX idx_vectors_cosine ON vectors (vec) USING HNSW WITH (DISTANCE=COSINE);
+
+-- 创建复合索引
+CREATE INDEX idx_orders_customer_date ON orders (customer_id, order_date) USING BTREE;
+CREATE INDEX idx_metrics_device_metric ON metrics (device_id, metric_id) USING TTREE;
 ```
 
 #### 生产级索引特性
@@ -858,13 +872,14 @@ RemDB支持以下索引类型：
 
 ### 3.2 索引功能
 
-- **精确查找**：根据键值精确查找记录
-- **范围查找**：查找指定范围内的所有记录
+- **精确查找**：根据键值精确查找记录，支持复合键查找
+- **范围查找**：查找指定范围内的所有记录，支持复合键范围查找
 - **索引统计**：支持查看索引的访问次数、命中次数、大小和项数量
 - **向量精确搜索**：支持向量的精确最近邻搜索
 - **向量近似最近邻搜索**：支持高效的向量近似搜索
 - **多种距离度量**：支持L2距离、内积(IP)和余弦相似度计算
 - **混合搜索**：支持向量搜索与标量过滤、全文搜索的混合查询
+- **复合索引**：支持基于多个列创建索引，提高多列查询的性能
 
 ### 3.3 索引创建示例
 
@@ -1229,7 +1244,7 @@ LIMIT 5;
 ## 7. 注意事项
 
 1. 字符串类型最大长度为64字节，超过将被截断
-2. 主键必须是唯一的，且只能有一个
+2. 主键必须是唯一的，支持单列主键和复合主键
 3. 自增列只能用于整数类型
 4. 索引键最大长度为64字节
 5. WHERE子句支持向量搜索条件和标量过滤条件的组合

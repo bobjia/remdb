@@ -97,7 +97,7 @@ fn main() {
             ("age", DataType::UInt8, 0, None, None),
             ("active", DataType::Bool, 0, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
 
     match result {

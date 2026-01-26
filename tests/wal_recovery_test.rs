@@ -139,7 +139,7 @@ static TEST_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::sync::Lazy
             vector_metadata: None,
         },
     ],
-    primary_key: 0,
+    primary_key: vec![0],
     secondary_index: None,
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 68,
@@ -203,8 +203,8 @@ static TEST_TIMESERIES_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std:
             vector_metadata: None,
         },
     ],
-    primary_key: 0,
-    secondary_index: Some(3), // 时间戳字段索引
+    primary_key: vec![0],
+    secondary_index: Some(vec![3]), // 时间戳字段索引
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 52,
     max_records: 100,
@@ -269,7 +269,7 @@ static TEST_VECTOR_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::syn
             }),
         },
     ],
-    primary_key: 0,
+    primary_key: vec![0],
     secondary_index: None,
     secondary_index_type: remdb::types::IndexType::SortedArray,
     record_size: 68,

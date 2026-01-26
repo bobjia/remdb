@@ -433,7 +433,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     // 生成secondary_index代码
     let secondary_index_code = match secondary_key_index {
-        Some(index) => quote! { Some(#index) },
+        Some(index) => quote! { Some(vec![#index as usize]) },
         None => quote! { None },
     };
 
@@ -445,7 +445,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 id: 0,
                 name: stringify!(#name).to_string(),
                 fields: vec![#(#field_defs,)*],
-                primary_key: #primary_key_index as usize,
+                primary_key: vec![#primary_key_index as usize],
                 secondary_index: #secondary_index_code,
                 secondary_index_type: #index_type,
                 record_size: #record_size as usize,

@@ -146,7 +146,7 @@ static TEST_TABLE_DEF: LazyLock<TableDef> = LazyLock::new(|| TableDef {
             vector_metadata: None,
         },
     ],
-    primary_key: 0,
+    primary_key: vec![0],
     secondary_index: None,
     secondary_index_type: IndexType::Hash,
     record_size: 8,
@@ -222,8 +222,8 @@ static TIME_SERIES_TABLE_DEF: LazyLock<TableDef> = LazyLock::new(|| TableDef {
             vector_metadata: None,
         },
     ],
-    primary_key: 0,
-    secondary_index: Some(3), // 时间戳作为辅助索引
+    primary_key: vec![0],
+    secondary_index: Some(vec![3]), // 时间戳作为辅助索引
     secondary_index_type: IndexType::SortedArray,
     record_size: 116,  // 4 + 32 + 8 + 8 + 64 = 116字节
     max_records: 2000, // 时间序列测试使用较大的记录数，支持2000条记录
@@ -1432,11 +1432,11 @@ static VECTOR_TABLE_DEF: LazyLock<TableDef> = LazyLock::new(|| TableDef {
             unique: false,
             auto_increment: false,
             default_value: None,
-            vector_metadata: Some(VectorMetadata {
-                dimension: 32,
-                distance_type: DistanceType::L2,
-                index_type: VectorIndexType::HNSW,
-            }),
+            vector_metadata: Some(VectorMetadata::new(
+                32,
+                DistanceType::L2,
+                VectorIndexType::HNSW,
+            )),
         },
         FieldDef {
             name: "category".to_string(),
@@ -1451,7 +1451,7 @@ static VECTOR_TABLE_DEF: LazyLock<TableDef> = LazyLock::new(|| TableDef {
             vector_metadata: None,
         },
     ],
-    primary_key: 0,
+    primary_key: vec![0],
     secondary_index: None,
     secondary_index_type: IndexType::Hash,
     record_size: 4 + 32 * 4 + 4, // 4字节id + 32*4字节向量 + 4字节category

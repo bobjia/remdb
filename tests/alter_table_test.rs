@@ -182,7 +182,7 @@ fn test_alter_table_add_column() {
             ("name", DataType::String, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
     assert!(result.is_ok(), "Failed to create table: {:?}", result.err());
 
@@ -217,7 +217,7 @@ fn test_alter_table_drop_column() {
             ("age", DataType::UInt8, 1, None, None),
             ("active", DataType::Bool, 1, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
     assert!(result.is_ok(), "Failed to create table: {:?}", result.err());
 
@@ -251,7 +251,7 @@ fn test_alter_table_modify_column() {
             ("name", DataType::String, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
     assert!(result.is_ok(), "Failed to create table: {:?}", result.err());
 
@@ -285,7 +285,7 @@ fn test_alter_table_rename_column() {
             ("name", DataType::String, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
     assert!(result.is_ok(), "Failed to create table: {:?}", result.err());
 
@@ -324,7 +324,7 @@ fn test_alter_table_data_migration() {
             ("name", DataType::String, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
         ],
-        Some(0), // 主键为id字段
+        Some(vec![0]), // 主键为id字段
     );
     assert!(result.is_ok(), "Failed to create table: {:?}", result.err());
 

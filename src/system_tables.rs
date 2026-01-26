@@ -126,7 +126,7 @@ unsafe fn create_system_config_table(db: &mut crate::RemDb) -> Result<()> {
         id: (db.tables.len() + 1) as u8, // 系统表ID从1开始
         name: SYSTEM_CONFIG_TABLE.to_string(),
         fields,
-        primary_key: 0, // 主键是config_key字段
+        primary_key: vec![0], // 主键是config_key字段
         secondary_index: None,
         secondary_index_type: crate::types::IndexType::SortedArray,
         record_size,

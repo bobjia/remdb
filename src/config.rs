@@ -198,16 +198,18 @@ pub fn validate_config(config: &DbConfig) -> bool {
         }
 
         // 检查主键存在
-        if table.primary_key >= table.fields.len() {
-            return false;
+        for &pk_index in &table.primary_key {
+            if pk_index >= table.fields.len() {
+                return false;
+            }
         }
 
         // 检查辅助索引（如果有）
-        let has_secondary = table.secondary_index.is_some();
-        if has_secondary {
-            let secondary_index = table.secondary_index.unwrap();
-            if secondary_index >= table.fields.len() {
-                return false;
+        if let Some(secondary_index) = &table.secondary_index {
+            for &index in secondary_index {
+                if index >= table.fields.len() {
+                    return false;
+                }
             }
         }
     }
@@ -228,7 +230,8 @@ pub fn table_memory_usage(table: &TableDef) -> usize {
         match table.secondary_index_type {
             // 有序数组索引
             crate::types::IndexType::SortedArray => {
-                let primary_key_field = &table.fields[table.primary_key];
+                // 对于复合主键，使用第一个主键字段的大小
+                let primary_key_field = &table.fields[table.primary_key[0]];
                 table.max_records * (primary_key_field.size + size_of::<u16>())
             }
             // B-Tree索引
@@ -249,7 +252,8 @@ pub fn table_memory_usage(table: &TableDef) -> usize {
             }
             // 其他索引类型（默认）
             _ => {
-                let primary_key_field = &table.fields[table.primary_key];
+                // 对于复合主键，使用第一个主键字段的大小
+                let primary_key_field = &table.fields[table.primary_key[0]];
                 table.max_records * (primary_key_field.size + size_of::<u16>())
             }
         }

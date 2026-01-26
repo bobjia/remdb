@@ -144,7 +144,7 @@ fn create_test_table_def() -> TableDef {
                 vector_metadata: None,
             },
         ],
-        primary_key: 0,
+        primary_key: vec![0],
         secondary_index: None,
         secondary_index_type: IndexType::SortedArray,
         record_size: 8,

@@ -107,10 +107,10 @@ pub struct SqlQuery {
     pub values: Vec<Vec<Value>>,
     /// 表字段定义（用于CREATE TABLE）：(字段名, 类型, 主键, 非空, 唯一, 自增, 默认值)
     pub table_def: Vec<(String, String, bool, bool, bool, bool, Option<Value>)>,
-    /// 主键字段名（用于CREATE TABLE）
-    pub primary_key: Option<String>,
-    /// 索引字段名（用于CREATE INDEX）
-    pub index_column: Option<String>,
+    /// 主键字段名列表（用于CREATE TABLE，支持复合主键）
+    pub primary_key: Option<Vec<String>>,
+    /// 索引字段名列表（用于CREATE INDEX，支持组合索引）
+    pub index_column: Option<Vec<String>>,
     /// 索引类型（用于CREATE INDEX）
     pub index_type: Option<String>,
     /// 索引参数（用于CREATE INDEX WITH子句）
@@ -789,68 +789,105 @@ impl SqlParser {
         self.skip_whitespace();
         self.expect_char('(')?;
 
-        // 解析字段定义
+        // 解析字段定义和约束
         let mut table_def = Vec::new();
         let mut primary_key = None;
+        let mut primary_key_fields = Vec::new();
 
         loop {
             self.skip_whitespace();
-            let field_name = self.parse_identifier()?;
-
-            self.skip_whitespace();
-            // 解析数据类型，支持复杂类型如 VARCHAR(255), INT UNSIGNED
-            let data_type = self.parse_data_type()?.to_uppercase();
-
-            // 初始化约束标志
-            let mut is_primary_key = false;
-            let mut is_not_null = false;
-            let mut is_unique = false;
-            let mut is_auto_increment = false;
-            let mut default_value: Option<Value> = None;
-
-            // 检查约束条件
-            loop {
+            
+            // 检查是否是PRIMARY KEY约束
+            if self.match_keyword("PRIMARY") {
                 self.skip_whitespace();
-
-                if self.match_keyword("PRIMARY") {
+                self.expect_keyword("KEY")?;
+                self.skip_whitespace();
+                self.expect_char('(')?;
+                
+                // 解析复合主键字段列表
+                loop {
                     self.skip_whitespace();
-                    self.expect_keyword("KEY")?;
-                    is_primary_key = true;
-                    primary_key = Some(field_name.clone());
-                } else if self.match_keyword("NOT") {
+                    let field_name = self.parse_identifier()?;
+                    primary_key_fields.push(field_name);
+                    
                     self.skip_whitespace();
-                    self.expect_keyword("NULL")?;
-                    is_not_null = true;
-                } else if self.match_keyword("UNIQUE") {
-                    is_unique = true;
-                } else if self.match_keyword("AUTOINCREMENT")
-                    || self.match_keyword("AUTO_INCREMENT")
-                {
-                    is_auto_increment = true;
-                } else if self.match_keyword("DEFAULT") {
-                    self.skip_whitespace();
-                    let value = self.parse_value()?;
-                    default_value = Some(value);
-                } else {
-                    // 没有更多约束
-                    break;
+                    if self.match_char(')') {
+                        break;
+                    }
+                    
+                    if !self.match_char(',') {
+                        return Err(QueryParseError::InvalidSyntax);
+                    }
                 }
-            }
+                
+                primary_key = Some(primary_key_fields.clone());
+                
+                // 更新字段定义中的主键标志
+                for (field_name, _, ref mut is_pk, _, _, _, _) in &mut table_def {
+                    if primary_key_fields.contains(field_name) {
+                        *is_pk = true;
+                    }
+                }
+            } else {
+                // 解析普通字段定义
+                let field_name = self.parse_identifier()?;
 
-            // SQLite兼容：INTEGER PRIMARY KEY自动设为自增
-            if data_type == "INTEGER" && is_primary_key {
-                is_auto_increment = true;
-            }
+                self.skip_whitespace();
+                // 解析数据类型，支持复杂类型如 VARCHAR(255), INT UNSIGNED
+                let data_type = self.parse_data_type()?.to_uppercase();
 
-            table_def.push((
-                field_name,
-                data_type,
-                is_primary_key,
-                is_not_null,
-                is_unique,
-                is_auto_increment,
-                default_value,
-            ));
+                // 初始化约束标志
+                let mut is_primary_key = false;
+                let mut is_not_null = false;
+                let mut is_unique = false;
+                let mut is_auto_increment = false;
+                let mut default_value: Option<Value> = None;
+
+                // 检查约束条件
+                loop {
+                    self.skip_whitespace();
+
+                    if self.match_keyword("PRIMARY") {
+                        self.skip_whitespace();
+                        self.expect_keyword("KEY")?;
+                        is_primary_key = true;
+                        primary_key_fields.push(field_name.clone());
+                        primary_key = Some(primary_key_fields.clone());
+                    } else if self.match_keyword("NOT") {
+                        self.skip_whitespace();
+                        self.expect_keyword("NULL")?;
+                        is_not_null = true;
+                    } else if self.match_keyword("UNIQUE") {
+                        is_unique = true;
+                    } else if self.match_keyword("AUTOINCREMENT")
+                        || self.match_keyword("AUTO_INCREMENT")
+                    {
+                        is_auto_increment = true;
+                    } else if self.match_keyword("DEFAULT") {
+                        self.skip_whitespace();
+                        let value = self.parse_value()?;
+                        default_value = Some(value);
+                    } else {
+                        // 没有更多约束
+                        break;
+                    }
+                }
+
+                // SQLite兼容：INTEGER PRIMARY KEY自动设为自增
+                if data_type == "INTEGER" && is_primary_key {
+                    is_auto_increment = true;
+                }
+
+                table_def.push((
+                    field_name,
+                    data_type,
+                    is_primary_key,
+                    is_not_null,
+                    is_unique,
+                    is_auto_increment,
+                    default_value,
+                ));
+            }
 
             self.skip_whitespace();
             if self.match_char(')') {
@@ -860,6 +897,11 @@ impl SqlParser {
             if !self.match_char(',') {
                 return Err(QueryParseError::InvalidSyntax);
             }
+        }
+
+        // 如果没有显式的主键定义，检查是否有字段标记为主键
+        if primary_key.is_none() {
+            primary_key = primary_key_fields.into_iter().collect::<Vec<_>>().into();
         }
 
         Ok(SqlQuery {
@@ -905,13 +947,28 @@ impl SqlParser {
         self.skip_whitespace();
         self.expect_char('(')?;
 
-        // 解析索引字段
-        self.skip_whitespace();
-        let index_column = self.parse_identifier()?;
-
-        // 解析右括号
-        self.skip_whitespace();
-        self.expect_char(')')?;
+        // 解析索引字段列表（支持组合索引）
+        let mut index_columns = Vec::new();
+        loop {
+            self.skip_whitespace();
+            let column_name = self.parse_identifier()?;
+            index_columns.push(column_name);
+            
+            // 跳过排序方向（ASC/DESC，可选）
+            self.skip_whitespace();
+            if self.match_keyword("ASC") || self.match_keyword("DESC") {
+                // 目前忽略排序方向，以后可以扩展支持
+            }
+            
+            self.skip_whitespace();
+            if self.match_char(')') {
+                break;
+            }
+            
+            if !self.match_char(',') {
+                return Err(QueryParseError::InvalidSyntax);
+            }
+        }
 
         // 解析索引类型（可选）
         let mut index_type = None;
@@ -986,7 +1043,7 @@ impl SqlParser {
             values: Vec::new(),
             table_def: Vec::new(),
             primary_key: None,
-            index_column: Some(index_column),
+            index_column: Some(index_columns),
             index_type,
             index_params,
             index_online,

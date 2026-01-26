@@ -534,7 +534,7 @@ impl ReplicationManager {
                             table_name,
                             &fields,
                             Some(&field_constraints),
-                            Some(primary_key),
+                            Some(vec![primary_key]),
                         );
 
                         eprintln!("[Slave] Created table: {}", table_name);

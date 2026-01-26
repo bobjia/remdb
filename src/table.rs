@@ -425,7 +425,7 @@ impl MemoryTable {
         }
 
         // 验证主键唯一性约束
-        if let Some(primary_key_field) = self.def.fields.iter().find(|f| f.primary_key) {
+        if !self.def.primary_key.is_empty() {
             // 遍历所有记录，检查是否存在重复主键
             for slot_id in 0..self.def.max_records {
                 // 跳过要排除的槽位（用于更新操作）
@@ -454,114 +454,117 @@ impl MemoryTable {
                     // 获取记录数据指针
                     let record_ptr = self.data_start.as_ptr().add(slot_id * self.record_size);
 
-                    // 根据字段类型比较主键值
-                    let is_duplicate = match primary_key_field.data_type {
+                    // 比较所有主键字段的值
+                    let mut is_duplicate = true;
+                    for &pk_col_idx in &self.def.primary_key {
+                        let pk_field = &self.def.fields[pk_col_idx];
+                        let fields_equal = match pk_field.data_type {
                         DataType::UInt8 => {
-                            let current = *(record_data.add(primary_key_field.offset) as *const u8);
-                            let existing = *(record_ptr.add(primary_key_field.offset) as *const u8);
+                            let current = *(record_data.add(pk_field.offset) as *const u8);
+                            let existing = *(record_ptr.add(pk_field.offset) as *const u8);
                             current == existing
                         }
                         DataType::UInt16 => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset) as *const u16,
+                                record_data.add(pk_field.offset) as *const u16,
                             );
                             let existing = core::ptr::read_unaligned(
-                                record_ptr.add(primary_key_field.offset) as *const u16,
+                                record_ptr.add(pk_field.offset) as *const u16,
                             );
                             current == existing
                         }
                         DataType::UInt32 => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset) as *const u32,
+                                record_data.add(pk_field.offset) as *const u32,
                             );
                             let existing = core::ptr::read_unaligned(
-                                record_ptr.add(primary_key_field.offset) as *const u32,
+                                record_ptr.add(pk_field.offset) as *const u32,
                             );
                             current == existing
                         }
                         DataType::UInt64 => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset) as *const u64,
+                                record_data.add(pk_field.offset) as *const u64,
                             );
                             let existing = core::ptr::read_unaligned(
-                                record_ptr.add(primary_key_field.offset) as *const u64,
+                                record_ptr.add(pk_field.offset) as *const u64,
                             );
                             current == existing
                         }
                         DataType::Int8 => {
-                            let current = *(record_data.add(primary_key_field.offset) as *const i8);
-                            let existing = *(record_ptr.add(primary_key_field.offset) as *const i8);
+                            let current = *(record_data.add(pk_field.offset) as *const i8);
+                            let existing = *(record_ptr.add(pk_field.offset) as *const i8);
                             current == existing
                         }
                         DataType::Int16 => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset) as *const i16,
+                                record_data.add(pk_field.offset) as *const i16,
                             );
                             let existing = core::ptr::read_unaligned(
-                                record_ptr.add(primary_key_field.offset) as *const i16,
+                                record_ptr.add(pk_field.offset) as *const i16,
                             );
                             current == existing
                         }
                         DataType::Int32 => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset) as *const i32,
+                                record_data.add(pk_field.offset) as *const i32,
                             );
                             let existing = core::ptr::read_unaligned(
-                                record_ptr.add(primary_key_field.offset) as *const i32,
+                                record_ptr.add(pk_field.offset) as *const i32,
                             );
                             current == existing
                         }
                         DataType::Int64 => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset) as *const i64,
+                                record_data.add(pk_field.offset) as *const i64,
                             );
                             let existing = core::ptr::read_unaligned(
-                                record_ptr.add(primary_key_field.offset) as *const i64,
+                                record_ptr.add(pk_field.offset) as *const i64,
                             );
                             current == existing
                         }
                         DataType::Float32 => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset) as *const f32,
+                                record_data.add(pk_field.offset) as *const f32,
                             );
                             let existing = core::ptr::read_unaligned(
-                                record_ptr.add(primary_key_field.offset) as *const f32,
+                                record_ptr.add(pk_field.offset) as *const f32,
                             );
                             current == existing
                         }
                         DataType::Float64 => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset) as *const f64,
+                                record_data.add(pk_field.offset) as *const f64,
                             );
                             let existing = core::ptr::read_unaligned(
-                                record_ptr.add(primary_key_field.offset) as *const f64,
+                                record_ptr.add(pk_field.offset) as *const f64,
                             );
                             current == existing
                         }
                         DataType::Bool => {
                             let current =
-                                *(record_data.add(primary_key_field.offset) as *const bool);
+                                *(record_data.add(pk_field.offset) as *const bool);
                             let existing =
-                                *(record_ptr.add(primary_key_field.offset) as *const bool);
+                                *(record_ptr.add(pk_field.offset) as *const bool);
                             current == existing
                         }
                         DataType::Timestamp => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset)
+                                record_data.add(pk_field.offset)
                                     as *const crate::types::db_timestamp,
                             );
                             let existing =
-                                core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset)
+                                core::ptr::read_unaligned(record_ptr.add(pk_field.offset)
                                     as *const crate::types::db_timestamp);
                             current.value == existing.value
                         }
                         DataType::TimestampTZ => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset)
+                                record_data.add(pk_field.offset)
                                     as *const crate::types::db_timestamp,
                             );
                             let existing =
-                                core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset)
+                                core::ptr::read_unaligned(record_ptr.add(pk_field.offset)
                                     as *const crate::types::db_timestamp);
                             current.value == existing.value
                                 && current.tz_offset == existing.tz_offset
@@ -569,11 +572,11 @@ impl MemoryTable {
                         DataType::String => {
                             // 比较字符串内容
                             let current_str =
-                                record_data.add(primary_key_field.offset) as *const u8;
+                                record_data.add(pk_field.offset) as *const u8;
                             let existing_str =
-                                record_ptr.add(primary_key_field.offset) as *const u8;
+                                record_ptr.add(pk_field.offset) as *const u8;
                             let mut is_equal = true;
-                            for i in 0..primary_key_field.size {
+                            for i in 0..pk_field.size {
                                 if *current_str.add(i) != *existing_str.add(i) {
                                     is_equal = false;
                                     break;
@@ -583,16 +586,23 @@ impl MemoryTable {
                         }
                         DataType::Interval => {
                             let current = core::ptr::read_unaligned(
-                                record_data.add(primary_key_field.offset)
+                                record_data.add(pk_field.offset)
                                     as *const crate::types::db_interval,
                             );
                             let existing =
-                                core::ptr::read_unaligned(record_ptr.add(primary_key_field.offset)
+                                core::ptr::read_unaligned(record_ptr.add(pk_field.offset)
                                     as *const crate::types::db_interval);
                             current.value == existing.value
                         }
                         DataType::Vector => false, // 向量字段暂不支持作为主键
-                    };
+                        };
+                        
+                        // 如果有任何一个主键字段不相等，则不是重复记录
+                        if !fields_equal {
+                            is_duplicate = false;
+                            break;
+                        }
+                    }
 
                     if is_duplicate {
                         return Err(RemDbError::DuplicateKey);
@@ -951,41 +961,44 @@ impl MemoryTable {
             (*status_ptr).version += 1;
         }
 
-        // 更新最大主键值（如果是主键字段）
-        if let Some(pk_field) = self.def.fields.get(self.def.primary_key) {
-            let pk_value = unsafe {
-                match pk_field.data_type {
-                    DataType::UInt8 => *record_ptr.add(pk_field.offset) as u64,
-                    DataType::UInt16 => {
-                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u16)
-                            as u64
+        // 更新最大主键值（仅当主键是单个整数类型字段时）
+        if self.def.primary_key.len() == 1 {
+            let pk_col_idx = self.def.primary_key[0];
+            if let Some(pk_field) = self.def.fields.get(pk_col_idx) {
+                let pk_value = unsafe {
+                    match pk_field.data_type {
+                        DataType::UInt8 => *record_ptr.add(pk_field.offset) as u64,
+                        DataType::UInt16 => {
+                            core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u16)
+                                as u64
+                        }
+                        DataType::UInt32 => {
+                            core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u32)
+                                as u64
+                        }
+                        DataType::UInt64 => {
+                            core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u64)
+                        }
+                        DataType::Int8 => *record_ptr.add(pk_field.offset) as i8 as u64,
+                        DataType::Int16 => {
+                            core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i16)
+                                as u64
+                        }
+                        DataType::Int32 => {
+                            core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i32)
+                                as u64
+                        }
+                        DataType::Int64 => {
+                            core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i64)
+                                as u64
+                        }
+                        _ => 0, // 非整数类型主键不更新max_pk
                     }
-                    DataType::UInt32 => {
-                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u32)
-                            as u64
-                    }
-                    DataType::UInt64 => {
-                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u64)
-                    }
-                    DataType::Int8 => *record_ptr.add(pk_field.offset) as i8 as u64,
-                    DataType::Int16 => {
-                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i16)
-                            as u64
-                    }
-                    DataType::Int32 => {
-                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i32)
-                            as u64
-                    }
-                    DataType::Int64 => {
-                        core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i64)
-                            as u64
-                    }
-                    _ => 0, // 非整数类型主键不更新max_pk
-                }
-            };
+                };
 
-            if pk_value > self.max_pk {
-                self.max_pk = pk_value;
+                if pk_value > self.max_pk {
+                    self.max_pk = pk_value;
+                }
             }
         }
 

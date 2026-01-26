@@ -151,7 +151,7 @@ fn test_index_recovery() -> Result<()> {
         ("value", remdb::DataType::UInt32, 4, None, None),
     ];
 
-    db.create_table("test_table", fields, Some(0))?;
+    db.create_table("test_table", fields, Some(vec![0]))?;
 
     // 为name字段创建索引
     db.create_index("test_table", "name", remdb::IndexType::BTree)?;
