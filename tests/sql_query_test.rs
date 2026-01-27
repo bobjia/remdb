@@ -166,8 +166,8 @@ remdb::database!(
 #[test]
 #[serial]
 fn test_sql_query() {
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 4194304]; // 4MB内存缓冲区，足够MVCC使用
 
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -467,8 +467,8 @@ remdb::database!(
 #[test]
 #[serial]
 fn test_sql_hybrid_query() {
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
 
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -542,8 +542,8 @@ fn test_sql_hybrid_query() {
 #[test]
 #[serial]
 fn test_sql_join() {
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
 
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -706,8 +706,8 @@ fn test_sql_join() {
 fn test_sql_distinct() {
     println!("=== 测试SQL DISTINCT语句 ===");
 
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
 
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -798,8 +798,8 @@ fn test_sql_distinct() {
 #[test]
 #[serial]
 fn test_sql_aliases() {
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
 
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -850,8 +850,8 @@ fn test_sql_aliases() {
 #[test]
 #[serial]
 fn test_sql_functions() {
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
 
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -937,8 +937,8 @@ fn test_sql_functions() {
 #[test]
 #[serial]
 fn test_sql_statistical_functions() {
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
 
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -1000,8 +1000,8 @@ fn test_sql_statistical_functions() {
 #[test]
 #[serial]
 fn test_sql_aggregate_functions() {
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
 
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -1067,8 +1067,8 @@ fn test_sql_aggregate_functions() {
 #[test]
 #[serial]
 fn test_sql_group_by() {
-    // 使用局部内存缓冲区，确保测试之间的隔离
-    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
 
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);

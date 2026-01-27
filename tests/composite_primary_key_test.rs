@@ -3,13 +3,11 @@ extern crate alloc;
 use remdb::{DataType, RemDb, Result};
 use std::sync::LazyLock;
 
+// 静态内存缓冲区
+static mut DB_MEMORY: Vec<u8> = Vec::new();
+
 // 静态内存分配器实例
 static DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
-
-// 静态内存缓冲区，每个测试用例使用自己的缓冲区
-static mut DB_MEMORY1: [u8; 8388608] = [0; 8388608]; // 8MB for test 1
-static mut DB_MEMORY2: [u8; 8388608] = [0; 8388608]; // 8MB for test 2
-static mut DB_MEMORY3: [u8; 8388608] = [0; 8388608]; // 8MB for test 3
 
 // 创建一个静态测试配置
 static TEST_CONFIG: LazyLock<remdb::config::DbConfig> = LazyLock::new(|| {
@@ -39,14 +37,10 @@ static TEST_CONFIG: LazyLock<remdb::config::DbConfig> = LazyLock::new(|| {
 
 #[test]
 fn test_create_table_with_composite_pk() -> Result<()> {
-    // 重置内存缓冲区
+    // 初始化内存缓冲区
     unsafe {
-        DB_MEMORY1.fill(0);
-    }
-    
-    // 初始化全局内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY1.as_mut_ptr(), DB_MEMORY1.len())?;
+        DB_MEMORY = vec![0u8; 8388608]; // 8MB
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())?;
     }
     
     // 创建数据库实例
@@ -71,14 +65,10 @@ fn test_create_table_with_composite_pk() -> Result<()> {
 
 #[test]
 fn test_insert_and_query_with_composite_pk() -> Result<()> {
-    // 重置内存缓冲区
+    // 初始化内存缓冲区
     unsafe {
-        DB_MEMORY2.fill(0);
-    }
-    
-    // 初始化全局内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY2.as_mut_ptr(), DB_MEMORY2.len())?;
+        DB_MEMORY = vec![0u8; 8388608]; // 8MB
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())?;
     }
     
     // 创建数据库实例
@@ -148,14 +138,10 @@ fn test_insert_and_query_with_composite_pk() -> Result<()> {
 
 #[test]
 fn test_composite_pk_with_three_fields() -> Result<()> {
-    // 重置内存缓冲区
+    // 初始化内存缓冲区
     unsafe {
-        DB_MEMORY3.fill(0);
-    }
-    
-    // 初始化全局内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY3.as_mut_ptr(), DB_MEMORY3.len())?;
+        DB_MEMORY = vec![0u8; 8388608]; // 8MB
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())?;
     }
     
     // 创建数据库实例

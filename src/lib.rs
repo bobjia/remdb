@@ -885,6 +885,39 @@ impl RemDb {
                 None => {
                     println!("Warning: Table with ID {} not found, skipping...", table_id);
                     // 跳过该表的数据
+                    // 读取表名长度
+                    let mut table_name_len_bytes = [0u8; 1];
+                    let _ = crate::platform::file_read(
+                        handle,
+                        table_name_len_bytes.as_mut_ptr(),
+                        table_name_len_bytes.len(),
+                    );
+                    let table_name_len = table_name_len_bytes[0] as usize;
+                    
+                    // 跳过表名
+                    let mut dummy_name = vec![0u8; table_name_len];
+                    let _ = crate::platform::file_read(
+                        handle,
+                        dummy_name.as_mut_ptr(),
+                        dummy_name.len(),
+                    );
+                    
+                    // 跳过字段数量
+                    let mut field_count_bytes = [0u8; 1];
+                    let _ = crate::platform::file_read(
+                        handle,
+                        field_count_bytes.as_mut_ptr(),
+                        field_count_bytes.len(),
+                    );
+                    
+                    // 跳过主键字段数量
+                    let mut primary_key_count_bytes = [0u8; 1];
+                    let _ = crate::platform::file_read(
+                        handle,
+                        primary_key_count_bytes.as_mut_ptr(),
+                        primary_key_count_bytes.len(),
+                    );
+                    
                     // 读取记录数
                     let mut record_count_bytes = [0u8; 4];
                     let _ = crate::platform::file_read(
@@ -915,6 +948,55 @@ impl RemDb {
                 }
             };
 
+            // 读取表名长度
+            let mut table_name_len_bytes = [0u8; 1];
+            let read = crate::platform::file_read(
+                handle,
+                table_name_len_bytes.as_mut_ptr(),
+                table_name_len_bytes.len(),
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != table_name_len_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            let table_name_len = table_name_len_bytes[0] as usize;
+            
+            // 读取表名
+            let mut table_name = vec![0u8; table_name_len];
+            let read = crate::platform::file_read(
+                handle,
+                table_name.as_mut_ptr(),
+                table_name.len(),
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != table_name.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            
+            // 读取字段数量
+            let mut field_count_bytes = [0u8; 1];
+            let read = crate::platform::file_read(
+                handle,
+                field_count_bytes.as_mut_ptr(),
+                field_count_bytes.len(),
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != field_count_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            
+            // 读取主键字段数量
+            let mut primary_key_count_bytes = [0u8; 1];
+            let read = crate::platform::file_read(
+                handle,
+                primary_key_count_bytes.as_mut_ptr(),
+                primary_key_count_bytes.len(),
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != primary_key_count_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            
             // 读取记录数
             let mut record_count_bytes = [0u8; 4];
             let read = crate::platform::file_read(
