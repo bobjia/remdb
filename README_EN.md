@@ -18,6 +18,7 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **Low Power Mode**: Optimized memory usage with reduced transaction log write frequency
 - **Incremental Snapshot**: Only saves records with changed version numbers, reducing snapshot size and save time
 - **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data, including aggregate functions, mathematical functions, time conversion functions, and JOIN operations
+- **SQL DDL Support**: Supports CREATE TABLE and DROP TABLE statements, allowing dynamic creation and deletion of table structures
 - **Database Monitoring**: Real-time monitoring of database metrics, including memory usage, query performance, and transaction status
 - **UDP-based Reliable Data Pub/Sub**: Supports unicast, broadcast, and multicast modes with NACK-based retransmission
 - **High Availability Support**:
@@ -707,6 +708,7 @@ Check the examples directory for sample code:
 - `time_series.rs`: Time series example demonstrating how to handle time series data
 - `vector_example.rs`: Vector database example demonstrating how to use vector fields, insert vector data, and perform vector similarity queries
 - `vector_distance_test.rs`: Vector distance test example demonstrating vector similarity calculations with different distance metrics
+- `drop_table_example.rs`: DROP TABLE example demonstrating how to use SQL DROP TABLE statements to delete table structures
 - `test_remdb_server.rs`: Master-slave replication example demonstrating how to run master and slave servers with synchronous or asynchronous replication mode
 
 ### Master-Slave Replication Example
@@ -838,7 +840,7 @@ Issues and pull requests are welcome!
 - Add more examples and documentation
 - Implement more complex memory optimization algorithms
 - Complete runtime DDL configuration API, supporting full table and index creation functionality
-- Support DROP TABLE and ALTER TABLE statements
+- Support ALTER TABLE statements
 - Implement more flexible memory allocation strategies
 - Optimize performance of runtime DDL operations
 - Support more complex index configuration options

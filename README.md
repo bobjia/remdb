@@ -18,6 +18,7 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
 - **低功耗模式**：优化内存使用，减少事务日志写入频率
 - **增量快照**：只保存版本号变化的记录，减少快照大小和保存时间
 - **SQL查询支持**：支持标准SQL SELECT语句查询内存数据库的数据，包括聚合函数、数学函数、时间转换函数和JOIN操作
+- **SQL DDL支持**：支持CREATE TABLE和DROP TABLE语句，允许动态创建和删除表结构
 - **数据库监控**：实时监控数据库指标，包括内存使用、查询性能、事务状态等
 - **基于UDP的高可靠数据订阅与发布**：支持单播、广播和组播模式，提供基于NACK的重传机制
 - **高可用支持**：
@@ -707,6 +708,7 @@ cargo check --no-default-features --features=baremetal
 - `time_series.rs`：时间序列示例，展示如何处理时间序列数据
 - `vector_example.rs`：向量数据库示例，展示如何使用向量字段、插入向量数据和执行向量相似性查询
 - `vector_distance_test.rs`：向量距离测试示例，展示不同距离度量的向量相似性计算
+- `drop_table_example.rs`：DROP TABLE示例，展示如何使用SQL DROP TABLE语句删除表结构
 - `test_remdb_server.rs`：主从复制示例，展示如何使用同步或异步复制模式运行主从服务器
 
 ### 主从复制示例
@@ -838,6 +840,6 @@ MIT许可证
 - 增加更多的示例和文档
 - 实现更复杂的内存优化算法
 - 完善运行时DDL配置API，支持完整的表和索引创建功能
-- 支持DROP TABLE和ALTER TABLE语句
+- 支持ALTER TABLE语句
 - 优化运行时DDL操作的性能
 - 支持更复杂的索引配置选项

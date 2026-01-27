@@ -76,6 +76,8 @@ pub enum LogOperation {
     ExitLowPowerMode = 10,
     /// 修改表结构
     AlterTable = 11,
+    /// 删除表
+    DropTable = 12,
 }
 
 /// 日志文件头

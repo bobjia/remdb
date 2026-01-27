@@ -1,0 +1,405 @@
+extern crate alloc;
+
+use remdb::{config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode}, RemDb};
+
+// 为每个测试创建单独的内存缓冲区
+static mut DB_MEMORY1: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024]; // 32MB
+static mut DB_MEMORY2: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024]; // 32MB
+static mut DB_MEMORY3: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024]; // 32MB
+static mut DB_MEMORY4: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024]; // 32MB
+static mut DB_MEMORY5: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024]; // 32MB
+static mut DB_MEMORY6: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024]; // 32MB
+
+// 测试基本的表删除操作
+#[test]
+fn test_drop_table_basic() {
+    // 重置内存缓冲区
+    unsafe {
+        DB_MEMORY1.fill(0);
+    }
+    
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY1.as_mut_ptr(), DB_MEMORY1.len()).unwrap();
+    }
+
+    // 初始化数据库配置
+    static DB_CONFIG: DbConfig = DbConfig {
+        total_memory: 32 * 1024 * 1024, // 32MB
+        default_max_records: 100,
+        low_power_mode_supported: false,
+        low_power_max_records: Some(50),
+        wal_config: WALConfig {
+            log_path: "",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
+        tables: Vec::new(),
+        memory_allocator: &DefaultMemoryAllocator,
+        time_series_defaults: remdb::time_series::TimeSeriesConfig {
+            partition_duration_secs: 3600,
+            retention_period_secs: 86400,
+            max_partitions: 100,
+            compression: remdb::time_series::CompressionType::None,
+        },
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: None,
+    };
+
+    // 创建数据库实例
+    let mut db = RemDb::new(&DB_CONFIG);
+    db.init().unwrap();
+
+    // 创建表
+    db.create_table(
+        "test_table",
+        &[(
+            "id",
+            remdb::DataType::Int64,
+            0,
+            None,
+            None,
+        )],
+        Some(vec![0]),
+    )
+    .unwrap();
+
+    // 验证表存在
+    let table = db.get_table(1).unwrap();
+    assert_eq!(table.def.name, "test_table");
+
+    // 删除表
+    db.drop_table("test_table", false, false).unwrap();
+
+    // 验证表不存在
+    let result = db.get_table(1);
+    assert!(result.is_err());
+}
+
+// 测试 IF EXISTS 选项的行为
+#[test]
+fn test_drop_table_if_exists() {
+    // 重置内存缓冲区
+    unsafe {
+        DB_MEMORY2.fill(0);
+    }
+    
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY2.as_mut_ptr(), DB_MEMORY2.len()).unwrap();
+    }
+
+    // 初始化数据库配置
+    static DB_CONFIG: DbConfig = DbConfig {
+        total_memory: 32 * 1024 * 1024, // 32MB
+        default_max_records: 100,
+        low_power_mode_supported: false,
+        low_power_max_records: Some(50),
+        wal_config: WALConfig {
+            log_path: "",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
+        tables: Vec::new(),
+        memory_allocator: &DefaultMemoryAllocator,
+        time_series_defaults: remdb::time_series::TimeSeriesConfig {
+            partition_duration_secs: 3600,
+            retention_period_secs: 86400,
+            max_partitions: 100,
+            compression: remdb::time_series::CompressionType::None,
+        },
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: None,
+    };
+
+    // 创建数据库实例
+    let mut db = RemDb::new(&DB_CONFIG);
+    db.init().unwrap();
+
+    // 尝试删除不存在的表，使用 IF EXISTS 选项
+    let result = db.drop_table("non_existent_table", true, false);
+    assert!(result.is_ok());
+
+    // 尝试删除不存在的表，不使用 IF EXISTS 选项
+    let result = db.drop_table("non_existent_table", false, false);
+    assert!(result.is_err());
+}
+
+// 测试通过SQL语句删除表
+#[test]
+fn test_drop_table_sql() {
+    // 重置内存缓冲区
+    unsafe {
+        DB_MEMORY3.fill(0);
+    }
+    
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY3.as_mut_ptr(), DB_MEMORY3.len()).unwrap();
+    }
+
+    // 初始化数据库配置
+    static DB_CONFIG: DbConfig = DbConfig {
+        total_memory: 32 * 1024 * 1024, // 32MB
+        default_max_records: 100,
+        low_power_mode_supported: false,
+        low_power_max_records: Some(50),
+        wal_config: WALConfig {
+            log_path: "",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
+        tables: Vec::new(),
+        memory_allocator: &DefaultMemoryAllocator,
+        time_series_defaults: remdb::time_series::TimeSeriesConfig {
+            partition_duration_secs: 3600,
+            retention_period_secs: 86400,
+            max_partitions: 100,
+            compression: remdb::time_series::CompressionType::None,
+        },
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: None,
+    };
+
+    // 创建数据库实例
+    let mut db = RemDb::new(&DB_CONFIG);
+    db.init().unwrap();
+
+    // 通过SQL创建表
+    let create_sql = "CREATE TABLE test_table (id INT PRIMARY KEY, name VARCHAR);";
+    let create_query = remdb::sql::parse_sql_query(create_sql).unwrap();
+    remdb::sql::execute_query(&mut db, &create_query).unwrap();
+
+    // 验证表存在
+    let table = db.get_table(1).unwrap();
+    assert_eq!(table.def.name, "test_table");
+
+    // 通过SQL删除表
+    let drop_sql = "DROP TABLE test_table;";
+    let drop_query = remdb::sql::parse_sql_query(drop_sql).unwrap();
+    remdb::sql::execute_query(&mut db, &drop_query).unwrap();
+
+    // 验证表不存在
+    let result = db.get_table(1);
+    assert!(result.is_err());
+}
+
+// 测试通过SQL语句删除不存在的表（使用IF EXISTS）
+#[test]
+fn test_drop_table_sql_if_exists() {
+    // 重置内存缓冲区
+    unsafe {
+        DB_MEMORY4.fill(0);
+    }
+    
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY4.as_mut_ptr(), DB_MEMORY4.len()).unwrap();
+    }
+
+    // 初始化数据库配置
+    static DB_CONFIG: DbConfig = DbConfig {
+        total_memory: 32 * 1024 * 1024, // 32MB
+        default_max_records: 100,
+        low_power_mode_supported: false,
+        low_power_max_records: Some(50),
+        wal_config: WALConfig {
+            log_path: "",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
+        tables: Vec::new(),
+        memory_allocator: &DefaultMemoryAllocator,
+        time_series_defaults: remdb::time_series::TimeSeriesConfig {
+            partition_duration_secs: 3600,
+            retention_period_secs: 86400,
+            max_partitions: 100,
+            compression: remdb::time_series::CompressionType::None,
+        },
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: None,
+    };
+
+    // 创建数据库实例
+    let mut db = RemDb::new(&DB_CONFIG);
+    db.init().unwrap();
+
+    // 通过SQL删除不存在的表，使用IF EXISTS
+    let drop_sql = "DROP TABLE IF EXISTS non_existent_table;";
+    let drop_query = remdb::sql::parse_sql_query(drop_sql).unwrap();
+    let result = remdb::sql::execute_query(&mut db, &drop_query);
+    assert!(result.is_ok());
+}
+
+// 测试事务中的表删除
+#[test]
+fn test_drop_table_in_transaction() {
+    // 重置内存缓冲区
+    unsafe {
+        DB_MEMORY5.fill(0);
+    }
+    
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY5.as_mut_ptr(), DB_MEMORY5.len()).unwrap();
+    }
+
+    // 初始化数据库配置
+    static DB_CONFIG: DbConfig = DbConfig {
+        total_memory: 32 * 1024 * 1024, // 32MB
+        default_max_records: 100,
+        low_power_mode_supported: false,
+        low_power_max_records: Some(50),
+        wal_config: WALConfig {
+            log_path: "",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
+        tables: Vec::new(),
+        memory_allocator: &DefaultMemoryAllocator,
+        time_series_defaults: remdb::time_series::TimeSeriesConfig {
+            partition_duration_secs: 3600,
+            retention_period_secs: 86400,
+            max_partitions: 100,
+            compression: remdb::time_series::CompressionType::None,
+        },
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: None,
+    };
+
+    // 创建数据库实例
+    let mut db = RemDb::new(&DB_CONFIG);
+    db.init().unwrap();
+
+    // 创建表
+    db.create_table(
+        "test_table",
+        &[(
+            "id",
+            remdb::DataType::Int64,
+            0,
+            None,
+            None,
+        )],
+        Some(vec![0]),
+    )
+    .unwrap();
+
+    // 验证表存在
+    let table = db.get_table(1).unwrap();
+    assert_eq!(table.def.name, "test_table");
+
+    // 删除表
+    db.drop_table("test_table", false, false).unwrap();
+
+    // 验证表不存在
+    let result = db.get_table(1);
+    assert!(result.is_err());
+}
+
+// 测试内存回收的完整性
+#[test]
+fn test_drop_table_memory_recovery() {
+    // 重置内存缓冲区
+    unsafe {
+        DB_MEMORY6.fill(0);
+    }
+    
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY6.as_mut_ptr(), DB_MEMORY6.len()).unwrap();
+    }
+
+    // 初始化数据库配置
+    static DB_CONFIG: DbConfig = DbConfig {
+        total_memory: 32 * 1024 * 1024, // 32MB
+        default_max_records: 100,
+        low_power_mode_supported: false,
+        low_power_max_records: Some(50),
+        wal_config: WALConfig {
+            log_path: "",
+            log_mode: LogMode::Sync,
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 0,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 1,
+        },
+        tables: Vec::new(),
+        memory_allocator: &DefaultMemoryAllocator,
+        time_series_defaults: remdb::time_series::TimeSeriesConfig {
+            partition_duration_secs: 3600,
+            retention_period_secs: 86400,
+            max_partitions: 100,
+            compression: remdb::time_series::CompressionType::None,
+        },
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: None,
+    };
+
+    // 创建数据库实例
+    let mut db = RemDb::new(&DB_CONFIG);
+    db.init().unwrap();
+
+    // 创建表
+    db.create_table(
+        "test_table",
+        &[
+            (
+                "id",
+                remdb::DataType::Int64,
+                0,
+                None,
+                None,
+            ),
+            (
+                "name",
+                remdb::DataType::String,
+                0,
+                None,
+                None,
+            ),
+        ],
+        Some(vec![0]),
+    )
+    .unwrap();
+
+    // 删除表
+    db.drop_table("test_table", false, false).unwrap();
+
+    // 验证表不存在
+    let result = db.get_table(1);
+    assert!(result.is_err());
+}

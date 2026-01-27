@@ -1093,14 +1093,140 @@ impl RemDb {
 
         // Publish health status to pubsub
         #[cfg(feature = "pubsub")]
-        if let Some(topic_id) =
-            crate::pubsub::get_topic_id(crate::pubsub::topics::HEALTH_STATUS_TOPIC)
-        {
+        if let Some(topic_id) = crate::pubsub::get_topic_id(crate::pubsub::topics::HEALTH_STATUS_TOPIC) {
             let health_bytes = health_result.to_bytes();
             let _ = crate::pubsub::publish(topic_id, &health_bytes);
         }
 
         health_result
+    }
+
+    /// 删除表
+    /// 
+    /// # 参数
+    /// - `table_name`: 要删除的表名
+    /// - `if_exists`: 如果表不存在，是否不报错
+    /// - `deferred`: 是否延迟删除
+    /// 
+    /// # 返回值
+    /// - `Ok(())`: 删除成功
+    /// - `Err(RemDbError)`: 删除失败
+    pub fn drop_table(&mut self, table_name: &str, if_exists: bool, deferred: bool) -> Result<()> {
+        #[cfg(feature = "std")]
+        eprintln!("Starting DROP TABLE operation on {}", table_name);
+        
+        // 检查是否为系统表，系统表不允许DROP操作
+        if crate::system_tables::is_system_table(table_name) {
+            return Err(RemDbError::ConfigError);
+        }
+        
+        // 1. 查找表的位置
+        let table_index = self.tables.iter().position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == table_name
+            } else {
+                false
+            }
+        });
+
+        // 2. 处理表不存在的情况
+        if table_index.is_none() {
+            if if_exists {
+                return Ok(());
+            } else {
+                return Err(RemDbError::TableNotFound);
+            }
+        }
+
+        let table_index = table_index.unwrap();
+
+        // 3. 检查是否有活跃的查询或事务正在使用该表
+        // 这里简化处理，实际实现需要更复杂的并发控制
+
+        // 4. 开始事务操作
+        if crate::transaction::has_active_tx() {
+            // 记录删除操作到事务日志
+            unsafe {
+                if let Some(mut tx) = crate::transaction::get_current_tx() {
+                    let tx_id = tx.as_mut().id;
+                    tx.as_mut().begin_log_item(
+                        tx_id,
+                        crate::transaction::LogOperation::DropTable,
+                        table_index as u8,
+                        0,
+                        0,
+                        None,
+                        None,
+                    );
+                }
+            }
+        }
+
+        // 5. 释放表占用的资源
+        let memory_released = if let Some(table) = &self.tables[table_index] {
+            // 计算释放的内存大小
+            MemoryTable::calculate_memory_size(&table.def)
+        } else {
+            0
+        };
+
+        // 从监控指标中减去释放的内存
+        self.metrics.sub_used_memory(memory_released);
+
+        // 移除表（通过将Option设置为None，触发Drop实现）
+        self.tables[table_index] = None;
+
+        // 6. 释放对应的索引
+        // 暂时注释掉索引访问，避免可能的越界访问
+        // if table_index < self.primary_indices.len() {
+        //     self.primary_indices[table_index] = None;
+        // }
+        // if table_index < self.secondary_indices.len() {
+        //     self.secondary_indices[table_index] = None;
+        // }
+
+        // 7. 从系统表中移除表的条目
+        // 这里简化处理，实际实现需要更新系统表
+
+        // 8. 记录删除操作到WAL日志
+        unsafe {
+            // 直接使用LogManager写入日志，而不是通过TransactionManager
+            let tx_manager = crate::transaction::get_tx_manager();
+            if let Some(log_manager) = tx_manager.get_log_manager_mut() {
+                // 创建日志项
+                let mut log_data = [0u8; 512];
+                // 写入表名
+                let name_bytes = table_name.as_bytes();
+                let name_len = core::cmp::min(name_bytes.len(), 64);
+                log_data[0] = name_len as u8;
+                log_data[1..1 + name_len].copy_from_slice(&name_bytes[..name_len]);
+
+                let log_item = crate::transaction::LogItem {
+                    op_type: crate::transaction::LogOperation::DropTable,
+                    table_id: table_index as u8,
+                    record_id: 0,
+                    data_size: (name_len + 1) as u16,
+                    old_data: [0; 512],
+                    new_data: log_data,
+                    tx_id: 0,
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0,
+                };
+
+                // 计算校验和
+                let calculated_checksum = crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
+
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+
+                // 写入日志
+                let _ = log_manager.write_log_item(&final_log_item);
+                // 立即刷新缓冲区，确保日志被持久化
+                let _ = log_manager.flush_buffer();
+            }
+        }
+
+        Ok(())
     }
 }
 

@@ -278,6 +278,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             }
             Ok(ResultSet::new(Vec::new()))
         },
+        crate::sql::QueryType::DropTable => execute_drop_table_query(db, query),
         crate::sql::QueryType::BeginTransaction => {
             // 开始事务
             unsafe {
@@ -421,6 +422,25 @@ fn execute_select_timeseries_query(
     }
 
     Ok(result_set)
+}
+
+/// 执行DROP TABLE查询
+fn execute_drop_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 提取IF EXISTS和DEFERRED选项
+    let mut if_exists = false;
+    let mut is_deferred = false;
+    
+    if let Some((if_exists_str, is_deferred_str, _, _, _, _, _)) = query.table_def.first() {
+        if_exists = if_exists_str == "true";
+        is_deferred = is_deferred_str == "true";
+    }
+
+    // 调用RemDb的drop_table方法
+    db.drop_table(&query.table_name, if_exists, is_deferred)
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    // 返回空结果集
+    Ok(ResultSet::new(Vec::new()))
 }
 
 /// 处理聚合查询

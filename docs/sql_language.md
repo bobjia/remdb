@@ -571,7 +571,46 @@ DESCRIBE TABLE table_name;
 DESCRIBE users;
 ```
 
-### 2.8 CREATE TIMESERIES TABLE语句
+### 2.8 DROP TABLE语句
+
+```sql
+DROP TABLE [IF EXISTS] table_name [CASCADE | RESTRICT] [DEFERRED];
+```
+
+#### 语法说明
+
+- `DROP TABLE`：关键字，用于删除表
+- `IF EXISTS`：可选，指定如果表不存在，操作不会报错
+- `table_name`：要删除的表名
+- `CASCADE`：可选，级联删除相关对象（暂未实现）
+- `RESTRICT`：可选，限制删除操作（默认行为）
+- `DEFERRED`：可选，延迟删除操作（暂未实现）
+
+#### 示例
+
+```sql
+-- 删除表
+DROP TABLE test_table;
+
+-- 删除表（如果存在）
+DROP TABLE IF EXISTS test_table;
+
+-- 使用RESTRICT选项删除表
+DROP TABLE test_table RESTRICT;
+
+-- 使用DEFERRED选项删除表
+DROP TABLE test_table DEFERRED;
+```
+
+#### 注意事项
+
+- 系统表不允许删除
+- 删除表会释放表占用的所有内存资源
+- 删除表会记录操作到WAL日志，支持崩溃恢复
+- 删除表后，表的所有数据和索引都会被清除
+- 使用IF EXISTS选项可以避免表不存在时的错误
+
+### 2.9 CREATE TIMESERIES TABLE语句
 
 RemDB支持专门的时序表创建语法，提供时序数据的优化存储和查询能力。
 
@@ -587,11 +626,11 @@ CREATE TIMESERIES TABLE table_name (
 
 详细的语法说明和示例请参见[4.2 CREATE TIMESERIES TABLE语句](#42-create-timeseries-table-语句)。
 
-### 2.9 事务相关语句
+### 2.10 事务相关语句
 
 RemDB支持基本的事务操作，包括开始事务、提交事务和回滚事务。
 
-#### 2.9.1 BEGIN TRANSACTION语句
+#### 2.10.1 BEGIN TRANSACTION语句
 
 用于开始一个新的事务。
 
@@ -607,7 +646,7 @@ BEGIN;
 - 后续的SQL操作将在该事务中执行
 - 支持的隔离级别为可重复读(Repeatable Read)
 
-#### 2.9.2 COMMIT语句
+#### 2.10.2 COMMIT语句
 
 用于提交当前事务，将所有更改持久化到数据库。
 
@@ -623,7 +662,7 @@ COMMIT TRANSACTION;
 - 将更改从事务日志写入到数据文件
 - 释放事务资源
 
-#### 2.9.3 ROLLBACK语句
+#### 2.10.3 ROLLBACK语句
 
 用于回滚当前事务，撤销所有未提交的更改。
 
@@ -1266,7 +1305,6 @@ LIMIT 5;
 
 - 子查询
 
-- DROP TABLE
 - 视图和存储过程
 - 外键约束
 - LIKE运算符

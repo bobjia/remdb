@@ -148,37 +148,39 @@ impl std::fmt::Display for IndexType {
 }
 
 /// 查询类型
-#[derive(Debug, Clone, PartialEq)]
-pub enum QueryType {
-    /// SELECT查询
-    Select,
-    /// INSERT查询
-    Insert,
-    /// UPDATE查询
-    Update,
-    /// DELETE查询
-    Delete,
-    /// DESCRIBE TABLE查询
-    Describe,
-    /// CREATE TABLE查询
-    CreateTable,
-    /// CREATE TIMESERIES TABLE查询
-    CreateTimeSeriesTable,
-    /// CREATE INDEX查询
-    CreateIndex,
-    /// ALTER TABLE查询
-    AlterTable,
-    /// BEGIN TRANSACTION查询
-    BeginTransaction,
-    /// COMMIT查询
-    Commit,
-    /// ROLLBACK查询
-    Rollback,
-    /// SHOW INDEX BUILD STATUS查询
-    ShowIndexBuildStatus,
-    /// 其他查询类型（暂不支持）
-    Other,
-}
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum QueryType {
+        /// SELECT查询
+        Select,
+        /// INSERT查询
+        Insert,
+        /// UPDATE查询
+        Update,
+        /// DELETE查询
+        Delete,
+        /// DESCRIBE TABLE查询
+        Describe,
+        /// CREATE TABLE查询
+        CreateTable,
+        /// CREATE TIMESERIES TABLE查询
+        CreateTimeSeriesTable,
+        /// CREATE INDEX查询
+        CreateIndex,
+        /// ALTER TABLE查询
+        AlterTable,
+        /// DROP TABLE查询
+        DropTable,
+        /// BEGIN TRANSACTION查询
+        BeginTransaction,
+        /// COMMIT查询
+        Commit,
+        /// ROLLBACK查询
+        Rollback,
+        /// SHOW INDEX BUILD STATUS查询
+        ShowIndexBuildStatus,
+        /// 其他查询类型（暂不支持）
+        Other,
+    }
 
 /// WHERE子句
 #[derive(Debug, Clone, PartialEq)]
@@ -422,6 +424,7 @@ impl SqlParser {
             QueryType::CreateTimeSeriesTable => self.parse_create_table_query(),
             QueryType::CreateIndex => self.parse_create_index_query(),
             QueryType::AlterTable => self.parse_alter_table_query(),
+            QueryType::DropTable => self.parse_drop_table_query(),
             QueryType::BeginTransaction => Ok(SqlQuery {
                 query_type,
                 table_name: String::new(),
@@ -1185,6 +1188,64 @@ impl SqlParser {
         Ok((field_name, data_type, is_primary_key, is_not_null, is_unique, is_auto_increment, default_value))
     }
 
+    /// 解析DROP TABLE查询
+    fn parse_drop_table_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析IF EXISTS选项
+        let mut if_exists = false;
+        self.skip_whitespace();
+        if self.match_keyword("IF") {
+            self.skip_whitespace();
+            self.expect_keyword("EXISTS")?;
+            if_exists = true;
+        }
+
+        // 解析表名
+        self.skip_whitespace();
+        let table_name = self.parse_identifier()?;
+
+        // 解析CASCADE | RESTRICT选项或DEFERRED选项
+        self.skip_whitespace();
+        let mut is_deferred = false;
+        if self.match_keyword("DEFERRED") {
+            is_deferred = true;
+        } else if self.match_keyword("CASCADE") {
+            // 一期实现仅标记，详细功能随未来依赖特性一同实现
+        } else if self.match_keyword("RESTRICT") {
+            // 默认行为，不需要特殊处理
+        }
+
+        // 创建SqlQuery对象
+        let mut query = SqlQuery {
+            query_type: QueryType::DropTable,
+            table_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+        };
+
+        // 使用table_def字段存储额外信息
+        // 格式：(if_exists, is_deferred, 0, 0, 0, 0, None)
+        query.table_def.push((if_exists.to_string(), is_deferred.to_string(), false, false, false, false, None));
+
+        Ok(query)
+    }
+
     /// 解析查询类型
     fn parse_query_type(&mut self) -> Result<QueryType, QueryParseError> {
         if self.match_keyword("SELECT") {
@@ -1217,6 +1278,13 @@ impl SqlParser {
             self.skip_whitespace();
             if self.match_keyword("TABLE") {
                 Ok(QueryType::AlterTable)
+            } else {
+                Ok(QueryType::Other)
+            }
+        } else if self.match_keyword("DROP") {
+            self.skip_whitespace();
+            if self.match_keyword("TABLE") {
+                Ok(QueryType::DropTable)
             } else {
                 Ok(QueryType::Other)
             }
