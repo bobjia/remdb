@@ -1003,24 +1003,61 @@ impl LogManager {
                         continue;
                     }
 
-                    // 正确解析CreateTable日志项，参考ha/replication.rs中的实现
+                    // 正确解析CreateTable日志项，参考lib.rs中的实现
                     // 从日志中解析表名
-                    let name_len = log_item.new_data[0] as usize;
+                    let name_len = if log_item.new_data.len() > 0 {
+                        log_item.new_data[0] as usize
+                    } else {
+                        println!("Warning: Empty new_data for CreateTable log item, skipping...");
+                        continue;
+                    };
+                    
+                    // 检查name_len是否有效且不会导致越界
+                    if name_len == 0 || name_len + 1 > log_item.new_data.len() {
+                        println!("Warning: Invalid name_len {} for CreateTable log item, skipping...", name_len);
+                        continue;
+                    }
+                    
                     let table_name_str = core::str::from_utf8(&log_item.new_data[1..1 + name_len])
                         .unwrap_or_else(|_| "unknown");
                     let table_name = Box::leak(table_name_str.to_string().into_boxed_str());
 
-                    // 从日志中解析字段数量（表名结束后的第一个字节：1字节长度 + 64字节表名 = 65字节）
-                    let field_count = log_item.new_data[65] as usize;
-
-                    // 从日志中解析主键索引（字段数量后的下一个字节，偏移65+1=66）
-                    let primary_key = log_item.new_data[66] as usize;
-
-                    // 解析字段定义（主键索引后的下一个字节，偏移66+1=67）
-                    let mut offset = 67;
-                    let mut fields = alloc::vec::Vec::with_capacity(field_count);
+                    // 参考lib.rs中的实现，使用固定偏移量解析
                     let new_data_len = log_item.new_data.len();
+                    
+                    // 从日志中解析字段数量（固定偏移65）
+                    let field_count = if new_data_len > 65 {
+                        log_item.new_data[65] as usize
+                    } else {
+                        println!("Warning: Offset out of bounds when parsing field count, skipping...");
+                        continue;
+                    };
 
+                    // 从日志中解析主键字段数量（固定偏移66）
+                    let primary_key_count = if new_data_len > 66 {
+                        log_item.new_data[66] as usize
+                    } else {
+                        println!("Warning: Offset out of bounds when parsing primary key count, skipping...");
+                        continue;
+                    };
+
+                    // 从日志中解析主键索引列表（从固定偏移67开始）
+                    let mut primary_key_list = Vec::new();
+                    for i in 0..primary_key_count {
+                        // 检查offset是否超出边界，如果超出则停止解析
+                        let pk_offset = 67 + i;
+                        if pk_offset >= new_data_len {
+                            println!("Warning: Offset out of bounds while parsing primary key index, skipping remaining indices...");
+                            break;
+                        }
+                        let pk_idx = log_item.new_data[pk_offset] as usize;
+                        primary_key_list.push(pk_idx);
+                    }
+                    let mut fields = alloc::vec::Vec::with_capacity(field_count);
+
+                    // 计算字段解析的起始偏移量（固定偏移67 + 主键数量）
+                    let mut offset = 67 + primary_key_count;
+                    
                     // 确保offset初始值不超出边界
                     if offset >= new_data_len {
                         println!(
@@ -1031,21 +1068,26 @@ impl LogManager {
 
                     for _ in 0..field_count {
                         // 检查offset是否超出边界，如果超出则停止解析
-                        if offset + 32 >= new_data_len {
-                            println!("Warning: Offset out of bounds while parsing field name, skipping remaining fields...");
+                        if offset >= new_data_len {
+                            println!("Warning: Offset out of bounds while parsing field, skipping remaining fields...");
                             break;
                         }
 
                         // 解析字段名
                         let field_name_len = log_item.new_data[offset] as usize;
-                        // 确保字段名不超出边界
-                        let max_name_len = core::cmp::min(field_name_len, 31); // 最大31字节，因为第一个字节是长度
+                        offset += 1;
+                        
+                        if offset + 32 > new_data_len {
+                            println!("Warning: Offset out of bounds for field name, skipping field...");
+                            continue;
+                        }
+                        
                         let field_name_str = core::str::from_utf8(
-                            &log_item.new_data[offset + 1..offset + 1 + max_name_len],
+                            &log_item.new_data[offset..offset + field_name_len],
                         )
                         .unwrap_or_else(|_| "unknown");
                         let field_name = Box::leak(field_name_str.to_string().into_boxed_str());
-                        offset += 33; // 固定33字节字段名空间（1字节长度 + 32字节内容），与创建表时的逻辑保持一致
+                        offset += 32; // 固定32字节字段名空间
 
                         // 检查offset是否超出边界
                         if offset + 3 >= new_data_len {
@@ -1421,7 +1463,7 @@ impl LogManager {
                         id: log_item.table_id,
                         name: table_name.to_string(),
                         fields: fields,
-                        primary_key: vec![primary_key as usize],
+                        primary_key: primary_key_list,
                         secondary_index: None,
                         secondary_index_type: crate::types::IndexType::SortedArray,
                         record_size: record_size,

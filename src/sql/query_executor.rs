@@ -4,6 +4,7 @@
 
 use alloc::string::String;
 use alloc::string::ToString;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::sql::query_parser::{
@@ -5268,32 +5269,32 @@ fn execute_describe_query(
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
     // 1. 查找要查询的表定义（同时检查普通表和时序表）
-    let mut table_def: Option<&TableDef> = None;
+    let mut found_table_def: Option<Arc<TableDef>> = None;
 
     // 查找普通表
     for table_opt in db.tables.iter() {
         if let Some(table) = table_opt {
             if table.def.name == query.table_name {
-                table_def = Some(&table.def);
+                found_table_def = Some(table.def.clone());
                 break;
             }
         }
     }
 
     // 如果普通表未找到，查找时序表
-    if table_def.is_none() {
+    if found_table_def.is_none() {
         for ts_table_opt in db.time_series_tables.iter() {
             if let Some(ts_table) = ts_table_opt {
                 if ts_table.def.base.name == query.table_name {
-                    table_def = Some(&ts_table.def.base);
-                    break;
-                }
+                            found_table_def = Some(alloc::sync::Arc::new(ts_table.def.base.clone()));
+                            break;
+                        }
             }
         }
     }
 
     // 如果都未找到，返回错误
-    let table_def = table_def.ok_or(QueryExecutionError::TableNotFound)?;
+    let table_def = found_table_def.ok_or(QueryExecutionError::TableNotFound)?;
 
     // 2. 定义结果集列名
     let columns = alloc::vec![
@@ -5306,6 +5307,17 @@ fn execute_describe_query(
 
     // 3. 创建结果集
     let mut result_set = ResultSet::new(columns.clone());
+
+    // 添加调试信息
+    #[cfg(feature = "std")]
+    {
+        println!("DEBUG: describe table {}: id={}, name={}, fields_len={}, primary_key_len={}", 
+                query.table_name, table_def.id, table_def.name, table_def.fields.len(), table_def.primary_key.len());
+        for (i, field) in table_def.fields.iter().enumerate() {
+            println!("DEBUG: field {}: name={}, data_type={:?}, size={}, offset={}", 
+                    i, field.name, field.data_type, field.size, field.offset);
+        }
+    }
 
     // 4. 添加字段信息到结果集
     // 注意：由于describe查询返回的是表结构信息，而不是实际数据，

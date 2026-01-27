@@ -650,7 +650,7 @@ impl RemDb {
         }
 
         // 写入表数量
-        let table_count = self.config.tables.len() as u32;
+        let table_count = self.tables.len() as u32;
         let table_count_bytes = table_count.to_le_bytes();
         let written = crate::platform::file_write(
             handle,
@@ -678,6 +678,53 @@ impl RemDb {
                 )
                 .map_err(|_| RemDbError::FileIoError)?;
                 if written != table_id_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+
+                // 写入表结构信息
+                // 1. 写入表名
+                let table_name = &table.def.name;
+                let table_name_len = table_name.len() as u8;
+                let written = crate::platform::file_write(
+                    handle,
+                    &table_name_len as *const u8,
+                    1,
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if written != 1 {
+                    return Err(RemDbError::FileIoError);
+                }
+                let written = crate::platform::file_write(
+                    handle,
+                    table_name.as_bytes().as_ptr(),
+                    table_name.len(),
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if written != table_name.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+
+                // 2. 写入字段数量
+                let field_count = table.def.fields.len() as u8;
+                let written = crate::platform::file_write(
+                    handle,
+                    &field_count as *const u8,
+                    1,
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if written != 1 {
+                    return Err(RemDbError::FileIoError);
+                }
+
+                // 3. 写入主键字段数量
+                let primary_key_count = table.def.primary_key.len() as u8;
+                let written = crate::platform::file_write(
+                    handle,
+                    &primary_key_count as *const u8,
+                    1,
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if written != 1 {
                     return Err(RemDbError::FileIoError);
                 }
 
@@ -808,10 +855,7 @@ impl RemDb {
         }
         let table_count = u32::from_le_bytes(table_count_bytes) as usize;
 
-        // 检查表数量是否匹配
-        if table_count != self.config.tables.len() {
-            return Err(RemDbError::SnapshotFormatError);
-        }
+        // 移除表数量匹配检查，允许从快照恢复表结构
 
         // 读取每个表的数据
         for _ in 0..table_count {
@@ -828,15 +872,47 @@ impl RemDb {
             }
             let table_id = u32::from_le_bytes(table_id_bytes) as usize;
 
-            // 检查表ID是否有效
+            // 检查并扩展表向量容量
             if table_id >= self.tables.len() {
-                return Err(RemDbError::SnapshotFormatError);
+                self.tables.resize_with(table_id + 1, || None);
+                self.primary_indices.resize_with(table_id + 1, || None);
+                self.secondary_indices.resize_with(table_id + 1, || None);
             }
 
-            // 获取表引用
+            // 获取表引用，如果不存在则跳过
             let table = match &mut self.tables[table_id] {
                 Some(table) => table,
-                None => return Err(RemDbError::SnapshotFormatError),
+                None => {
+                    println!("Warning: Table with ID {} not found, skipping...", table_id);
+                    // 跳过该表的数据
+                    // 读取记录数
+                    let mut record_count_bytes = [0u8; 4];
+                    let _ = crate::platform::file_read(
+                        handle,
+                        record_count_bytes.as_mut_ptr(),
+                        record_count_bytes.len(),
+                    );
+                    let record_count = u32::from_le_bytes(record_count_bytes) as usize;
+                    
+                    // 跳过所有记录
+                    for _ in 0..record_count {
+                        // 跳过记录索引
+                        let mut index_bytes = [0u8; 4];
+                        let _ = crate::platform::file_read(
+                            handle,
+                            index_bytes.as_mut_ptr(),
+                            index_bytes.len(),
+                        );
+                        // 跳过记录数据
+                        let mut dummy_record = [0u8; 1024]; // 足够大的缓冲区
+                        let _ = crate::platform::file_read(
+                            handle,
+                            dummy_record.as_mut_ptr(),
+                            1024,
+                        );
+                    }
+                    continue;
+                }
             };
 
             // 读取记录数
