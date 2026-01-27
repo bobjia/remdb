@@ -2139,8 +2139,13 @@ impl SqlParser {
 
         self.skip_whitespace();
 
-        // 解析比较运算符
-        let operator = self.parse_comparison_operator()?;
+        // 检查是否是LIKE操作符
+        let operator = if self.match_keyword("LIKE") {
+            ComparisonOperator::Like
+        } else {
+            // 解析普通比较运算符
+            self.parse_comparison_operator()?
+        };
 
         self.skip_whitespace();
 

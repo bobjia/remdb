@@ -17,7 +17,7 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **Compile-time Configuration**: Table and database configuration via macros for performance optimization
 - **Low Power Mode**: Optimized memory usage with reduced transaction log write frequency
 - **Incremental Snapshot**: Only saves records with changed version numbers, reducing snapshot size and save time
-- **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data, including aggregate functions, mathematical functions, time conversion functions, and JOIN operations
+- **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data, including aggregate functions, mathematical functions, time conversion functions, JOIN operations, and LIKE pattern matching operator
 - **SQL DDL Support**: Supports CREATE TABLE and DROP TABLE statements, allowing dynamic creation and deletion of table structures
 - **Database Monitoring**: Real-time monitoring of database metrics, including memory usage, query performance, and transaction status
 - **UDP-based Reliable Data Pub/Sub**: Supports unicast, broadcast, and multicast modes with NACK-based retransmission
@@ -471,6 +471,12 @@ let result = db.sql_query("SELECT id, name, TO_EPOCH(created_at) AS unix_time FR
 
 // Combine aggregate functions with time functions
 let result = db.sql_query("SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS date, AVG(value) AS avg_value FROM sensor_data GROUP BY date").unwrap();
+
+// Use LIKE operator for pattern matching
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE 'A%'").unwrap(); // Match names starting with 'A'
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE '%son'").unwrap(); // Match names ending with 'son'
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE '%mi%'").unwrap(); // Match names containing 'mi'
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE 'A__e'").unwrap(); // Match names of length 4 starting with 'A' and ending with 'e'
 ```
 
 ## Time Series Database

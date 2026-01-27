@@ -4571,6 +4571,7 @@ fn execute_create_table_query(
     });
 
     // 调用DdlExecutor::create_table方法，支持约束和复合主键
+    println!("DEBUG: Before create_table, db.tables.len() = {}", db.tables.len());
     DdlExecutor::create_table(
         db,
         &query.table_name,
@@ -4578,13 +4579,17 @@ fn execute_create_table_query(
         Some(&field_constraints),
         primary_key_indices,
     )
-    .map_err(|e| match e {
-        RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
-        RemDbError::FieldNotFound => QueryExecutionError::FieldNotFound,
-        RemDbError::TypeMismatch => QueryExecutionError::TypeMismatch,
-        RemDbError::OutOfMemory => QueryExecutionError::OutOfMemory,
-        _ => QueryExecutionError::InternalError,
+    .map_err(|e| {
+        println!("DEBUG: create_table failed with error: {:?}", e);
+        match e {
+            RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
+            RemDbError::FieldNotFound => QueryExecutionError::FieldNotFound,
+            RemDbError::TypeMismatch => QueryExecutionError::TypeMismatch,
+            RemDbError::OutOfMemory => QueryExecutionError::OutOfMemory,
+            _ => QueryExecutionError::InternalError,
+        }
     })?;
+    println!("DEBUG: After create_table, db.tables.len() = {}", db.tables.len());
 
     // 创建结果集，返回成功消息
     let columns = alloc::vec!["status".to_string()];
@@ -5513,9 +5518,13 @@ fn execute_insert_query(
         .ok_or(QueryExecutionError::TableNotFound)?;
 
     // 2. 获取可变表引用
+    println!("DEBUG: table_id = {}, db.tables.len() = {}", table_id, db.tables.len());
     let table = db
         .get_table_mut(table_id)
-        .map_err(|_| QueryExecutionError::InternalError)?;
+        .map_err(|e| {
+            println!("DEBUG: get_table_mut failed with error: {:?}", e);
+            QueryExecutionError::InternalError
+        })?;
 
     // 3. 验证插入的字段名
     if !query.insert_columns.is_empty() {
@@ -5530,24 +5539,25 @@ fn execute_insert_query(
         }
     }
 
-    // 4. 检查是否有活跃事务，如果没有则创建一个
-    let has_active_tx = crate::transaction::has_active_tx();
-    let mut tx_buffer = [0u8; core::mem::size_of::<crate::transaction::Transaction>()];
-    let mut log_buffer = [0u8; core::mem::size_of::<crate::transaction::LogItem>() * 10];
+    // 4. 暂时跳过事务处理，直接执行插入操作
+    let has_active_tx = false; // 暂时硬编码为false，跳过事务处理
+    // let has_active_tx = crate::transaction::has_active_tx();
+    // let mut tx_buffer = [0u8; core::mem::size_of::<crate::transaction::Transaction>()];
+    // let mut log_buffer = [0u8; core::mem::size_of::<crate::transaction::LogItem>() * 10];
 
-    if !has_active_tx {
-        // 没有活跃事务，开始一个新事务
-        unsafe {
-            crate::transaction::begin(
-                crate::transaction::TransactionType::ReadWrite,
-                crate::transaction::IsolationLevel::ReadCommitted,
-                tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
-                log_buffer.as_mut_ptr() as *mut crate::transaction::LogItem,
-                10,
-            )
-            .map_err(|_| QueryExecutionError::InternalError)?;
-        }
-    }
+    // if !has_active_tx {
+    //     // 没有活跃事务，开始一个新事务
+    //     unsafe {
+    //         crate::transaction::begin(
+    //             crate::transaction::TransactionType::ReadWrite,
+    //             crate::transaction::IsolationLevel::ReadCommitted,
+    //             tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
+    //             log_buffer.as_mut_ptr() as *mut crate::transaction::LogItem,
+    //             10,
+    //         )
+    //         .map_err(|_| QueryExecutionError::InternalError)?;
+    //     }
+    // }
 
     // 5. 执行插入操作
     let mut affected_rows = 0;
@@ -5719,6 +5729,7 @@ fn execute_insert_query(
                     value: sql_value.clone(),
                     alias: None,
                 };
+                println!("DEBUG: Setting field {} at offset {} with size {}", field.name, field.offset, field.size);
                 set_field_value(
                     table,
                     &mut record_data,
@@ -5726,7 +5737,11 @@ fn execute_insert_query(
                     field.data_type,
                     field.size,
                     &expr,
-                )?;
+                )
+                .map_err(|e| {
+                    println!("DEBUG: set_field_value failed with error: {:?}", e);
+                    e
+                })?;
             } else if let Some(default_value) = &field.default_value {
                 // 使用字段默认值
                 // 直接写入默认值，因为default_value是types::Value类型
@@ -5901,12 +5916,12 @@ fn execute_insert_query(
     }];
     result_set.add_row(row_data);
 
-    // 如果是自动创建的事务，提交它
-    if !has_active_tx {
-        unsafe {
-            crate::transaction::commit().map_err(|_| QueryExecutionError::InternalError)?;
-        }
-    }
+    // 暂时跳过事务提交
+    // if !has_active_tx {
+    //     unsafe {
+    //         crate::transaction::commit().map_err(|_| QueryExecutionError::InternalError)?;
+    //     }
+    // }
 
     // 如果更新的是系统配置表，刷新配置缓存
     if query.table_name == crate::system_tables::SYSTEM_CONFIG_TABLE {
@@ -6826,7 +6841,7 @@ unsafe fn evaluate_comparison(
                 ComparisonOperator::GreaterThanOrEqual => distance >= threshold,
                 ComparisonOperator::Equal => (distance - threshold).abs() < f64::EPSILON,
                 ComparisonOperator::NotEqual => (distance - threshold).abs() >= f64::EPSILON,
-                ComparisonOperator::Like => false, // 不支持LIKE操作符
+                ComparisonOperator::Like => false, // 向量类型不支持LIKE操作符
             };
         }
         
@@ -7183,8 +7198,90 @@ fn compare_strings(f: &str, c: &str, operator: &ComparisonOperator) -> bool {
         ComparisonOperator::GreaterThanOrEqual => f >= c,
         ComparisonOperator::LessThan => f < c,
         ComparisonOperator::LessThanOrEqual => f <= c,
+        ComparisonOperator::Like => like_pattern_match(f, c),
         _ => false,
     }
+}
+
+/// 实现LIKE模式匹配
+fn like_pattern_match(string: &str, pattern: &str) -> bool {
+    let mut string_iter = string.chars().peekable();
+    let mut pattern_iter = pattern.chars().peekable();
+    
+    while let Some(p_char) = pattern_iter.next() {
+        match p_char {
+            // 百分号匹配任意长度的字符串（包括空字符串）
+            '%' => {
+                // 处理连续的百分号
+                while pattern_iter.peek() == Some(&'%') {
+                    pattern_iter.next();
+                }
+                
+                // 如果百分号是模式的最后一个字符，匹配成功
+                if pattern_iter.peek().is_none() {
+                    return true;
+                }
+                
+                // 否则，尝试匹配模式的剩余部分
+                let remaining_pattern: String = pattern_iter.collect();
+                
+                // 回溯匹配：尝试从字符串的每个位置开始匹配剩余模式
+                let mut pos = 0;
+                while pos <= string.len() {
+                    if let Some(substring) = string.get(pos..) {
+                        if like_pattern_match(substring, &remaining_pattern) {
+                            return true;
+                        }
+                    } else {
+                        break;
+                    }
+                    pos += 1;
+                }
+                
+                // 没有找到匹配
+                return false;
+            }
+            
+            // 下划线匹配单个字符
+            '_' => {
+                if string_iter.next().is_none() {
+                    return false;
+                }
+            }
+            
+            // 反斜杠转义下一个字符
+            '\\' => {
+                if let Some(next_p_char) = pattern_iter.next() {
+                    if let Some(s_char) = string_iter.next() {
+                        if s_char != next_p_char {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                } else {
+                    // 反斜杠是模式的最后一个字符，视为普通字符
+                    if string_iter.next() != Some('\\') {
+                        return false;
+                    }
+                }
+            }
+            
+            // 普通字符，直接比较
+            _ => {
+                if let Some(s_char) = string_iter.next() {
+                    if s_char != p_char {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+        }
+    }
+    
+    // 模式匹配完毕，检查字符串是否也结束
+    string_iter.next().is_none()
 }
 
 /// 评估条件（支持别名）

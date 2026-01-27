@@ -711,6 +711,54 @@ ROLLBACK;
 - `>=`：大于等于
 - `<`：小于
 - `<=`：小于等于
+- `LIKE`：模式匹配，支持通配符和转义字符
+
+##### LIKE运算符详细说明
+
+`LIKE`运算符用于在WHERE子句中进行字符串模式匹配，支持以下通配符：
+
+- `%`：匹配任意长度的任意字符序列（包括空序列）
+- `_`：匹配单个任意字符
+- `\`：转义字符，用于匹配字面上的通配符（如`\%`匹配百分号本身）
+
+**语法**：
+```sql
+column_name LIKE pattern
+```
+
+**示例**：
+
+```sql
+-- 匹配以"a"开头的所有字符串
+SELECT * FROM users WHERE name LIKE 'a%';
+
+-- 匹配以"end"结尾的所有字符串
+SELECT * FROM users WHERE name LIKE '%end';
+
+-- 匹配包含"middle"的所有字符串
+SELECT * FROM users WHERE name LIKE '%middle%';
+
+-- 匹配长度为3且以"a"开头的字符串
+SELECT * FROM users WHERE name LIKE 'a__';
+
+-- 匹配第二个字符为"b"的所有字符串
+SELECT * FROM users WHERE name LIKE '_b%';
+
+-- 匹配包含字面百分号的字符串
+SELECT * FROM products WHERE description LIKE '%\%%';
+
+-- 匹配包含字面下划线的字符串
+SELECT * FROM products WHERE description LIKE '%\_%';
+
+-- 结合多个通配符
+SELECT * FROM users WHERE name LIKE 'a%b_c';
+```
+
+**注意事项**：
+- LIKE运算符区分大小写
+- 对于NULL值，LIKE运算符返回NULL
+- 模式匹配可能会影响查询性能，特别是使用前缀通配符时
+- 对于复杂模式，建议使用索引来提高性能
 
 #### 逻辑运算符
 
@@ -1307,7 +1355,6 @@ LIMIT 5;
 
 - 视图和存储过程
 - 外键约束
-- LIKE运算符
 
 ## 9. 示例：完整的时序数据应用
 
@@ -1559,7 +1606,8 @@ RemDB提供了轻量级的SQL支持，适合嵌入式系统和边缘计算场景
 2. **事务支持**：支持ACID事务，包括BEGIN TRANSACTION、COMMIT和ROLLBACK语句
 3. **索引机制**：支持多种索引类型，包括哈希索引、有序数组索引、B-Tree索引和T-Tree索引
 4. **时序数据支持**：专门的时序表创建语法，支持数据压缩和TTL自动清理
-5. **内嵌函数支持**：
+5. **LIKE运算符支持**：支持模式匹配，包括通配符（%、_）和转义字符
+6. **内嵌函数支持**：
    - 基础统计聚合函数：COUNT、SUM、AVG、MIN、MAX
    - 扩展统计函数：VAR、STDDEV（总体方差和标准差）、VAR_SAMP、STDDEV_SAMP（样本方差和标准差）
    - 滑动窗口函数：MOVING_SUM、MOVING_AVERAGE

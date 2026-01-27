@@ -17,7 +17,7 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
 - **编译时配置**：使用宏实现表和数据库的编译时配置，优化性能
 - **低功耗模式**：优化内存使用，减少事务日志写入频率
 - **增量快照**：只保存版本号变化的记录，减少快照大小和保存时间
-- **SQL查询支持**：支持标准SQL SELECT语句查询内存数据库的数据，包括聚合函数、数学函数、时间转换函数和JOIN操作
+- **SQL查询支持**：支持标准SQL SELECT语句查询内存数据库的数据，包括聚合函数、数学函数、时间转换函数、JOIN操作和LIKE模式匹配运算符
 - **SQL DDL支持**：支持CREATE TABLE和DROP TABLE语句，允许动态创建和删除表结构
 - **数据库监控**：实时监控数据库指标，包括内存使用、查询性能、事务状态等
 - **基于UDP的高可靠数据订阅与发布**：支持单播、广播和组播模式，提供基于NACK的重传机制
@@ -471,6 +471,12 @@ let result = db.sql_query("SELECT id, name, TO_EPOCH(created_at) AS unix_time FR
 
 // 结合聚合函数和时间函数
 let result = db.sql_query("SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS date, AVG(value) AS avg_value FROM sensor_data GROUP BY date").unwrap();
+
+// 使用LIKE运算符进行模式匹配
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE 'A%'").unwrap(); // 匹配以'A'开头的名称
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE '%son'").unwrap(); // 匹配以'son'结尾的名称
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE '%mi%'").unwrap(); // 匹配包含'mi'的名称
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE 'A__e'").unwrap(); // 匹配长度为4且以'A'开头、以'e'结尾的名称
 ```
 
 ## 时序数据库
