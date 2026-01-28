@@ -88,6 +88,44 @@ CREATE DATABASE my_database;
 CREATE DATABASE my_database WITH ENCODING = 'UTF-8';
 ```
 
+#### USE DATABASE语句
+
+用于切换到指定的数据库。
+
+**语法**：
+```sql
+USE DATABASE database_name;
+```
+
+**参数说明**：
+- `database_name`：要切换到的数据库名称
+
+**示例**：
+
+```sql
+-- 切换到指定数据库
+USE DATABASE my_database;
+```
+
+#### CLOSE DATABASE语句
+
+用于关闭指定的数据库。
+
+**语法**：
+```sql
+CLOSE DATABASE database_name;
+```
+
+**参数说明**：
+- `database_name`：要关闭的数据库名称
+
+**示例**：
+
+```sql
+-- 关闭指定数据库
+CLOSE DATABASE my_database;
+```
+
 #### DROP DATABASE语句
 
 用于删除一个现有的数据库。
