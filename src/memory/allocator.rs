@@ -108,14 +108,9 @@ pub struct StaticAllocator {
 unsafe impl Send for StaticAllocator {}
 unsafe impl Sync for StaticAllocator {}
 
-// 为StaticAllocator实现Clone trait
-impl Clone for StaticAllocator {
-    fn clone(&self) -> Self {
-        // 创建一个新的分配器实例，使用相同的内存池
-        Self::new(self.start_ptr.as_ptr() as *mut u8, self.size)
-            .expect("Failed to clone StaticAllocator")
-    }
-}
+// Note: Clone trait implementation removed because it's unsafe
+// Cloning would create a new allocator with the same memory pool,
+// which can lead to double-free or use-after-free errors when the memory pool is updated.
 
 impl StaticAllocator {
     /// 创建新的静态内存分配器
@@ -163,6 +158,27 @@ impl StaticAllocator {
             self.alloc_count = 0;
             self.free_count = 0;
         }
+    }
+
+    /// 更新内存池
+    pub fn update_memory_pool(&mut self, start_ptr: *mut u8, size: usize) {
+        // 计算MemoryBlock所需的对齐值
+        const ALIGNMENT: usize = core::mem::align_of::<MemoryBlock>();
+
+        // 对齐start_ptr到MemoryBlock的对齐要求
+        let start_addr = start_ptr as usize;
+        let aligned_addr = (start_addr + ALIGNMENT - 1) & !(ALIGNMENT - 1);
+        let aligned_ptr = aligned_addr as *mut u8;
+
+        // 计算对齐后的可用大小
+        let aligned_size = size - (aligned_addr - start_addr);
+
+        // 更新内存池信息
+        self.start_ptr = NonNull::new(aligned_ptr).expect("Failed to update memory pool");
+        self.size = aligned_size;
+
+        // 重置分配器
+        self.reset();
     }
 
     /// 分配内存
@@ -333,13 +349,13 @@ static GLOBAL_ALLOCATOR: OnceLock<Mutex<StaticAllocator>> = OnceLock::new();
 pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
     // 尝试获取现有的分配器
     if let Some(allocator) = GLOBAL_ALLOCATOR.get() {
-        // 如果分配器已存在，重置它
+        // 如果分配器已存在，更新内存池
         let mut allocator_guard = allocator
             .lock()
             .map_err(|_| crate::types::RemDbError::OutOfMemory)?;
         
-        // 重置分配器，使用相同的内存缓冲区
-        allocator_guard.reset();
+        // 更新内存池，使用新的内存缓冲区
+        allocator_guard.update_memory_pool(start_ptr, size);
     } else {
         // 创建新的分配器实例
         let new_allocator =

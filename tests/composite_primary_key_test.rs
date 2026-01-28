@@ -37,10 +37,15 @@ static TEST_CONFIG: LazyLock<remdb::config::DbConfig> = LazyLock::new(|| {
 
 #[test]
 fn test_create_table_with_composite_pk() -> Result<()> {
-    // 初始化内存缓冲区
+    // 创建新的内存缓冲区
+    let mut new_memory = vec![0u8; 8388608]; // 8MB
+    
+    // 初始化全局分配器
+    remdb::memory::allocator::init_global_allocator(new_memory.as_mut_ptr(), new_memory.len())?;
+    
+    // 更新全局内存缓冲区
     unsafe {
-        DB_MEMORY = vec![0u8; 8388608]; // 8MB
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())?;
+        DB_MEMORY = new_memory;
     }
     
     // 创建数据库实例
@@ -65,10 +70,15 @@ fn test_create_table_with_composite_pk() -> Result<()> {
 
 #[test]
 fn test_insert_and_query_with_composite_pk() -> Result<()> {
-    // 初始化内存缓冲区
+    // 创建新的内存缓冲区
+    let mut new_memory = vec![0u8; 8388608]; // 8MB
+    
+    // 初始化全局分配器
+    remdb::memory::allocator::init_global_allocator(new_memory.as_mut_ptr(), new_memory.len())?;
+    
+    // 更新全局内存缓冲区
     unsafe {
-        DB_MEMORY = vec![0u8; 8388608]; // 8MB
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())?;
+        DB_MEMORY = new_memory;
     }
     
     // 创建数据库实例
@@ -90,7 +100,7 @@ fn test_insert_and_query_with_composite_pk() -> Result<()> {
     
     // 插入数据
     let table_id = 1; // 系统表占用0，所以新表ID为1
-    let mut table = db.get_table_mut(table_id)?;
+    let table = db.get_table_mut(table_id)?;
     
     // 准备记录数据
     let mut record = [0u8; 4 + 4 + 256 + 8]; // id1(4) + id2(4) + name(256) + value(8)
@@ -138,10 +148,15 @@ fn test_insert_and_query_with_composite_pk() -> Result<()> {
 
 #[test]
 fn test_composite_pk_with_three_fields() -> Result<()> {
-    // 初始化内存缓冲区
+    // 创建新的内存缓冲区
+    let mut new_memory = vec![0u8; 8388608]; // 8MB
+    
+    // 初始化全局分配器
+    remdb::memory::allocator::init_global_allocator(new_memory.as_mut_ptr(), new_memory.len())?;
+    
+    // 更新全局内存缓冲区
     unsafe {
-        DB_MEMORY = vec![0u8; 8388608]; // 8MB
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())?;
+        DB_MEMORY = new_memory;
     }
     
     // 创建数据库实例

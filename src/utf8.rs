@@ -284,11 +284,11 @@ mod tests {
         
         // 测试UTF-8
         let utf8 = "Hello 世界".as_bytes();
-        assert_eq!(processor.char_length(utf8), 7); // "Hello " + "世界"
+        assert_eq!(processor.char_length(utf8), 8); // "Hello " + "世界"
         
         // 测试包含emoji
         let emoji = "👋 世界".as_bytes();
-        assert_eq!(processor.char_length(emoji), 3); // "👋 " + "世界"
+        assert_eq!(processor.char_length(emoji), 4); // "👋 " + "世界"
     }
     
     #[test]
