@@ -304,6 +304,11 @@ impl Drop for MemoryTable {
 impl MemoryTable {
     /// 创建新的内存表
     pub fn new(def: alloc::sync::Arc<TableDef>) -> Result<Self> {
+        Self::new_with_options(def, false)
+    }
+
+    /// 创建新的内存表（带选项）
+    pub fn new_with_options(def: alloc::sync::Arc<TableDef>, skip_status_init: bool) -> Result<Self> {
         // 确保max_records至少为1，避免创建无法使用的表
         if def.max_records == 0 {
             return Err(RemDbError::ConfigError);
@@ -320,21 +325,32 @@ impl MemoryTable {
         let free_slots_start = crate::memory::allocator::alloc(free_slots_size)?;
 
         // 初始化状态数组
+        let mut free_slot_count = def.max_records;
         unsafe {
-            let status_array = status_start.cast::<RecordHeader>();
-            for i in 0..def.max_records {
-                let status_ptr = status_array.as_ptr().add(i);
-                (*status_ptr).status = RecordStatus::Free;
-                (*status_ptr).version = 0;
-                (*status_ptr).lock_type = crate::types::LockType::None;
-                (*status_ptr).lock_owner = 0;
-                (*status_ptr).lock_count = 0;
-            }
+            if !skip_status_init {
+                let status_array = status_start.cast::<RecordHeader>();
+                for i in 0..def.max_records {
+                    let status_ptr = status_array.as_ptr().add(i);
+                    (*status_ptr).status = RecordStatus::Free;
+                    (*status_ptr).version = 0;
+                    (*status_ptr).lock_type = crate::types::LockType::None;
+                    (*status_ptr).lock_owner = 0;
+                    (*status_ptr).lock_count = 0;
+                }
 
-            // 初始化空闲记录槽栈，将所有记录槽压入栈中
-            let free_slots = free_slots_start.cast::<usize>();
-            for i in 0..def.max_records {
-                *free_slots.as_ptr().add(i) = (def.max_records - 1 - i) as usize;
+                // 初始化空闲记录槽栈，将所有记录槽压入栈中
+                let free_slots = free_slots_start.cast::<usize>();
+                for i in 0..def.max_records {
+                    *free_slots.as_ptr().add(i) = (def.max_records - 1 - i) as usize;
+                }
+            } else {
+                // 跳过状态初始化，由WAL恢复过程处理
+                free_slot_count = 0;
+                // 初始化free_slots数组为0，避免未初始化内存访问
+                let free_slots = free_slots_start.cast::<usize>();
+                for i in 0..def.max_records {
+                    *free_slots.as_ptr().add(i) = 0;
+                }
             }
         }
 
@@ -346,7 +362,7 @@ impl MemoryTable {
             lock: 0,
             record_size: def.record_size, // 使用表定义中已经计算好的record_size
             free_slots: free_slots_start.cast(),
-            free_slot_count: def.max_records,
+            free_slot_count: free_slot_count,
             low_power_mode: false,       // 默认不启用低功耗模式
             low_power_max_records: None, // 默认使用表定义的最大记录数
             snapshot_version: 0,         // 初始快照版本为0

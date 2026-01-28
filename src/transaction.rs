@@ -78,6 +78,8 @@ pub enum LogOperation {
     AlterTable = 11,
     /// 删除表
     DropTable = 12,
+    /// 创建数据库
+    CreateDatabase = 13,
 }
 
 /// 日志文件头
@@ -964,6 +966,7 @@ impl LogManager {
                     | LogOperation::Delete
                     | LogOperation::Update
                     | LogOperation::CreateTable
+                    | LogOperation::CreateDatabase
                     | LogOperation::TimeSeriesInsert
                     | LogOperation::Commit
                     | LogOperation::Abort
@@ -972,6 +975,7 @@ impl LogManager {
                     | LogOperation::EnterLowPowerMode
                     | LogOperation::ExitLowPowerMode
                     | LogOperation::AlterTable
+                    | LogOperation::DropTable
             ) {
                 // Invalid operation type, skip
                 continue;
@@ -989,10 +993,24 @@ impl LogManager {
             valid_log_items.len()
         );
 
-        // 阶段2：先处理所有的表创建和索引创建操作，确保表结构已建立
-        println!("Phase 2: Processing schema operations (CreateTable, CreateIndex)...");
+        // 阶段2：先处理所有的数据库创建、表创建和索引创建操作，确保数据库和表结构已建立
+        println!("Phase 2: Processing schema operations (CreateDatabase, CreateTable, CreateIndex)...");
         for log_item in &valid_log_items {
             match log_item.op_type {
+                LogOperation::CreateDatabase => {
+                    // 执行创建数据库操作
+                    // 从日志中解析数据库名
+                    let db_name_len = log_item.new_data[0] as usize;
+                    let db_name = 
+                        core::str::from_utf8(&log_item.new_data[1..1 + db_name_len])
+                            .unwrap_or_else(|_| "unknown");
+
+                    println!("Creating database from WAL: {}", db_name);
+
+                    // 这里需要调用数据库管理器的创建数据库方法
+                    // 但由于我们在恢复过程中，可能需要特殊处理
+                    // 暂时跳过，由数据库管理器在初始化时处理
+                }
                 LogOperation::CreateTable => {
                     // 检查表是否已经存在
                     let table_id = log_item.table_id as usize;
@@ -1494,9 +1512,9 @@ impl LogManager {
                             db.secondary_indices.resize_with(new_capacity, || None);
                         }
 
-                        // 创建内存表
+                        // 创建内存表，跳过状态初始化，由WAL恢复过程处理
                         let table_def_arc = alloc::sync::Arc::new(table_def.clone());
-                        match crate::table::MemoryTable::new(table_def_arc.clone()) {
+                        match crate::table::MemoryTable::new_with_options(table_def_arc.clone(), true) {
                             Ok(table) => {
                                 // 添加到表向量
                                 db.tables[table_def.id as usize] = Some(table);
@@ -1800,23 +1818,28 @@ impl LogManager {
                         }
                     };
 
-                    // 检查记录是否已存在
-                    let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                    if (*status_ptr).status != crate::types::RecordStatus::Used {
-                        // 记录不存在，执行插入
-                        let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                        crate::platform::memcpy(
-                            record_ptr,
-                            log_item.new_data.as_ptr(),
-                            log_item.data_size as usize,
-                        );
+                    println!("Processing Insert operation for table_id {} record_id {}", table_id, log_item.record_id);
 
+                    // 无论记录是否存在，都执行插入操作
+                    let status_ptr = table.get_status_ptr(log_item.record_id as usize);
+                    let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                    
+                    // 复制数据到记录位置
+                    crate::platform::memcpy(
+                        record_ptr,
+                        log_item.new_data.as_ptr(),
+                        log_item.data_size as usize,
+                    );
+
+                    // 检查记录是否已存在
+                    if (*status_ptr).status != crate::types::RecordStatus::Used {
+                        // 记录不存在，更新状态和计数
                         (*status_ptr).status = crate::types::RecordStatus::Used;
                         (*status_ptr).version += 1;
                         (*status_ptr).create_tx_id = log_item.tx_id;
                         (*status_ptr).delete_tx_id = 0;
                         (*status_ptr).next_version_ptr = 0;
-                        table.inc_record_count();
+                        table.record_count += 1;
 
                         // 从空闲槽栈中移除该槽位，确保不重复使用
                         if table.free_slot_count > 0 {
@@ -1843,49 +1866,55 @@ impl LogManager {
                                 }
                             }
                         }
+                    } else {
+                        // 记录已存在，更新版本号和创建事务ID
+                        (*status_ptr).version += 1;
+                        (*status_ptr).create_tx_id = log_item.tx_id;
+                    }
 
-                        // 更新主键索引
-                        if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                            // 使用复合键插入方法
-                            let _: Result<()> = primary_index.insert_composite(
-                                record_ptr,
-                                log_item.record_id as u16,
-                            );
-                        }
+                    // 更新主键索引
+                    if let Some(primary_index) = &mut db.primary_indices[table_id] {
+                        // 先删除旧的索引项（如果存在）
+                        let _: Result<()> = primary_index.delete_composite(record_ptr);
+                        // 使用复合键插入方法
+                        let _: Result<()> = primary_index.insert_composite(
+                            record_ptr,
+                            log_item.record_id as u16,
+                        );
+                    }
 
-                        // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
-                        // 对于复合主键，只考虑第一个主键字段
-                        if !table.def.primary_key.is_empty() {
-                            let primary_key_field = &table.def.fields[table.def.primary_key[0]];
-                            let key_ptr = record_ptr.add(primary_key_field.offset);
-                            let new_pk = match primary_key_field.data_type {
-                                crate::types::DataType::UInt8 => {
-                                    (unsafe { *(key_ptr as *const u8) }) as u64
-                                }
-                                crate::types::DataType::UInt16 => {
-                                    (unsafe { *(key_ptr as *const u16) }) as u64
-                                }
-                                crate::types::DataType::UInt32 => {
-                                    (unsafe { *(key_ptr as *const u32) }) as u64
-                                }
-                                crate::types::DataType::UInt64 => unsafe { *(key_ptr as *const u64) },
-                                crate::types::DataType::Int8 => {
-                                    (unsafe { *(key_ptr as *const i8) }) as u64
-                                }
-                                crate::types::DataType::Int16 => {
-                                    (unsafe { *(key_ptr as *const i16) }) as u64
-                                }
-                                crate::types::DataType::Int32 => {
-                                    (unsafe { *(key_ptr as *const i32) }) as u64
-                                }
-                                crate::types::DataType::Int64 => {
-                                    (unsafe { *(key_ptr as *const i64) }) as u64
-                                }
-                                _ => 0,
-                            };
-                            if new_pk > table.max_pk {
-                                table.max_pk = new_pk;
+                    // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
+                    // 对于复合主键，只考虑第一个主键字段
+                    if !table.def.primary_key.is_empty() {
+                        let primary_key_field = &table.def.fields[table.def.primary_key[0]];
+                        let key_ptr = record_ptr.add(primary_key_field.offset);
+                        let new_pk = match primary_key_field.data_type {
+                            crate::types::DataType::UInt8 => {
+                                (unsafe { *(key_ptr as *const u8) }) as u64
                             }
+                            crate::types::DataType::UInt16 => {
+                                (unsafe { *(key_ptr as *const u16) }) as u64
+                            }
+                            crate::types::DataType::UInt32 => {
+                                (unsafe { *(key_ptr as *const u32) }) as u64
+                            }
+                            crate::types::DataType::UInt64 => unsafe { *(key_ptr as *const u64) },
+                            crate::types::DataType::Int8 => {
+                                (unsafe { *(key_ptr as *const i8) }) as u64
+                            }
+                            crate::types::DataType::Int16 => {
+                                (unsafe { *(key_ptr as *const i16) }) as u64
+                            }
+                            crate::types::DataType::Int32 => {
+                                (unsafe { *(key_ptr as *const i32) }) as u64
+                            }
+                            crate::types::DataType::Int64 => {
+                                (unsafe { *(key_ptr as *const i64) }) as u64
+                            }
+                            _ => 0,
+                        };
+                        if new_pk > table.max_pk {
+                            table.max_pk = new_pk;
                         }
                     }
                 }

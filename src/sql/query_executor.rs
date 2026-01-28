@@ -5649,24 +5649,23 @@ fn execute_insert_query(
     }
 
     // 4. 暂时跳过事务处理，直接执行插入操作
-    let has_active_tx = false; // 暂时硬编码为false，跳过事务处理
-    // let has_active_tx = crate::transaction::has_active_tx();
-    // let mut tx_buffer = [0u8; core::mem::size_of::<crate::transaction::Transaction>()];
-    // let mut log_buffer = [0u8; core::mem::size_of::<crate::transaction::LogItem>() * 10];
+    let mut tx_buffer = [0u8; core::mem::size_of::<crate::transaction::Transaction>()];
+    let mut log_buffer = [0u8; core::mem::size_of::<crate::transaction::LogItem>() * 10];
+    let has_active_tx = crate::transaction::has_active_tx();
 
-    // if !has_active_tx {
-    //     // 没有活跃事务，开始一个新事务
-    //     unsafe {
-    //         crate::transaction::begin(
-    //             crate::transaction::TransactionType::ReadWrite,
-    //             crate::transaction::IsolationLevel::ReadCommitted,
-    //             tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
-    //             log_buffer.as_mut_ptr() as *mut crate::transaction::LogItem,
-    //             10,
-    //         )
-    //         .map_err(|_| QueryExecutionError::InternalError)?;
-    //     }
-    // }
+    if !has_active_tx {
+        // 没有活跃事务，开始一个新事务
+        unsafe {
+            crate::transaction::begin(
+                crate::transaction::TransactionType::ReadWrite,
+                crate::transaction::IsolationLevel::ReadCommitted,
+                tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
+                log_buffer.as_mut_ptr() as *mut crate::transaction::LogItem,
+                10,
+            )
+            .map_err(|_| QueryExecutionError::InternalError)?;
+        }
+    }
 
     // 5. 执行插入操作
     let mut affected_rows = 0;
@@ -6018,12 +6017,12 @@ fn execute_insert_query(
     }];
     result_set.add_row(row_data);
 
-    // 暂时跳过事务提交
-    // if !has_active_tx {
-    //     unsafe {
-    //         crate::transaction::commit().map_err(|_| QueryExecutionError::InternalError)?;
-    //     }
-    // }
+    // 提交事务
+    if !has_active_tx {
+        unsafe {
+            crate::transaction::commit().map_err(|_| QueryExecutionError::InternalError)?;
+        }
+    }
 
     // 如果更新的是系统配置表，刷新配置缓存
     if query.table_name == crate::system_tables::SYSTEM_CONFIG_TABLE {

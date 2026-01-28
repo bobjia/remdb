@@ -295,6 +295,42 @@ impl DatabaseManager {
         // 创建数据库实例
         let db = Arc::new(RemDb::new_with_name(name, db_config));
 
+        // 记录CreateDatabase操作的WAL日志
+        unsafe {
+            if let Some(log_manager) = crate::transaction::get_log_manager() {
+                // 构建日志数据：包含数据库名
+                let mut new_data = [0u8; 512];
+                new_data[0] = name.len() as u8;
+                if name.len() > 0 && name.len() <= 511 {
+                    let name_bytes = name.as_bytes();
+                    for (i, &byte) in name_bytes.iter().enumerate() {
+                        new_data[1 + i] = byte;
+                    }
+                }
+
+                // 创建日志项
+                let log_item = crate::transaction::LogItem {
+                    op_type: crate::transaction::LogOperation::CreateDatabase,
+                    table_id: 0,  // 数据库操作不关联特定表
+                    record_id: 0, // 数据库操作不关联特定记录
+                    data_size: (name.len() + 1) as u16, // 包含长度字节
+                    old_data: [0; 512],
+                    new_data: new_data,
+                    tx_id: 0, // 数据库操作不关联特定事务
+                    timestamp: crate::platform::get_timestamp_us(),
+                    checksum: 0, // 后面会计算
+                };
+
+                // 计算校验和
+                let calculated_checksum = crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
+                let mut final_log_item = log_item;
+                final_log_item.checksum = calculated_checksum;
+
+                // 写入日志
+                let _ = log_manager.write_log_item(&final_log_item);
+            }
+        }
+
         // 添加到数据库列表
         self.databases.push(db.clone());
 
