@@ -6,7 +6,7 @@
  * snapshot management, and health monitoring.
  *
  * Compile with:
- * gcc -o c_api_example c_api_example.c -lremdb -L. -I../include
+ * gcc -o c_api_example c_api_example.c -lremdb -L../target/release -I../include
  */
 
 #include <stdio.h>
@@ -17,7 +17,7 @@
 // Define a simple table structure for demonstration
 typedef struct User {
     uint32_t id;
-    char name[32];
+    char name[REMDB_MAX_STRING_LEN];
     uint32_t age;
 } User;
 
@@ -55,7 +55,9 @@ int main() {
     RemDbConfig config = {
         .tables = tables,
         .tables_count = sizeof(tables) / sizeof(tables[0]),
-        .total_memory = 1024 * 1024,  // 1 MB
+        .time_series_tables = NULL,
+        .time_series_tables_count = 0,
+        .total_memory = 1024 * 1024 * 100,  // 100 MB
         .low_power_mode_supported = 1,
         .low_power_max_records = 500
     };
@@ -417,29 +419,68 @@ int main() {
     free(records);
     printf("\n");
     
-    // Step 18: Update Record Example
-    printf("Update Record Example...\n");
+    // Step 18: Create Table Example
+    printf("Create Table Example...\n");
     
-    err = remdb_update_record(handle, "users", "age = age + 1", "age > 30", &affected_rows);
+    // Define new table fields
+    RemDbFieldDef product_fields[] = {
+        { "id", REMDB_TYPE_UINT32, sizeof(uint32_t), 0 },
+        { "name", REMDB_TYPE_STRING, REMDB_MAX_STRING_LEN, sizeof(uint32_t) },
+        { "price", REMDB_TYPE_FLOAT32, sizeof(float), sizeof(uint32_t) + REMDB_MAX_STRING_LEN }
+    };
+    size_t product_fields_count = sizeof(product_fields) / sizeof(product_fields[0]);
+    
+    // Create new table
+    err = remdb_create_table(handle, "products", product_fields, product_fields_count, 0);
     if (err != REMDB_SUCCESS) {
-        printf("Failed to update records: error code %d\n", err);
+        printf("Failed to create table: error code %d\n", err);
     } else {
-        printf("Updated %zu records successfully!\n", affected_rows);
+        printf("Table 'products' created successfully!\n");
     }
     printf("\n");
     
-    // Step 19: Delete Record Example
-    printf("Delete Record Example...\n");
-    
-    err = remdb_delete_record(handle, "users", "age < 28", &affected_rows);
+    // Step 19: Get Table by Name Example
+    printf("Get Table by Name Example...\n");
+    size_t table_id = 0;
+    err = remdb_table_get_by_name(handle, "products", &table_id);
     if (err != REMDB_SUCCESS) {
-        printf("Failed to delete records: error code %d\n", err);
+        printf("Failed to get table by name: error code %d\n", err);
     } else {
-        printf("Deleted %zu records successfully!\n", affected_rows);
+        printf("Table 'products' found with ID: %zu\n", table_id);
     }
     printf("\n");
     
-    // Step 20: Export DDL Example
+    // Step 20: Metrics Snapshot Example
+    printf("Metrics Snapshot Example...\n");
+    RemDbMetricsSnapshot metrics;
+    err = remdb_get_metrics_snapshot(handle, &metrics);
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to get metrics snapshot: error code %d\n", err);
+    } else {
+        printf("Metrics Snapshot:\n");
+        printf("  Total Memory: %zu bytes\n", metrics.total_memory);
+        printf("  Used Memory: %zu bytes\n", metrics.used_memory);
+        printf("  Read Operations: %llu\n", (unsigned long long)metrics.read_ops);
+        printf("  Write Operations: %llu\n", (unsigned long long)metrics.write_ops);
+        printf("  Delete Operations: %llu\n", (unsigned long long)metrics.delete_ops);
+        printf("  Update Operations: %llu\n", (unsigned long long)metrics.update_ops);
+        printf("  Transactions: %llu\n", (unsigned long long)metrics.transactions);
+        printf("  Committed Transactions: %llu\n", (unsigned long long)metrics.committed_transactions);
+        printf("  Rolled Back Transactions: %llu\n", (unsigned long long)metrics.rolled_back_transactions);
+    }
+    printf("\n");
+    
+    // Step 21: Reset Metrics Example
+    printf("Reset Metrics Example...\n");
+    err = remdb_reset_metrics(handle);
+    if (err != REMDB_SUCCESS) {
+        printf("Failed to reset metrics: error code %d\n", err);
+    } else {
+        printf("Metrics reset successfully!\n");
+    }
+    printf("\n");
+    
+    // Step 22: Export DDL Example
     printf("Export DDL Example...\n");
     
     err = remdb_export_ddl(handle, "exported_ddl.sql");
@@ -450,7 +491,7 @@ int main() {
     }
     printf("\n");
     
-    // Step 21: Export Data Example
+    // Step 23: Export Data Example
     printf("Export Data Example...\n");
     
     err = remdb_export_data(handle, "exported_data.sql");

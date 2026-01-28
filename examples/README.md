@@ -29,7 +29,7 @@ gcc -o c_api_example c_api_example.c -lremdb -L../target/release -I../include
 
 ```bash
 cd examples
-cl /I../include c_api_example.c ..\target\release\remdb.lib
+cl /I../include c_api_example.c ..\target\release\remdb.lib ws2_32.lib mswsock.lib advapi32.lib ntdll.lib userenv.lib bcrypt.lib
 ```
 
 ## Execution
