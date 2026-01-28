@@ -4782,7 +4782,7 @@ fn execute_create_index_query(
         .map_err(|_| QueryExecutionError::InternalError)?
         .submit_task(
             query.table_name.clone(),
-            field_name.clone(),
+            field_name.clone(), // 直接克隆 Vec<String>
             crate::sql::query_parser::IndexType::BTree, // 使用默认值，实际索引类型由params指定
             params,
         );

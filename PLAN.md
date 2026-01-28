@@ -2345,6 +2345,295 @@ USING SCHEMA <schema_identifier>  -- 关键：绑定到编译期定义的Schema
 
 **建议将本需求置于“阶段二：核心优化”中，作为 US-210（编译期DDL） 的自然延伸和 US-104（内存管理） 的重要应用场景，与数据库的基础设施能力紧密耦合。**
 
+---
+
+#### **US-221：嵌入式全功能UTF-8编码支持**
+
+**作为** 需要在全球范围内部署的嵌入式设备开发者，**我希望** 数据库的所有文本处理功能（包括存储、索引、比较、LIKE匹配和JSON处理）都能完整、高效地支持UTF-8编码，**以便于** 我的设备能够正确处理多语言用户输入、国际化日志消息和包含表情符号等Unicode字符的数据，同时仍然满足嵌入式环境对性能和资源确定性的严苛要求。
+
+---
+
+**1. 核心设计原则**
+
+**1.1 分层架构与渐进增强**
+
+UTF-8支持将采用分层架构，确保基础功能在**所有配置下都可用**，而高级功能（如规范化、排序规则）可作为可选模块启用。
+
+```rust
+// 核心UTF-8处理模块的配置选项
+struct Utf8Config {
+    validation_level: Utf8ValidationLevel, // 严格/宽松/无
+    normalization: Option<NormalizationForm>, // NFC, NFD等（可选）
+    case_mapping: bool,                    // 大小写映射（可选）
+    grapheme_cluster: bool,                // 字素簇边界（高级）
+}
+```
+
+**1.2 性能与资源的平衡**
+
+| 操作类型     | 纯ASCII优化路径     | 通用UTF-8路径 | 额外开销目标 |
+| ------------ | ------------------- | ------------- | ------------ |
+| **长度计算** | O(1) 直接使用字节数 | O(n) 遍历计数 | < 30%        |
+| **比较操作** | `memcmp`            | 字符迭代比较  | < 50%        |
+| **LIKE匹配** | 字节模式匹配        | 字符感知匹配  | < 100%       |
+| **索引构建** | 直接字节排序        | 按字符排序    | < 20%        |
+
+**2. UTF-8核心功能需求**
+
+**2.1 基础存储与验证**
+
+```sql
+-- 所有TEXT类型列自动支持UTF-8
+CREATE TABLE multilingual_data (
+    id INTEGER PRIMARY KEY,
+    log_message TEXT,           -- UTF-8文本
+    user_input VARCHAR(255),    -- UTF-8可变长度
+    emoji_label CHAR(10)        -- UTF-8定长（以字符为单位）
+);
+
+-- 插入包含各种Unicode字符的数据
+INSERT INTO multilingual_data VALUES 
+(1, '正常ASCII文本', '普通输入'),
+(2, '中文测试', '日本語テスト'),
+(3, 'Emoji 🚀 和混合文本', '🔥 Hot!'),
+(4, 'Z͑ͫ̓ͪ̂ͫ̽͏̴̙̤̞͉͚̯̞̠͍A̴̵̜̰͔ͫ͗͢L̠ͨͧͩ͘G̴̻͈͍͔̹̑͗̎̅͛́Ǫ̵̹̻̝̳͂̌̌͘表情!', '特殊');
+```
+
+**验证策略**：
+
+- **严格模式**（默认）：拒绝无效UTF-8序列，防止安全漏洞
+- **宽松模式**：替换无效序列为U+FFFD（�）
+- **无验证模式**：仅用于性能关键场景
+
+**2.2 字符感知的字符串操作**
+
+```sql
+-- 字符长度（而非字节长度）
+SELECT 
+    message,
+    LENGTH(message) AS byte_length,
+    CHAR_LENGTH(message) AS char_length  -- 新增：字符数
+FROM multilingual_data;
+
+-- 字符位置操作
+SELECT 
+    SUBSTRING(message FROM 3 FOR 2) AS chars_3_to_4,  -- 字符位置
+    LEFT(message, 5) AS first_5_chars
+FROM multilingual_data;
+
+-- 示例结果：
+-- 'Emoji 🚀 和混合文本' | byte_len=23 | char_len=10
+-- SUBSTRING: 'ji 🚀' (注意：🚀是单个字符)
+```
+
+**2.3 增强的LIKE运算符（扩展US-219）**
+
+```sql
+-- UTF-8感知的LIKE匹配（字符为单位）
+SELECT * FROM logs WHERE message LIKE '%🚀%';      -- 匹配包含火箭emoji
+SELECT * FROM users WHERE name LIKE '_大_';         -- 匹配三字中文名，中间为"大"
+SELECT * FROM texts WHERE content LIKE 'Café%';    -- 正确匹配带重音字符
+
+-- 可选的校对规则敏感匹配
+SELECT * FROM data WHERE text LIKE 'cafe%' COLLATE utf8mb4_unicode_ci;
+```
+
+**算法优化**：
+
+- 实现UTF-8感知的**Shift-Or/Bitap算法变体**
+- 为纯ASCII模式保留快速路径
+- 支持预编译的匹配状态机，避免每次解析模式
+
+**3. 索引与排序优化**
+
+**3.1 UTF-8感知的B-Tree索引**
+
+```sql
+-- 在UTF-8列上创建索引，支持排序和前缀匹配
+CREATE INDEX idx_multilingual ON multilingual_data(log_message);
+
+-- 索引将使用字符感知的比较，而非字节比较
+-- 'café' 会正确排序在 'caff' 之前，而不是按字节顺序
+```
+
+**索引键编码优化**：
+
+```rust
+// 索引键的UTF-8友好编码
+struct Utf8IndexKey {
+    // 为常见字符（ASCII、常用CJK）使用优化编码
+    // 为复杂字符保留可变长度编码
+    encoded: Vec<u8>,
+    
+    // 用于快速比较的辅助信息
+    fast_cmp_prefix: [u8; 8],  // 前几个字符的标准化形式
+}
+```
+
+**3.2 可配置的排序规则（Collation）**
+
+```sql
+-- 指定列的排序规则
+CREATE TABLE products (
+    name TEXT COLLATE utf8mb4_unicode_ci,  -- 不区分大小写和重音
+    sku TEXT COLLATE utf8mb4_bin           -- 二进制比较（最快）
+);
+
+-- 查询时可指定排序规则
+SELECT * FROM products 
+ORDER BY name COLLATE utf8mb4_zh_0900_as_cs;  -- 中文拼音排序
+```
+
+**支持的排序规则**（按优先级）：
+
+1.  `utf8mb4_bin`：二进制，最快，一期支持
+2.  `utf8mb4_unicode_ci`：Unicode大小写不敏感，二期支持
+3.  语言特定规则（如中文拼音），三期支持
+
+**4. 高级Unicode功能（可选模块）**
+
+**4.1 Unicode规范化支持**
+
+```sql
+-- 确保文本以规范形式存储和比较
+SET NORMALIZATION_FORM = 'NFC';  -- 标准推荐形式
+
+-- 规范化敏感的比较
+SELECT * FROM users 
+WHERE NORMALIZE(username) = NORMALIZE('café');  -- 匹配'café'
+```
+
+**4.2 字素簇边界处理**
+
+```sql
+-- 处理组合字符（如e + ´ = é）
+SELECT 
+    text,
+    GRAPHEME_LENGTH(text) AS visible_chars,  -- 视觉字符数
+    SUBSTRING(text BY GRAPHEME CLUSTERS FROM 1 FOR 3) AS first_3_clusters
+FROM complex_texts;
+```
+
+**5. 性能优化与资源约束**
+
+**5.1 内存高效的数据结构**
+
+```rust
+// 紧凑的UTF-8字符串表示
+struct CompactUtf8Str {
+    // 内联存储短字符串（≤23字节）
+    inline_data: [u8; 23],
+    length: u8,  // 字符数（非字节数）
+    flags: u8,   // 编码提示：是否纯ASCII、是否需要规范化等
+}
+
+// 长字符串使用共享缓冲区
+struct LongUtf8Str {
+    buffer: Arc<[u8]>,  // 共享所有权的字节数组
+    char_count: u32,     // 缓存的字符数，避免重复计算
+}
+```
+
+**5.2 SIMD加速（ARM NEON / x86 AVX2）**
+
+```c
+// 使用SIMD快速扫描ASCII段落
+int count_utf8_chars_neon(const uint8_t* str, size_t len) {
+    // 使用NEON指令并行处理16字节，统计非ASCII起始字节
+    // 对嵌入式设备特别重要
+}
+```
+
+**5.3 编译时配置选项**
+
+```toml
+# Cargo.toml 特性配置
+[features]
+default = ["utf8-basic"]           # 基础UTF-8验证和存储
+utf8-full = ["unicode-normalization", "unicode-segmentation"]  # 完整支持
+utf8-lite = []                     # 最小支持，仅验证
+no-utf8 = []                       # 禁用UTF-8，仅处理ASCII
+```
+
+**6. 嵌入式特殊优化**
+
+**6.1 确定性内存使用**
+
+- 每个UTF-8操作的最大栈分配：256字节
+- 无堆分配的快速路径（字符串≤64字节时）
+- 可配置的最大字符串长度：默认16KB，适应嵌入式限制
+
+**6.2 低功耗模式**
+
+```rust
+// 在电池供电设备上，使用简化算法
+struct LowPowerUtf8Processor {
+    use_simple_validation: bool,      // 跳过完整验证
+    cache_normalized_forms: bool,     // 缓存规范化结果
+    max_complexity_level: u8,         // 限制复杂字符处理
+}
+```
+
+**7. 测试与验证**
+
+**7.1 正确性测试矩阵**
+
+| 测试类别           | 示例输入            | 预期行为          |
+| ------------------ | ------------------- | ----------------- |
+| **基本多语言平面** | "Hello 世界"        | 正确存储和检索    |
+| **辅助平面**       | "𠮷𠮷𠮷" (U+20BB7)  | 支持4字节字符     |
+| **组合字符**       | "café" (e + U+0301) | 规范化处理        |
+| **Emoji序列**      | "👨‍👩‍👧‍👦" (家庭emoji)  | 字素簇处理        |
+| **边缘案例**       | 无效UTF-8序列       | 根据配置拒绝/替换 |
+
+**7.2 性能基准**
+
+```rust
+// 性能测试套件
+benchmark_group!(utf8_benches,
+    bench_ascii_only,      // 纯ASCII性能
+    bench_mixed_text,      // 混合文本
+    bench_cjk_dense,       // 密集CJK文本
+    bench_emoji_heavy      // 大量emoji
+);
+
+// 目标：UTF-8操作相比ASCII操作的性能下降
+// - 存储/检索: < 20%
+// - 比较操作: < 50%
+// - LIKE匹配: < 100% (最坏情况)
+// - 索引构建: < 30%
+```
+
+**8. 集成点与依赖**
+
+**8.1 与现有功能集成**
+
+- **LIKE运算符**：扩展为UTF-8感知
+- **JSON支持**：JSON字符串值的UTF-8处理
+- **索引系统**：UTF-8感知的键比较和排序
+- **全文检索**（未来）：词素分析考虑Unicode属性
+
+**8.2 系统表扩展**
+
+```sql
+-- 新增系统视图，显示UTF-8相关状态
+CREATE VIEW remdb_unicode_status AS
+SELECT 
+    'utf8_support' AS feature,
+    normalization_form,
+    default_collation,
+    max_char_length
+FROM remdb_system_config;
+```
+
+
+
+**9. 总结**
+
+UTF-8支持是 `remdb` 成为国际化嵌入式数据库的关键特性。通过分层架构、性能优化和资源控制，本设计在提供完整Unicode功能的同时，坚守了嵌入式系统的核心原则：**确定性、高效性和可靠性**。
+
+**将此需求置于阶段二（核心优化），作为字符串处理、LIKE运算符和国际化支持的基础设施，与US-xxx（LIKE运算符）紧密协同实现。**
+
 ### **阶段三：高级功能**
 
 **性能优化**

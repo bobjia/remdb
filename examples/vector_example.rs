@@ -118,6 +118,10 @@ fn main() -> Result<()> {
         println!("行 {}: id={:?}, name={:?}, l2_distance={:?}", i+1, row.values[0], row.values[1], row.values[2]);
     }
 
+    // 初始化索引构建线程池
+    remdb::index::builder::init_index_build_thread_pool(2);
+    println!("索引构建线程池初始化成功！");
+
     // 创建向量索引
     let create_index_sql = "CREATE INDEX idx_products_embedding ON products (embedding) USING HNSW WITH (M=16, ef_construction=200)";
     db.sql_query(create_index_sql)?;

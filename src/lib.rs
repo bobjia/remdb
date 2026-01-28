@@ -3356,7 +3356,7 @@ impl RemDb {
         }
 
         // 写入表数量
-        let table_count = self.config.tables.len() as u32;
+        let table_count = self.tables.len() as u32;
         let table_count_bytes = table_count.to_le_bytes();
         let written = crate::platform::file_write(
             handle,
