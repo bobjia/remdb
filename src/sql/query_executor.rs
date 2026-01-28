@@ -300,6 +300,10 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             }
             Ok(ResultSet::new(Vec::new()))
         },
+        crate::sql::QueryType::CreateDatabase => execute_create_database_query(db, query),
+        crate::sql::QueryType::UseDatabase => execute_use_database_query(db, query),
+        crate::sql::QueryType::CloseDatabase => execute_close_database_query(db, query),
+        crate::sql::QueryType::DropDatabase => execute_drop_database_query(db, query),
         _ => Err(QueryExecutionError::InternalError),
     }
 }
@@ -437,6 +441,58 @@ fn execute_drop_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSe
 
     // 调用RemDb的drop_table方法
     db.drop_table(&query.table_name, if_exists, is_deferred)
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    // 返回空结果集
+    Ok(ResultSet::new(Vec::new()))
+}
+
+/// 执行CREATE DATABASE查询
+fn execute_create_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 提取数据库名称
+    let database_name = query.table_name.clone();
+    
+    // 调用RemDb的create_database方法
+    db.create_database(&database_name)
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    // 返回空结果集
+    Ok(ResultSet::new(Vec::new()))
+}
+
+/// 执行USE DATABASE查询
+fn execute_use_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 提取数据库名称
+    let database_name = query.table_name.clone();
+    
+    // 调用RemDb的use_database方法
+    db.use_database(&database_name)
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    // 返回空结果集
+    Ok(ResultSet::new(Vec::new()))
+}
+
+/// 执行CLOSE DATABASE查询
+fn execute_close_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 提取数据库名称
+    let database_name = query.table_name.clone();
+    
+    // 调用RemDb的close_database方法
+    db.close_database(&database_name)
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    // 返回空结果集
+    Ok(ResultSet::new(Vec::new()))
+}
+
+/// 执行DROP DATABASE查询
+fn execute_drop_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    // 提取数据库名称
+    let database_name = query.table_name.clone();
+    
+    // 调用RemDb的drop_database方法
+    db.drop_database(&database_name)
         .map_err(|_| QueryExecutionError::InternalError)?;
 
     // 返回空结果集

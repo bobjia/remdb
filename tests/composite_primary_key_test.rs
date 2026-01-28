@@ -103,7 +103,7 @@ fn test_insert_and_query_with_composite_pk() -> Result<()> {
     let table = db.get_table_mut(table_id)?;
     
     // 准备记录数据
-    let mut record = [0u8; 4 + 4 + 256 + 8]; // id1(4) + id2(4) + name(256) + value(8)
+    let mut record = [0u8; 4 + 4 + 64 + 8]; // id1(4) + id2(4) + name(64) + value(8)
     
     // 插入第一条记录
     let id1: u32 = 1;
@@ -119,7 +119,7 @@ fn test_insert_and_query_with_composite_pk() -> Result<()> {
     let name_bytes = name.as_bytes();
     record[8..8+name_bytes.len()].copy_from_slice(name_bytes);
     // 设置value
-    record[8+256..8+256+8].copy_from_slice(&value.to_le_bytes());
+    record[8+64..8+64+8].copy_from_slice(&value.to_le_bytes());
     
     // 插入记录
     let record_id = table.insert(record.as_ptr() as *const u8)?;

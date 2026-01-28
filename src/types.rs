@@ -1298,6 +1298,14 @@ pub enum RemDbError {
     UnsupportedOperation,
     /// 文件I/O错误
     FileIoError,
+    /// 数据库不存在
+    DatabaseNotFound,
+    /// 数据库已存在
+    DatabaseExists,
+    /// 数据库已关闭
+    DatabaseClosed,
+    /// 数据库数量达到上限
+    MaxDatabasesReached,
     /// 快照格式错误
     SnapshotFormatError,
     /// CRC校验失败
@@ -1349,6 +1357,10 @@ impl fmt::Display for RemDbError {
             RemDbError::InvalidRecordSize => write!(f, "Invalid record size"),
             RemDbError::InvalidSqlQuery => write!(f, "Invalid SQL query"),
             RemDbError::NoRecordsToOverwrite => write!(f, "No records to overwrite"),
+            RemDbError::DatabaseNotFound => write!(f, "Database not found"),
+            RemDbError::DatabaseExists => write!(f, "Database exists"),
+            RemDbError::DatabaseClosed => write!(f, "Database closed"),
+            RemDbError::MaxDatabasesReached => write!(f, "Maximum databases reached"),
             RemDbError::InternalError => write!(f, "Internal error"),
         }
     }

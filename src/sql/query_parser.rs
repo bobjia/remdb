@@ -166,6 +166,14 @@ impl std::fmt::Display for IndexType {
         CreateTimeSeriesTable,
         /// CREATE INDEX查询
         CreateIndex,
+        /// CREATE DATABASE查询
+        CreateDatabase,
+        /// USE DATABASE查询
+        UseDatabase,
+        /// CLOSE DATABASE查询
+        CloseDatabase,
+        /// DROP DATABASE查询
+        DropDatabase,
         /// ALTER TABLE查询
         AlterTable,
         /// DROP TABLE查询
@@ -423,6 +431,10 @@ impl SqlParser {
             QueryType::CreateTable => self.parse_create_table_query(),
             QueryType::CreateTimeSeriesTable => self.parse_create_table_query(),
             QueryType::CreateIndex => self.parse_create_index_query(),
+            QueryType::CreateDatabase => self.parse_create_database_query(),
+            QueryType::UseDatabase => self.parse_use_database_query(),
+            QueryType::CloseDatabase => self.parse_close_database_query(),
+            QueryType::DropDatabase => self.parse_drop_database_query(),
             QueryType::AlterTable => self.parse_alter_table_query(),
             QueryType::DropTable => self.parse_drop_table_query(),
             QueryType::BeginTransaction => Ok(SqlQuery {
@@ -1246,6 +1258,211 @@ impl SqlParser {
         Ok(query)
     }
 
+    /// 解析CREATE DATABASE查询
+    fn parse_create_database_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析IF NOT EXISTS选项
+        let mut if_not_exists = false;
+        self.skip_whitespace();
+        if self.match_keyword("IF") {
+            self.skip_whitespace();
+            self.expect_keyword("NOT")?;
+            self.skip_whitespace();
+            self.expect_keyword("EXISTS")?;
+            if_not_exists = true;
+        }
+
+        // 解析数据库名称
+        self.skip_whitespace();
+        let database_name = self.parse_identifier()?;
+
+        // 解析USING SCHEMA子句
+        let mut schema = None;
+        self.skip_whitespace();
+        if self.match_keyword("USING") {
+            self.skip_whitespace();
+            self.expect_keyword("SCHEMA")?;
+            self.skip_whitespace();
+            schema = Some(self.parse_identifier()?);
+        }
+
+        // 解析WITH CONFIGURATION子句
+        let mut config_params = HashMap::new();
+        self.skip_whitespace();
+        if self.match_keyword("WITH") {
+            self.skip_whitespace();
+            self.expect_keyword("CONFIGURATION")?;
+            self.skip_whitespace();
+            self.expect_char('(')?;
+
+            // 解析配置参数
+            loop {
+                self.skip_whitespace();
+                let param_name = self.parse_identifier()?.to_uppercase();
+                
+                self.skip_whitespace();
+                self.expect_char('=')?;
+                
+                self.skip_whitespace();
+                let param_value = self.parse_value()?;
+                let value_str = match param_value {
+                    Value::String(s) => s,
+                    Value::Identifier(id) => id,
+                    Value::Integer(i) => i.to_string(),
+                    Value::Float(f) => f.to_string(),
+                    Value::Boolean(b) => b.to_string(),
+                    _ => return Err(QueryParseError::InvalidValue),
+                };
+                
+                config_params.insert(param_name, value_str);
+                
+                self.skip_whitespace();
+                if self.match_char(')') {
+                    break;
+                } else if !self.match_char(',') {
+                    return Err(QueryParseError::InvalidSyntax);
+                }
+            }
+        }
+
+        // 创建SqlQuery对象
+        let mut query = SqlQuery {
+            query_type: QueryType::CreateDatabase,
+            table_name: database_name,
+            table_alias: schema,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: config_params,
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: if_not_exists,
+        };
+
+        Ok(query)
+    }
+
+    /// 解析USE DATABASE查询
+    fn parse_use_database_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析数据库名称
+        self.skip_whitespace();
+        let database_name = self.parse_identifier()?;
+
+        // 创建SqlQuery对象
+        let query = SqlQuery {
+            query_type: QueryType::UseDatabase,
+            table_name: database_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+        };
+
+        Ok(query)
+    }
+
+    /// 解析CLOSE DATABASE查询
+    fn parse_close_database_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析数据库名称
+        self.skip_whitespace();
+        let database_name = self.parse_identifier()?;
+
+        // 创建SqlQuery对象
+        let query = SqlQuery {
+            query_type: QueryType::CloseDatabase,
+            table_name: database_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+        };
+
+        Ok(query)
+    }
+
+    /// 解析DROP DATABASE查询
+    fn parse_drop_database_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析IF EXISTS选项
+        let mut if_exists = false;
+        self.skip_whitespace();
+        if self.match_keyword("IF") {
+            self.skip_whitespace();
+            self.expect_keyword("EXISTS")?;
+            if_exists = true;
+        }
+
+        // 解析数据库名称
+        self.skip_whitespace();
+        let database_name = self.parse_identifier()?;
+
+        // 创建SqlQuery对象
+        let mut query = SqlQuery {
+            query_type: QueryType::DropDatabase,
+            table_name: database_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: if_exists,
+        };
+
+        Ok(query)
+    }
+
     /// 解析查询类型
     fn parse_query_type(&mut self) -> Result<QueryType, QueryParseError> {
         if self.match_keyword("SELECT") {
@@ -1271,6 +1488,8 @@ impl SqlParser {
                 Ok(QueryType::CreateTable)
             } else if self.match_keyword("INDEX") {
                 Ok(QueryType::CreateIndex)
+            } else if self.match_keyword("DATABASE") {
+                Ok(QueryType::CreateDatabase)
             } else {
                 Ok(QueryType::Other)
             }
@@ -1285,6 +1504,22 @@ impl SqlParser {
             self.skip_whitespace();
             if self.match_keyword("TABLE") {
                 Ok(QueryType::DropTable)
+            } else if self.match_keyword("DATABASE") {
+                Ok(QueryType::DropDatabase)
+            } else {
+                Ok(QueryType::Other)
+            }
+        } else if self.match_keyword("USE") {
+            self.skip_whitespace();
+            if self.match_keyword("DATABASE") {
+                Ok(QueryType::UseDatabase)
+            } else {
+                Ok(QueryType::Other)
+            }
+        } else if self.match_keyword("CLOSE") {
+            self.skip_whitespace();
+            if self.match_keyword("DATABASE") {
+                Ok(QueryType::CloseDatabase)
             } else {
                 Ok(QueryType::Other)
             }
