@@ -2740,6 +2740,8 @@ fn execute_function_call(
         "SUBSTRING" => execute_substring(args),
         "UPPER" => execute_upper(args),
         "LOWER" => execute_lower(args),
+        "LENGTH" => execute_length(args),
+        "CHAR_LENGTH" => execute_char_length(args),
         // 数学函数
         "ABS" => execute_abs(args),
         "SQRT" => execute_sqrt(args),
@@ -3496,6 +3498,57 @@ fn execute_lower(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
             value: Value {
                 string: string_value,
             },
+        })
+    }
+}
+
+/// 执行LENGTH函数（字节长度）
+fn execute_length(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let arg = &args[0];
+
+    unsafe {
+        let length = match arg.value_type {
+            DataType::String => {
+                let source_str = core::str::from_utf8(&arg.value.string)
+                    .map_err(|_| QueryExecutionError::TypeMismatch)?
+                    .trim_end_matches(char::from(0));
+                source_str.len() as u64
+            }
+            _ => return Err(QueryExecutionError::TypeMismatch),
+        };
+
+        Ok(TypedValue {
+            value_type: DataType::UInt64,
+            value: Value { u64: length },
+        })
+    }
+}
+
+/// 执行CHAR_LENGTH函数（字符长度，UTF-8感知）
+fn execute_char_length(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let arg = &args[0];
+
+    unsafe {
+        let char_count = match arg.value_type {
+            DataType::String => {
+                // 使用UTF-8处理器计算字符长度
+                let char_count = crate::utf8::get_global_utf8_processor().char_length(&arg.value.string);
+                char_count as u64
+            }
+            _ => return Err(QueryExecutionError::TypeMismatch),
+        };
+
+        Ok(TypedValue {
+            value_type: DataType::UInt64,
+            value: Value { u64: char_count },
         })
     }
 }

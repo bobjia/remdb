@@ -20,6 +20,7 @@ pub mod time_series;
 pub mod transaction;
 pub mod types;
 pub mod system_tables;
+pub mod utf8;
 
 // 导出核心类型
 pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};

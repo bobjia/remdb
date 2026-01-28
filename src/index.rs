@@ -1670,12 +1670,33 @@ impl SecondaryIndex {
         item1: &SecondaryIndexItem,
         item2: &SecondaryIndexItem,
     ) -> core::cmp::Ordering {
-        // 比较键大�?
+        // 比较键大小
         if item1.key_size != item2.key_size {
             return item1.key_size.cmp(&item2.key_size);
         }
 
-        // 比较键数�?
+        // 检查是否是字符串字段的索引
+        if let Some(secondary_index) = &self.def.secondary_index {
+            if let Some(field_index) = secondary_index.first() {
+                if *field_index < self.def.fields.len() {
+                    let field = &self.def.fields[*field_index];
+                    if field.data_type == crate::types::DataType::String {
+                        // 尝试使用UTF-8处理器比较字符串
+                        if let (Some(str1), Some(str2)) = (
+                            crate::utf8::get_global_utf8_processor().to_string(&item1.key_data[..item1.key_size as usize]),
+                            crate::utf8::get_global_utf8_processor().to_string(&item2.key_data[..item2.key_size as usize])
+                        ) {
+                            let cmp = str1.cmp(str2);
+                            if cmp != core::cmp::Ordering::Equal {
+                                return cmp;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 比较键数据（字节级比较，作为回退）
         let key_size = item1.key_size as usize;
         for i in 0..key_size {
             if item1.key_data[i] != item2.key_data[i] {
@@ -2218,12 +2239,33 @@ impl BTreeIndex {
         item1: &SecondaryIndexItem,
         item2: &SecondaryIndexItem,
     ) -> core::cmp::Ordering {
-        // 比较键大�?
+        // 比较键大小
         if item1.key_size != item2.key_size {
             return item1.key_size.cmp(&item2.key_size);
         }
 
-        // 比较键数�?
+        // 检查是否是字符串字段的索引
+        if let Some(secondary_index) = &self.def.secondary_index {
+            if let Some(field_index) = secondary_index.first() {
+                if *field_index < self.def.fields.len() {
+                    let field = &self.def.fields[*field_index];
+                    if field.data_type == crate::types::DataType::String {
+                        // 尝试使用UTF-8处理器比较字符串
+                        if let (Some(str1), Some(str2)) = (
+                            crate::utf8::get_global_utf8_processor().to_string(&item1.key_data[..item1.key_size as usize]),
+                            crate::utf8::get_global_utf8_processor().to_string(&item2.key_data[..item2.key_size as usize])
+                        ) {
+                            let cmp = str1.cmp(str2);
+                            if cmp != core::cmp::Ordering::Equal {
+                                return cmp;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 比较键数据（字节级比较，作为回退）
         let key_size = item1.key_size as usize;
         for i in 0..key_size {
             if item1.key_data[i] != item2.key_data[i] {

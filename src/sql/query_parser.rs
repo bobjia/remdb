@@ -2547,15 +2547,17 @@ impl SqlParser {
     /// 匹配关键字
     fn match_keyword(&mut self, keyword: &str) -> bool {
         let start = self.position;
-        let end = start + keyword.len();
+        let keyword_bytes = keyword.as_bytes();
+        let end = start + keyword_bytes.len();
 
-        if end <= self.input.len() {
-            let actual = &self.input[start..end];
-            let expected = keyword;
+        if end <= self.input.as_bytes().len() {
+            let actual_bytes = &self.input.as_bytes()[start..end];
+            let expected_bytes = keyword_bytes;
 
-            if actual.eq_ignore_ascii_case(expected) {
+            // 比较字节序列（忽略大小写）
+            if actual_bytes.eq_ignore_ascii_case(expected_bytes) {
                 // 检查是否是完整的关键字（后面跟着非字母数字字符）
-                let next_char = self.input.chars().nth(end);
+                let next_char = self.input.as_bytes().get(end).map(|&b| b as char);
                 if next_char.is_none() || !next_char.unwrap().is_ascii_alphanumeric() {
                     self.position = end;
                     self.column += keyword.len();
@@ -2570,10 +2572,11 @@ impl SqlParser {
     /// 匹配字符串
     fn match_str(&mut self, s: &str) -> bool {
         let start = self.position;
-        let end = start + s.len();
+        let s_bytes = s.as_bytes();
+        let end = start + s_bytes.len();
 
-        if end <= self.input.len() {
-            if &self.input[start..end] == s {
+        if end <= self.input.as_bytes().len() {
+            if &self.input.as_bytes()[start..end] == s_bytes {
                 self.position = end;
                 self.column += s.len();
                 return true;
@@ -2604,7 +2607,11 @@ impl SqlParser {
 
     /// 查看当前字符
     fn peek_char(&self) -> Option<char> {
-        self.input.chars().nth(self.position)
+        if self.position < self.input.as_bytes().len() {
+            Some(self.input.as_bytes()[self.position] as char)
+        } else {
+            None
+        }
     }
 
     /// 获取下一个字符

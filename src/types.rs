@@ -1,5 +1,6 @@
 use core::fmt;
 use core::mem::size_of;
+use crate::utf8::{Utf8Processor, get_global_utf8_processor};
 
 // 引入alloc模块
 extern crate alloc;
@@ -757,10 +758,10 @@ impl PartialEq for TypedValue {
                 }
                 DataType::Interval => self.value.interval.value == other.value.interval.value,
                 DataType::String => {
-                    // 比较字符串数组
-                    let a_str = core::str::from_utf8(&self.value.string).unwrap_or("");
-                    let b_str = core::str::from_utf8(&other.value.string).unwrap_or("");
-                    a_str.trim_end_matches(char::from(0)) == b_str.trim_end_matches(char::from(0))
+                    // 使用UTF-8处理器比较字符串
+                    let a_str = self.value.string.as_ref();
+                    let b_str = other.value.string.as_ref();
+                    get_global_utf8_processor().compare(a_str, b_str) == core::cmp::Ordering::Equal
                 }
                 DataType::Vector => {
                     // 向量比较：比较向量指针
@@ -822,9 +823,13 @@ impl Hash for TypedValue {
                 }
                 DataType::Interval => self.value.interval.value.hash(state),
                 DataType::String => {
-                    // 哈希字符串内容，忽略末尾的空字符
-                    let s = core::str::from_utf8(&self.value.string).unwrap_or("");
-                    s.trim_end_matches(char::from(0)).hash(state);
+                    // 使用UTF-8处理器哈希字符串内容
+                    if let Some(s) = get_global_utf8_processor().to_string(&self.value.string) {
+                        s.trim_end_matches(char::from(0)).hash(state);
+                    } else {
+                        // 如果转换失败，回退到字节哈希
+                        self.value.string.hash(state);
+                    }
                 }
                 DataType::Vector => {
                     // 向量哈希：哈希向量指针
@@ -889,14 +894,10 @@ impl PartialOrd for TypedValue {
                             Some(self.value.interval.value.cmp(&other.value.interval.value))
                         }
                         DataType::String => {
-                            // 比较字符串内容
-                            let a_str = core::str::from_utf8(&self.value.string).unwrap_or("");
-                            let b_str = core::str::from_utf8(&other.value.string).unwrap_or("");
-                            Some(
-                                a_str
-                                    .trim_end_matches(char::from(0))
-                                    .cmp(b_str.trim_end_matches(char::from(0))),
-                            )
+                            // 使用UTF-8处理器比较字符串
+                            let a_str = self.value.string.as_ref();
+                            let b_str = other.value.string.as_ref();
+                            Some(get_global_utf8_processor().compare(a_str, b_str))
                         }
                         DataType::Vector => {
                             // 向量比较：比较向量指针
@@ -1011,7 +1012,7 @@ impl fmt::Debug for TypedValue {
                     )
                 }
                 DataType::String => {
-                    let s = core::str::from_utf8(&self.value.string)
+                    let s = get_global_utf8_processor().to_string(&self.value.string)
                         .unwrap_or("")
                         .trim_end_matches(char::from(0));
                     write!(
@@ -1113,7 +1114,7 @@ impl FieldDef {
             unsafe {
                 match self.data_type {
                     DataType::String => {
-                        let s = core::str::from_utf8(&default.string)
+                        let s = get_global_utf8_processor().to_string(&default.string)
                             .unwrap_or("")
                             .trim_end_matches(char::from(0));
                         constraints.push_str(&alloc::format!("'{}'", s));

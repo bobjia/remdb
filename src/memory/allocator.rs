@@ -331,22 +331,21 @@ static GLOBAL_ALLOCATOR: OnceLock<Mutex<StaticAllocator>> = OnceLock::new();
 
 /// 初始化全局内存分配器
 pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
-    // 创建新的分配器实例
-    // 注意：每次调用都重新初始化内存缓冲区，确保每个测试用例都有干净的内存状态
-    // 这是安全的，因为测试用例是顺序执行的
-    let new_allocator =
-        StaticAllocator::new(start_ptr, size).ok_or(crate::types::RemDbError::OutOfMemory)?;
-
-    // 无论是否已经初始化过，都重新设置分配器
-    if let Some(allocator_mutex) = GLOBAL_ALLOCATOR.get() {
-        // 获取锁并替换内部分配器
-        let mut allocator_guard = allocator_mutex
+    // 尝试获取现有的分配器
+    if let Some(allocator) = GLOBAL_ALLOCATOR.get() {
+        // 如果分配器已存在，重置它
+        let mut allocator_guard = allocator
             .lock()
             .map_err(|_| crate::types::RemDbError::OutOfMemory)?;
-        // 完全替换分配器实例，确保所有状态被重置
-        *allocator_guard = new_allocator;
+        
+        // 重置分配器，使用相同的内存缓冲区
+        allocator_guard.reset();
     } else {
-        // 首次初始化：设置全局分配器
+        // 创建新的分配器实例
+        let new_allocator =
+            StaticAllocator::new(start_ptr, size).ok_or(crate::types::RemDbError::OutOfMemory)?;
+
+        // 设置分配器
         let _ = GLOBAL_ALLOCATOR.set(Mutex::new(new_allocator));
     }
 
@@ -362,6 +361,7 @@ pub fn alloc(size: usize) -> Result<NonNull<u8>> {
     let mut allocator_guard = allocator
         .lock()
         .map_err(|_| crate::types::RemDbError::OutOfMemory)?;
+
     allocator_guard.allocate(size)
 }
 
