@@ -19,6 +19,8 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **Incremental Snapshot**: Only saves records with changed version numbers, reducing snapshot size and save time
 - **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data, including aggregate functions, mathematical functions, time conversion functions, JOIN operations, and LIKE pattern matching operator
 - **SQL DDL Support**: Supports CREATE TABLE and DROP TABLE statements, allowing dynamic creation and deletion of table structures
+- **SQL Database Management Support**: Supports CREATE DATABASE and DROP DATABASE statements for database creation and management
+- **UTF8 Character Support**: Full UTF8 character encoding support, including string storage, character functions, LIKE operator, and sorting
 - **Database Monitoring**: Real-time monitoring of database metrics, including memory usage, query performance, and transaction status
 - **UDP-based Reliable Data Pub/Sub**: Supports unicast, broadcast, and multicast modes with NACK-based retransmission
 - **High Availability Support**:

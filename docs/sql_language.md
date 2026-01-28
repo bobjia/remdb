@@ -32,7 +32,84 @@ RemDB支持以下SQL数据类型：
 | String | TEXT | 64 |
 | Vector | VECTOR(dim) | dim * 4 |
 
+### 1.2 UTF8 字符支持
+
+RemDB 完全支持 UTF8 字符编码，包括：
+
+- **字符串存储**：TEXT 类型使用 UTF8 编码存储字符串
+- **字符函数**：所有字符串函数（如 CONCAT、SUBSTRING、UPPER、LOWER）都支持 UTF8 字符
+- **LIKE 运算符**：支持 UTF8 字符的模式匹配
+- **排序**：字符串排序基于 UTF8 编码的字典序
+- **长度计算**：字符串长度计算基于 UTF8 字符数，而非字节数
+
+**示例**：
+
+```sql
+-- 存储包含 UTF8 字符的字符串
+INSERT INTO users (name) VALUES ('测试用户');
+
+-- 使用字符串函数处理 UTF8 字符
+SELECT UPPER('测试用户') AS upper_name;
+
+-- 使用 LIKE 运算符匹配 UTF8 字符
+SELECT * FROM users WHERE name LIKE '%测试%';
+
+-- 排序包含 UTF8 字符的字符串
+SELECT * FROM users ORDER BY name;
+```
+
 ## 2. 支持的SQL语法
+
+### 2.0 数据库管理语句
+
+RemDB支持基本的数据库管理语句，用于创建和管理数据库。
+
+#### CREATE DATABASE语句
+
+用于创建一个新的数据库。
+
+**语法**：
+```sql
+CREATE DATABASE database_name [WITH [ENCODING = 'encoding'] [, TEMPLATE = template_name]];
+```
+
+**参数说明**：
+- `database_name`：要创建的数据库名称
+- `ENCODING`：指定数据库的字符编码，默认为UTF-8
+- `TEMPLATE`：指定使用的模板数据库，默认为默认模板
+
+**示例**：
+
+```sql
+-- 创建一个新的数据库
+CREATE DATABASE my_database;
+
+-- 创建一个使用UTF-8编码的数据库
+CREATE DATABASE my_database WITH ENCODING = 'UTF-8';
+```
+
+#### DROP DATABASE语句
+
+用于删除一个现有的数据库。
+
+**语法**：
+```sql
+DROP DATABASE [IF EXISTS] database_name;
+```
+
+**参数说明**：
+- `IF EXISTS`：可选，指定如果数据库不存在，操作不会报错
+- `database_name`：要删除的数据库名称
+
+**示例**：
+
+```sql
+-- 删除一个数据库
+DROP DATABASE my_database;
+
+-- 删除一个数据库（如果存在）
+DROP DATABASE IF EXISTS my_database;
+```
 
 ### 2.1 SELECT语句
 
