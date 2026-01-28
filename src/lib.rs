@@ -172,6 +172,21 @@ pub enum DatabaseStatus {
     Dropped,
 }
 
+/// 数据库信息结构体
+#[derive(Clone, Debug, PartialEq)]
+pub struct DatabaseInfo {
+    /// 数据库名称
+    pub name: String,
+    /// 数据库类型
+    pub database_type: String,
+    /// 数据库状态
+    pub status: DatabaseStatus,
+    /// 表数量
+    pub table_count: usize,
+    /// 内存使用情况（字节）
+    pub memory_usage: usize,
+}
+
 /// 数据库配置
 #[derive(Clone, Debug)]
 pub struct DatabaseConfig {
@@ -312,6 +327,32 @@ impl DatabaseManager {
         } else {
             Err(RemDbError::DatabaseNotFound)
         }
+    }
+
+    /// 获取所有数据库信息
+    pub fn list_databases(&self) -> Result<Vec<DatabaseInfo>> {
+        let mut databases_info = Vec::new();
+        
+        for db in &self.databases {
+            // 计算表数量（排除None值）
+            let table_count = db.tables.iter().filter(|table| table.is_some()).count();
+            
+            // 计算内存使用情况
+            let memory_usage = db.metrics.used_memory.load(core::sync::atomic::Ordering::Relaxed);
+            
+            // 创建数据库信息
+            let db_info = DatabaseInfo {
+                name: db.name.clone(),
+                database_type: "RemDb".to_string(),
+                status: db.status.clone(),
+                table_count,
+                memory_usage,
+            };
+            
+            databases_info.push(db_info);
+        }
+        
+        Ok(databases_info)
     }
 }
 
@@ -458,6 +499,29 @@ impl RemDb {
         // TODO: 实现数据库删除
 
         Ok(())
+    }
+
+    /// 获取当前系统中可用的数据库列表
+    pub fn databases(&self) -> Result<Vec<DatabaseInfo>> {
+        // 由于当前没有全局数据库管理器，暂时返回当前数据库的信息
+        // TODO: 当实现全局数据库管理器后，应返回所有数据库的信息
+        
+        // 计算表数量（排除None值）
+        let table_count = self.tables.iter().filter(|table| table.is_some()).count();
+        
+        // 计算内存使用情况
+        let memory_usage = self.metrics.used_memory.load(core::sync::atomic::Ordering::Relaxed);
+        
+        // 创建数据库信息
+        let db_info = DatabaseInfo {
+            name: self.name.clone(),
+            database_type: "RemDb".to_string(),
+            status: self.status.clone(),
+            table_count,
+            memory_usage,
+        };
+        
+        Ok(vec![db_info])
     }
 
     /// 获取表
