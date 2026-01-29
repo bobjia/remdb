@@ -2158,6 +2158,12 @@ impl TransactionManager {
         let tx_id = self.tx_id_counter;
         self.tx_id_counter += 1;
 
+        // 检查tx_buffer是否为空
+        if tx_buffer.is_null() {
+            crate::platform::spin_unlock(&mut self.lock);
+            return Err(RemDbError::TransactionError);
+        }
+
         // 初始化事务
         let tx = tx_buffer.as_mut().unwrap();
         *tx = Transaction {
@@ -2166,8 +2172,8 @@ impl TransactionManager {
             status: TransactionStatus::Active,
             isolation_level,
             start_time: crate::platform::get_timestamp_us(),
-            log_items: NonNull::new(log_buffer).unwrap(),
-            max_log_items,
+            log_items: NonNull::new(log_buffer).unwrap_or_else(|| NonNull::dangling()),
+            max_log_items: if log_buffer.is_null() { 0 } else { max_log_items },
             log_item_count: 0,
             depth: 1,
             lock: 0,
@@ -2444,6 +2450,11 @@ impl Transaction {
         // 检查是否有活动事务
         if self.status != TransactionStatus::Active {
             return Err(RemDbError::TransactionError);
+        }
+
+        // 如果没有日志项，直接返回成功
+        if self.log_item_count == 0 {
+            return Ok(());
         }
 
         // 遍历所有日志项
