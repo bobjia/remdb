@@ -121,6 +121,8 @@ pub struct SqlQuery {
     pub update_pairs: Vec<(String, Expression)>,
     /// 是否忽略重复键
     pub ignore_duplicates: bool,
+    /// 是否使用IF NOT EXISTS子句
+    pub if_not_exists: bool,
 }
 
 /// 索引类型枚举（用于CREATE INDEX语句）
@@ -438,28 +440,29 @@ impl SqlParser {
             QueryType::AlterTable => self.parse_alter_table_query(),
             QueryType::DropTable => self.parse_drop_table_query(),
             QueryType::BeginTransaction => Ok(SqlQuery {
-                query_type,
-                table_name: String::new(),
-                table_alias: None,
-                joins: Vec::new(),
-                columns: Vec::new(),
-                select_all: false,
-                distinct: false,
-                where_clause: None,
-                group_by: None,
-                order_by: None,
-                limit: None,
-                insert_columns: Vec::new(),
-                values: Vec::new(),
-                table_def: Vec::new(),
-                primary_key: None,
-                index_column: None,
-                index_type: None,
-                index_params: HashMap::new(),
-                index_online: true,
-                update_pairs: Vec::new(),
-                ignore_duplicates: false,
-            }),
+            query_type,
+            table_name: String::new(),
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+        }),
             QueryType::Commit => Ok(SqlQuery {
                 query_type: QueryType::Commit,
                 table_name: String::new(),
@@ -482,6 +485,7 @@ impl SqlParser {
                 index_online: true,
                 update_pairs: Vec::new(),
                 ignore_duplicates: false,
+                if_not_exists: false,
             }),
             QueryType::Rollback => Ok(SqlQuery {
                 query_type: QueryType::Rollback,
@@ -505,6 +509,7 @@ impl SqlParser {
                 index_online: true,
                 update_pairs: Vec::new(),
                 ignore_duplicates: false,
+                if_not_exists: false,
             }),
             QueryType::ShowIndexBuildStatus => Ok(SqlQuery {
                 query_type: QueryType::ShowIndexBuildStatus,
@@ -528,6 +533,7 @@ impl SqlParser {
                 index_online: true,
                 update_pairs: Vec::new(),
                 ignore_duplicates: false,
+                if_not_exists: false,
             }),
             QueryType::Other => Err(QueryParseError::UnsupportedKeyword),
         }?;
@@ -597,6 +603,7 @@ impl SqlParser {
             index_online: true,
             update_pairs,
             ignore_duplicates: false,
+            if_not_exists: false,
         })
     }
 
@@ -632,6 +639,7 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
+            if_not_exists: false,
         })
     }
 
@@ -684,6 +692,7 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates,
+            if_not_exists: false,
         })
     }
 
@@ -791,11 +800,23 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
+            if_not_exists: false,
         })
     }
 
     /// 解析CREATE TABLE查询
     fn parse_create_table_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析IF NOT EXISTS子句
+        let mut if_not_exists = false;
+        self.skip_whitespace();
+        if self.match_keyword("IF") {
+            self.skip_whitespace();
+            self.expect_keyword("NOT")?;
+            self.skip_whitespace();
+            self.expect_keyword("EXISTS")?;
+            if_not_exists = true;
+        }
+        
         // 解析表名
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
@@ -941,6 +962,7 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
+            if_not_exists,
         })
     }
 
@@ -1064,6 +1086,7 @@ impl SqlParser {
             index_online,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
+            if_not_exists: false,
         })
     }
 
@@ -1151,6 +1174,7 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
+            if_not_exists: false,
         })
     }
 
@@ -1249,6 +1273,7 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
+            if_not_exists: false,
         };
 
         // 使用table_def字段存储额外信息
@@ -1347,6 +1372,7 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: if_not_exists,
+            if_not_exists: false,
         };
 
         Ok(query)
@@ -1381,6 +1407,7 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
+            if_not_exists: false,
         };
 
         Ok(query)
@@ -1415,6 +1442,7 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
+            if_not_exists: false,
         };
 
         Ok(query)
@@ -1458,6 +1486,7 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: if_exists,
+            if_not_exists: false,
         };
 
         Ok(query)
@@ -1596,6 +1625,7 @@ impl SqlParser {
             index_online: true,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
+            if_not_exists: false,
         })
     }
 

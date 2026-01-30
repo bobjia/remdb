@@ -4195,6 +4195,40 @@ fn execute_create_table_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
+    // 检查IF NOT EXISTS子句
+    if query.if_not_exists {
+        // 检查表是否已存在
+        for table_opt in &db.tables {
+            if let Some(table) = table_opt {
+                if table.def.name == query.table_name {
+                    // 表已存在，返回成功
+                    let columns = alloc::vec!["status".to_string()];
+                    let mut result_set = ResultSet::new(columns);
+                    result_set.add_row(alloc::vec![TypedValue {
+                        value_type: DataType::String,
+                        value: Value { string: [b'0'; 64] },
+                    }]);
+                    return Ok(result_set);
+                }
+            }
+        }
+        // 检查时序表是否已存在
+        for table_opt in &db.time_series_tables {
+            if let Some(table) = table_opt {
+                if table.def.base.name == query.table_name {
+                    // 表已存在，返回成功
+                    let columns = alloc::vec!["status".to_string()];
+                    let mut result_set = ResultSet::new(columns);
+                    result_set.add_row(alloc::vec![TypedValue {
+                        value_type: DataType::String,
+                        value: Value { string: [b'0'; 64] },
+                    }]);
+                    return Ok(result_set);
+                }
+            }
+        }
+    }
+    
     // 将SQL数据类型转换为RemDb DataType
     // 字段定义：(字段名, 数据类型, 维度/精度, 距离度量, 默认值)
     let mut fields = Vec::new();
@@ -6638,6 +6672,40 @@ fn execute_create_time_series_table_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
+    // 检查IF NOT EXISTS子句
+    if query.if_not_exists {
+        // 检查时序表是否已存在
+        for table_opt in &db.time_series_tables {
+            if let Some(table) = table_opt {
+                if table.def.base.name == query.table_name {
+                    // 表已存在，返回成功
+                    let columns = alloc::vec!["status".to_string()];
+                    let mut result_set = ResultSet::new(columns);
+                    result_set.add_row(alloc::vec![TypedValue {
+                        value_type: DataType::String,
+                        value: Value { string: [b'0'; 64] },
+                    }]);
+                    return Ok(result_set);
+                }
+            }
+        }
+        // 检查普通表是否已存在
+        for table_opt in &db.tables {
+            if let Some(table) = table_opt {
+                if table.def.name == query.table_name {
+                    // 表已存在，返回成功
+                    let columns = alloc::vec!["status".to_string()];
+                    let mut result_set = ResultSet::new(columns);
+                    result_set.add_row(alloc::vec![TypedValue {
+                        value_type: DataType::String,
+                        value: Value { string: [b'0'; 64] },
+                    }]);
+                    return Ok(result_set);
+                }
+            }
+        }
+    }
+    
     // 时序表创建逻辑：
     // 1. 必须包含一个TIMESTAMP类型的time_field
     // 2. 必须包含一个数值类型的value_field
