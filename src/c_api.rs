@@ -1067,15 +1067,17 @@ pub unsafe extern "C" fn remdb_begin_transaction(
     }
 
     let db = &mut *handle;
-    let tx_buffer = core::ptr::null_mut();
-    let log_buffer = core::ptr::null_mut();
+    
+    // 创建本地的事务缓冲区和日志缓冲区
+    let mut tx_buffer = crate::transaction::Transaction::default();
+    let mut log_buffer = [crate::transaction::LogItem::default(); 1024];
 
     match db.begin_transaction(
         tx_type.into(),
         isolation_level.into(),
-        tx_buffer,
-        log_buffer,
-        0,
+        &mut tx_buffer as *mut crate::transaction::Transaction,
+        log_buffer.as_mut_ptr(),
+        1024,
     ) {
         Ok(_) => RemDbError::Success,
         Err(e) => e.into(),
