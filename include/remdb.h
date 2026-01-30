@@ -61,7 +61,7 @@ typedef union RemDbValue {
     uint64_t u64;
     float float32;
     double float64;
-    uint8_t bool;
+    uint8_t boolean;
     uint64_t timestamp;
     uint8_t string[REMDB_MAX_STRING_LEN];
 } RemDbValue;

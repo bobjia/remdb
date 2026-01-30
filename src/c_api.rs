@@ -50,7 +50,7 @@ pub union RemDbValue {
     pub u64: u64,
     pub float32: f32,
     pub float64: f64,
-    pub bool: u8,
+    pub boolean: u8,
     pub timestamp: u64,
     pub string: [u8; REMDB_MAX_STRING_LEN],
     pub vector: *const f32,
