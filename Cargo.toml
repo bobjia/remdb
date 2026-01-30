@@ -36,7 +36,7 @@ name = "database"
 harness = false
 
 [features]
-default = ["std", "posix", "ha", "pubsub"]
+default = ["std", "posix", "ha", "pubsub", "c-api"]
 std = ["rand", "socket2"]
 posix = ["std"]
 baremetal = []

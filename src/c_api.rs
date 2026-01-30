@@ -681,6 +681,41 @@ pub unsafe extern "C" fn remdb_init_global(
     // 将C配置转换为Rust配置
     let c_config = &*config;
 
+    // 初始化内存分配器
+    // 分配内存用于内存池
+    let total_memory = c_config.total_memory;
+    
+    // 检查内存大小是否足够
+    if total_memory < 1024 * 1024 { // 最小1MB
+        return RemDbError::OutOfMemory;
+    }
+    
+    // 分配内存缓冲区
+    let mut memory_buffer = alloc::vec::Vec::with_capacity(total_memory);
+    
+    // 尝试调整内存缓冲区大小
+    if let Err(_) = memory_buffer.try_reserve(total_memory) {
+        return RemDbError::OutOfMemory;
+    }
+    
+    // 调整大小并初始化
+    memory_buffer.resize(total_memory, 0);
+    let memory_ptr = memory_buffer.as_mut_ptr();
+    
+    // 泄漏内存，使其成为静态内存
+    core::mem::forget(memory_buffer);
+    
+    // 初始化全局内存分配器
+    if let Err(e) = crate::memory::allocator::init_global_allocator(memory_ptr, total_memory) {
+        return e.into();
+    }
+    
+    // 检查内存分配器是否初始化成功
+    let stats = crate::memory::allocator::get_memory_stats();
+    if stats.total < total_memory / 2 { // 至少应该有一半的内存可用
+        return RemDbError::OutOfMemory;
+    }
+
     // 转换表定义
     let mut rust_tables = Vec::new();
     for i in 0..c_config.tables_count {
@@ -901,10 +936,45 @@ pub unsafe extern "C" fn remdb_get_global(handle: *mut RemDbHandle) -> RemDbErro
         return RemDbError::ConfigError;
     }
 
+    // 初始化内存分配器
+    // 分配内存用于内存池
+    let total_memory = 1024 * 1024 * 1024; // 默认1GB
+    
+    // 检查内存大小是否足够
+    if total_memory < 1024 * 1024 { // 最小1MB
+        return RemDbError::OutOfMemory;
+    }
+    
+    // 分配内存缓冲区
+    let mut memory_buffer = alloc::vec::Vec::with_capacity(total_memory);
+    
+    // 尝试调整内存缓冲区大小
+    if let Err(_) = memory_buffer.try_reserve(total_memory) {
+        return RemDbError::OutOfMemory;
+    }
+    
+    // 调整大小并初始化
+    memory_buffer.resize(total_memory, 0);
+    let memory_ptr = memory_buffer.as_mut_ptr();
+    
+    // 泄漏内存，使其成为静态内存
+    core::mem::forget(memory_buffer);
+    
+    // 初始化全局内存分配器
+    if let Err(e) = crate::memory::allocator::init_global_allocator(memory_ptr, total_memory) {
+        return e.into();
+    }
+    
+    // 检查内存分配器是否初始化成功
+    let stats = crate::memory::allocator::get_memory_stats();
+    if stats.total < total_memory / 2 { // 至少应该有一半的内存可用
+        return RemDbError::OutOfMemory;
+    }
+    
     // 创建默认数据库配置
     let default_config = crate::config::DbConfig {
         tables: vec![],
-        total_memory: 1024 * 1024 * 1024, // 默认1GB
+        total_memory: total_memory,
         default_max_records: 100000,
         low_power_mode_supported: true,
         low_power_max_records: Some(10000),

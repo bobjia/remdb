@@ -347,6 +347,16 @@ static GLOBAL_ALLOCATOR: OnceLock<Mutex<StaticAllocator>> = OnceLock::new();
 
 /// 初始化全局内存分配器
 pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
+    // 检查内存大小是否足够
+    if size < MemoryBlock::SIZE * 2 { // 至少需要两个块头大小
+        return Err(crate::types::RemDbError::OutOfMemory);
+    }
+    
+    // 检查内存指针是否有效
+    if start_ptr.is_null() {
+        return Err(crate::types::RemDbError::OutOfMemory);
+    }
+    
     // 尝试获取现有的分配器
     if let Some(allocator) = GLOBAL_ALLOCATOR.get() {
         // 如果分配器已存在，更新内存池
@@ -358,11 +368,13 @@ pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
         allocator_guard.update_memory_pool(start_ptr, size);
     } else {
         // 创建新的分配器实例
-        let new_allocator =
+        let new_allocator = 
             StaticAllocator::new(start_ptr, size).ok_or(crate::types::RemDbError::OutOfMemory)?;
 
         // 设置分配器
-        let _ = GLOBAL_ALLOCATOR.set(Mutex::new(new_allocator));
+        if GLOBAL_ALLOCATOR.set(Mutex::new(new_allocator)).is_err() {
+            return Err(crate::types::RemDbError::OutOfMemory);
+        }
     }
 
     Ok(())
