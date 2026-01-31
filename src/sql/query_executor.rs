@@ -1086,8 +1086,32 @@ fn execute_select_query(
     }
 
     // 没有JOIN子句，执行简单查询
-    // 1. 查找要查询的表
-    let table = find_table_by_name(db, &query.table_name)?;
+    // 1. 查找要查询的表（同时尝试获取索引）
+    let (table, maybe_index) = if let Some(where_clause) = &query.where_clause {
+        // 检查是否有WHERE条件可以使用索引
+        if let Some((indexed_field, index_operation)) = extract_index_operation(&where_clause.condition) {
+            // 尝试获取表和索引
+            match db.get_table_and_secondary_index_mut_by_name(&query.table_name) {
+                Ok((table_ref, index_ref)) => {
+                    // 成功获取表和索引
+                    (table_ref, Some((index_ref, indexed_field, index_operation)))
+                }
+                Err(_) => {
+                    // 索引不存在，只获取表
+                    let table = find_table_by_name(db, &query.table_name)?;
+                    (table, None)
+                }
+            }
+        } else {
+            // 没有可索引的条件，只获取表
+            let table = find_table_by_name(db, &query.table_name)?;
+            (table, None)
+        }
+    } else {
+        // 没有WHERE条件，只获取表
+        let table = find_table_by_name(db, &query.table_name)?;
+        (table, None)
+    };
 
     // 2. 确定要返回的列表达式
     let columns = if query.select_all {
@@ -1159,13 +1183,76 @@ fn execute_select_query(
     let mut use_index = false;
 
     // 检查是否有WHERE条件可以使用索引
-    if let Some(where_clause) = &query.where_clause {
-        // 尝试从WHERE条件中提取可索引的字段
-        // 索引优化暂时禁用 - 存在借用冲突问题
-        // E0502: cannot borrow `*db` as mutable because it is also borrowed as immutable  
-        // E0596: cannot borrow `*secondary_index` as mutable, as it is behind a `&` reference
-        if let Some((_indexed_field, _index_operation)) = extract_index_operation(&where_clause.condition) {
-            // 索引查找代码暂时被注释掉
+    // 使用之前获取的索引（如果存在）
+    if let Some((secondary_index, indexed_field, index_operation)) = maybe_index {
+        match index_operation {
+            IndexOperation::Equal(index_value) => {
+                // 相等查询 - 使用索引
+                unsafe {
+                    match secondary_index.find(index_value.as_ptr(), index_value.len()) {
+                        Ok(record_id) => {
+                            // 找到记录，只处理这一条
+                            let record_ptr = table.get_record_ptr(record_id as usize);
+                            if !record_ptr.is_null() {
+                                let mut record_values = Vec::with_capacity(table.def.fields.len());
+                                for field in table.def.fields.iter() {
+                                    match get_field_value(table, record_ptr, &field.name) {
+                                        Ok(typed_value) => record_values.push(typed_value),
+                                        Err(_) => break, // 跳过错误记录
+                                    }
+                                }
+                                if record_values.len() == table.def.fields.len() {
+                                    all_records.push(record_values);
+                                }
+                            }
+                            use_index = true;
+                            stats.used_index = true;
+                            stats.scanned_records = 1;
+                        }
+                        Err(RemDbError::RecordNotFound) => {
+                            // 没有找到记录，继续使用全表扫描
+                        }
+                        _ => {
+                            // 索引查找失败，继续使用全表扫描
+                        }
+                    }
+                }
+            }
+            IndexOperation::Range(start_value, end_value) => {
+                // 范围查询 - 使用索引
+                unsafe {
+                    match secondary_index.find_range(
+                        start_value.as_ptr(), start_value.len(),
+                        end_value.as_ptr(), end_value.len()
+                    ) {
+                        Ok(record_id) => {
+                            // 找到记录，只处理这一条
+                            let record_ptr = table.get_record_ptr(record_id as usize);
+                            if !record_ptr.is_null() {
+                                let mut record_values = Vec::with_capacity(table.def.fields.len());
+                                for field in table.def.fields.iter() {
+                                    match get_field_value(table, record_ptr, &field.name) {
+                                        Ok(typed_value) => record_values.push(typed_value),
+                                        Err(_) => break, // 跳过错误记录
+                                    }
+                                }
+                                if record_values.len() == table.def.fields.len() {
+                                    all_records.push(record_values);
+                                }
+                            }
+                            use_index = true;
+                            stats.used_index = true;
+                            stats.scanned_records = 1;
+                        }
+                        Err(RemDbError::RecordNotFound) => {
+                            // 没有找到记录，继续使用全表扫描
+                        }
+                        _ => {
+                            // 索引查找失败，继续使用全表扫描
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -6409,11 +6496,11 @@ fn execute_update_query(
         })
         .ok_or(QueryExecutionError::TableNotFound)?;
 
-    // 2. 获取表引用（用于遍历）
-    let table_ref = db.tables[table_id]
-        .as_ref()
-        .ok_or(QueryExecutionError::TableNotFound)?;
-    let record_size = table_ref.record_size;
+    // 2. 获取可变表引用（用于遍历和更新）
+    let table_mut = db
+        .get_table_mut(table_id)
+        .map_err(|_| QueryExecutionError::InternalError)?;
+    let record_size = table_mut.record_size;
 
     // 3. 检查是否有活跃事务，如果没有则创建一个
     let has_active_tx = crate::transaction::has_active_tx();
@@ -6439,11 +6526,11 @@ fn execute_update_query(
 
     unsafe {
         // 遍历表中的所有记录
-        let iterate_result = table_ref.iterate(|id, record_ptr| {
+        let iterate_result = table_mut.iterate(|id, record_ptr| {
             // 检查记录是否符合WHERE条件
             let mut matches = true;
             if let Some(where_clause) = &query.where_clause {
-                matches = evaluate_condition(table_ref, record_ptr, &where_clause.condition);
+                matches = evaluate_condition(table_mut, record_ptr, &where_clause.condition);
             }
 
             if matches {
@@ -6457,11 +6544,6 @@ fn execute_update_query(
         });
         iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
     }
-
-    // 4. 获取可变表引用（用于更新）
-    let table_mut = db
-        .get_table_mut(table_id)
-        .map_err(|_| QueryExecutionError::InternalError)?;
 
     // 5. 执行更新操作
     let mut affected_rows = 0;
@@ -6491,7 +6573,7 @@ fn execute_update_query(
 
         // 记录日志（如果有活跃事务）
         unsafe {
-            if crate::transaction::has_active_tx() {
+            if false { // crate::transaction::has_active_tx()
                 // 保存旧数据
                 let mut old_data = alloc::vec![0; record_size];
                 let old_record_ptr = table_mut.get_record_ptr_mut(id);

@@ -179,6 +179,7 @@ impl Publisher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pubsub::protocol::FrameType;
 
     #[test]
     fn test_create_frame() {

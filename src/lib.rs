@@ -682,7 +682,48 @@ impl RemDb {
             None => Err(RemDbError::RecordNotFound),
         }
     }
-
+    
+    /// 根据表名获取表引用和辅助索引的可变引用
+    pub fn get_table_and_secondary_index_mut_by_name(
+        &mut self,
+        table_name: &str,
+    ) -> Result<(&MemoryTable, &mut AnySecondaryIndex)> {
+        // 首先查找表ID
+        let mut table_id = None;
+        for (id, table_opt) in self.tables.iter().enumerate() {
+            if let Some(table) = table_opt {
+                if table.def.name == table_name {
+                    table_id = Some(id);
+                    break;
+                }
+            }
+        }
+        
+        let table_id = table_id.ok_or(RemDbError::RecordNotFound)?;
+        
+        // 安全地分割借用：分别借用 tables 和 secondary_indices 字段
+        // 这是安全的，因为：
+        // 1. tables 和 secondary_indices 是不相关的字段
+        // 2. 我们使用相同的索引访问这两个字段
+        // 3. 没有创建任何别名或悬垂指针
+        unsafe {
+            let tables_ptr: *const Vec<Option<MemoryTable>> = &self.tables;
+            let secondary_indices_ptr: *mut Vec<Option<AnySecondaryIndex>> = &mut self.secondary_indices;
+            
+            let table = (&(*tables_ptr))
+                .get(table_id)
+                .and_then(|opt: &Option<MemoryTable>| opt.as_ref())
+                .ok_or(RemDbError::RecordNotFound)?;
+                
+            let index = (&mut (*secondary_indices_ptr))
+                .get_mut(table_id)
+                .and_then(|opt: &mut Option<AnySecondaryIndex>| opt.as_mut())
+                .ok_or(RemDbError::RecordNotFound)?;
+                
+            Ok((table, index))
+        }
+    }
+    
     /// 检查是否处于低功耗模式
     pub fn is_low_power_mode(&self) -> bool {
         self.low_power_mode
