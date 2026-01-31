@@ -9,7 +9,6 @@ pub mod ttl_ringbuffer;
 pub mod udp;
 
 use crate::pubsub::topics::*;
-use alloc::vec::Vec;
 use core::fmt;
 use core::sync::atomic::{AtomicBool, Ordering};
 use protocol::ProtocolFrame;
@@ -275,14 +274,14 @@ impl PubSub {
     fn handle_data_frame(&mut self, frame: protocol::ProtocolFrame) {
         // 获取帧信息
         let topic_id = frame.topic_id();
-        let seq_num = frame.seq_num();
+        let _seq_num = frame.seq_num();
         let payload = frame.payload();
 
         // 检查序列号（这里简化处理，直接接收）
         // TODO: 实现序列号检查和NACK生成
 
         // 将数据分发给订阅者
-        if let Err(e) = self.subscribers.handle_data(topic_id, payload) {
+        if let Err(_e) = self.subscribers.handle_data(topic_id, payload) {
             // 处理分发错误
         }
     }

@@ -1,9 +1,8 @@
 // 角色管理器实现
 
 use crate::ha::HARole;
-use crate::ha::{HAError, Result};
+use crate::ha::Result;
 use crate::pubsub;
-use crate::pubsub::{PubSubConfig, PubSubError, UdpMode};
 use core::sync::atomic::{AtomicU8, Ordering};
 
 // 角色变更主题ID

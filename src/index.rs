@@ -743,7 +743,7 @@ impl VectorIndex {
     #[cfg(feature = "std")]
     pub fn save(&self, file_path: &str) -> Result<()> {
         use std::fs::File;
-        use std::io::{Write, Error as IoError};
+        use std::io::Write;
         
         // 打开文件用于写入
         let mut file = File::create(file_path)
@@ -820,7 +820,7 @@ impl VectorIndex {
         memory_start: *mut u8,
     ) -> Result<Self> {
         use std::fs::File;
-        use std::io::{Read, Error as IoError};
+        use std::io::Read;
         
         // 打开文件用于读取
         let mut file = File::open(file_path)
@@ -2126,7 +2126,7 @@ impl BTreeIndex {
         // 将所有节点链接到空闲列表
         for i in (0..max_nodes).rev() {
             let node_ptr = nodes.as_ptr().add(i);
-            let mut node_mut = &mut *node_ptr;
+            let node_mut = &mut *node_ptr;
 
             // 初始化节�?
             node_mut.is_leaf = true;
@@ -2182,7 +2182,7 @@ impl BTreeIndex {
     /// 从空闲列表获取一个节�?
     unsafe fn allocate_node(&mut self) -> Option<NonNull<BTreeNode>> {
         let node_ptr = self.free_nodes?;
-        let mut node_mut = &mut *node_ptr.as_ptr();
+        let node_mut = &mut *node_ptr.as_ptr();
 
         // 从节点的key_data字段获取下一个空闲节点的指针
         let mut next_ptr = 0u64;
@@ -2398,7 +2398,7 @@ impl BTreeIndex {
             root_mut.key_count = 1;
             self.root = Some(root_node);
         } else {
-            let mut root = self.root.expect("Root node unexpectedly None");
+            let root = self.root.expect("Root node unexpectedly None");
 
             // 如果根节点已满，分裂根节�?
             if root.as_ref().key_count == BTREE_ORDER as u8 {
@@ -2734,7 +2734,7 @@ impl BTreeIndex {
     }
 
     /// 删除索引�?
-    pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
+    pub unsafe fn delete(&mut self, _key: *const u8, _key_size: usize) -> Result<()> {
         // 增加索引删除计数
         crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
         // 自旋锁保�?
@@ -2774,7 +2774,7 @@ impl TTreeIndex {
         // 将所有节点链接到空闲列表
         for i in (0..max_nodes).rev() {
             let node_ptr = nodes.as_ptr().add(i);
-            let mut node_mut = &mut *node_ptr;
+            let node_mut = &mut *node_ptr;
 
             // 初始化节�?
             node_mut.key_count = 0;
@@ -2828,7 +2828,7 @@ impl TTreeIndex {
     /// 从空闲列表获取一个节�?
     unsafe fn allocate_node(&mut self) -> Option<NonNull<TTreeNode>> {
         let node_ptr = self.free_nodes?;
-        let mut node_mut = &mut *node_ptr.as_ptr();
+        let node_mut = &mut *node_ptr.as_ptr();
 
         // 从节点的key_data字段获取下一个空闲节点的指针
         let mut next_ptr = 0u64;
@@ -3415,7 +3415,7 @@ impl TTreeIndex {
     }
 
     /// 删除索引�?
-    pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
+    pub unsafe fn delete(&mut self, _key: *const u8, _key_size: usize) -> Result<()> {
         // 增加索引删除计数
         crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
         // 自旋锁保�?

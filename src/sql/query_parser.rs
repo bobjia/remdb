@@ -1350,7 +1350,7 @@ impl SqlParser {
         }
 
         // 创建SqlQuery对象
-        let mut query = SqlQuery {
+        let query = SqlQuery {
             query_type: QueryType::CreateDatabase,
             table_name: database_name,
             table_alias: schema,
@@ -1464,7 +1464,7 @@ impl SqlParser {
         let database_name = self.parse_identifier()?;
 
         // 创建SqlQuery对象
-        let mut query = SqlQuery {
+        let query = SqlQuery {
             query_type: QueryType::DropDatabase,
             table_name: database_name,
             table_alias: None,
@@ -1769,7 +1769,7 @@ impl SqlParser {
         // 如果有别名，需要更新表达式的别名
         match left_expr {
             Expression::Field {
-                alias: mut expr_alias,
+                alias: expr_alias,
                 name,
                 ..
             } => Ok(Expression::Field {
@@ -1777,7 +1777,7 @@ impl SqlParser {
                 alias: alias.or(expr_alias),
             }),
             Expression::FunctionCall {
-                alias: mut expr_alias,
+                alias: expr_alias,
                 name,
                 args,
                 ..
@@ -1787,7 +1787,7 @@ impl SqlParser {
                 alias: alias.or(expr_alias),
             }),
             Expression::Constant {
-                alias: mut expr_alias,
+                alias: expr_alias,
                 value,
                 ..
             } => Ok(Expression::Constant {
@@ -2033,8 +2033,8 @@ impl SqlParser {
         self.skip_whitespace();
 
         // 保存当前位置，用于回溯
-        let saved_pos = self.position;
-        let saved_col = self.column;
+        let _saved_pos = self.position;
+        let _saved_col = self.column;
 
         // 检查是否有AS关键字
         if self.match_keyword("AS") {
@@ -2396,8 +2396,8 @@ impl SqlParser {
     /// 解析比较条件
     fn parse_comparison_condition(&mut self) -> Result<Condition, QueryParseError> {
         // 保存当前位置，用于回溯
-        let saved_pos = self.position;
-        let saved_col = self.column;
+        let _saved_pos = self.position;
+        let _saved_col = self.column;
 
         // 解析左侧表达式，但不包含比较运算符
         let left_expr = self.parse_vector_expression()?;
@@ -2587,7 +2587,7 @@ impl SqlParser {
     /// 解析值
     fn parse_value(&mut self) -> Result<Value, QueryParseError> {
         // 保存当前位置，用于回溯
-        let saved_pos = self.position;
+        let _saved_pos = self.position;
 
         if self.peek_char() == Some('"') || self.peek_char() == Some('\'') {
             // 字符串值

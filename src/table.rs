@@ -1,9 +1,6 @@
 use crate::defer;
 use crate::platform::{memcpy, memset};
-use crate::{
-    types::{DataType, RecordHeader, RecordStatus, RemDbError, Result, TableDef, Value},
-    DataType as CrateDataType,
-};
+use crate::types::{DataType, RecordHeader, RecordStatus, RemDbError, Result, TableDef, Value};
 use core::ptr::NonNull;
 
 // 引入alloc模块
@@ -2568,7 +2565,7 @@ impl MemoryTable {
 
         // 将聚合结果转换为向量
         let mut result = Vec::with_capacity(window_aggregates.len());
-        for (window_start, (sum, min, max, last, count)) in window_aggregates {
+        for (window_start, (sum, min, max, _last, count)) in window_aggregates {
             let avg = if count > 0 { sum / count as f64 } else { 0.0 };
             result.push((window_start, sum, avg, min, max, count));
         }

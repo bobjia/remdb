@@ -3,10 +3,7 @@
 use crate::ha::HARole;
 use crate::ha::{HAError, Result};
 use crate::pubsub;
-use crate::pubsub::{PubSubConfig, PubSubError, UdpMode};
-use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use core::time::Duration;
 
 // 心跳主题ID
 const HEARTBEAT_TOPIC: u16 = 3;
@@ -477,7 +474,7 @@ impl HeartbeatMonitor {
     /// 发送心跳
     fn send_heartbeat(&self) -> Result<()> {
         // 构建心跳数据包
-        let mut packet = HeartbeatPacket::new(self.node_id, self.role);
+        let packet = HeartbeatPacket::new(self.node_id, self.role);
 
         // 安全访问字段，避免未对齐访问
         let timestamp = packet.timestamp();

@@ -1,7 +1,6 @@
 // 发布者管理
 
-use super::protocol::{FrameType, ProtocolFrame};
-use super::PubSubError;
+use super::protocol::ProtocolFrame;
 use super::Result;
 
 // 待重传数据结构体

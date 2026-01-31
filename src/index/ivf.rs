@@ -1,9 +1,7 @@
-use crate::platform::{memcpy, memset};
 use crate::types::{DistanceType, VectorMetadata};
 use crate::{RemDbError, Result};
 use alloc::vec::Vec;
 use core::cmp::Ordering;
-use core::ptr::NonNull;
 
 /// IVF_FLAT簇结构
 #[repr(C)]
@@ -375,12 +373,12 @@ impl IVFIndex {
             
             // 分配向量到簇            
             for &vec_ptr in vectors {
-                let cluster_idx = self.find_closest_cluster(vec_ptr);                
+                let _cluster_idx = self.find_closest_cluster(vec_ptr);                
                 // TODO: 这里需要向量偏移量和记录ID，暂时跳过
             }
             
             // 更新簇中心            
-            for (i, cluster) in self.clusters.iter_mut().enumerate() {
+            for (_i, cluster) in self.clusters.iter_mut().enumerate() {
                 if cluster.vector_count > 0 {
                     // 计算新的簇中心                    
                     let mut new_centroid = vec![0.0; dimension];                    
@@ -438,7 +436,7 @@ impl IVFIndex {
         cluster_distances.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));        
         // 3. 选择前nprobe个簇        
         let nprobe = self.nprobe as usize;        
-        let selected_clusters = cluster_distances.iter().take(nprobe).map(|&(d, i)| i);        
+        let selected_clusters = cluster_distances.iter().take(nprobe).map(|&(_d, i)| i);        
         // 4. 在选中的簇中搜索最近邻        
         let mut results = Vec::new();        
         for cluster_idx in selected_clusters {

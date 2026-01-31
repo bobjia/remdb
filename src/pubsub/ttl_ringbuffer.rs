@@ -3,7 +3,7 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 // 定义槽位状态
 const SLOT_FREE: u8 = 0;

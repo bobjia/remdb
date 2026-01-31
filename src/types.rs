@@ -1,10 +1,9 @@
 use core::fmt;
 use core::mem::size_of;
-use crate::utf8::{Utf8Processor, get_global_utf8_processor};
+use crate::utf8::get_global_utf8_processor;
 
 // 引入alloc模块
 extern crate alloc;
-use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::string::ToString;
 

@@ -13,7 +13,7 @@ use crate::sql::query_parser::{
 use crate::sql::{
     ComparisonCondition, ComparisonOperator, Condition, OrderByClause, ResultSet, SqlQuery,
 };
-use crate::types::{DataType, DistanceType, TypedValue, VectorIndexType, VectorMetadata};
+use crate::types::{DataType, TypedValue};
 use crate::{
     DdlExecutor, IndexType, MemoryTable, RemDb, RemDbError, TableDef, TimeSeriesTable, Value,
     MAX_STRING_LEN,
@@ -372,7 +372,7 @@ fn execute_select_timeseries_query(
     let mut alias_map = alloc::collections::BTreeMap::new();
     for expr in &columns {
         match expr {
-            Expression::Field { name, alias } => {
+            Expression::Field { name: _, alias } => {
                 if let Some(alias) = alias {
                     alias_map.insert(alias.clone(), expr);
                 }
@@ -399,7 +399,7 @@ fn execute_select_timeseries_query(
     let mut result_set = ResultSet::new(result_columns);
 
     // 5. 遍历时序表中的所有记录，收集匹配的记录
-    let mut matched_rows: Vec<Vec<TypedValue>> = Vec::new();
+    let matched_rows: Vec<Vec<TypedValue>> = Vec::new();
 
     // TODO: 实现时序表的查询逻辑
     // 这里需要实现时序表的查询逻辑，包括：
@@ -412,7 +412,7 @@ fn execute_select_timeseries_query(
     // 6. 计算表达式值并添加到结果集
     for _ in matched_rows {
         let mut row_data = Vec::with_capacity(columns.len());
-        for expr in &columns {
+        for _expr in &columns {
             // TODO: 实现时序表表达式求值
             // 这里需要实现时序表的表达式求值逻辑
             // 暂时返回默认值
@@ -903,7 +903,7 @@ fn process_aggregate_query(
                     let (sum, sum_of_squares, count) = var_stddev_states[i];
                     if count > 1 {
                         // 样本方差：(sum_of_squares - sum^2/count) / (count - 1)
-                        let mean = sum / count as f64;
+                        let _mean = sum / count as f64;
                         let variance =
                             (sum_of_squares - sum * sum / count as f64) / (count - 1) as f64;
                         // 样本标准差：sqrt(variance)
@@ -921,7 +921,7 @@ fn process_aggregate_query(
                     let (sum, sum_of_squares, count) = var_stddev_states[i];
                     if count > 1 {
                         // 样本方差：(sum_of_squares - sum^2/count) / (count - 1)
-                        let mean = sum / count as f64;
+                        let _mean = sum / count as f64;
                         let variance =
                             (sum_of_squares - sum * sum / count as f64) / (count - 1) as f64;
                         aggregate_values[i] = TypedValue {
@@ -964,7 +964,7 @@ fn process_aggregate_query(
 /// 为聚合函数计算表达式值
 fn evaluate_expression_for_aggregate(
     args: &[Expression],
-    record_values: &[TypedValue],
+    _record_values: &[TypedValue],
 ) -> Result<TypedValue, QueryExecutionError> {
     if args.is_empty() {
         // 对于COUNT(*), COUNT(1)等无参数情况
@@ -1069,7 +1069,7 @@ fn execute_select_query(
     let mut alias_map = alloc::collections::BTreeMap::new();
     for expr in &columns {
         match expr {
-            Expression::Field { name, alias } => {
+            Expression::Field { name: _, alias } => {
                 if let Some(alias) = alias {
                     alias_map.insert(alias.clone(), expr);
                 }
@@ -1100,7 +1100,7 @@ fn execute_select_query(
 
     unsafe {
         // 遍历表中的所有记录，收集所有记录
-        let iterate_result = table.iterate(|id, record_ptr| {
+        let iterate_result = table.iterate(|_id, record_ptr| {
             // 直接从记录中提取字段值，创建行数据
             let mut record_values = Vec::with_capacity(table.def.fields.len());
             for field in table.def.fields.iter() {
@@ -1273,7 +1273,7 @@ fn add_joined_row(
         match expr {
             Expression::Field { name, .. } => {
                 // 处理带表名/别名的字段
-                let (table_name_part, field_name_part) = if name.contains('.') {
+                let (_table_name_part, field_name_part) = if name.contains('.') {
                     let parts: Vec<&str> = name.split('.').collect();
                     (Some(parts[0]), parts[1])
                 } else {
@@ -1433,7 +1433,7 @@ fn execute_select_join_query(
     // 2. 确定要返回的列表达式
     let columns = if query.select_all {
         // 返回主表所有列（作为Field表达式）
-        let mut fields = main_table
+        let fields = main_table
             .def
             .fields
             .iter()
@@ -1477,7 +1477,7 @@ fn execute_select_join_query(
 
     // 6. 遍历主表中的所有记录
     unsafe {
-        let iterate_result = main_table.iterate(|main_id, main_record_ptr| {
+        let iterate_result = main_table.iterate(|_main_id, main_record_ptr| {
             // 从主表记录中提取所有字段值
             let mut main_record_values = Vec::with_capacity(main_table.def.fields.len());
             for field in main_table.def.fields.iter() {
@@ -1498,7 +1498,7 @@ fn execute_select_join_query(
 
                 // 遍历连接表中的所有记录
                 join_table
-                    .iterate(|join_id, join_record_ptr| {
+                    .iterate(|_join_id, join_record_ptr| {
                         // 从连接表记录中提取所有字段值
                         let mut join_record_values =
                             Vec::with_capacity(join_table.def.fields.len());
@@ -1697,7 +1697,7 @@ fn execute_select_join_query(
                                 match expr {
                                     Expression::Field { name, .. } => {
                                         // 处理带表名/别名的字段
-                                        let (table_name_part, field_name_part) =
+                                        let (_table_name_part, field_name_part) =
                                             if name.contains('.') {
                                                 let parts: Vec<&str> = name.split('.').collect();
                                                 (Some(parts[0]), parts[1])
@@ -1806,7 +1806,7 @@ fn execute_select_join_query(
                                 value: Value { bool: false },
                             },
                             DataType::String => {
-                                let mut buf = [0; MAX_STRING_LEN];
+                                let buf = [0; MAX_STRING_LEN];
                                 TypedValue {
                                     value_type: DataType::String,
                                     value: Value { string: buf },
@@ -1860,7 +1860,7 @@ fn execute_select_join_query(
 
             unsafe {
                 // 遍历连接表中的所有记录
-                let iterate_result = join_table.iterate(|join_id, join_record_ptr| {
+                let iterate_result = join_table.iterate(|_join_id, join_record_ptr| {
                     // 从连接表记录中提取所有字段值
                     let mut join_record_values = Vec::with_capacity(join_table.def.fields.len());
                     for field in join_table.def.fields.iter() {
@@ -1878,7 +1878,7 @@ fn execute_select_join_query(
 
                     // 遍历主表中的所有记录
                     main_table
-                        .iterate(|main_id, main_record_ptr| {
+                        .iterate(|_main_id, main_record_ptr| {
                             // 从主表记录中提取所有字段值
                             let mut main_record_values =
                                 Vec::with_capacity(main_table.def.fields.len());
@@ -2072,7 +2072,7 @@ fn execute_select_join_query(
                                     value: Value { bool: false },
                                 },
                                 DataType::String => {
-                                    let mut buf = [0; MAX_STRING_LEN];
+                                    let buf = [0; MAX_STRING_LEN];
                                     TypedValue {
                                         value_type: DataType::String,
                                         value: Value { string: buf },
@@ -2107,7 +2107,7 @@ fn execute_select_join_query(
                             match expr {
                                 Expression::Field { name, .. } => {
                                     // 处理带表名/别名的字段
-                                    let (table_name_part, field_name_part) = if name.contains('.') {
+                                    let (_table_name_part, field_name_part) = if name.contains('.') {
                                         let parts: Vec<&str> = name.split('.').collect();
                                         (Some(parts[0]), parts[1])
                                     } else {
@@ -2818,7 +2818,7 @@ fn execute_function_call(
 }
 
 /// 执行COUNT函数
-fn execute_count(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+fn execute_count(_args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
     // COUNT函数返回记录数，这里简单返回1，实际聚合时会累加
     Ok(TypedValue {
         value_type: DataType::UInt64,
@@ -3203,7 +3203,7 @@ fn parse_time_string(time_str: &str) -> Result<i64, QueryExecutionError> {
     let mut seconds = 0;
 
     // 计算年份贡献的秒数（忽略闰年）
-    for y in 1970..year {
+    for _y in 1970..year {
         seconds += 365 * 24 * 60 * 60;
     }
 
@@ -4860,7 +4860,7 @@ fn execute_show_index_build_status_query(
 
 /// 执行CREATE INDEX查询
 fn execute_create_index_query(
-    db: &mut RemDb,
+    _db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
     // 将SQL索引类型转换为RemDb IndexType
@@ -6829,7 +6829,7 @@ unsafe fn evaluate_between(
         || between.field.contains("<=>")
     {
         // 这是一个向量距离表达式，需要特殊处理
-        if let Some((field_name, op, compare_vec)) = parse_vector_distance_expression(&between.field) {
+        if let Some((field_name, op, _compare_vec)) = parse_vector_distance_expression(&between.field) {
             // 获取向量字段索引
             let field_index = match table
                 .def
@@ -6947,7 +6947,7 @@ unsafe fn evaluate_comparison(
     // 检查字段名是否包含向量距离操作符
     if comp.field.contains("<->") || comp.field.contains("<#>") || comp.field.contains("<=>") {
         // 这是一个向量距离表达式，需要特殊处理
-        if let Some((field_name, op, compare_vec)) = parse_vector_distance_expression(&comp.field) {
+        if let Some((field_name, op, _compare_vec)) = parse_vector_distance_expression(&comp.field) {
             // 获取向量字段索引
             let field_index = match table
                 .def
@@ -7777,7 +7777,7 @@ unsafe fn evaluate_between_with_alias(
         };
 
         // 获取表达式值
-        let field_value = &expr_values[expr_index];
+        let _field_value = &expr_values[expr_index];
 
         // BETWEEN条件：field_value >= min_value AND field_value <= max_value
         let min_comp = ComparisonCondition {

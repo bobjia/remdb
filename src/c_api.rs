@@ -2,8 +2,7 @@
 
 use crate::config::DbConfig;
 use crate::transaction::{IsolationLevel, TransactionType};
-use crate::types::{DataType, DistanceType, FieldDef, TableDef, Value};
-use core::ffi::c_void;
+use crate::types::{DataType, FieldDef, TableDef, Value};
 
 /// C API: 数据类型枚举
 #[repr(u8)]

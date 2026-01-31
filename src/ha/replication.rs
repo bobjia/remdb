@@ -3,10 +3,8 @@
 use crate::ha::ReplicationMode;
 use crate::ha::{HAError, Result};
 use crate::pubsub;
-use crate::pubsub::{PubSubConfig, UdpMode};
 use crate::transaction::LogItem;
 use crate::DdlExecutor;
-use crate::FieldConstraint;
 use std::time::Instant;
 
 // WAL复制主题ID
@@ -32,7 +30,7 @@ fn handle_slave_ack(topic_id: u16, data: &[u8]) -> bool {
 }
 
 // WAL日志处理回调函数
-fn handle_wal_log_callback(topic_id: u16, data: &[u8]) -> bool {
+fn handle_wal_log_callback(_topic_id: u16, _data: &[u8]) -> bool {
     // 直接返回，不处理任何消息
     // 这个回调函数在测试环境中可能被调用，但我们不需要实际处理消息
     // 避免访问全局管理器，防止访问冲突
@@ -227,10 +225,10 @@ impl ReplicationManager {
                             // 解析字段约束
                             let constraints = log_item.new_data[offset];
                             offset += 1;
-                            let primary_key_flag = (constraints & 0b0001) != 0;
-                            let not_null_flag = (constraints & 0b0010) != 0;
-                            let unique_flag = (constraints & 0b0100) != 0;
-                            let auto_increment_flag = (constraints & 0b1000) != 0;
+                            let _primary_key_flag = (constraints & 0b0001) != 0;
+                            let _not_null_flag = (constraints & 0b0010) != 0;
+                            let _unique_flag = (constraints & 0b0100) != 0;
+                            let _auto_increment_flag = (constraints & 0b1000) != 0;
 
                             // 确保offset不超过new_data的大小
                             if offset >= log_item.new_data.len() {

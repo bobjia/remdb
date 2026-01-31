@@ -1,7 +1,5 @@
 use crate::sql::query_parser::IndexType as SqlIndexType;
 use crate::types::{IndexType, RemDbError, Result};
-use crate::table::MemoryTable;
-use crate::DdlExecutor;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::collections::{HashMap, VecDeque};

@@ -1,10 +1,5 @@
 use crate::platform::{memcpy, memset};
-use crate::table::MemoryTable;
-use crate::types::{DataType, FieldDef, RemDbError, Result, TableDef, Value};
-use alloc::string::String;
-use alloc::sync::Arc;
-use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, Ordering};
+use crate::types::{RemDbError, Result, Value};
 
 // 系统表名称
 pub const SYSTEM_CONFIG_TABLE: &str = "__remdb_system_config";
@@ -54,7 +49,7 @@ unsafe fn create_system_config_table(db: &mut crate::RemDb) -> Result<()> {
     let now = crate::platform::get_timestamp_us();
     
     // 定义字段
-    let mut offset = 0;
+    let _offset = 0;
     let record_size = 64 + 256 + 128 + 8 + 8; // 计算系统表记录大小
     
     // 创建字段定义
@@ -158,7 +153,7 @@ unsafe fn insert_default_configs(db: &mut crate::RemDb) -> Result<()> {
     
     // 获取当前时间戳
     let now = crate::platform::get_timestamp_us();
-    let timestamp_value = Value {
+    let _timestamp_value = Value {
         time: crate::types::db_timestamp {
             value: now as i64,
             tz_offset: 0,

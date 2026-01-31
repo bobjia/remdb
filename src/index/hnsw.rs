@@ -1,4 +1,4 @@
-use crate::platform::{memcpy, memset};
+use crate::platform::memset;
 use crate::types::{DistanceType, VectorMetadata};
 use crate::{RemDbError, Result};
 use alloc::vec::Vec;
@@ -58,7 +58,7 @@ impl HNSWNode {
         max_level: usize,
     ) -> Self {
         let mut neighbor_counts = Vec::with_capacity(max_level + 1);
-        let mut neighbors = Vec::with_capacity((max_level + 1) * 32); // 每层最多32个邻居        
+        let neighbors = Vec::with_capacity((max_level + 1) * 32); // 每层最多32个邻居        
         for _ in 0..=max_level {
             neighbor_counts.push(0);
         }
@@ -134,7 +134,7 @@ impl HNSWIndex {
         let max_level = (max_nodes as f64).ln() as usize;
         
         // 初始化节点池
-        let node_size = core::mem::size_of::<HNSWNode>();
+        let _node_size = core::mem::size_of::<HNSWNode>();
         let nodes = NonNull::new_unchecked(memory_start as *mut HNSWNode);
         
         // 初始化空闲节点链表
@@ -142,9 +142,9 @@ impl HNSWIndex {
         for i in (0..max_nodes).rev() {
             let node_ptr = nodes.as_ptr().add(i);
             // 初始化节点
-            let mut node = HNSWNode::new(0, 0, max_level);            
+            let _node = HNSWNode::new(0, 0, max_level);            
             // 链接到空闲列表
-            let next = free_nodes;
+            let _next = free_nodes;
             free_nodes = Some(NonNull::new_unchecked(node_ptr));
         }
         
@@ -374,7 +374,7 @@ impl HNSWIndex {
         let node_count = usize::from_le_bytes(node_count_bytes);
         
         // 初始化节点池
-        let node_size = core::mem::size_of::<HNSWNode>();
+        let _node_size = core::mem::size_of::<HNSWNode>();
         let nodes = NonNull::new_unchecked(memory_start as *mut HNSWNode);
         
         // 读取入口点
@@ -526,7 +526,7 @@ impl HNSWIndex {
     pub unsafe fn search(
         &self,
         query_vec: *const f32,
-        k: usize,
+        _k: usize,
     ) -> Result<Vec<(f32, u16)>> {
         if self.enter_point.is_none() {
             return Err(RemDbError::RecordNotFound);
@@ -585,7 +585,7 @@ impl HNSWIndex {
         };
         
         let mut current_level = self.max_level;
-        let mut visited: Vec<NonNull<HNSWNode>> = Vec::new();        
+        let _visited: Vec<NonNull<HNSWNode>> = Vec::new();        
         // 从上到下搜索插入位置        
         while current_level > new_level {
             let results = self.search_layer(vec_ptr, entry_point, 1, current_level);            
@@ -602,7 +602,7 @@ impl HNSWIndex {
             let neighbors = self.search_layer(vec_ptr, entry_point, ef_construction, current_level);            
             // 选择M个最近邻            
             let m = self.meta.hnsw_m as usize;
-            let selected_neighbors = neighbors.iter().take(m).map(|&(d, n)| n).collect::<Vec<_>>();            
+            let selected_neighbors = neighbors.iter().take(m).map(|&(_d, n)| n).collect::<Vec<_>>();            
             // 将新节点连接到选中的邻居            
             for &neighbor in &selected_neighbors {
                 new_node.add_neighbor_at_level(current_level, neighbor)?;                
@@ -655,7 +655,7 @@ impl HNSWIndex {
             let mut node = NonNull::new_unchecked(node_ptr);            
             node.as_mut().neighbors.clear();            
             node.as_mut().neighbor_counts.clear();            
-            let next_free = self.free_nodes;            
+            let _next_free = self.free_nodes;            
             self.free_nodes = Some(node);            
             // TODO: 更新图结构，移除指向该节点的连接            
             Ok(())

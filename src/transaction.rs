@@ -1,5 +1,4 @@
 use crate::defer;
-use crate::platform::{memcpy, memset};
 use crate::types::{RemDbError, Result};
 use core::default::Default;
 use core::ptr::NonNull;
@@ -7,7 +6,6 @@ use crate::DdlExecutor;
 
 // 引入alloc模块
 extern crate alloc;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 /// 事务隔离级别
@@ -1142,7 +1140,7 @@ impl LogManager {
                         // 解析默认值
                         let default_value = if has_default {
                             // 保存当前offset，用于解析默认值
-                            let default_offset = offset;
+                            let _default_offset = offset;
 
                             // 根据数据类型解析默认值
                             let value = unsafe {
@@ -1308,7 +1306,7 @@ impl LogManager {
                                     crate::types::DataType::String => {
                                         // 确保有足够空间读取字符串长度
                                         if offset + 1 <= new_data_len {
-                                            let str_len = log_item.new_data[offset] as usize; // 1字节长度
+                                            let _str_len = log_item.new_data[offset] as usize; // 1字节长度
                                             offset += 1;
 
                                             // 创建字符串默认值
@@ -2194,7 +2192,7 @@ impl TransactionManager {
         crate::platform::spin_lock(&mut self.lock);
 
         // 检查是否有活动事务
-        let mut tx = match self.current_tx {
+        let tx = match self.current_tx {
             Some(tx) => tx,
             None => {
                 crate::platform::spin_unlock(&mut self.lock);
@@ -2230,7 +2228,7 @@ impl TransactionManager {
         crate::platform::spin_lock(&mut self.lock);
 
         // 检查是否有活动事务
-        let mut tx = match self.current_tx {
+        let tx = match self.current_tx {
             Some(tx) => tx,
             None => {
                 crate::platform::spin_unlock(&mut self.lock);

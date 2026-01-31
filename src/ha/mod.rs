@@ -5,7 +5,6 @@ pub mod manager;
 pub mod replication;
 pub mod role;
 
-use alloc::vec::Vec;
 use core::fmt;
 
 // HA角色

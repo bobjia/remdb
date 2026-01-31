@@ -76,7 +76,7 @@ impl UdpSocket {
 mod posix {
     use super::*;
     use socket2;
-    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket as StdUdpSocket};
+    use std::net::{Ipv4Addr, SocketAddr, UdpSocket as StdUdpSocket};
     use std::str::FromStr;
 
     // POSIX平台UDP套接字实现

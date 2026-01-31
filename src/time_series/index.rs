@@ -1,7 +1,7 @@
 use alloc::{collections::BTreeMap, string::String, string::ToString, sync::Arc, vec::Vec};
 
 #[cfg(feature = "std")]
-use std::{collections::HashMap, sync::Mutex, sync::RwLock};
+use std::{collections::HashMap, sync::RwLock};
 
 #[cfg(not(feature = "std"))]
 use crate::memory::allocator::Mutex;

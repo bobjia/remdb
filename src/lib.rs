@@ -247,7 +247,7 @@ impl DatabaseManager {
     pub fn create_database(
         &mut self,
         name: &str,
-        schema: &str,
+        _schema: &str,
         config: Option<DatabaseConfig>,
     ) -> Result<Arc<RemDb>> {
         // 检查数据库是否已存在
@@ -339,7 +339,7 @@ impl DatabaseManager {
 
     /// 关闭数据库
     pub fn close_database(&mut self, name: &str) -> Result<()> {
-        if let Some(idx) = self.databases.iter().position(|db| db.name == name) {
+        if let Some(_idx) = self.databases.iter().position(|db| db.name == name) {
             // 这里需要实现关闭数据库的逻辑
             // 例如：持久化数据、释放资源等
             Ok(())
@@ -908,7 +908,7 @@ impl RemDb {
             use std::path::Path;
 
             // 构造完整的日志文件路径：log_path目录 + remdb.wal文件名
-            let log_dir = self.config.wal_config.log_path.clone();
+            let log_dir = self.config.wal_config.log_path;
             let wal_file_path = format!("{}/remdb.wal", log_dir);
 
             // 确保日志目录存在（仅在std环境下）
@@ -1496,7 +1496,7 @@ impl RemDb {
     /// # 返回值
     /// - `Ok(())`: 删除成功
     /// - `Err(RemDbError)`: 删除失败
-    pub fn drop_table(&mut self, table_name: &str, if_exists: bool, deferred: bool) -> Result<()> {
+    pub fn drop_table(&mut self, table_name: &str, if_exists: bool, _deferred: bool) -> Result<()> {
         #[cfg(feature = "std")]
         eprintln!("Starting DROP TABLE operation on {}", table_name);
         
@@ -2551,7 +2551,7 @@ impl DdlExecutor for RemDb {
                     unsafe {
                         // 获取空闲槽
                         let mut new_slot_id = 0;
-                        let mut is_overwrite = false;
+                        let _is_overwrite = false;
                         
                         // 自旋锁保护
                         crate::platform::spin_lock(&mut new_table.lock);
@@ -2684,7 +2684,7 @@ impl DdlExecutor for RemDb {
                 // 根据操作类型写入详细信息
                 let mut data_size = 67;
                 match &operation {
-                    AlterTableOperation::AddColumn { ref name, ref data_type, size, ref distance_type, ref default_value, ref constraints } => {
+                    AlterTableOperation::AddColumn { ref name, ref data_type, size, distance_type: _, default_value: _, ref constraints } => {
                         // 写入列名
                         let name_bytes = name.as_bytes();
                         let col_name_len = core::cmp::min(name_bytes.len(), 64);
@@ -2724,7 +2724,7 @@ impl DdlExecutor for RemDb {
                         
                         data_size = 68 + col_name_len;
                     },
-                    AlterTableOperation::ModifyColumn { ref name, ref data_type, size, ref distance_type, ref default_value, ref constraints } => {
+                    AlterTableOperation::ModifyColumn { ref name, ref data_type, size, distance_type: _, default_value: _, ref constraints } => {
                         // 写入列名
                         let name_bytes = name.as_bytes();
                         let col_name_len = core::cmp::min(name_bytes.len(), 64);
