@@ -2640,6 +2640,75 @@ fn evaluate_binary_op(
         | BinaryOperator::GreaterThanOrEqual => {
             // 比较操作符需要返回布尔值
             unsafe {
+                // 特殊处理IS NULL操作
+                if right.value_type == DataType::Int64 && right.value.i64 == 0 {
+                    // IS NULL操作
+                    // 检查左侧值是否为NULL
+                    let is_null = match left.value_type {
+                        DataType::UInt8 => left.value.u8 == 0,
+                        DataType::UInt16 => left.value.u16 == 0,
+                        DataType::UInt32 => left.value.u32 == 0,
+                        DataType::UInt64 => left.value.u64 == 0,
+                        DataType::Int8 => left.value.i8 == 0,
+                        DataType::Int16 => left.value.i16 == 0,
+                        DataType::Int32 => left.value.i32 == 0,
+                        DataType::Int64 => left.value.i64 == 0,
+                        DataType::Float32 => left.value.float32 == 0.0,
+                        DataType::Float64 => left.value.float64 == 0.0,
+                        DataType::Bool => !left.value.bool,
+                        DataType::String => {
+                            // 检查字符串是否为空
+                            match core::str::from_utf8(&left.value.string) {
+                                Ok(s) => {
+                                    let trimmed = s.trim_end_matches(char::from(0));
+                                    trimmed.is_empty()
+                                },
+                                Err(_) => return Err(QueryExecutionError::TypeMismatch),
+                            }
+                        }
+                        DataType::Timestamp => left.value.time.value == 0,
+                        DataType::TimestampTZ => left.value.time.value == 0,
+                        DataType::Interval => left.value.interval.value == 0,
+                        DataType::Vector => left.value.vector.is_null(),
+                    };
+                    
+                    let result = match op {
+                        BinaryOperator::Equal => is_null,  // IS NULL
+                        BinaryOperator::NotEqual => !is_null, // IS NOT NULL
+                        _ => return Err(QueryExecutionError::TypeMismatch),
+                    };
+                    
+                    return Ok(TypedValue {
+                        value_type: DataType::Bool,
+                        value: Value { bool: result },
+                    });
+                }
+                
+                // 字符串比较
+                if left.value_type == DataType::String && right.value_type == DataType::String {
+                    let left_str = core::str::from_utf8(&left.value.string)
+                        .map_err(|_| QueryExecutionError::TypeMismatch)?
+                        .trim_end_matches(char::from(0));
+                    let right_str = core::str::from_utf8(&right.value.string)
+                        .map_err(|_| QueryExecutionError::TypeMismatch)?
+                        .trim_end_matches(char::from(0));
+                    
+                    let result = match op {
+                        BinaryOperator::Equal => left_str == right_str,
+                        BinaryOperator::NotEqual => left_str != right_str,
+                        BinaryOperator::LessThan => left_str < right_str,
+                        BinaryOperator::LessThanOrEqual => left_str <= right_str,
+                        BinaryOperator::GreaterThan => left_str > right_str,
+                        BinaryOperator::GreaterThanOrEqual => left_str >= right_str,
+                        _ => return Err(QueryExecutionError::TypeMismatch),
+                    };
+                    
+                    return Ok(TypedValue {
+                        value_type: DataType::Bool,
+                        value: Value { bool: result },
+                    });
+                }
+                
                 // 将操作数转换为f64进行比较，适用于所有数值类型
                 let left_val = match left.value_type {
                     DataType::UInt8 => left.value.u8 as f64,
