@@ -2783,6 +2783,12 @@ fn evaluate_binary_op(
                 BinaryOperator::Add => left_val + right_val,
                 BinaryOperator::Subtract => left_val - right_val,
                 BinaryOperator::Multiply => left_val * right_val,
+                BinaryOperator::Divide => {
+                    if right_val == 0.0 {
+                        return Err(QueryExecutionError::InternalError);
+                    }
+                    left_val / right_val
+                },
                 _ => return Err(QueryExecutionError::TypeMismatch),
             };
 
