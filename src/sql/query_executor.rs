@@ -1006,7 +1006,7 @@ fn evaluate_expression_for_aggregate(
                 SqlValue::String(s) => {
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-                    buf[..len].copy_from_slice(s.as_bytes());
+                    buf[..len].copy_from_slice(&s.as_bytes()[..len]);
                     (DataType::String, Value { string: buf })
                 }
                 SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
@@ -1015,7 +1015,7 @@ fn evaluate_expression_for_aggregate(
                     // 标识符作为字符串处理
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-                    buf[..len].copy_from_slice(s.as_bytes());
+                    buf[..len].copy_from_slice(&s.as_bytes()[..len]);
                     (DataType::String, Value { string: buf })
                 }
             };
@@ -2396,7 +2396,7 @@ fn evaluate_expression(
                     // 普通字符串
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-                    buf[..len].copy_from_slice(s.as_bytes());
+                    buf[..len].copy_from_slice(&s.as_bytes()[..len]);
                     (DataType::String, Value { string: buf })
                 }
                 SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
@@ -2405,7 +2405,7 @@ fn evaluate_expression(
                     // 标识符作为字符串处理
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-                    buf[..len].copy_from_slice(s.as_bytes());
+                    buf[..len].copy_from_slice(&s.as_bytes()[..len]);
                     (DataType::String, Value { string: buf })
                 }
             };
@@ -3441,7 +3441,7 @@ fn execute_to_iso8601(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionE
                 // 将字符串转换为TypedValue
                 let mut string_value = [0; MAX_STRING_LEN];
                 let len = core::cmp::min(result.len(), MAX_STRING_LEN);
-                string_value[..len].copy_from_slice(result.as_bytes());
+                string_value[..len].copy_from_slice(&result.as_bytes()[..len]);
 
                 Ok(TypedValue {
                     value_type: DataType::String,
@@ -3478,7 +3478,7 @@ fn execute_to_char(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionErro
                 // 将字符串转换为TypedValue
                 let mut string_value = [0; MAX_STRING_LEN];
                 let len = core::cmp::min(result.len(), MAX_STRING_LEN);
-                string_value[..len].copy_from_slice(result.as_bytes());
+                string_value[..len].copy_from_slice(&result.as_bytes()[..len]);
 
                 Ok(TypedValue {
                     value_type: DataType::String,
@@ -3583,7 +3583,7 @@ fn execute_concat(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError
     // 将结果转换为TypedValue
     let mut string_value = [0; MAX_STRING_LEN];
     let len = core::cmp::min(result.len(), MAX_STRING_LEN);
-    string_value[..len].copy_from_slice(result.as_bytes());
+    string_value[..len].copy_from_slice(&result.as_bytes()[..len]);
 
     Ok(TypedValue {
         value_type: DataType::String,
@@ -3652,7 +3652,7 @@ fn execute_substring(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionEr
         // 将结果转换为TypedValue
         let mut string_value = [0; MAX_STRING_LEN];
         let len = core::cmp::min(substring.len(), MAX_STRING_LEN);
-        string_value[..len].copy_from_slice(substring.as_bytes());
+        string_value[..len].copy_from_slice(&substring.as_bytes()[..len]);
 
         Ok(TypedValue {
             value_type: DataType::String,
@@ -3685,7 +3685,7 @@ fn execute_upper(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
         // 将结果转换为TypedValue
         let mut string_value = [0; MAX_STRING_LEN];
         let len = core::cmp::min(result_str.len(), MAX_STRING_LEN);
-        string_value[..len].copy_from_slice(result_str.as_bytes());
+        string_value[..len].copy_from_slice(&result_str.as_bytes()[..len]);
 
         Ok(TypedValue {
             value_type: DataType::String,
@@ -3718,7 +3718,7 @@ fn execute_lower(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
         // 将结果转换为TypedValue
         let mut string_value = [0; MAX_STRING_LEN];
         let len = core::cmp::min(result_str.len(), MAX_STRING_LEN);
-        string_value[..len].copy_from_slice(result_str.as_bytes());
+        string_value[..len].copy_from_slice(&result_str.as_bytes()[..len]);
 
         Ok(TypedValue {
             value_type: DataType::String,
@@ -4537,7 +4537,7 @@ fn execute_create_table_query(
                                 let mut s = [0; MAX_STRING_LEN];
                                 let str_val = actual_value.to_string();
                                 let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
-                                s[..len].copy_from_slice(str_val.as_bytes());
+                                s[..len].copy_from_slice(&str_val.as_bytes()[..len]);
                                 Value { string: s }
                             }
                             DataType::Interval => Value {
@@ -4584,7 +4584,7 @@ fn execute_create_table_query(
                             let mut s = [0; MAX_STRING_LEN];
                             let str_val = f.to_string();
                             let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
-                            s[..len].copy_from_slice(str_val.as_bytes());
+                            s[..len].copy_from_slice(&str_val.as_bytes()[..len]);
                             Value { string: s }
                         }
                         DataType::Interval => Value {
@@ -4634,7 +4634,7 @@ fn execute_create_table_query(
                             let mut s = [0; MAX_STRING_LEN];
                             let str_val = b.to_string();
                             let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
-                            s[..len].copy_from_slice(str_val.as_bytes());
+                            s[..len].copy_from_slice(&str_val.as_bytes()[..len]);
                             Value { string: s }
                         }
                         DataType::Interval => Value {
@@ -4701,7 +4701,7 @@ fn execute_create_table_query(
                         DataType::String => {
                             let mut buf = [0; MAX_STRING_LEN];
                             let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-                            buf[..len].copy_from_slice(s.as_bytes());
+                            buf[..len].copy_from_slice(&s.as_bytes()[..len]);
                             Value { string: buf }
                         }
                         DataType::Interval => Value {
@@ -4770,7 +4770,7 @@ fn execute_create_table_query(
                             DataType::String => {
                                 let mut buf = [0; MAX_STRING_LEN];
                                 let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-                                buf[..len].copy_from_slice(s.as_bytes());
+                                buf[..len].copy_from_slice(&s.as_bytes()[..len]);
                                 Value { string: buf }
                             }
                             DataType::Interval => Value {
