@@ -1771,6 +1771,33 @@ impl SqlParser {
             };
         }
 
+        // 检查是否有IS NULL或IS NOT NULL语法
+        self.skip_whitespace();
+        if self.match_keyword("IS") {
+            self.skip_whitespace();
+            let is_not = self.match_keyword("NOT");
+            self.skip_whitespace();
+            if self.match_keyword("NULL") {
+                // 构建IS NULL或IS NOT NULL表达式
+                // 使用BinaryOp来表示IS NULL操作
+                let right_expr = Expression::Constant { 
+                    value: Value::Null, 
+                    alias: None 
+                };
+                let op = if is_not {
+                    BinaryOperator::NotEqual
+                } else {
+                    BinaryOperator::Equal
+                };
+                left_expr = Expression::BinaryOp {
+                    left: Box::new(left_expr),
+                    op,
+                    right: Box::new(right_expr),
+                    alias: None,
+                };
+            }
+        }
+
         self.skip_whitespace();
         let alias = self.parse_alias()?;
 
