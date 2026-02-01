@@ -55,8 +55,8 @@ panic = "abort"          # 崩溃时直接终止
 opt-level = 1            # 开发模式也有一些优化
 panic = "unwind"         # 开发模式也使用unwind，以便调试
 
-[profile.test]
-panic = "unwind"         # 测试模式使用unwind，以便生成测试回溯
+# Test settings have been moved to tool.cargo.test in newer Cargo versions
+[tool.cargo.test]
 test-threads = 1
 
 [build-dependencies]
