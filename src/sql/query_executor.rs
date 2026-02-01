@@ -2658,13 +2658,15 @@ fn evaluate_binary_op(
                         DataType::Bool => !left.value.bool,
                         DataType::String => {
                             // 检查字符串是否为空
-                            match core::str::from_utf8(&left.value.string) {
-                                Ok(s) => {
-                                    let trimmed = s.trim_end_matches(char::from(0));
-                                    trimmed.is_empty()
-                                },
-                                Err(_) => return Err(QueryExecutionError::TypeMismatch),
+                            // 安全地检查字符串是否为空，避免UTF-8转换错误
+                            let mut is_empty = true;
+                            for &byte in &left.value.string {
+                                if byte != 0 {
+                                    is_empty = false;
+                                    break;
+                                }
                             }
+                            is_empty
                         }
                         DataType::Timestamp => left.value.time.value == 0,
                         DataType::TimestampTZ => left.value.time.value == 0,
