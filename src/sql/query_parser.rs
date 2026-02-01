@@ -210,6 +210,8 @@ pub enum Condition {
     And(Box<Condition>, Box<Condition>),
     /// OR条件组合
     Or(Box<Condition>, Box<Condition>),
+    /// NOT条件
+    Not(Box<Condition>),
 }
 
 /// BETWEEN条件
@@ -2280,8 +2282,15 @@ impl SqlParser {
         self.parse_where_condition()
     }
 
-    /// 解析WHERE条件，支持AND/OR组合
+    /// 解析WHERE条件，支持AND/OR/NOT组合
     fn parse_where_condition(&mut self) -> Result<Condition, QueryParseError> {
+        // 解析NOT条件
+        self.skip_whitespace();
+        if self.match_keyword("NOT") {
+            let inner_condition = self.parse_where_condition()?;
+            return Ok(Condition::Not(Box::new(inner_condition)));
+        }
+
         // 解析第一个条件
         let mut condition = self.parse_single_condition()?;
 
@@ -2291,11 +2300,11 @@ impl SqlParser {
 
             if self.match_keyword("AND") {
                 // 解析AND右侧的条件
-                let right_condition = self.parse_single_condition()?;
+                let right_condition = self.parse_where_condition()?;
                 condition = Condition::And(Box::new(condition), Box::new(right_condition));
             } else if self.match_keyword("OR") {
                 // 解析OR右侧的条件
-                let right_condition = self.parse_single_condition()?;
+                let right_condition = self.parse_where_condition()?;
                 condition = Condition::Or(Box::new(condition), Box::new(right_condition));
             } else {
                 // 没有更多的逻辑运算符，结束循环
@@ -2306,9 +2315,23 @@ impl SqlParser {
         Ok(condition)
     }
 
-    /// 解析单个条件（比较或BETWEEN）
+    /// 解析单个条件（比较、BETWEEN、表达式、NOT、括号）
     fn parse_single_condition(&mut self) -> Result<Condition, QueryParseError> {
         self.skip_whitespace();
+
+        // 检查是否是NOT条件
+        if self.match_keyword("NOT") {
+            let inner_condition = self.parse_single_condition()?;
+            return Ok(Condition::Not(Box::new(inner_condition)));
+        }
+
+        // 检查是否是括号条件
+        if self.match_char('(') {
+            let inner_condition = self.parse_where_condition()?;
+            self.skip_whitespace();
+            self.expect_char(')')?;
+            return Ok(inner_condition);
+        }
 
         // 保存当前位置，用于回溯
         let saved_pos = self.position;
@@ -2323,8 +2346,31 @@ impl SqlParser {
         self.position = saved_pos;
         self.column = saved_col;
 
-        // 解析比较条件
-        self.parse_comparison_condition()
+        // 尝试解析比较条件
+        let saved_pos_compare = self.position;
+        let saved_col_compare = self.column;
+        
+        if let Ok(condition) = self.parse_comparison_condition() {
+            return Ok(condition);
+        }
+
+        // 回溯，尝试解析表达式条件（如 "a" 或 "a + b"）
+        self.position = saved_pos_compare;
+        self.column = saved_col_compare;
+
+        // 解析表达式
+        let expr = self.parse_expression()?;
+        
+        // 对于表达式条件，我们将其视为与 TRUE 的比较
+        // 例如 "a" 相当于 "a = TRUE"
+        Ok(Condition::Comparison(ComparisonCondition {
+            field: match expr {
+                Expression::Field { name, alias: None } => name,
+                _ => format!("{:?}", expr),
+            },
+            operator: ComparisonOperator::Equal,
+            value: Value::Boolean(true),
+        }))
     }
 
     /// 解析BETWEEN条件

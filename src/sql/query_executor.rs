@@ -5152,6 +5152,10 @@ fn extract_indexed_condition(condition: &Condition) -> Option<(String, Vec<u8>)>
             }
             None
         }
+        Condition::Not(inner) => {
+            // 对于NOT条件，尝试从内部条件中提取可索引条件
+            extract_indexed_condition(inner)
+        }
         _ => None,
     }
 }
@@ -7120,6 +7124,9 @@ unsafe fn evaluate_condition(
             evaluate_condition(table, record_ptr, left)
                 || evaluate_condition(table, record_ptr, right)
         }
+        Condition::Not(inner) => {
+            !evaluate_condition(table, record_ptr, inner)
+        }
     }
 }
 
@@ -7816,6 +7823,16 @@ unsafe fn evaluate_condition_with_alias(
                 columns,
                 expr_values,
                 right,
+                alias_map,
+            )
+        }
+        Condition::Not(inner) => {
+            !evaluate_condition_with_alias(
+                table,
+                record_values,
+                columns,
+                expr_values,
+                inner,
                 alias_map,
             )
         }
