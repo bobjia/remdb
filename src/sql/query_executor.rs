@@ -15,7 +15,7 @@ use crate::sql::query_parser::{
 use crate::sql::{
     ComparisonCondition, ComparisonOperator, Condition, OrderByClause, ResultSet, SqlQuery,
 };
-use crate::types::{DataType, TypedValue};
+use crate::types::{DataType, TypedValue, JsonStorage};
 use crate::{
     DdlExecutor, IndexType, MemoryTable, RemDb, RemDbError, TableDef, TimeSeriesTable, Value,
     MAX_STRING_LEN,
@@ -796,7 +796,8 @@ fn check_memory_limit(
                 format!("Query exceeds memory limit: {}MB estimated, {}MB allowed", 
                        estimated_usage / (1024 * 1024), max_mb)));
         }
-    }
+        }
+
     Ok(())
 }
 
@@ -1443,6 +1444,7 @@ fn evaluate_expression_for_aggregate(
                     buf[..len].copy_from_slice(&s.as_bytes()[..len]);
                     (DataType::String, Value { string: buf })
                 }
+                SqlValue::Json(_) => (DataType::Json, Value { json_storage: JsonStorage::Null }),
             };
 
             Ok(TypedValue { value_type, value })
@@ -2022,6 +2024,10 @@ fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
                 // 向量比较：目前不支持精确比较，返回false
                 false
             }
+            DataType::Json => {
+                // JSON比较：目前不支持精确比较，返回false
+                false
+            }
         }
     }
 }
@@ -2437,6 +2443,10 @@ fn execute_select_join_query(
                                     u64: 0,
                                 },
                             },
+                            DataType::Json => TypedValue {
+                                value_type: DataType::Json,
+                                value: Value { json_storage: JsonStorage::Null },
+                            },
                         };
                         join_default_values.push(default_value);
                     }
@@ -2703,6 +2713,10 @@ fn execute_select_join_query(
                                         vector: std::ptr::null(),
                                     },
                                 },
+                                DataType::Json => TypedValue {
+                                    value_type: DataType::Json,
+                                    value: Value { json_storage: JsonStorage::Null },
+                                },
                             };
                             main_default_values.push(default_value);
                         }
@@ -2850,6 +2864,7 @@ fn evaluate_expression(
                     buf[..len].copy_from_slice(&s.as_bytes()[..len]);
                     (DataType::String, Value { string: buf })
                 }
+                SqlValue::Json(_) => (DataType::Json, Value { json_storage: JsonStorage::Null }),
             };
 
             Ok(TypedValue { value_type, value })
@@ -3114,6 +3129,10 @@ fn evaluate_binary_op(
                         DataType::TimestampTZ => left.value.time.value == 0,
                         DataType::Interval => left.value.interval.value == 0,
                         DataType::Vector => left.value.vector.is_null(),
+                        DataType::Json => {
+                            // 检查JSON值是否为Null
+                            matches!(left.value.json_storage, JsonStorage::Null)
+                        },
                     };
                     
                     let result = match op {
@@ -5063,6 +5082,9 @@ fn execute_create_table_query(
                             DataType::Vector => Value {
                                 vector: core::ptr::null(),
                             },
+                            DataType::Json => Value {
+                                json_storage: crate::types::JsonStorage::Null,
+                            },
                         }
                     }
                     crate::sql::Value::Float(f) => match data_type {
@@ -5109,6 +5131,9 @@ fn execute_create_table_query(
                         },
                         DataType::Vector => Value {
                             vector: core::ptr::null(),
+                        },
+                        DataType::Json => Value {
+                            json_storage: crate::types::JsonStorage::Null,
                         },
                     },
                     crate::sql::Value::Boolean(b) => match data_type {
@@ -5159,6 +5184,9 @@ fn execute_create_table_query(
                         },
                         DataType::Vector => Value {
                             vector: core::ptr::null(),
+                        },
+                        DataType::Json => Value {
+                            json_storage: crate::types::JsonStorage::Null,
                         },
                     },
                     crate::sql::Value::String(s) => match data_type {
@@ -5226,6 +5254,9 @@ fn execute_create_table_query(
                         },
                         DataType::Vector => Value {
                             vector: core::ptr::null(),
+                        },
+                        DataType::Json => Value {
+                            json_storage: crate::types::JsonStorage::Null,
                         },
                     },
                     crate::sql::Value::Identifier(s) => {
@@ -5296,6 +5327,9 @@ fn execute_create_table_query(
                             DataType::Vector => Value {
                                 vector: core::ptr::null(),
                             },
+                            DataType::Json => Value {
+                                json_storage: crate::types::JsonStorage::Null,
+                            },
                         }
                     }
                     crate::sql::Value::Null => {
@@ -5341,7 +5375,18 @@ fn execute_create_table_query(
                             DataType::Vector => Value {
                                 vector: core::ptr::null(),
                             },
+                            DataType::Json => Value {
+                                json_storage: crate::types::JsonStorage::Null,
+                            },
                         }
+                    }
+                    crate::sql::Value::Json(_) => match data_type {
+                        DataType::Json => Value {
+                            json_storage: crate::types::JsonStorage::Null,
+                        },
+                        _ => Value {
+                            json_storage: crate::types::JsonStorage::Null,
+                        },
                     }
                 };
                 Some(types_val)
@@ -5853,6 +5898,10 @@ fn process_group_by_query(
                     hash
                 },
                 DataType::Vector => value.value.vector as u64,
+                DataType::Json => {
+                    // JSON类型的简单哈希
+                    0 // 暂时返回0，实际应用中可能需要更复杂的哈希逻辑
+                },
             }
         }
     }
@@ -6371,7 +6420,9 @@ fn execute_describe_query(
                 // 时间间隔类型
                 DataType::Interval => alloc::format!("{}", unsafe { default_val.interval.value }),
                 // 向量类型，默认值显示为<vector>
-                DataType::Vector => "<vector>".to_string()
+                DataType::Vector => "<vector>".to_string(),
+                // JSON类型，默认值显示为<json>
+                DataType::Json => "<json>".to_string()
             }
         } else {
             "".to_string()
@@ -6401,6 +6452,7 @@ fn execute_describe_query(
                     "vector".to_string()
                 }
             }
+            crate::DataType::Json => "json".to_string()
         };
 
         // 创建行数据
@@ -6820,6 +6872,14 @@ fn execute_insert_query(
                                 record_data.as_mut_ptr().add(field.offset)
                             );
                         }
+                        DataType::Json => {
+                            // 写入JSON数据
+                            core::ptr::write_unaligned(
+                                record_data.as_mut_ptr().add(field.offset)
+                                    as *mut crate::types::JsonStorage,
+                                default_value.json_storage,
+                            );
+                        }
                     }
                 }
             }
@@ -7223,6 +7283,9 @@ fn set_field_value(
                         }
                         crate::types::Value { string: str_value }
                     }
+                    DataType::Json => crate::types::Value {
+                        json_storage: unsafe { core::ptr::read_unaligned(field_ptr as *const crate::types::JsonStorage) },
+                    },
                     _ => crate::types::Value { i64: 0 },
                 };
                 crate::types::TypedValue {
@@ -7490,6 +7553,20 @@ fn set_field_value(
                     }
                 }
             }
+            // JSON类型
+            DataType::Json => {
+                // 处理JSON类型
+                match evaluated_value.value_type {
+                    DataType::Json => {
+                        // 直接复制JSON存储
+                        core::ptr::write_unaligned(
+                            record_data.as_mut_ptr().add(offset) as *mut crate::types::JsonStorage,
+                            evaluated_value.value.json_storage,
+                        );
+                    }
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                }
+            }
         }
     }
 
@@ -7546,7 +7623,15 @@ fn execute_create_time_series_table_query(
     let mut tag_fields = Vec::new();
 
     for (field_name, data_type_str, _, _, _, _, _) in &query.table_def {
-        let data_type = match data_type_str.to_uppercase().as_str() {
+        // 打印调试信息
+        println!("DEBUG: Field {} has data type: '{}'", field_name, data_type_str);
+        
+        // 提取基本类型部分，去除参数（如 VARCHAR(32) -> VARCHAR）
+        let base_type = data_type_str.split('(').next().unwrap_or(data_type_str).trim();
+        let base_type_upper = base_type.to_uppercase();
+        println!("DEBUG: Base type: '{}', upper case: '{}'", base_type, base_type_upper);
+        
+        let data_type = match base_type_upper.as_str() {
             "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => crate::DataType::Timestamp,
             "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => crate::DataType::TimestampTZ,
             "UINT8" | "TINYINT UNSIGNED" => crate::DataType::UInt8,
@@ -8165,6 +8250,8 @@ fn compare_field_with_condition(
         }
         // 向量类型 - 目前不支持直接比较
         DataType::Vector => false,
+        // JSON类型 - 目前不支持直接比较
+        DataType::Json => false,
     }
 }
 
@@ -9247,6 +9334,8 @@ fn sort_rows(
             }
             // 向量类型 - 目前不支持排序
             DataType::Vector => core::cmp::Ordering::Equal,
+            // JSON类型 - 目前不支持排序
+            DataType::Json => core::cmp::Ordering::Equal,
         };
 
         // 根据排序方向调整结果

@@ -234,6 +234,7 @@ fn generate_field_defs(
                 auto_increment: #auto_increment,
                 default_value: None,
                 vector_metadata: None,
+                json_metadata: None,
             }
         });
 

@@ -21,6 +21,9 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **SQL DDL Support**: Supports CREATE TABLE and DROP TABLE statements, allowing dynamic creation and deletion of table structures
 - **SQL Database Management Support**: Supports CREATE DATABASE and DROP DATABASE statements for database creation and management
 - **UTF8 Character Support**: Full UTF8 character encoding support, including string storage, character functions, LIKE operator, and sorting
+- **JSON Support**: Native JSON data type with support for JSON path queries, JSON modification functions, JSON indexing, and integration with other features
+- **SAMPLE BY Syntax**: Supports time series data sampling at specified intervals, providing concise time window aggregation syntax
+- **FILL Syntax**: Supports filling missing time windows in time series data to ensure time series continuity, with multiple filling methods
 - **Database Monitoring**: Real-time monitoring of database metrics, including memory usage, query performance, and transaction status
 - **UDP-based Reliable Data Pub/Sub**: Supports unicast, broadcast, and multicast modes with NACK-based retransmission
 - **High Availability Support**:

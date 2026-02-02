@@ -1443,6 +1443,146 @@ impl VectorIndex {
     }
 }
 
+/// JSON索引结构
+/// 用于索引JSON文档中的路径和值
+pub struct JsonIndex {
+    /// 表定义
+    def: alloc::sync::Arc<TableDef>,
+    /// 底层B-Tree索引（用于存储编码后的JSON键）
+    btree: BTreeIndex,
+    /// JSON路径（如果索引特定的路径）
+    json_path: Option<String>,
+    /// 索引统计信息
+    stats: IndexStats,
+    /// 自旋锁
+    lock: u32,
+}
+
+impl JsonIndex {
+    /// 创建新的JSON索引
+    pub unsafe fn new(
+        def: alloc::sync::Arc<TableDef>,
+        memory_start: *mut u8,
+        max_items: usize,
+    ) -> Result<Self> {
+        // 创建底层B-Tree索引
+        let btree = BTreeIndex::new(def.clone(), memory_start as *mut BTreeNode, max_items);
+        
+        // 检查是否为JSON字段索引
+        let json_path = None; // 暂时不提取JSON路径，简化实现
+        
+        Ok(JsonIndex {
+            def,
+            btree,
+            json_path,
+            stats: IndexStats::default(),
+            lock: 0,
+        })
+    }
+    
+    /// 计算JSON索引所需的内存大小
+    pub fn calculate_memory_size(max_items: usize) -> usize {
+        // 使用B-Tree索引的内存大小
+        BTreeIndex::calculate_memory_size(max_items)
+    }
+    
+    /// 编码JSON路径和值为索引键（暂未实现）
+    fn encode_json_key(&self, _json_doc: &crate::json::JsonDocument, _path: &str) -> Result<(Vec<u8>, usize)> {
+        // 暂未实现JSON路径编码
+        Err(RemDbError::UnsupportedOperation)
+    }
+    
+    /// 插入JSON索引项
+    pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
+        // 自旋锁保护
+        crate::platform::spin_lock(&mut self.lock);
+        
+        // 直接使用提供的键（已经编码）
+        let result = self.btree.insert(key, key_size, record_id);
+        
+        crate::platform::spin_unlock(&mut self.lock);
+        result
+    }
+    
+    /// 根据键查找记录ID
+    pub unsafe fn find(&mut self, key: *const u8, key_size: usize) -> Result<u16> {
+        // 更新统计信息
+        self.stats.access_count += 1;
+        
+        let result = self.btree.find(key, key_size);
+        if result.is_ok() {
+            self.stats.hit_count += 1;
+        }
+        result
+    }
+    
+    /// 范围查询（返回第一个匹配项）
+    pub unsafe fn find_range(
+        &mut self,
+        start_key: *const u8,
+        start_key_size: usize,
+        end_key: *const u8,
+        end_key_size: usize,
+    ) -> Result<u16> {
+        // 更新统计信息
+        self.stats.access_count += 1;
+        
+        let result = self.btree.find_range(start_key, start_key_size, end_key, end_key_size);
+        if result.is_ok() {
+            self.stats.hit_count += 1;
+        }
+        result
+    }
+    
+    /// 范围查询（返回所有匹配项）
+    pub unsafe fn find_range_all(
+        &mut self,
+        start_key: *const u8,
+        start_key_size: usize,
+        end_key: *const u8,
+        end_key_size: usize,
+        out_record_ids: *mut u16,
+        max_records: usize,
+    ) -> Result<usize> {
+        // 更新统计信息
+        self.stats.access_count += 1;
+        
+        let result = self.btree.find_range_all(
+            start_key, start_key_size, end_key, end_key_size,
+            out_record_ids, max_records,
+        );
+        
+        if let Ok(count) = result {
+            if count > 0 {
+                self.stats.hit_count += count;
+            }
+        }
+        
+        result
+    }
+    
+    /// 删除索引项
+    pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
+        // 自旋锁保护
+        crate::platform::spin_lock(&mut self.lock);
+        
+        let result = self.btree.delete(key, key_size);
+        
+        crate::platform::spin_unlock(&mut self.lock);
+        result
+    }
+    
+    /// 获取索引统计信息
+    pub fn stats(&self) -> &IndexStats {
+        &self.stats
+    }
+    
+    /// 重置索引统计信息
+    pub fn reset_stats(&mut self) {
+        self.stats = IndexStats::default();
+    }
+}
+
 pub enum AnySecondaryIndex {
     /// 有序数组索引
     SortedArray(SecondaryIndex),
@@ -1452,6 +1592,8 @@ pub enum AnySecondaryIndex {
     TTree(TTreeIndex),
     /// 向量索引
     Vector(VectorIndex),
+    /// JSON索引（虚拟生成列和路径索引）
+    Json(JsonIndex),
 }
 
 impl AnySecondaryIndex {
@@ -1483,6 +1625,11 @@ impl AnySecondaryIndex {
                 let index = VectorIndex::new(def, memory_start, max_items)?;
                 Ok(AnySecondaryIndex::Vector(index))
             }
+            IndexType::Json => {
+                // 创建JSON索引
+                let index = JsonIndex::new(def, memory_start, max_items)?;
+                Ok(AnySecondaryIndex::Json(index))
+            }
             _ => Err(RemDbError::UnsupportedOperation),
         }
     }
@@ -1494,6 +1641,7 @@ impl AnySecondaryIndex {
             IndexType::BTree => BTreeIndex::calculate_memory_size(max_items),
             IndexType::TTree => TTreeIndex::calculate_memory_size(max_items),
             IndexType::Vector => VectorIndex::calculate_memory_size(def, max_items),
+            IndexType::Json => JsonIndex::calculate_memory_size(max_items),
             _ => 0,
         }
     }
@@ -1505,6 +1653,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::BTree(index) => index.insert(key, key_size, record_id),
             AnySecondaryIndex::TTree(index) => index.insert(key, key_size, record_id),
             AnySecondaryIndex::Vector(index) => index.insert(key, key_size, record_id),
+            AnySecondaryIndex::Json(index) => index.insert(key, key_size, record_id),
         }
     }
 
@@ -1515,6 +1664,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::BTree(index) => index.find(key, key_size),
             AnySecondaryIndex::TTree(index) => index.find(key, key_size),
             AnySecondaryIndex::Vector(index) => index.find(key, key_size),
+            AnySecondaryIndex::Json(index) => index.find(key, key_size),
         }
     }
 
@@ -1537,6 +1687,9 @@ impl AnySecondaryIndex {
                 index.find_range(start_key, start_key_size, end_key, end_key_size)
             }
             AnySecondaryIndex::Vector(index) => {
+                index.find_range(start_key, start_key_size, end_key, end_key_size)
+            }
+            AnySecondaryIndex::Json(index) => {
                 index.find_range(start_key, start_key_size, end_key, end_key_size)
             }
         }
@@ -1585,6 +1738,14 @@ impl AnySecondaryIndex {
                 out_record_ids,
                 max_records,
             ),
+            AnySecondaryIndex::Json(index) => index.find_range_all(
+                start_key,
+                start_key_size,
+                end_key,
+                end_key_size,
+                out_record_ids,
+                max_records,
+            ),
         }
     }
 
@@ -1595,6 +1756,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::BTree(index) => index.delete(key, key_size),
             AnySecondaryIndex::TTree(index) => index.delete(key, key_size),
             AnySecondaryIndex::Vector(index) => index.delete(key, key_size),
+            AnySecondaryIndex::Json(index) => index.delete(key, key_size),
         }
     }
 
@@ -1605,6 +1767,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::BTree(index) => index.stats(),
             AnySecondaryIndex::TTree(index) => index.stats(),
             AnySecondaryIndex::Vector(index) => index.stats(),
+            AnySecondaryIndex::Json(index) => index.stats(),
         }
     }
 
@@ -1615,6 +1778,7 @@ impl AnySecondaryIndex {
             AnySecondaryIndex::BTree(index) => index.reset_stats(),
             AnySecondaryIndex::TTree(index) => index.reset_stats(),
             AnySecondaryIndex::Vector(index) => index.reset_stats(),
+            AnySecondaryIndex::Json(index) => index.reset_stats(),
         }
     }
 }

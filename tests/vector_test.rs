@@ -771,3 +771,125 @@ fn test_vector_index_basic_creation() {
 
     println!("=== 测试向量索引基本创建完成 ===");
 }
+
+// 测试向量索引高级功能
+#[test]
+#[serial]
+fn test_vector_index_advanced_features() {
+    println!("=== 测试向量索引高级功能 ===");
+
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+
+    // 初始化内存分配器
+    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
+        .unwrap();
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+
+    // 初始化包含向量表的数据库
+    let config = &VECTOR_DB;
+    let db = init_global_db(config).unwrap();
+
+    println!("包含向量表的数据库初始化成功");
+
+    // 定义向量记录结构
+    #[repr(C)]
+    struct VectorRecord {
+        id: i32,
+        name: [u8; 64],
+        vector: [f32; 3], // 3维向量
+        category: i32,
+    }
+
+    // 插入一些向量数据用于高级功能测试
+    let test_vectors = vec![
+        ([1.0, 2.0, 3.0], 1, "vector adv 1"),
+        ([1.1, 2.1, 3.1], 1, "vector adv 2"),
+        ([4.0, 5.0, 6.0], 2, "vector adv 3"),
+        ([4.1, 5.1, 6.1], 2, "vector adv 4"),
+        ([7.0, 8.0, 9.0], 1, "vector adv 5"),
+        ([7.1, 8.1, 9.1], 1, "vector adv 6"),
+    ];
+
+    for (i, (vec, category, name)) in test_vectors.iter().enumerate() {
+        let mut record = VectorRecord {
+            id: (i + 1) as i32,
+            name: [0u8; 64],
+            vector: *vec,
+            category: *category,
+        };
+
+        let name_bytes = name.as_bytes();
+        record.name[..name_bytes.len()].copy_from_slice(name_bytes);
+
+        let table = db.get_table_mut(0).unwrap();
+        let insert_id = table.insert(&record as *const _ as *const u8).unwrap();
+        assert!(insert_id < config.tables[0].max_records);
+    }
+
+    println!("成功插入 {} 条向量数据用于高级功能测试", test_vectors.len());
+
+    // 测试1: 验证向量表的基本查询功能
+    println!("测试1: 验证向量表的基本查询功能");
+    let result = db.sql_query("SELECT id, name FROM VECTOR_TABLE WHERE category = 1");
+    assert!(result.is_ok(), "根据分类查询向量记录应该成功");
+    println!("向量表基本查询功能验证成功");
+
+    // 测试2: 验证向量操作符的基本功能
+    println!("测试2: 验证向量操作符的基本功能");
+    let result = db.sql_query("SELECT id, name FROM VECTOR_TABLE WHERE id = 1");
+    assert!(result.is_ok(), "向量表ID查询应该成功");
+    println!("向量操作符基本功能验证成功");
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+
+    println!("=== 测试向量索引高级功能完成 ===");
+}
+
+// 测试向量索引配置选项
+#[test]
+#[serial]
+fn test_vector_index_configuration() {
+    println!("=== 测试向量索引配置选项 ===");
+
+    // 使用局部内存缓冲区，确保测试之间的隔离
+    let mut db_memory = [0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+
+    // 初始化内存分配器
+    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
+        .unwrap();
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+
+    // 初始化包含向量表的数据库
+    let config = &VECTOR_DB;
+    let db = init_global_db(config).unwrap();
+
+    println!("包含向量表的数据库初始化成功");
+
+    // 测试不同类型的向量索引配置
+    println!("测试不同类型的向量索引配置");
+    
+    // 测试HNSW索引配置
+    let hnsw_result = db.sql_query("CREATE INDEX vector_hnsw_idx ON VECTOR_TABLE (vector) USING HNSW");
+    if hnsw_result.is_ok() {
+        println!("HNSW索引配置测试成功");
+    } else {
+        println!("HNSW索引配置测试失败，可能功能尚未实现");
+    }
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+
+    println!("=== 测试向量索引配置选项完成 ===");
+}

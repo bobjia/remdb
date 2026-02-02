@@ -69,6 +69,7 @@ unsafe fn create_system_config_table(db: &mut crate::RemDb) -> Result<()> {
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         crate::types::FieldDef {
             name: "config_value".to_string(),
@@ -81,6 +82,7 @@ unsafe fn create_system_config_table(db: &mut crate::RemDb) -> Result<()> {
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         crate::types::FieldDef {
             name: "description".to_string(),
@@ -93,6 +95,7 @@ unsafe fn create_system_config_table(db: &mut crate::RemDb) -> Result<()> {
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         crate::types::FieldDef {
             name: "updated_at".to_string(),
@@ -105,6 +108,7 @@ unsafe fn create_system_config_table(db: &mut crate::RemDb) -> Result<()> {
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         crate::types::FieldDef {
             name: "created_at".to_string(),
@@ -117,6 +121,7 @@ unsafe fn create_system_config_table(db: &mut crate::RemDb) -> Result<()> {
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
     ];
     

@@ -132,6 +132,7 @@ static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(
             auto_increment: true,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         FieldDef {
             name: "value".to_string(),
@@ -144,6 +145,7 @@ static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
     ],
     primary_key: vec![0],
@@ -401,6 +403,7 @@ static SMALL_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new
         auto_increment: true,
         default_value: None,
         vector_metadata: None,
+        json_metadata: None,
     }],
     primary_key: vec![0],
     secondary_index: None,
@@ -526,6 +529,7 @@ fn test_not_null_constraint() {
                     auto_increment: true,
                     default_value: None,
                     vector_metadata: None,
+                    json_metadata: None,
                 },
                 FieldDef {
                     name: "name".to_string(),
@@ -538,6 +542,7 @@ fn test_not_null_constraint() {
                     auto_increment: false,
                     default_value: None,
                     vector_metadata: None,
+                    json_metadata: None,
                 },
                 FieldDef {
                     name: "value_float".to_string(),
@@ -550,6 +555,7 @@ fn test_not_null_constraint() {
                     auto_increment: false,
                     default_value: None,
                     vector_metadata: None,
+                    json_metadata: None,
                 },
                 FieldDef {
                     name: "value_int".to_string(),
@@ -562,6 +568,7 @@ fn test_not_null_constraint() {
                     auto_increment: false,
                     default_value: None,
                     vector_metadata: None,
+                    json_metadata: None,
                 },
             ],
             primary_key: vec![0],
@@ -697,6 +704,7 @@ fn test_table_record_ref_and_scan_ref() {
                 auto_increment: true,
                 default_value: None,
                 vector_metadata: None,
+                json_metadata: None,
             },
             FieldDef {
                 name: "name".to_string(),
@@ -709,6 +717,7 @@ fn test_table_record_ref_and_scan_ref() {
                 auto_increment: false,
                 default_value: None,
                 vector_metadata: None,
+                json_metadata: None,
             },
         ];
 

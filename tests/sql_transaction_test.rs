@@ -125,6 +125,7 @@ static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(
             auto_increment: true,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         FieldDef {
             name: "value".to_string(),
@@ -137,6 +138,7 @@ static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
     ],
     primary_key: vec![0],

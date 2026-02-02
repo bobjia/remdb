@@ -1419,6 +1419,7 @@ impl LogManager {
                             auto_increment: auto_increment_flag,
                             default_value: default_value, // 使用解析出的默认值
                             vector_metadata: vector_metadata, // 设置向量元数据
+                            json_metadata: None,
                         };
 
                         fields.push(field_def);

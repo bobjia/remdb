@@ -499,6 +499,13 @@ impl ReplicationManager {
                                         // 在复制场景中，向量数据已通过LogItem完整复制，无需额外指针设置
                                         // 向量元数据通过LogItem数据传输，无需单独设置
                                     }
+                                    crate::types::DataType::Json => {
+                                        // JSON类型处理：跳过JSON数据解析
+                                        // 因为在复制场景中，我们不需要直接访问JSON内容
+                                        // 只需要确保数据被正确复制到数据库
+                                        // 跳过固定64字节内联存储空间
+                                        offset = core::cmp::min(offset + 64, log_item.new_data.len());
+                                    }
                                 }
                                 Some(value)
                             } else {

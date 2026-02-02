@@ -130,6 +130,7 @@ fn create_test_table_def() -> TableDef {
                 auto_increment: true,
                 default_value: None,
                 vector_metadata: None,
+                json_metadata: None,
             },
             FieldDef {
                 name: "value".to_string(),
@@ -142,6 +143,7 @@ fn create_test_table_def() -> TableDef {
                 auto_increment: false,
                 default_value: None,
                 vector_metadata: None,
+                json_metadata: None,
             },
         ],
         primary_key: vec![0],

@@ -22,6 +22,7 @@ static USERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock:
             auto_increment: true,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "name".to_string(),
@@ -34,6 +35,7 @@ static USERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock:
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "email".to_string(),
@@ -46,6 +48,7 @@ static USERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock:
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "age".to_string(),
@@ -58,6 +61,7 @@ static USERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock:
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "active".to_string(),
@@ -70,6 +74,7 @@ static USERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock:
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "created_at".to_string(),
@@ -82,6 +87,7 @@ static USERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock:
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
     ],
     primary_key: vec![0],
@@ -110,6 +116,7 @@ static ORDERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock
             auto_increment: true,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "user_id".to_string(),
@@ -122,6 +129,7 @@ static ORDERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "product".to_string(),
@@ -134,6 +142,7 @@ static ORDERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "quantity".to_string(),
@@ -146,6 +155,7 @@ static ORDERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "amount".to_string(),
@@ -158,6 +168,7 @@ static ORDERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "status".to_string(),
@@ -170,6 +181,7 @@ static ORDERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "created_at".to_string(),
@@ -182,6 +194,7 @@ static ORDERS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
     ],
     primary_key: vec![0],
@@ -210,6 +223,7 @@ static PRODUCTS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLo
             auto_increment: true,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "name".to_string(),
@@ -222,6 +236,7 @@ static PRODUCTS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLo
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "description".to_string(),
@@ -234,6 +249,7 @@ static PRODUCTS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLo
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "price".to_string(),
@@ -246,6 +262,7 @@ static PRODUCTS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLo
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "stock".to_string(),
@@ -258,6 +275,7 @@ static PRODUCTS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLo
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "active".to_string(),
@@ -270,6 +288,7 @@ static PRODUCTS: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLo
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
     ],
     primary_key: vec![0],

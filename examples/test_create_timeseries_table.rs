@@ -72,8 +72,8 @@ fn main() {
     println!("\n1. Testing: CREATE TIMESERIES TABLE with minimal schema");
     let create_table_sql1 = "CREATE TIMESERIES TABLE sensor_data (
         timestamp TIMESTAMP,
-        value FLOAT64,
-        sensor_id STRING
+        value DOUBLE,
+        sensor_id VARCHAR(50)
     )";
 
     match db.sql_query(create_table_sql1) {
@@ -90,11 +90,11 @@ fn main() {
     println!("\n2. Testing: CREATE TIMESERIES TABLE with multiple tags");
     let create_table_sql2 = "CREATE TIMESERIES TABLE device_metrics (
         ts TIMESTAMP,
-        cpu_usage FLOAT32,
-        memory_usage FLOAT32,
-        device_id STRING,
-        location STRING,
-        active BOOL
+        cpu_usage FLOAT,
+        memory_usage FLOAT,
+        device_id VARCHAR(50),
+        location VARCHAR(100),
+        active BOOLEAN
     )";
 
     match db.sql_query(create_table_sql2) {

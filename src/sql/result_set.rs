@@ -256,6 +256,10 @@ fn value_to_string_repr(value: &TypedValue) -> String {
                     alloc::format!("[null]")
                 }
             }
+            DataType::Json => {
+                // JSON类型转换为字符串表示
+                alloc::format!("<json>")
+            }
         }
     }
 }

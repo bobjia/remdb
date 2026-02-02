@@ -394,6 +394,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 auto_increment: #auto_increment_val,
                 default_value: None,
                 vector_metadata: #vector_metadata_code,
+                json_metadata: None,
             }
         };
 

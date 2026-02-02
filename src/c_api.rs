@@ -106,6 +106,7 @@ impl From<&FieldDef> for RemDbFieldDef {
                 DataType::String => RemDbDataType::String,
                 DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
                 DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
+                DataType::Json => RemDbDataType::Vector,     // 暂时映射为Vector类型
             },
             size: rust_field.size,
             offset: rust_field.offset,
@@ -391,6 +392,7 @@ impl From<crate::types::TypedValue> for RemDbTypedValue {
                 crate::DataType::String => RemDbDataType::String,
                 crate::DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
                 crate::DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
+                crate::DataType::Json => RemDbDataType::Vector,     // 暂时映射为Vector类型
             },
             value: rust_value.value.into(),
         }
@@ -738,6 +740,7 @@ pub unsafe extern "C" fn remdb_init_global(
                 auto_increment: false,              // 默认不自增
                 default_value: None,                // 默认无默认值
                 vector_metadata: None,              // 默认无向量元数据
+                json_metadata: None,                // 默认无JSON元数据
             });
         }
 
@@ -860,6 +863,7 @@ pub unsafe extern "C" fn remdb_init_global(
                         auto_increment: false,                          // 默认不自增
                         default_value: None,                            // 默认无默认值
                         vector_metadata: None,                          // 默认无向量元数据
+                        json_metadata: None,                            // 默认无JSON元数据
                     });
                 }
 

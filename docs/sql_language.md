@@ -1189,6 +1189,75 @@ SELECT * FROM sensor_data ORDER BY timestamp DESC LIMIT 100;
 SELECT * FROM sensor_data WHERE sensor_id = 1 ORDER BY timestamp DESC LIMIT 50;
 ```
 
+### 4.3.1 SAMPLE BY 语法
+
+RemDB 支持 `SAMPLE BY` 语法，用于对时序数据按照指定的时间间隔进行采样，是 `TIME_BUCKET` 函数的一种便捷替代方式。
+
+**语法**：
+```sql
+SELECT column1, column2, ...
+FROM table_name
+SAMPLE BY interval [ALIGN TO alignment_time]
+[WHERE condition]
+[GROUP BY column1, column2, ...]
+[ORDER BY column1, column2, ...]
+[LIMIT number];
+```
+
+**参数说明**：
+- `interval`：时间间隔，支持与 `TIME_BUCKET` 相同的格式，如 '5m'、'1h'、'1d' 等
+- `ALIGN TO`：可选，指定采样的对齐时间点，默认为 1970-01-01 00:00:00
+- `alignment_time`：对齐时间点，可以是时间戳或日期字符串
+
+**说明**：
+- `SAMPLE BY` 会自动按照指定的时间间隔对时序数据进行分组
+- 对于时间字段，会自动计算每个时间窗口的起始时间
+- 可以与聚合函数结合使用，计算每个时间窗口的统计值
+- 可以与 `WHERE` 条件结合，过滤数据后再进行采样
+- 可以与 `GROUP BY` 结合，实现更复杂的分组采样
+- 可以与 `ORDER BY` 结合，按时间窗口排序结果
+
+**示例**：
+
+```sql
+-- 按5分钟间隔采样温度数据，计算平均值
+SELECT timestamp, AVG(temperature) AS avg_temp
+FROM sensor_readings
+SAMPLE BY '5m';
+
+-- 按1小时间隔采样特定传感器的数据，计算最大值和最小值
+SELECT sensor_id, timestamp, MAX(temperature) AS max_temp, MIN(temperature) AS min_temp
+FROM sensor_readings
+WHERE sensor_id = 1
+SAMPLE BY '1h';
+
+-- 按1天间隔采样数据，对齐到每天的08:00:00
+SELECT timestamp, AVG(temperature) AS avg_temp
+FROM sensor_readings
+SAMPLE BY '1d' ALIGN TO '2024-01-01 08:00:00';
+
+-- 按5分钟间隔采样，结合多个聚合函数
+SELECT 
+    timestamp,
+    AVG(temperature) AS avg_temp,
+    SUM(humidity) AS sum_humidity,
+    COUNT(*) AS reading_count
+FROM sensor_readings
+SAMPLE BY '5m';
+
+-- 按1小时间隔采样，分组并排序
+SELECT 
+    sensor_id,
+    timestamp,
+    AVG(temperature) AS avg_temp
+FROM sensor_readings
+GROUP BY sensor_id
+SAMPLE BY '1h'
+ORDER BY sensor_id, timestamp;
+```
+
+`SAMPLE BY` 语法提供了一种更简洁的方式来进行时序数据的时间窗口聚合，与 `TIME_BUCKET` 函数相比，语法更加直观和简洁。
+
 ### 4.4 时间转换函数示例
 
 ```sql
@@ -1295,6 +1364,211 @@ SELECT * FROM metrics WHERE metric_name = 'cpu_usage' ORDER BY timestamp DESC LI
 
 -- 查询特定时间范围内的内存使用率
 SELECT * FROM metrics WHERE metric_name = 'mem_usage' AND timestamp BETWEEN 1609459200000 AND 1609459320000;
+```
+
+## 5. JSON 支持
+
+### 5.1 JSON 数据类型
+
+RemDB 支持 `JSON` 数据类型，用于存储和处理 JSON 格式的数据。
+
+**语法**：`JSON`
+
+**说明**：
+- `JSON` 类型可以存储任意有效的 JSON 数据，包括对象、数组、字符串、数字、布尔值和 null
+- JSON 数据会被自动验证，确保存储的是有效的 JSON 格式
+- 支持 JSON 路径查询和修改操作
+
+**示例**：
+
+```sql
+-- 创建包含 JSON 字段的表
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    profile JSON
+);
+
+-- 插入包含 JSON 数据的记录
+INSERT INTO users (name, profile) VALUES (
+    'Alice',
+    '{"age": 25, "email": "alice@example.com", "hobbies": ["reading", "hiking"]}'
+);
+
+-- 插入包含不同类型 JSON 数据的记录
+INSERT INTO users (name, profile) VALUES (
+    'Bob',
+    '{"age": 30, "email": "bob@example.com", "hobbies": [], "active": true}'
+);
+```
+
+### 5.2 JSON 函数
+
+RemDB 提供了丰富的 JSON 函数，用于查询和修改 JSON 数据。
+
+#### 5.2.1 JSON 提取函数
+
+| 函数名 | 描述 | 示例 |
+|--------|------|------|
+| `JSON_EXTRACT(json, path)` | 从 JSON 中提取指定路径的值 | `JSON_EXTRACT(profile, '$.age')` |
+| `JSON_VALUE(json, path)` | 从 JSON 中提取标量值 | `JSON_VALUE(profile, '$.name')` |
+| `JSON_QUERY(json, path)` | 从 JSON 中提取对象或数组 | `JSON_QUERY(profile, '$.hobbies')` |
+| `JSON_HAS(json, path)` | 检查 JSON 中是否存在指定路径 | `JSON_HAS(profile, '$.email')` |
+| `JSON_TYPE(json, path)` | 返回 JSON 中指定路径的值类型 | `JSON_TYPE(profile, '$.age')` |
+
+**示例**：
+
+```sql
+-- 提取 JSON 中的字段
+SELECT 
+    id,
+    name,
+    JSON_EXTRACT(profile, '$.age') AS age,
+    JSON_EXTRACT(profile, '$.email') AS email
+FROM users;
+
+-- 检查 JSON 中是否存在字段
+SELECT 
+    id,
+    name,
+    JSON_HAS(profile, '$.hobbies') AS has_hobbies
+FROM users;
+
+-- 获取 JSON 值的类型
+SELECT 
+    id,
+    name,
+    JSON_TYPE(profile, '$.age') AS age_type,
+    JSON_TYPE(profile, '$.hobbies') AS hobbies_type
+FROM users;
+```
+
+#### 5.2.2 JSON 修改函数
+
+| 函数名 | 描述 | 示例 |
+|--------|------|------|
+| `JSON_SET(json, path, value)` | 设置 JSON 中指定路径的值 | `JSON_SET(profile, '$.age', 26)` |
+| `JSON_REMOVE(json, path)` | 从 JSON 中删除指定路径的值 | `JSON_REMOVE(profile, '$.email')` |
+| `JSON_MERGE_PATCH(json1, json2)` | 使用 JSON Merge Patch 合并两个 JSON | `JSON_MERGE_PATCH(profile, '{"age": 26}')` |
+| `JSON_ARRAY_APPEND(json, path, value)` | 向 JSON 数组中追加元素 | `JSON_ARRAY_APPEND(profile, '$.hobbies', 'coding')` |
+
+**示例**：
+
+```sql
+-- 更新 JSON 中的字段
+UPDATE users
+SET profile = JSON_SET(profile, '$.age', 26)
+WHERE id = 1;
+
+-- 从 JSON 中删除字段
+UPDATE users
+SET profile = JSON_REMOVE(profile, '$.email')
+WHERE id = 1;
+
+-- 合并 JSON 数据
+UPDATE users
+SET profile = JSON_MERGE_PATCH(profile, '{"age": 27, "city": "New York"}')
+WHERE id = 1;
+
+-- 向 JSON 数组中添加元素
+UPDATE users
+SET profile = JSON_ARRAY_APPEND(profile, '$.hobbies', 'coding')
+WHERE id = 1;
+```
+
+### 5.3 JSON 路径语法
+
+RemDB 支持标准的 JSON 路径语法，用于指定 JSON 中的位置。
+
+**基本语法**：
+- `$`：表示 JSON 根对象
+- `$.key`：表示根对象的 key 字段
+- `$[index]`：表示数组的第 index 个元素
+- `$.key[index]`：表示对象中数组字段的第 index 个元素
+
+**示例**：
+
+| JSON 路径 | 描述 |
+|-----------|------|
+| `$` | 整个 JSON 对象 |
+| `$.name` | 根对象的 name 字段 |
+| `$.hobbies[0]` | 根对象 hobbies 数组的第一个元素 |
+| `$.address.city` | 根对象 address 对象的 city 字段 |
+
+### 5.4 JSON 索引
+
+RemDB 支持为 JSON 字段创建索引，提高 JSON 路径查询的性能。
+
+**语法**：
+```sql
+CREATE INDEX index_name ON table_name ((JSON_EXTRACT(json_column, '$.path'))) [USING index_type];
+```
+
+**示例**：
+
+```sql
+-- 为 JSON 字段的 age 路径创建索引
+CREATE INDEX idx_users_profile_age ON users ((JSON_EXTRACT(profile, '$.age')));
+
+-- 为 JSON 字段的 city 路径创建索引
+CREATE INDEX idx_users_profile_city ON users ((JSON_EXTRACT(profile, '$.address.city')));
+```
+
+### 5.5 JSON 与其他功能的结合
+
+#### 5.5.1 JSON 与聚合函数
+
+```sql
+-- 计算 JSON 中年龄的平均值
+SELECT AVG(JSON_EXTRACT(profile, '$.age')) AS avg_age
+FROM users;
+
+-- 统计不同城市的用户数量
+SELECT 
+    JSON_EXTRACT(profile, '$.address.city') AS city,
+    COUNT(*) AS user_count
+FROM users
+GROUP BY city;
+```
+
+#### 5.5.2 JSON 与 WHERE 条件
+
+```sql
+-- 查询年龄大于 25 的用户
+SELECT id, name
+FROM users
+WHERE JSON_EXTRACT(profile, '$.age') > 25;
+
+-- 查询居住在特定城市的用户
+SELECT id, name
+FROM users
+WHERE JSON_EXTRACT(profile, '$.address.city') = 'New York';
+```
+
+#### 5.5.3 JSON 与时序数据
+
+```sql
+-- 创建包含 JSON 字段的时序表
+CREATE TIMESERIES TABLE sensor_data (
+    timestamp TIMESTAMP,
+    value REAL,
+    metadata JSON
+);
+
+-- 插入包含 JSON 元数据的时序数据
+INSERT INTO sensor_data (timestamp, value, metadata) VALUES (
+    1609459200000,
+    25.5,
+    '{"sensor_id": "s1", "location": "room1", "battery": 90}'
+);
+
+-- 按传感器 ID 分组查询
+SELECT 
+    JSON_EXTRACT(metadata, '$.sensor_id') AS sensor_id,
+    AVG(value) AS avg_value
+FROM sensor_data
+SAMPLE BY '1h'
+GROUP BY sensor_id;
 ```
 
 ## 6. 向量相关功能

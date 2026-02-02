@@ -145,6 +145,88 @@ impl VectorMetadata {
     }
 }
 
+/// JSON元数据
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Default)]
+pub struct JsonMetadata {
+    /// JSON路径（用于索引特定的路径）
+    pub path: String,
+    /// 值类型（如果路径指向特定类型）
+    pub value_type: Option<DataType>,
+    /// 是否创建虚拟生成列
+    pub virtual_column: bool,
+    /// 虚拟列名称（如果virtual_column为true）
+    pub virtual_column_name: Option<String>,
+    /// 索引配置
+    pub index_config: JsonIndexConfig,
+}
+
+/// JSON索引配置
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct JsonIndexConfig {
+    /// 索引类型（默认为BTree）
+    pub index_type: IndexType,
+    /// 是否启用路径索引
+    pub path_index_enabled: bool,
+    /// 索引的最大路径深度
+    pub max_depth: u8,
+    /// 是否索引数组元素
+    pub index_array_elements: bool,
+    /// 是否索引对象键
+    pub index_object_keys: bool,
+}
+
+/// 为JsonMetadata实现构造函数
+impl JsonMetadata {
+    /// 创建JSON元数据
+    pub fn new(path: String) -> Self {
+        Self {
+            path,
+            value_type: None,
+            virtual_column: false,
+            virtual_column_name: None,
+            index_config: JsonIndexConfig::default(),
+        }
+    }
+    
+    /// 创建带有虚拟生成列的JSON元数据
+    pub fn with_virtual_column(path: String, column_name: String) -> Self {
+        Self {
+            path: path.clone(),
+            value_type: None,
+            virtual_column: true,
+            virtual_column_name: Some(column_name),
+            index_config: JsonIndexConfig::default(),
+        }
+    }
+    
+    /// 创建带有索引配置的JSON元数据
+    pub fn with_index_config(
+        path: String,
+        index_config: JsonIndexConfig,
+    ) -> Self {
+        Self {
+            path,
+            value_type: None,
+            virtual_column: false,
+            virtual_column_name: None,
+            index_config,
+        }
+    }
+}
+
+/// 为JsonIndexConfig实现默认值
+impl Default for JsonIndexConfig {
+    fn default() -> Self {
+        Self {
+            index_type: IndexType::BTree,
+            path_index_enabled: true,
+            max_depth: 10,
+            index_array_elements: true,
+            index_object_keys: true,
+        }
+    }
+}
+
 /// 允许使用元组语法初始化VectorMetadata，自动添加默认压缩字段
 impl From<(u16, DistanceType, VectorIndexType)> for VectorMetadata {
     fn from((dimension, distance_type, index_type): (u16, DistanceType, VectorIndexType)) -> Self {
@@ -242,6 +324,8 @@ pub enum DataType {
     Interval = 14,
     /// 向量类型
     Vector = 15,
+    /// JSON类型
+    Json = 16,
 }
 
 /// 实现从u8到DataType的转换
@@ -264,6 +348,7 @@ impl From<u8> for DataType {
             13 => DataType::String,
             14 => DataType::Interval,
             15 => DataType::Vector,
+            16 => DataType::Json,
             _ => DataType::String, // 默认为String类型
         }
     }
@@ -295,6 +380,7 @@ impl DataType {
             DataType::Interval => core::mem::size_of::<db_interval>(), // 实际大小，包括精度和标志
             DataType::String => panic!("String size is variable at compile time"),
             DataType::Vector => panic!("Vector size depends on dimension at runtime"),
+            DataType::Json => panic!("Json size is variable at runtime"),
         }
     }
 
@@ -324,6 +410,8 @@ impl DataType {
             DataType::String => "TEXT",
             // 向量类型
             DataType::Vector => "VECTOR",
+            // JSON类型
+            DataType::Json => "JSON",
         }
     }
 }
@@ -440,6 +528,24 @@ impl db_timestamp {
         let precision = core::cmp::max(self.precision, other.precision);
         db_interval::new(diff_value, precision, 0)
     }
+}
+
+/// JSON存储方式枚举
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum JsonStorage {
+    /// 内联存储（最多64字节）
+    Inline([u8; 64]),
+    /// 外部存储（超过64字节）
+    External {
+        /// 内存池ID
+        pool_id: u8,
+        /// 偏移量
+        offset: u32,
+        /// 长度
+        length: u32,
+    },
+    /// NULL值
+    Null,
 }
 
 /// 时区信息
@@ -628,6 +734,7 @@ pub union Value {
     pub string: [u8; MAX_STRING_LEN],
     pub vector: *const f32,              // 向量类型（指向float32数组的指针）
     pub vector_metadata: VectorMetadata, // 向量元数据
+    pub json_storage: JsonStorage,       // JSON存储
 }
 
 // 手动实现Clone trait，因为Rust不支持为union类型自动派生Clone
@@ -701,6 +808,10 @@ impl Clone for TypedValue {
                     // just copy the pointer
                     new_value.vector = self.value.vector;
                 }
+                DataType::Json => {
+                    // For JSON, copy the storage information
+                    new_value.json_storage = self.value.json_storage;
+                }
             }
         }
         
@@ -767,6 +878,10 @@ impl PartialEq for TypedValue {
                     // 注意：实际使用中需要比较向量的每个元素，但这需要向量维度信息
                     // 由于这是一个简化实现，我们比较向量指针
                     self.value.vector == other.value.vector
+                }
+                DataType::Json => {
+                    // JSON比较：比较存储信息
+                    self.value.json_storage == other.value.json_storage
                 }
             }
         }
@@ -835,6 +950,10 @@ impl Hash for TypedValue {
                     // 注意：实际使用中可能需要哈希向量的部分或全部元素
                     self.value.vector.hash(state);
                 }
+                DataType::Json => {
+                    // JSON哈希：哈希存储信息
+                    self.value.json_storage.hash(state);
+                }
             }
         }
     }
@@ -902,6 +1021,11 @@ impl PartialOrd for TypedValue {
                             // 向量比较：比较向量指针
                             // 注意：实际使用中可能需要比较向量的距离或相似度
                             Some(self.value.vector.cmp(&other.value.vector))
+                        }
+                        DataType::Json => {
+                            // JSON比较：基于存储信息的比较
+                            // 注意：实际使用中可能需要深度比较JSON内容
+                            Some(core::cmp::Ordering::Equal)
                         }
                     }
                 }
@@ -1032,9 +1156,15 @@ impl fmt::Debug for TypedValue {
                 DataType::Vector => {
                     write!(
                         f,
-                        "TypedValue(Vector, metadata: {:?})
-",
+                        "TypedValue(Vector, metadata: {:?})",
                         self.value.vector_metadata
+                    )
+                }
+                DataType::Json => {
+                    write!(
+                        f,
+                        "TypedValue(Json, storage: {:?})",
+                        self.value.json_storage
                     )
                 }
             }
@@ -1068,6 +1198,8 @@ pub struct FieldDef {
     pub default_value: Option<Value>,
     /// 向量元数据（仅向量类型使用）
     pub vector_metadata: Option<VectorMetadata>,
+    /// JSON元数据（仅JSON类型使用）
+    pub json_metadata: Option<JsonMetadata>,
 }
 
 impl Default for FieldDef {
@@ -1083,6 +1215,7 @@ impl Default for FieldDef {
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         }
     }
 }
@@ -1138,6 +1271,9 @@ impl FieldDef {
                     DataType::Vector => {
                         constraints.push_str("NULL"); // 向量类型暂不支持默认值
                     }
+                    DataType::Json => {
+                        constraints.push_str("NULL"); // JSON类型暂不支持默认值
+                    }
                 }
             }
         }
@@ -1160,7 +1296,7 @@ impl FieldDef {
 
 /// 索引类型枚举
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Ord, PartialOrd)]
 pub enum IndexType {
     /// 哈希索引（仅用于主键）
     Hash = 0,
@@ -1172,6 +1308,8 @@ pub enum IndexType {
     TTree = 3,
     /// 向量索引
     Vector = 4,
+    /// JSON索引（虚拟生成列和路径索引）
+    Json = 5,
 }
 
 /// 为IndexType实现From<u8> trait，允许从u8转换为IndexType
@@ -1183,6 +1321,7 @@ impl From<u8> for IndexType {
             2 => IndexType::BTree,
             3 => IndexType::TTree,
             4 => IndexType::Vector,
+            5 => IndexType::Json,
             _ => IndexType::SortedArray, // 默认使用SortedArray
         }
     }

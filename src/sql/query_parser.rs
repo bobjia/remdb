@@ -406,6 +406,8 @@ pub enum Value {
     Null,
     /// 标识符（字段名、表名等）
     Identifier(String),
+    /// JSON值
+    Json(String),
 }
 
 /// 查询解析错误
@@ -1108,6 +1110,7 @@ impl SqlParser {
                     Value::Integer(i) => i.to_string(),
                     Value::Float(f) => f.to_string(),
                     Value::Boolean(b) => b.to_string(),
+                    Value::Json(s) => s,
                     _ => return Err(QueryParseError::InvalidValue),
                 };
                 
@@ -1411,6 +1414,7 @@ impl SqlParser {
                     Value::Integer(i) => i.to_string(),
                     Value::Float(f) => f.to_string(),
                     Value::Boolean(b) => b.to_string(),
+                    Value::Json(s) => s,
                     _ => return Err(QueryParseError::InvalidValue),
                 };
                 
@@ -2921,7 +2925,7 @@ impl SqlParser {
             // 这里返回0作为占位符，实际执行时会处理
             Ok(Value::Integer(0))
         } else if self.peek_char() == Some('[') {
-            // 向量字面量 [x1, x2, ..., xn]
+            // JSON数组或向量字面量
             let start_pos = self.position;
 
             // 跳过左括号
@@ -2930,6 +2934,8 @@ impl SqlParser {
             // 查找匹配的右括号
             let mut bracket_count = 1;
             let mut end_pos = start_pos + 1;
+            let mut in_string = false;
+            let mut quote_char = '"';
 
             while bracket_count > 0 {
                 if self.is_eof() {
@@ -2939,18 +2945,75 @@ impl SqlParser {
                 let c = self.next_char().unwrap();
                 end_pos += 1;
 
-                if c == '[' {
-                    bracket_count += 1;
-                } else if c == ']' {
-                    bracket_count -= 1;
+                // 处理字符串中的括号
+                if c == '"' || c == '\'' {
+                    if !in_string {
+                        in_string = true;
+                        quote_char = c;
+                    } else if c == quote_char {
+                        in_string = false;
+                    }
+                }
+
+                if !in_string {
+                    if c == '[' {
+                        bracket_count += 1;
+                    } else if c == ']' {
+                        bracket_count -= 1;
+                    }
                 }
             }
 
-            // 提取完整的向量字面量字符串
-            let vec_str = self.input[start_pos..end_pos].to_string();
+            // 提取完整的JSON数组字符串
+            let json_str = self.input[start_pos..end_pos].to_string();
 
-            // 返回向量字符串
-            Ok(Value::String(vec_str))
+            // 返回JSON值
+            Ok(Value::Json(json_str))
+        } else if self.peek_char() == Some('{') {
+            // JSON对象
+            let start_pos = self.position;
+
+            // 跳过左大括号
+            self.next_char();
+
+            // 查找匹配的右大括号
+            let mut brace_count = 1;
+            let mut end_pos = start_pos + 1;
+            let mut in_string = false;
+            let mut quote_char = '"';
+
+            while brace_count > 0 {
+                if self.is_eof() {
+                    return Err(QueryParseError::InvalidSyntax);
+                }
+
+                let c = self.next_char().unwrap();
+                end_pos += 1;
+
+                // 处理字符串中的大括号
+                if c == '"' || c == '\'' {
+                    if !in_string {
+                        in_string = true;
+                        quote_char = c;
+                    } else if c == quote_char {
+                        in_string = false;
+                    }
+                }
+
+                if !in_string {
+                    if c == '{' {
+                        brace_count += 1;
+                    } else if c == '}' {
+                        brace_count -= 1;
+                    }
+                }
+            }
+
+            // 提取完整的JSON对象字符串
+            let json_str = self.input[start_pos..end_pos].to_string();
+
+            // 返回JSON值
+            Ok(Value::Json(json_str))
         } else if self
             .peek_char()
             .is_some_and(|c| c.is_ascii_digit() || c == '-')

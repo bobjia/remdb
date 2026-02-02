@@ -208,6 +208,52 @@ impl<'a> RecordRef<'a> {
         let field = self.field_def(col)?;
         Ok(unsafe { core::slice::from_raw_parts(self.field_ptr(field), field.size) })
     }
+
+    /// 按列索引读取JSON数据
+    pub fn get_json(&self, col: usize) -> Result<crate::json::JsonDocument> {
+        let field = self.field_def(col)?;
+        if field.data_type != DataType::Json {
+            return Err(RemDbError::TypeMismatch);
+        }
+        
+        // 读取JsonStorage
+        let json_storage = unsafe {
+            core::ptr::read_unaligned(self.field_ptr(field) as *const crate::types::JsonStorage)
+        };
+        
+        match json_storage {
+            crate::types::JsonStorage::Inline(data) => {
+                // 从内联存储创建JsonDocument
+                let size = field.size;
+                let data_slice = &data[..size];
+                crate::json::JsonDocument::from_binary(data_slice, size)
+                    .map_err(|_| RemDbError::TypeMismatch)
+            }
+            crate::types::JsonStorage::External { pool_id, offset, length } => {
+                // 从外部存储创建JsonDocument
+                let pool_manager = crate::json::memory_pool::get_global_json_pool_manager()
+                    .ok_or(RemDbError::UnsupportedOperation)?;
+                
+                let pool = pool_manager.get_pool(pool_id)
+                    .ok_or(RemDbError::UnsupportedOperation)?;
+                
+                if let Some(data_ptr) = pool.get_block_data(offset as usize, 0) {
+                    let data_slice = unsafe {
+                        core::slice::from_raw_parts(data_ptr, length as usize)
+                    };
+                    
+                    crate::json::JsonDocument::from_binary(data_slice, length as usize)
+                        .map_err(|_| RemDbError::TypeMismatch)
+                } else {
+                    Err(RemDbError::UnsupportedOperation)
+                }
+            }
+            crate::types::JsonStorage::Null => {
+                Ok(crate::json::JsonDocument::from_binary(&[], 0)
+                    .map_err(|_| RemDbError::TypeMismatch)?)
+            }
+        }
+    }
 }
 
 /// 记录游标（全表扫描）
@@ -608,6 +654,7 @@ impl MemoryTable {
                             current.value == existing.value
                         }
                         DataType::Vector => false, // 向量字段暂不支持作为主键
+                        DataType::Json => false, // JSON字段暂不支持作为主键
                         };
                         
                         // 如果有任何一个主键字段不相等，则不是重复记录
@@ -790,6 +837,7 @@ impl MemoryTable {
                             current.value == existing.value
                         }
                         DataType::Vector => false, // 向量字段暂不支持唯一约束
+                        DataType::Json => false, // JSON字段暂不支持唯一约束
                     };
 
                     if is_duplicate {
@@ -862,6 +910,11 @@ impl MemoryTable {
             }
             DataType::Vector => {
                 Value { vector: field_ptr as *const f32 }
+            },
+            DataType::Json => {
+                // 从存储中读取JsonStorage
+                let json_storage = core::ptr::read_unaligned(field_ptr as *const crate::types::JsonStorage);
+                Value { json_storage }
             },
         };
 
@@ -1331,6 +1384,11 @@ impl MemoryTable {
             crate::types::DataType::Vector => Value {
                 vector: field_ptr as *const f32,
             },
+            crate::types::DataType::Json => {
+                // 从存储中读取JsonStorage
+                let json_storage = core::ptr::read_unaligned(field_ptr as *const crate::types::JsonStorage);
+                Value { json_storage }
+            },
         };
 
         Ok(value)
@@ -1409,6 +1467,10 @@ impl MemoryTable {
                     dimension,
                     field_ptr
                 );
+            }
+            crate::types::DataType::Json => {
+                // 写入JsonStorage
+                *(field_ptr as *mut crate::types::JsonStorage) = value.json_storage;
             }
         }
 
@@ -1607,6 +1669,48 @@ impl MemoryTable {
             self.def.max_records
         );
         self.data_start.as_ptr().add(index * self.record_size) as *mut u8
+    }
+
+    /// 设置JSON字段值
+    pub fn set_json(&mut self, record_data: *mut u8, col: usize, json_doc: &crate::json::JsonDocument) -> Result<()> {
+        let field = self.def.fields.get(col)
+            .ok_or(RemDbError::FieldNotFound)?;
+        
+        if field.data_type != DataType::Json {
+            return Err(RemDbError::TypeMismatch);
+        }
+        
+        let field_ptr = unsafe { record_data.add(field.offset) };
+        
+        match json_doc.storage() {
+            crate::types::JsonStorage::Inline(data) => {
+                // 写入内联存储
+                unsafe {
+                    let json_storage = crate::types::JsonStorage::Inline(*data);
+                    core::ptr::write_unaligned(field_ptr as *mut crate::types::JsonStorage, json_storage);
+                }
+            }
+            crate::types::JsonStorage::External { pool_id, offset, length } => {
+                // 写入外部存储引用
+                unsafe {
+                    let json_storage = crate::types::JsonStorage::External {
+                        pool_id: *pool_id,
+                        offset: *offset,
+                        length: *length,
+                    };
+                    core::ptr::write_unaligned(field_ptr as *mut crate::types::JsonStorage, json_storage);
+                }
+            }
+            crate::types::JsonStorage::Null => {
+                // 写入NULL值
+                unsafe {
+                    let json_storage = crate::types::JsonStorage::Null;
+                    core::ptr::write_unaligned(field_ptr as *mut crate::types::JsonStorage, json_storage);
+                }
+            }
+        }
+        
+        Ok(())
     }
 
     /// 设置记录数（仅用于快照恢复）

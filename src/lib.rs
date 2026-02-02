@@ -9,6 +9,7 @@ pub mod config;
 #[cfg(feature = "ha")]
 pub mod ha;
 pub mod index;
+pub mod json;
 pub mod memory;
 pub mod monitor;
 pub mod platform;
@@ -1770,6 +1771,7 @@ impl DdlExecutor for RemDb {
                 auto_increment: is_auto_increment, // 应用自增约束
                 default_value: default_value.clone(),     // 设置字段默认值
                 vector_metadata,                   // 设置向量元数据
+                json_metadata: None,               // JSON元数据
             };
 
             field_defs.push(field_def);
@@ -2058,6 +2060,20 @@ impl DdlExecutor for RemDb {
                                     offset += 1;
                                 }
                             }
+                            // JSON类型
+                            crate::types::DataType::Json => {
+                                // JSON默认值处理
+                                if offset + 64 <= log_data.len() { // JsonStorage大小
+                                    let json_storage = default_value.json_storage;
+                                    let storage_ptr = &json_storage as *const _ as *const u8;
+                                    std::ptr::copy(
+                                        storage_ptr,
+                                        log_data.as_mut_ptr().add(offset),
+                                        core::mem::size_of::<crate::types::JsonStorage>(),
+                                    );
+                                    offset += core::mem::size_of::<crate::types::JsonStorage>();
+                                }
+                            }
                         }
                     }
                 }
@@ -2187,6 +2203,7 @@ impl DdlExecutor for RemDb {
             IndexType::SortedArray => max_items,        // 有序数组索引使用原始值
             IndexType::Hash => max_items,               // 哈希索引使用原始值
             IndexType::Vector => max_items,             // 向量索引使用原始值
+            IndexType::Json => max_items,               // JSON索引使用原始值
         };
 
         // 计算索引所需内存大小
@@ -2364,6 +2381,7 @@ impl DdlExecutor for RemDb {
                     } else {
                         None
                     },
+                    json_metadata: None,
                 };
 
                 // 更新表定义
@@ -2954,6 +2972,7 @@ impl RemDb {
                 time: crate::types::db_timestamp::new(0, 0, 0, 0),
             }),
             vector_metadata: None,
+            json_metadata: None,
         });
         offset += time_field_size;
         record_size += time_field_size;
@@ -2972,6 +2991,7 @@ impl RemDb {
             auto_increment: false,
             default_value: Some(Value { float64: 0.0 }),
             vector_metadata: None,
+            json_metadata: None,
         });
         offset += value_field_size;
         record_size += value_field_size;
@@ -2992,6 +3012,7 @@ impl RemDb {
                 auto_increment: false,
                 default_value: None, // 标签字段默认值为None
                 vector_metadata: None,
+                json_metadata: None,
             });
             tag_field_indices.push((i + 2) as usize); // 时间字段(0) + 值字段(1) + 标签字段(i)
             offset += tag_field_size;
@@ -3409,6 +3430,7 @@ impl RemDb {
                                 IndexType::BTree => "btree",
                                 IndexType::TTree => "ttree",
                                 IndexType::Vector => "vector",
+                                IndexType::Json => "json",
                             };
 
                             let create_index_sql = format!(
@@ -3606,6 +3628,7 @@ impl RemDb {
                                         )
                                     }
                                     DataType::Vector => format!("<vector>"),
+                                    DataType::Json => format!("<json>"),
                                 };
 
                                 field_values.push(value_str);

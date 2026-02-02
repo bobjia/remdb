@@ -125,6 +125,7 @@ static TEST_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::sync::Lazy
             auto_increment: true,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "name".to_string(),
@@ -137,6 +138,7 @@ static TEST_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::sync::Lazy
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
     ],
     primary_key: vec![0],
@@ -165,6 +167,7 @@ static TEST_TIMESERIES_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std:
             auto_increment: true,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "sensor_id".to_string(),
@@ -177,6 +180,7 @@ static TEST_TIMESERIES_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std:
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "value".to_string(),
@@ -189,6 +193,7 @@ static TEST_TIMESERIES_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std:
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "timestamp".to_string(),
@@ -201,6 +206,7 @@ static TEST_TIMESERIES_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std:
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
     ],
     primary_key: vec![0],
@@ -229,6 +235,7 @@ static TEST_VECTOR_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::syn
             auto_increment: true,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "name".to_string(),
@@ -241,6 +248,7 @@ static TEST_VECTOR_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::syn
             auto_increment: false,
             default_value: None,
             vector_metadata: None,
+            json_metadata: None,
         },
         remdb::types::FieldDef {
             name: "vector".to_string(),
@@ -267,6 +275,7 @@ static TEST_VECTOR_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::syn
                 ivf_nlist: 1024,
                 ivf_nprobe: 16,
             }),
+            json_metadata: None,
         },
     ],
     primary_key: vec![0],
