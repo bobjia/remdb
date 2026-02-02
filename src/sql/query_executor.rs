@@ -426,10 +426,9 @@ fn execute_select_timeseries_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
-    // 从环境变量获取查询超时（毫秒）
-    let query_timeout_ms = std::env::var("REMD_QUERY_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok());
+    // 从系统表获取查询超时（毫秒）
+    let (_, query_timeout_ms) = crate::get_query_resource_config();
+    let query_timeout_ms = Some(query_timeout_ms as u64);
     
     // 使用超时包装执行
     execute_with_timeout(query_timeout_ms, || {
@@ -516,12 +515,9 @@ fn execute_select_timeseries_query(
 
     // 6.1 内存使用检查
     let estimated_memory = estimate_memory_usage(&raw_records);
-    // 默认内存限制：1GB
-    let max_memory_mb = std::env::var("REMD_MAX_QUERY_MEMORY_MB")
-        .ok()
-        .and_then(|v| v.parse::<u32>().ok())
-        .or(Some(1024)); // 默认1GB
-    check_memory_limit(estimated_memory, max_memory_mb)?;
+    // 从系统表获取内存限制
+    let (max_memory_mb, _) = crate::get_query_resource_config();
+    check_memory_limit(estimated_memory, Some(max_memory_mb))?;
 
     // 7. 应用SAMPLE BY降采样（如果指定）
     let sampled_records = if let Some(sample_interval) = &query.sample_by {
@@ -778,6 +774,14 @@ fn estimate_memory_usage(records: &[crate::time_series::TimeSeriesRecord]) -> us
     // 简化估算：每条记录的基本大小 + 标签存储
     const BASE_RECORD_SIZE: usize = std::mem::size_of::<crate::time_series::TimeSeriesRecord>();
     records.len() * BASE_RECORD_SIZE
+}
+
+/// 估算普通查询记录的内存使用量（字节）
+fn estimate_memory_usage_for_records(records: &[Vec<TypedValue>]) -> usize {
+    // 简化估算：每条记录的基本大小
+    const BASE_VALUE_SIZE: usize = std::mem::size_of::<TypedValue>();
+    let total_values = records.iter().map(|record| record.len()).sum::<usize>();
+    total_values * BASE_VALUE_SIZE
 }
 
 /// 检查内存使用是否超过限制
@@ -1482,6 +1486,10 @@ fn execute_select_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
+    // 从系统表获取查询资源配置
+    let (max_memory_mb, query_timeout_ms) = crate::get_query_resource_config();
+    let query_timeout_ms = Some(query_timeout_ms as u64);
+    
     // 开始计时
     let start_time = Instant::now();
     let mut stats = QueryStats::default();
@@ -1709,6 +1717,10 @@ fn execute_select_query(
     
     // 更新匹配的记录数
     stats.matched_records = all_records.len();
+    
+    // 内存使用检查
+    let estimated_memory = estimate_memory_usage_for_records(&all_records);
+    check_memory_limit(estimated_memory, Some(max_memory_mb))?;
 
     // 7. 计算每个记录的表达式值
     let mut records_with_expr_values = Vec::with_capacity(all_records.len());
@@ -2019,6 +2031,9 @@ fn execute_select_join_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
+    // 从系统表获取查询资源配置
+    let (max_memory_mb, query_timeout_ms) = crate::get_query_resource_config();
+    
     // 1. 查找主表
     let main_table = find_table_by_name(db, &query.table_name)?;
 

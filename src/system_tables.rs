@@ -16,6 +16,10 @@ pub struct ConfigCache {
     pub vector_compression_scheme: u8,
     /// 压缩级别（1-9）
     pub vector_compression_level: u8,
+    /// 查询内存限制（MB）
+    pub max_query_memory_mb: u32,
+    /// 查询超时时间（毫秒）
+    pub query_timeout_ms: u32,
 }
 
 /// 压缩方案常量
@@ -167,6 +171,8 @@ unsafe fn insert_default_configs(db: &mut crate::RemDb) -> Result<()> {
         ("vector_compression_enabled", "false", "全局向量压缩开关"),
         ("vector_compression_scheme", "none", "向量压缩方案：none=不压缩, float16=float16, zstd=ZSTD"),
         ("vector_compression_level", "3", "压缩级别（1-9）"),
+        ("max_query_memory_mb", "512", "查询内存限制（MB）"),
+        ("query_timeout_ms", "30000", "查询超时时间（毫秒）"),
     ];
     
     for (key, value, desc) in default_configs {
@@ -219,6 +225,8 @@ pub unsafe fn load_config_cache(db: &crate::RemDb) -> Result<()> {
     let mut enabled = false;
     let mut scheme = COMPRESSION_NONE;
     let mut level = 3u8;
+    let mut max_query_memory_mb = 512u32;
+    let mut query_timeout_ms = 30000u32;
     
     // 扫描系统表获取配置
     let mut cursor = table.scan_ref();
@@ -244,6 +252,14 @@ pub unsafe fn load_config_cache(db: &crate::RemDb) -> Result<()> {
                 let value = record.get_str(1).unwrap_or("3");
                 level = value.parse().unwrap_or(3);
             },
+            "max_query_memory_mb" => {
+                let value = record.get_str(1).unwrap_or("512");
+                max_query_memory_mb = value.parse().unwrap_or(512);
+            },
+            "query_timeout_ms" => {
+                let value = record.get_str(1).unwrap_or("30000");
+                query_timeout_ms = value.parse().unwrap_or(30000);
+            },
             _ => {},
         }
     }
@@ -253,6 +269,8 @@ pub unsafe fn load_config_cache(db: &crate::RemDb) -> Result<()> {
         vector_compression_enabled: enabled,
         vector_compression_scheme: scheme,
         vector_compression_level: level,
+        max_query_memory_mb,
+        query_timeout_ms,
     });
     
     Ok(())
@@ -268,8 +286,29 @@ pub fn get_vector_compression_config() -> ConfigCache {
                 vector_compression_enabled: false,
                 vector_compression_scheme: COMPRESSION_NONE,
                 vector_compression_level: 3,
+                max_query_memory_mb: 512,
+                query_timeout_ms: 30000,
             }
         })
+    }
+}
+
+/// 获取查询资源配置
+pub fn get_query_resource_config() -> (u32, u32) {
+    unsafe {
+        // 如果缓存已初始化，返回缓存的配置，否则返回默认配置
+        let config = CONFIG_CACHE.as_ref().cloned().unwrap_or_else(|| {
+            // 返回默认配置的副本，而不是引用
+            ConfigCache {
+                vector_compression_enabled: false,
+                vector_compression_scheme: COMPRESSION_NONE,
+                vector_compression_level: 3,
+                max_query_memory_mb: 512,
+                query_timeout_ms: 30000,
+            }
+        });
+        
+        (config.max_query_memory_mb, config.query_timeout_ms)
     }
 }
 

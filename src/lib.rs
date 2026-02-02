@@ -27,7 +27,7 @@ pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};
 pub use types::{    DataType, DistanceType, FieldDef, IndexType, RecordStatus, RemDbError, Result, TableDef, Value,    VectorIndexType, VectorMetadata, MAX_STRING_LEN,
 };
 pub use compression::CompressionScheme;
-pub use system_tables::{init_system_tables, get_vector_compression_config};
+pub use system_tables::{init_system_tables, get_vector_compression_config, get_query_resource_config};
 
 pub use index::{
     AnySecondaryIndex, BTreeIndex, IndexStats, PrimaryIndex, PrimaryIndexItem, SecondaryIndex,
