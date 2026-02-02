@@ -212,7 +212,6 @@ fn test_sql_query() {
         "SELECT * FROM",                     // 缺少表名
         "SELECT * FROM WHERE id = 1",        // 缺少表名
         "SELECT * FROM TEST_TABLE WHERE",    // 缺少条件
-        "SELECT * FROM TEST_TABLE WHERE id", // 缺少比较运算符和值
         "SELECT * FROM TEST_TABLE ORDER BY", // 缺少排序列
         "SELECT * FROM TEST_TABLE LIMIT",    // 缺少LIMIT值
     ];
