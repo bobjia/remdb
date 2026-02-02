@@ -559,7 +559,73 @@ fn main() {
         }
     }
 }
+
+### 时序数据预聚合
+
+remdb 现在支持时序数据预聚合功能，在数据写入时自动计算并存储不同时间间隔的聚合结果，显著提高查询性能。
+
+#### 核心特性
+
+- **自动更新**：当写入新数据时，预聚合数据会自动更新
+- **多种聚合函数**：支持 SUM、AVG、MIN 和 MAX 聚合函数
+- **自定义时间间隔**：允许配置不同的预聚合时间间隔
+- **线程安全**：使用 Mutex 确保并发写入时的数据一致性
+- **高效存储**：将预聚合数据存储在哈希表中，实现快速查找
+
+#### 使用示例
+
+```rust
+use remdb::*;
+use remdb::time_series::*;
+
+// 获取时序表引用
+let ts_table = db.get_time_series_table("sensor_data").unwrap();
+
+// 添加预聚合配置
+ts_table.add_pre_aggregation(60, "AVG").unwrap();   // 1分钟平均值
+ts_table.add_pre_aggregation(300, "SUM").unwrap();  // 5分钟总和
+
+// 写入数据（预聚合会自动更新）
+let records = vec![
+    TimeSeriesRecord {
+        timestamp: 1609459200000, // 2021-01-01 00:00:00
+        value: 25.5,
+        tags: vec!["sensor_id=1"],
+    },
+    // 更多记录...
+];
+ts_table.batch_write(&records).unwrap();
+
+// 查询预聚合数据
+let start_time = 1609459200000;
+let end_time = 1609462800000; // 1小时后
+
+// 查询1分钟平均值数据
+let avg_result = ts_table.query_pre_aggregated(start_time, end_time, 60, "AVG").unwrap();
+for record in avg_result {
+    println!("时间: {}, 平均值: {}", record.timestamp, record.value);
+}
+
+// 查询5分钟总和数据
+let sum_result = ts_table.query_pre_aggregated(start_time, end_time, 300, "SUM").unwrap();
+for record in sum_result {
+    println!("时间: {}, 总和: {}", record.timestamp, record.value);
+}
 ```
+
+#### 优势
+
+- **查询速度更快**：直接获取预计算结果，避免实时计算
+- **减少CPU使用**：避免实时聚合计算
+- **性能稳定**：查询性能不受数据量影响
+- **配置灵活**：支持多种聚合函数和时间间隔
+
+#### 适用场景
+
+- **实时监控**：快速查询最近的聚合数据
+- **历史数据分析**：高效查询长时间范围的聚合结果
+- **仪表盘展示**：预计算常用时间间隔的聚合数据
+- **告警系统**：基于预聚合数据进行阈值判断
 
 ## 向量数据库
 

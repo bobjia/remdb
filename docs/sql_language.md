@@ -1221,6 +1221,55 @@ RemDB内部提供了丰富的时间辅助函数：
 - 时间范围检查
 - 当前时间戳获取（需要std特性）
 
+### 4.6 时序数据预聚合
+
+RemDB支持时序数据的预聚合功能，可以在数据写入时自动计算并存储不同时间间隔的聚合结果，提高查询性能。
+
+#### 4.6.1 添加预聚合配置
+
+通过SQL语句为时序表添加预聚合配置：
+
+```sql
+-- 为时序表添加预聚合配置
+ALTER TABLE timeseries_table ADD PRE_AGGREGATION INTERVAL 60 SECONDS AGGREGATION AVG;
+ALTER TABLE timeseries_table ADD PRE_AGGREGATION INTERVAL 300 SECONDS AGGREGATION SUM;
+```
+
+#### 4.6.2 预聚合查询
+
+查询预聚合的数据可以显著提高查询性能，特别是对于长时间范围的聚合查询：
+
+```sql
+-- 查询预聚合的1分钟平均值数据
+SELECT time_bucket, value FROM timeseries_table WHERE time_bucket >= start_time AND time_bucket <= end_time PRE_AGGREGATED INTERVAL 60 SECONDS AGGREGATION AVG;
+
+-- 查询预聚合的5分钟总和数据
+SELECT time_bucket, value FROM timeseries_table WHERE time_bucket >= start_time AND time_bucket <= end_time PRE_AGGREGATED INTERVAL 300 SECONDS AGGREGATION SUM;
+```
+
+#### 4.6.3 支持的聚合函数
+
+RemDB支持以下聚合函数用于预聚合：
+
+- `SUM`：计算总和
+- `AVG`：计算平均值
+- `MIN`：计算最小值
+- `MAX`：计算最大值
+
+#### 4.6.4 预聚合原理
+
+1. **数据存储**：预聚合数据存储在专用的哈希表中，键为（时间桶，标签哈希），值为聚合结果
+2. **自动更新**：当新数据写入时，系统会自动更新所有相关的预聚合数据
+3. **线程安全**：使用Mutex确保并发写入时的数据一致性
+4. **高效查询**：查询时直接从预聚合存储中读取数据，避免实时计算
+
+#### 4.6.5 预聚合使用场景
+
+- **实时监控**：快速查询最近的聚合数据
+- **历史数据分析**：高效查询长时间范围的聚合结果
+- **仪表盘展示**：预计算常用时间间隔的聚合数据
+- **告警系统**：基于预聚合数据进行阈值判断
+
 ## 5. 示例：时序数据应用
 
 ```sql

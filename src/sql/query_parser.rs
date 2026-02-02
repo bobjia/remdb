@@ -101,6 +101,10 @@ pub struct SqlQuery {
     pub order_by: Option<OrderByClause>,
     /// 结果限制
     pub limit: Option<usize>,
+    /// 降采样时间间隔（如"1h"、"5m"）
+    pub sample_by: Option<String>,
+    /// 缺失数据填充策略
+    pub fill_clause: Option<FillClause>,
     /// 要插入的字段列表
     pub insert_columns: Vec<String>,
     /// 要插入的值列表
@@ -123,6 +127,37 @@ pub struct SqlQuery {
     pub ignore_duplicates: bool,
     /// 是否使用IF NOT EXISTS子句
     pub if_not_exists: bool,
+}
+
+impl Default for SqlQuery {
+    fn default() -> Self {
+        Self {
+            query_type: QueryType::Select,
+            table_name: String::new(),
+            table_alias: None,
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            order_by: None,
+            group_by: None,
+            joins: Vec::new(),
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: false,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+        }
+    }
 }
 
 /// 索引类型枚举（用于CREATE INDEX语句）
@@ -212,6 +247,19 @@ pub enum Condition {
     Or(Box<Condition>, Box<Condition>),
     /// NOT条件
     Not(Box<Condition>),
+}
+
+/// 时序数据插值策略
+#[derive(Debug, Clone, PartialEq)]
+pub enum FillClause {
+    /// 使用前一个值填充
+    Prev,
+    /// 使用线性插值填充
+    Linear,
+    /// 使用后一个值填充
+    Next,
+    /// 使用固定值填充
+    FixedValue(f64),
 }
 
 /// BETWEEN条件
@@ -455,6 +503,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -479,6 +529,8 @@ impl SqlParser {
                 group_by: None,
                 order_by: None,
                 limit: None,
+                sample_by: None,
+                fill_clause: None,
                 insert_columns: Vec::new(),
                 values: Vec::new(),
                 table_def: Vec::new(),
@@ -503,6 +555,8 @@ impl SqlParser {
                 group_by: None,
                 order_by: None,
                 limit: None,
+                sample_by: None,
+                fill_clause: None,
                 insert_columns: Vec::new(),
                 values: Vec::new(),
                 table_def: Vec::new(),
@@ -527,6 +581,8 @@ impl SqlParser {
                 group_by: None,
                 order_by: None,
                 limit: None,
+                sample_by: None,
+                fill_clause: None,
                 insert_columns: Vec::new(),
                 values: Vec::new(),
                 table_def: Vec::new(),
@@ -597,6 +653,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -633,6 +691,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -686,6 +746,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns,
             values,
             table_def: Vec::new(),
@@ -794,6 +856,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -956,6 +1020,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def,
@@ -1080,6 +1146,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1168,6 +1236,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def,
@@ -1267,6 +1337,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1366,6 +1438,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1401,6 +1475,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1436,6 +1512,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1480,6 +1558,8 @@ impl SqlParser {
             group_by: None,
             order_by: None,
             limit: None,
+            sample_by: None,
+            fill_clause: None,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1606,6 +1686,12 @@ impl SqlParser {
 
         // 解析LIMIT子句（可选）
         let limit = self.parse_limit_clause()?;
+        
+        // 解析SAMPLE BY子句（可选，时序查询专用）
+        let sample_by = self.parse_sample_by_clause()?;
+        
+        // 解析FILL子句（可选，时序查询专用）
+        let fill_clause = self.parse_fill_clause()?;
 
         Ok(SqlQuery {
             query_type: QueryType::Select,
@@ -1619,6 +1705,8 @@ impl SqlParser {
             group_by,
             order_by,
             limit,
+            sample_by,
+            fill_clause,
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -2304,6 +2392,69 @@ impl SqlParser {
             self.skip_whitespace();
             let limit = self.parse_number()? as usize;
             Ok(Some(limit))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 解析SAMPLE BY子句（可选）
+    fn parse_sample_by_clause(&mut self) -> Result<Option<String>, QueryParseError> {
+        self.skip_whitespace();
+
+        if self.match_keyword("SAMPLE") {
+            self.skip_whitespace();
+            if !self.match_keyword("BY") {
+                return Err(QueryParseError::InvalidSyntax);
+            }
+            self.skip_whitespace();
+            // 解析时间间隔字符串，如"1h"、"5m"、"30s"
+            // 时间间隔可以包含数字和字母，如"1h30m"
+            let start = self.position;
+            while let Some(c) = self.peek_char() {
+                if c.is_ascii_alphanumeric() {
+                    self.next_char();
+                } else {
+                    break;
+                }
+            }
+            if self.position == start {
+                return Err(QueryParseError::InvalidValue);
+            }
+            let interval = self.input[start..self.position].to_string();
+            Ok(Some(interval))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 解析FILL子句（可选）
+    fn parse_fill_clause(&mut self) -> Result<Option<FillClause>, QueryParseError> {
+        self.skip_whitespace();
+
+        if self.match_keyword("FILL") {
+            self.skip_whitespace();
+            // 解析填充策略
+            if self.match_keyword("PREV") {
+                Ok(Some(FillClause::Prev))
+            } else if self.match_keyword("LINEAR") {
+                Ok(Some(FillClause::Linear))
+            } else if self.match_keyword("NEXT") {
+                Ok(Some(FillClause::Next))
+            } else {
+                // 尝试解析固定值
+                // 先检查是否是数字
+                let saved_pos = self.position;
+                let saved_col = self.column;
+                match self.parse_number() {
+                    Ok(num) => Ok(Some(FillClause::FixedValue(num as f64))),
+                    Err(_) => {
+                        // 恢复位置，返回错误
+                        self.position = saved_pos;
+                        self.column = saved_col;
+                        Err(QueryParseError::InvalidValue)
+                    }
+                }
+            }
         } else {
             Ok(None)
         }

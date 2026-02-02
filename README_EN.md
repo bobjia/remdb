@@ -559,7 +559,73 @@ fn main() {
         }
     }
 }
+
+### Time Series Pre-Aggregation
+
+remdb now supports time series data pre-aggregation, which automatically calculates and stores aggregated results at different time intervals during data writing, significantly improving query performance.
+
+#### Key Features
+
+- **Automatic Updates**: Pre-aggregated data is automatically updated when new data is written
+- **Multiple Aggregation Functions**: Supports SUM, AVG, MIN, and MAX aggregation functions
+- **Custom Time Intervals**: Allows configuring different time intervals for pre-aggregation
+- **Thread Safety**: Uses Mutex to ensure data consistency during concurrent writes
+- **Efficient Storage**: Stores pre-aggregated data in a hash table for fast lookup
+
+#### Usage Example
+
+```rust
+use remdb::*;
+use remdb::time_series::*;
+
+// Get time series table reference
+let ts_table = db.get_time_series_table("sensor_data").unwrap();
+
+// Add pre-aggregation configurations
+ts_table.add_pre_aggregation(60, "AVG").unwrap();   // 1-minute average
+ts_table.add_pre_aggregation(300, "SUM").unwrap();  // 5-minute sum
+
+// Write data (pre-aggregations will be automatically updated)
+let records = vec![
+    TimeSeriesRecord {
+        timestamp: 1609459200000, // 2021-01-01 00:00:00
+        value: 25.5,
+        tags: vec!["sensor_id=1"],
+    },
+    // More records...
+];
+ts_table.batch_write(&records).unwrap();
+
+// Query pre-aggregated data
+let start_time = 1609459200000;
+let end_time = 1609462800000; // 1 hour later
+
+// Query 1-minute average data
+let avg_result = ts_table.query_pre_aggregated(start_time, end_time, 60, "AVG").unwrap();
+for record in avg_result {
+    println!("Time: {}, Average Value: {}", record.timestamp, record.value);
+}
+
+// Query 5-minute sum data
+let sum_result = ts_table.query_pre_aggregated(start_time, end_time, 300, "SUM").unwrap();
+for record in sum_result {
+    println!("Time: {}, Sum Value: {}", record.timestamp, record.value);
+}
 ```
+
+#### Benefits
+
+- **Faster Queries**: Directly retrieve pre-calculated results instead of computing on the fly
+- **Reduced CPU Usage**: Avoids real-time aggregation calculations
+- **Consistent Performance**: Query performance remains stable regardless of data volume
+- **Flexible Configuration**: Supports multiple aggregation functions and time intervals
+
+#### Use Cases
+
+- **Real-time Monitoring**: Quickly query recent aggregated data
+- **Historical Analysis**: Efficiently query long-term aggregated results
+- **Dashboard Display**: Pre-calculate common time interval aggregations
+- **Alerting Systems**: Use pre-aggregated data for threshold-based alerts
 
 ## Vector Database
 

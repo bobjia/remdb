@@ -706,3 +706,123 @@ fn test_time_precision_support() {
 
     println!("测试通过: 时间精度支持验证成功");
 }
+
+#[test]
+fn test_time_series_pre_aggregation() {
+    let _guard = TEST_MUTEX.lock().unwrap();
+
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+
+    // 初始化全局内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
+            .unwrap();
+    }
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+
+    // 创建数据库实例
+    let mut db = RemDb::new(&*TEST_DB_CONFIG);
+    db.init().unwrap();
+
+    // 创建时序表
+    let table_name = "test_pre_aggregation";
+    let time_field = "timestamp";
+    let value_field = "value";
+    let tag_fields = &["tag1"];
+
+    db.create_time_series_table(table_name, time_field, value_field, tag_fields, None)
+        .unwrap();
+
+    // 测试1: 添加预聚合配置
+    {
+        let time_series_table = db.get_time_series_table(0).unwrap();
+        let interval_seconds = 60; // 1分钟
+        let aggregation = "sum";
+        let result = time_series_table.add_pre_aggregation(interval_seconds, aggregation);
+        assert!(result.is_ok());
+    }
+
+    // 测试2: 写入测试数据
+    let mut data_points = Vec::new();
+    let base_timestamp = 1000000000000; // 1秒（纳秒）
+    for i in 0..10 {
+        data_points.push(TimeSeriesRecord {
+            timestamp: base_timestamp + (i * 100000000) as u64, // 每100毫秒一个数据点
+            value: i as f64,
+            tag_count: 1,
+            tags: [1 as u64, 0, 0, 0, 0, 0, 0, 0],
+        });
+    }
+
+    // 使用batch_write方法写入数据，不需要事务
+    let time_series_table = db.get_time_series_table_mut(0).unwrap();
+    unsafe {
+        let result = time_series_table.batch_write(data_points.as_ptr(), data_points.len());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 10);
+    }
+
+    // 测试3: 使用预聚合数据查询
+    {
+        let time_series_table = db.get_time_series_table(0).unwrap();
+        let start_time = 1000000000000; // 1秒（纳秒）
+        let end_time = 1000000000000 + 1000000000; // 2秒（纳秒）
+        let interval_seconds = 60;
+        let aggregation = "sum";
+        let result = time_series_table.query_pre_aggregated(start_time, end_time, interval_seconds, aggregation);
+        assert!(result.is_ok());
+        let records = result.unwrap();
+        assert!(!records.is_empty());
+
+        println!("预聚合查询结果: {:?}", records);
+    }
+
+    // 测试4: 测试不同聚合函数
+    {
+        let time_series_table = db.get_time_series_table(0).unwrap();
+        let interval_seconds = 60;
+        let avg_aggregation = "avg";
+        let result = time_series_table.add_pre_aggregation(interval_seconds, avg_aggregation);
+        assert!(result.is_ok());
+    }
+
+    // 写入更多数据以测试平均值聚合
+    let mut more_data_points = Vec::new();
+    let base_timestamp = 1000000000000; // 1秒（纳秒）
+    for i in 10..20 {
+        more_data_points.push(TimeSeriesRecord {
+            timestamp: base_timestamp + (i * 100000000) as u64, // 每100毫秒一个数据点
+            value: i as f64,
+            tag_count: 1,
+            tags: [1 as u64, 0, 0, 0, 0, 0, 0, 0],
+        });
+    }
+
+    // 使用batch_write方法写入数据，不需要事务
+    let time_series_table = db.get_time_series_table_mut(0).unwrap();
+    unsafe {
+        let result = time_series_table.batch_write(more_data_points.as_ptr(), more_data_points.len());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 10);
+    }
+
+    // 使用平均值聚合查询
+    {
+        let time_series_table = db.get_time_series_table(0).unwrap();
+        let start_time = 1000000000000; // 1秒（纳秒）
+        let end_time = 1000000000000 + 1000000000; // 2秒（纳秒）
+        let interval_seconds = 60;
+        let avg_aggregation = "avg";
+        let result = time_series_table.query_pre_aggregated(start_time, end_time, interval_seconds, avg_aggregation);
+        assert!(result.is_ok());
+        let avg_records = result.unwrap();
+        assert!(!avg_records.is_empty());
+
+        println!("平均值预聚合查询结果: {:?}", avg_records);
+    }
+
+    println!("测试通过: 时序数据预聚合功能验证成功");
+}
