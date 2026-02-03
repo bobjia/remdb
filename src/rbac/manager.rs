@@ -2,9 +2,9 @@
 //! 
 //! This module defines the RbacManager struct for managing RBAC operations.
 
-use alloc::collections::HashMap;
-use alloc::string::String;
-use alloc::vec::Vec;
+use std::collections::HashMap;
+use std::string::String;
+use std::vec::Vec;
 
 use crate::rbac::permission::Permission;
 use crate::rbac::role::Role;

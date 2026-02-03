@@ -146,25 +146,41 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
     match query.query_type {
         crate::sql::QueryType::Select => {
             // 检查SELECT权限
-            if !db.check_permission("current_user", crate::rbac::Permission::Select, &query.table_name) {
+            if let Ok(has_permission) = db.check_permission("current_user", &crate::rbac::Permission::Select, &Some(query.table_name.clone()), &None) {
+                if !has_permission {
+                    return Err(QueryExecutionError::InternalError);
+                }
+            } else {
                 return Err(QueryExecutionError::InternalError);
             }
         }
         crate::sql::QueryType::Insert => {
             // 检查INSERT权限
-            if !db.check_permission("current_user", crate::rbac::Permission::Insert, &query.table_name) {
+            if let Ok(has_permission) = db.check_permission("current_user", &crate::rbac::Permission::Insert, &Some(query.table_name.clone()), &None) {
+                if !has_permission {
+                    return Err(QueryExecutionError::InternalError);
+                }
+            } else {
                 return Err(QueryExecutionError::InternalError);
             }
         }
         crate::sql::QueryType::Update => {
             // 检查UPDATE权限
-            if !db.check_permission("current_user", crate::rbac::Permission::Update, &query.table_name) {
+            if let Ok(has_permission) = db.check_permission("current_user", &crate::rbac::Permission::Update, &Some(query.table_name.clone()), &None) {
+                if !has_permission {
+                    return Err(QueryExecutionError::InternalError);
+                }
+            } else {
                 return Err(QueryExecutionError::InternalError);
             }
         }
         crate::sql::QueryType::Delete => {
             // 检查DELETE权限
-            if !db.check_permission("current_user", crate::rbac::Permission::Delete, &query.table_name) {
+            if let Ok(has_permission) = db.check_permission("current_user", &crate::rbac::Permission::Delete, &Some(query.table_name.clone()), &None) {
+                if !has_permission {
+                    return Err(QueryExecutionError::InternalError);
+                }
+            } else {
                 return Err(QueryExecutionError::InternalError);
             }
         }
@@ -387,14 +403,14 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             // Extract permission from the first field in table_def
             if let Some((permission_str, _, _, _, _, _, _)) = query.table_def.first() {
                 let permission = crate::rbac::Permission::from_str(permission_str)
-                    .map_err(|_| QueryExecutionError::InternalError)?;
+                    .ok_or(QueryExecutionError::InternalError)?;
                 // Extract table name from the second field
                 let table_name = if let Some((_, table_name, _, _, _, _, _)) = query.table_def.first() {
                     table_name.clone()
                 } else {
                     String::new()
                 };
-                db.grant_permission(&role_name, permission, &table_name)
+                db.grant_permission(&role_name, permission, Some(table_name), None)
                     .map_err(|_| QueryExecutionError::InternalError)?;
                 Ok(ResultSet::new(Vec::new()))
             } else {
@@ -407,14 +423,14 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             // Extract permission from the first field in table_def
             if let Some((permission_str, _, _, _, _, _, _)) = query.table_def.first() {
                 let permission = crate::rbac::Permission::from_str(permission_str)
-                    .map_err(|_| QueryExecutionError::InternalError)?;
+                    .ok_or(QueryExecutionError::InternalError)?;
                 // Extract table name from the second field
                 let table_name = if let Some((_, table_name, _, _, _, _, _)) = query.table_def.first() {
                     table_name.clone()
                 } else {
                     String::new()
                 };
-                db.revoke_permission(&role_name, permission, &table_name)
+                db.revoke_permission(&role_name, &permission, &Some(table_name), &None)
                     .map_err(|_| QueryExecutionError::InternalError)?;
                 Ok(ResultSet::new(Vec::new()))
             } else {

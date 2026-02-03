@@ -2,8 +2,8 @@
 //! 
 //! This module defines the User struct for RBAC.
 
-use alloc::string::String;
-use alloc::vec::Vec;
+use std::string::String;
+use std::vec::Vec;
 
 /// User struct for RBAC
 #[derive(Debug, Clone)]

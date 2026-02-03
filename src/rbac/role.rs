@@ -2,8 +2,8 @@
 //! 
 //! This module defines the Role struct for RBAC.
 
-use alloc::string::String;
-use alloc::vec::Vec;
+use std::string::String;
+use std::vec::Vec;
 
 use crate::rbac::permission::Permission;
 

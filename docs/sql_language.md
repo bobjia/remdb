@@ -935,7 +935,192 @@ SELECT * FROM users WHERE name LIKE 'a%b_c';
 - `<#>`：向量内积，用于计算向量点积
 - `<=>`：向量余弦相似度，用于计算向量夹角余弦值
 
-### 2.13 函数支持
+### 2.13 RBAC 相关语句
+
+RemDB 支持基于角色的访问控制（RBAC），用于管理用户权限。
+
+#### 2.13.1 CREATE ROLE语句
+
+用于创建一个新的角色。
+
+**语法**：
+```sql
+CREATE ROLE role_name;
+```
+
+**参数说明**：
+- `role_name`：要创建的角色名称
+
+**示例**：
+
+```sql
+-- 创建一个新的角色
+CREATE ROLE admin;
+
+-- 创建一个只读角色
+CREATE ROLE read_only;
+```
+
+#### 2.13.2 DROP ROLE语句
+
+用于删除一个现有的角色。
+
+**语法**：
+```sql
+DROP ROLE role_name;
+```
+
+**参数说明**：
+- `role_name`：要删除的角色名称
+
+**示例**：
+
+```sql
+-- 删除一个角色
+DROP ROLE admin;
+```
+
+#### 2.13.3 GRANT PERMISSION语句
+
+用于授予权限给指定的角色。
+
+**语法**：
+```sql
+GRANT permission ON [table_name [.column_name]] TO role_name;
+```
+
+**参数说明**：
+- `permission`：要授予的权限，支持 `SELECT`、`INSERT`、`UPDATE`、`DELETE`
+- `table_name`：可选，指定表名
+- `column_name`：可选，指定列名
+- `role_name`：要授予权限的角色名称
+
+**示例**：
+
+```sql
+-- 授予所有权限给admin角色
+GRANT ALL ON * TO admin;
+
+-- 授予SELECT权限给read_only角色
+GRANT SELECT ON users TO read_only;
+
+-- 授予INSERT和UPDATE权限给user_manager角色
+GRANT INSERT, UPDATE ON users TO user_manager;
+```
+
+#### 2.13.4 REVOKE PERMISSION语句
+
+用于从指定的角色中撤销权限。
+
+**语法**：
+```sql
+REVOKE permission ON [table_name [.column_name]] FROM role_name;
+```
+
+**参数说明**：
+- `permission`：要撤销的权限
+- `table_name`：可选，指定表名
+- `column_name`：可选，指定列名
+- `role_name`：要撤销权限的角色名称
+
+**示例**：
+
+```sql
+-- 撤销admin角色的所有权限
+REVOKE ALL ON * FROM admin;
+
+-- 撤销read_only角色的SELECT权限
+REVOKE SELECT ON users FROM read_only;
+```
+
+#### 2.13.5 CREATE USER语句
+
+用于创建一个新的用户。
+
+**语法**：
+```sql
+CREATE USER user_name;
+```
+
+**参数说明**：
+- `user_name`：要创建的用户名称
+
+**示例**：
+
+```sql
+-- 创建一个新的用户
+CREATE USER alice;
+
+-- 创建一个新的用户
+CREATE USER bob;
+```
+
+#### 2.13.6 DROP USER语句
+
+用于删除一个现有的用户。
+
+**语法**：
+```sql
+DROP USER user_name;
+```
+
+**参数说明**：
+- `user_name`：要删除的用户名称
+
+**示例**：
+
+```sql
+-- 删除一个用户
+DROP USER alice;
+```
+
+#### 2.13.7 GRANT ROLE语句
+
+用于授予角色给指定的用户。
+
+**语法**：
+```sql
+GRANT ROLE role_name TO user_name;
+```
+
+**参数说明**：
+- `role_name`：要授予的角色名称
+- `user_name`：要授予角色的用户名称
+
+**示例**：
+
+```sql
+-- 授予admin角色给alice用户
+GRANT ROLE admin TO alice;
+
+-- 授予read_only角色给bob用户
+GRANT ROLE read_only TO bob;
+```
+
+#### 2.13.8 REVOKE ROLE语句
+
+用于从指定的用户中撤销角色。
+
+**语法**：
+```sql
+REVOKE ROLE role_name FROM user_name;
+```
+
+**参数说明**：
+- `role_name`：要撤销的角色名称
+- `user_name`：要撤销角色的用户名称
+
+**示例**：
+
+```sql
+-- 撤销admin角色从alice用户
+REVOKE ROLE admin FROM alice;
+
+-- 撤销read_only角色从bob用户
+REVOKE ROLE read_only FROM bob;
+```
+
+### 2.14 函数支持
 
 RemDB支持在SELECT语句中使用内嵌函数，包括聚合函数和窗口函数。
 
@@ -1304,70 +1489,72 @@ SELECT * FROM sensor_data WHERE sensor_id = 1 ORDER BY timestamp DESC LIMIT 50;
 
 RemDB 支持 `SAMPLE BY` 语法，用于对时序数据按照指定的时间间隔进行采样，是 `TIME_BUCKET` 函数的一种便捷替代方式。
 
+### 4.3.2 FILL 子句
+
+RemDB 支持 `FILL` 子句，用于处理时序数据中的缺失值，为缺失的时间点填充适当的值。
+
 **语法**：
 ```sql
 SELECT column1, column2, ...
 FROM table_name
-SAMPLE BY interval [ALIGN TO alignment_time]
 [WHERE condition]
-[GROUP BY column1, column2, ...]
-[ORDER BY column1, column2, ...]
+[SAMPLE BY interval [ALIGN TO alignment_time]]
+[FILL fill_strategy]
+[ORDER BY column [ASC | DESC]]
 [LIMIT number];
 ```
 
-**参数说明**：
-- `interval`：时间间隔，支持与 `TIME_BUCKET` 相同的格式，如 '5m'、'1h'、'1d' 等
-- `ALIGN TO`：可选，指定采样的对齐时间点，默认为 1970-01-01 00:00:00
-- `alignment_time`：对齐时间点，可以是时间戳或日期字符串
+**填充策略**：
+
+| 填充策略 | 描述 | 示例 |
+|---------|------|------|
+| `PREV` | 使用前一个非空值填充 | `FILL PREV` |
+| `LINEAR` | 使用线性插值填充 | `FILL LINEAR` |
+| `NEXT` | 使用后一个非空值填充 | `FILL NEXT` |
+| `value` | 使用指定的固定值填充（数值类型） | `FILL 0` 或 `FILL 2.5` |
 
 **说明**：
-- `SAMPLE BY` 会自动按照指定的时间间隔对时序数据进行分组
-- 对于时间字段，会自动计算每个时间窗口的起始时间
-- 可以与聚合函数结合使用，计算每个时间窗口的统计值
-- 可以与 `WHERE` 条件结合，过滤数据后再进行采样
-- 可以与 `GROUP BY` 结合，实现更复杂的分组采样
-- 可以与 `ORDER BY` 结合，按时间窗口排序结果
+- `FILL` 子句通常与 `SAMPLE BY` 或 `TIME_BUCKET` 一起使用，用于填充时间窗口聚合后产生的缺失值
+- 当时间序列数据中存在时间间隔不均匀或缺失的数据点时，`FILL` 子句可以确保结果集中的时间序列是连续的
+- 不同的填充策略适用于不同的业务场景：
+  - `PREV`：适用于不希望数据突变的场景，如传感器读数
+  - `LINEAR`：适用于数据变化较为平滑的场景，如温度变化
+  - `NEXT`：适用于需要提前获取未来值的场景
+  - `固定值`：适用于明确知道缺失值应该是什么的场景
 
 **示例**：
 
 ```sql
--- 按5分钟间隔采样温度数据，计算平均值
-SELECT timestamp, AVG(temperature) AS avg_temp
+-- 使用前一个值填充缺失数据
+SELECT TIME_BUCKET('5m', timestamp) AS time_window, AVG(temperature) AS avg_temp
 FROM sensor_readings
-SAMPLE BY '5m';
+GROUP BY time_window
+FILL PREV
+ORDER BY time_window;
 
--- 按1小时间隔采样特定传感器的数据，计算最大值和最小值
-SELECT sensor_id, timestamp, MAX(temperature) AS max_temp, MIN(temperature) AS min_temp
+-- 使用线性插值填充缺失数据
+SELECT timestamp, temperature
 FROM sensor_readings
-WHERE sensor_id = 1
-SAMPLE BY '1h';
+SAMPLE BY '1m'
+FILL LINEAR;
 
--- 按1天间隔采样数据，对齐到每天的08:00:00
-SELECT timestamp, AVG(temperature) AS avg_temp
-FROM sensor_readings
-SAMPLE BY '1d' ALIGN TO '2024-01-01 08:00:00';
-
--- 按5分钟间隔采样，结合多个聚合函数
-SELECT 
-    timestamp,
-    AVG(temperature) AS avg_temp,
-    SUM(humidity) AS sum_humidity,
-    COUNT(*) AS reading_count
-FROM sensor_readings
-SAMPLE BY '5m';
-
--- 按1小时间隔采样，分组并排序
-SELECT 
-    sensor_id,
-    timestamp,
-    AVG(temperature) AS avg_temp
-FROM sensor_readings
-GROUP BY sensor_id
+-- 使用固定值填充缺失数据
+SELECT timestamp, value
+FROM metrics
 SAMPLE BY '1h'
-ORDER BY sensor_id, timestamp;
+FILL 0
+ORDER BY timestamp;
+
+-- 结合WHERE条件使用FILL子句
+SELECT TIME_BUCKET('15m', timestamp) AS time_window, SUM(value) AS total_value
+FROM sensor_data
+WHERE sensor_id = 1
+GROUP BY time_window
+FILL 0
+ORDER BY time_window;
 ```
 
-`SAMPLE BY` 语法提供了一种更简洁的方式来进行时序数据的时间窗口聚合，与 `TIME_BUCKET` 函数相比，语法更加直观和简洁。
+`FILL` 子句为时序数据查询提供了灵活的缺失值处理能力，确保查询结果的连续性和完整性，便于后续的数据分析和可视化。
 
 ### 4.4 时间转换函数示例
 

@@ -2,7 +2,7 @@
 //! 
 //! This module defines the Permission enum for RBAC.
 
-use alloc::string::String;
+use std::string::String;
 
 /// Permission types for RBAC
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
