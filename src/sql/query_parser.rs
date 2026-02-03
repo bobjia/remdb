@@ -127,6 +127,12 @@ pub struct SqlQuery {
     pub ignore_duplicates: bool,
     /// 是否使用IF NOT EXISTS子句
     pub if_not_exists: bool,
+    /// 模型文件路径（用于CREATE MODEL）
+    pub model_path: String,
+    /// 模型输入参数（用于CREATE MODEL）：(参数名, 类型)
+    pub model_inputs: Vec<(String, String)>,
+    /// 模型输出（用于CREATE MODEL）：(名称, 类型)
+    pub model_output: (String, String),
 }
 
 impl Default for SqlQuery {
@@ -156,6 +162,9 @@ impl Default for SqlQuery {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         }
     }
 }
@@ -205,6 +214,8 @@ impl std::fmt::Display for IndexType {
         CreateIndex,
         /// CREATE DATABASE查询
         CreateDatabase,
+        /// CREATE MODEL查询
+        CreateModel,
         /// USE DATABASE查询
         UseDatabase,
         /// CLOSE DATABASE查询
@@ -471,6 +482,29 @@ impl SqlParser {
         }
     }
 
+    /// 解析带引号的字符串
+    fn parse_string(&mut self) -> Result<String, QueryParseError> {
+        if let Some(quote_char) = self.peek_char() {
+            if quote_char == '"' || quote_char == '\'' {
+                self.next_char(); // 跳过引号
+                let mut string_value = String::new();
+
+                while let Some(c) = self.next_char() {
+                    if c == quote_char {
+                        break;
+                    }
+                    string_value.push(c);
+                }
+
+                Ok(string_value)
+            } else {
+                Err(QueryParseError::InvalidSyntax)
+            }
+        } else {
+            Err(QueryParseError::InvalidSyntax)
+        }
+    }
+
     /// 解析SQL查询
     pub fn parse(&mut self) -> Result<SqlQuery, QueryParseError> {
         self.skip_whitespace();
@@ -488,6 +522,7 @@ impl SqlParser {
             QueryType::CreateTimeSeriesTable => self.parse_create_table_query(),
             QueryType::CreateIndex => self.parse_create_index_query(),
             QueryType::CreateDatabase => self.parse_create_database_query(),
+            QueryType::CreateModel => self.parse_create_model_query(),
             QueryType::UseDatabase => self.parse_use_database_query(),
             QueryType::CloseDatabase => self.parse_close_database_query(),
             QueryType::DropDatabase => self.parse_drop_database_query(),
@@ -518,6 +553,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         }),
             QueryType::Commit => Ok(SqlQuery {
                 query_type: QueryType::Commit,
@@ -544,6 +582,9 @@ impl SqlParser {
                 update_pairs: Vec::new(),
                 ignore_duplicates: false,
                 if_not_exists: false,
+                model_path: String::new(),
+                model_inputs: Vec::new(),
+                model_output: (String::new(), String::new()),
             }),
             QueryType::Rollback => Ok(SqlQuery {
                 query_type: QueryType::Rollback,
@@ -570,6 +611,9 @@ impl SqlParser {
                 update_pairs: Vec::new(),
                 ignore_duplicates: false,
                 if_not_exists: false,
+                model_path: String::new(),
+                model_inputs: Vec::new(),
+                model_output: (String::new(), String::new()),
             }),
             QueryType::ShowIndexBuildStatus => Ok(SqlQuery {
                 query_type: QueryType::ShowIndexBuildStatus,
@@ -596,6 +640,9 @@ impl SqlParser {
                 update_pairs: Vec::new(),
                 ignore_duplicates: false,
                 if_not_exists: false,
+                model_path: String::new(),
+                model_inputs: Vec::new(),
+                model_output: (String::new(), String::new()),
             }),
             QueryType::Other => Err(QueryParseError::UnsupportedKeyword),
         }?;
@@ -668,6 +715,7 @@ impl SqlParser {
             update_pairs,
             ignore_duplicates: false,
             if_not_exists: false,
+            ..Default::default()
         })
     }
 
@@ -706,6 +754,7 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists: false,
+            ..Default::default()
         })
     }
 
@@ -761,6 +810,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         })
     }
 
@@ -871,6 +923,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         })
     }
 
@@ -1035,6 +1090,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         })
     }
 
@@ -1162,6 +1220,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         })
     }
 
@@ -1252,6 +1313,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         })
     }
 
@@ -1353,6 +1417,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         };
 
         // 使用table_def字段存储额外信息
@@ -1455,9 +1522,95 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: if_not_exists,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         };
 
         Ok(query)
+    }
+
+    /// 解析CREATE MODEL查询
+    fn parse_create_model_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析IF NOT EXISTS子句
+        let mut if_not_exists = false;
+        self.skip_whitespace();
+        if self.match_keyword("IF") {
+            self.skip_whitespace();
+            self.expect_keyword("NOT")?;
+            self.skip_whitespace();
+            self.expect_keyword("EXISTS")?;
+            if_not_exists = true;
+        }
+        
+        // 解析模型名称
+        self.skip_whitespace();
+        let model_name = self.parse_identifier()?;
+
+        // 解析USING子句
+        self.skip_whitespace();
+        self.expect_keyword("USING")?;
+        self.skip_whitespace();
+        let model_path = self.parse_string()?;
+
+        // 解析AS子句和输入参数
+        self.skip_whitespace();
+        self.expect_keyword("AS")?;
+        self.skip_whitespace();
+        self.expect_char('(')?;
+
+        // 解析输入参数
+        let mut model_inputs = Vec::new();
+        loop {
+            self.skip_whitespace();
+            let param_name = self.parse_identifier()?;
+            self.skip_whitespace();
+            let param_type = self.parse_identifier()?.to_uppercase();
+            model_inputs.push((param_name, param_type));
+
+            self.skip_whitespace();
+            if self.match_char(')') {
+                break;
+            } else if !self.match_char(',') {
+                return Err(QueryParseError::InvalidSyntax);
+            }
+        }
+
+        // 解析RETURNS子句
+        self.skip_whitespace();
+        self.expect_keyword("RETURNS")?;
+        self.skip_whitespace();
+        let return_type = self.parse_identifier()?.to_uppercase();
+
+        Ok(SqlQuery {
+            query_type: QueryType::CreateModel,
+            table_name: model_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists,
+            model_path,
+            model_inputs,
+            model_output: ("result".to_string(), return_type),
+        })
     }
 
     /// 解析USE DATABASE查询
@@ -1492,6 +1645,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         };
 
         Ok(query)
@@ -1529,6 +1685,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         };
 
         Ok(query)
@@ -1575,6 +1734,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: if_exists,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         };
 
         Ok(query)
@@ -1607,6 +1769,8 @@ impl SqlParser {
                 Ok(QueryType::CreateIndex)
             } else if self.match_keyword("DATABASE") {
                 Ok(QueryType::CreateDatabase)
+            } else if self.match_keyword("MODEL") {
+                Ok(QueryType::CreateModel)
             } else {
                 Ok(QueryType::Other)
             }
@@ -1722,6 +1886,9 @@ impl SqlParser {
             update_pairs: Vec::new(),
             ignore_duplicates: false,
             if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
         })
     }
 

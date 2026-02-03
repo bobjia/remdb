@@ -11,6 +11,7 @@ pub mod ha;
 pub mod index;
 pub mod json;
 pub mod memory;
+pub mod model;
 pub mod monitor;
 pub mod platform;
 #[cfg(feature = "pubsub")]
@@ -158,6 +159,8 @@ pub struct RemDb {
     pub metrics: monitor::DbMetrics,
     /// 数据库状态
     pub status: DatabaseStatus,
+    /// 模型管理器
+    pub model_manager: model::ModelManager,
 }
 
 /// 数据库状态
@@ -451,6 +454,7 @@ impl RemDb {
             snapshot_version: 0, // 初始快照版本为0
             metrics,
             status: DatabaseStatus::Created,
+            model_manager: model::ModelManager::new(),
         }
     }
 

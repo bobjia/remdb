@@ -20,6 +20,7 @@ use crate::{
     DdlExecutor, IndexType, MemoryTable, RemDb, RemDbError, TableDef, TimeSeriesTable, Value,
     MAX_STRING_LEN,
 };
+use crate::model::model_manager::get_global_model_manager;
 
 /// 解析数据类型字符串，提取基本类型和精度/维度
 /// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6)
@@ -316,6 +317,27 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         crate::sql::QueryType::UseDatabase => execute_use_database_query(db, query),
         crate::sql::QueryType::CloseDatabase => execute_close_database_query(db, query),
         crate::sql::QueryType::DropDatabase => execute_drop_database_query(db, query),
+        crate::sql::QueryType::CreateModel => {
+            // Register the model using the global model manager
+            match get_global_model_manager() {
+                Ok(mut model_manager) => {
+                    match model_manager.register_model(
+                        query.table_name.clone(),
+                        query.model_path.clone(),
+                        query.model_inputs.clone(),
+                        query.model_output.clone(),
+                    ) {
+                        Ok(_) => Ok(ResultSet::new(Vec::new())),
+                        Err(e) => {
+                            #[cfg(feature = "std")]
+                            eprintln!("Model registration failed: {:?}", e);
+                            Err(QueryExecutionError::InternalError)
+                        },
+                    }
+                }
+                Err(_) => Err(QueryExecutionError::InternalError),
+            }
+        },
         _ => Err(QueryExecutionError::InternalError),
     }
 }
@@ -1730,6 +1752,7 @@ fn execute_select_query(
         // 计算表达式值
         let mut expr_values = Vec::with_capacity(columns.len());
         for expr in &columns {
+            // Evaluate the expression
             let value = evaluate_expression(table, record_values, expr)?;
             expr_values.push(value);
         }
@@ -3473,51 +3496,57 @@ fn execute_function_call(
     name: &str,
     args: &[TypedValue],
 ) -> Result<TypedValue, QueryExecutionError> {
-    match name.to_uppercase().as_str() {
-        // 基础统计聚合函数
-        "COUNT" => execute_count(args),
-        "SUM" => execute_sum(args),
-        "AVG" => execute_avg(args),
-        "MIN" => execute_min(args),
-        "MAX" => execute_max(args),
-        // 新增统计学函数
-        "STDDEV" => execute_stddev(args),
-        "VAR" => execute_var(args),
-        "STDDEV_SAMP" => execute_stddev_samp(args),
-        "VAR_SAMP" => execute_var_samp(args),
-        // 新增滑动窗口函数
-        "MOVING_AVERAGE" => execute_moving_average(args),
-        "MOVING_SUM" => execute_moving_sum(args),
-        // 时间函数
-        "TIME_BUCKET" => execute_time_bucket(args),
-        // 时间格式化函数
-        "TO_ISO8601" => execute_to_iso8601(args),
-        "TO_CHAR" => execute_to_char(args),
-        "TO_EPOCH" => execute_to_epoch(args),
-        // 字符串函数
-        "CONCAT" => execute_concat(args),
-        "SUBSTRING" => execute_substring(args),
-        "UPPER" => execute_upper(args),
-        "LOWER" => execute_lower(args),
-        "LENGTH" => execute_length(args),
-        "CHAR_LENGTH" => execute_char_length(args),
-        // 数学函数
-        "ABS" => execute_abs(args),
-        "SQRT" => execute_sqrt(args),
-        "POWER" => execute_power(args),
-        "SIN" => execute_sin(args),
-        "COS" => execute_cos(args),
-        "LOG" => execute_log(args),
-        "EXP" => execute_exp(args),
-        "ROUND" => execute_round(args),
-        "CEIL" => execute_ceil(args),
-        "FLOOR" => execute_floor(args),
-        "MOD" => execute_mod(args),
-        _ => {
-            // 不支持的函数
-            Err(QueryExecutionError::UnsupportedFunction(name.to_string()))
-        }
-    }
+    // Check if the function name corresponds to a model UDF
+    // We'll let execute_model_udf handle the model lookup
+    return crate::model::model_udf::execute_model_udf(name, args)
+        .or_else(|_| {
+            // If it's not a model UDF, try the built-in functions
+            match name.to_uppercase().as_str() {
+                // 基础统计聚合函数
+                "COUNT" => execute_count(args),
+                "SUM" => execute_sum(args),
+                "AVG" => execute_avg(args),
+                "MIN" => execute_min(args),
+                "MAX" => execute_max(args),
+                // 新增统计学函数
+                "STDDEV" => execute_stddev(args),
+                "VAR" => execute_var(args),
+                "STDDEV_SAMP" => execute_stddev_samp(args),
+                "VAR_SAMP" => execute_var_samp(args),
+                // 新增滑动窗口函数
+                "MOVING_AVERAGE" => execute_moving_average(args),
+                "MOVING_SUM" => execute_moving_sum(args),
+                // 时间函数
+                "TIME_BUCKET" => execute_time_bucket(args),
+                // 时间格式化函数
+                "TO_ISO8601" => execute_to_iso8601(args),
+                "TO_CHAR" => execute_to_char(args),
+                "TO_EPOCH" => execute_to_epoch(args),
+                // 字符串函数
+                "CONCAT" => execute_concat(args),
+                "SUBSTRING" => execute_substring(args),
+                "UPPER" => execute_upper(args),
+                "LOWER" => execute_lower(args),
+                "LENGTH" => execute_length(args),
+                "CHAR_LENGTH" => execute_char_length(args),
+                // 数学函数
+                "ABS" => execute_abs(args),
+                "SQRT" => execute_sqrt(args),
+                "POWER" => execute_power(args),
+                "SIN" => execute_sin(args),
+                "COS" => execute_cos(args),
+                "LOG" => execute_log(args),
+                "EXP" => execute_exp(args),
+                "ROUND" => execute_round(args),
+                "CEIL" => execute_ceil(args),
+                "FLOOR" => execute_floor(args),
+                "MOD" => execute_mod(args),
+                _ => {
+                    // 不支持的函数
+                    Err(QueryExecutionError::UnsupportedFunction(name.to_string()))
+                }
+            }
+        })
 }
 
 /// 执行COUNT函数

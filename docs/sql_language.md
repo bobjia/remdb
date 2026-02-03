@@ -741,11 +741,60 @@ CREATE TIMESERIES TABLE table_name (
 
 详细的语法说明和示例请参见[4.2 CREATE TIMESERIES TABLE语句](#42-create-timeseries-table-语句)。
 
-### 2.10 事务相关语句
+### 2.10 模型管理语句
+
+RemDB支持AI模型的注册和管理，允许将预训练的模型（如ONNX格式）注册为数据库中的函数，在SQL查询中直接调用。
+
+#### 2.10.1 CREATE MODEL语句
+
+用于注册一个新的AI模型，使其可以在SQL查询中作为用户定义函数（UDF）使用。
+
+**语法**：
+```sql
+CREATE MODEL model_name USING 'model_path.onnx' AS (input1 datatype1, input2 datatype2, ...) RETURNS output_datatype;
+```
+
+**参数说明**：
+- `model_name`：模型名称，将作为SQL函数名使用
+- `model_path`：模型文件路径（ONNX格式）
+- `(input1 datatype1, input2 datatype2, ...)`：模型输入参数定义
+- `output_datatype`：模型输出数据类型
+
+**支持的输入数据类型**：
+- `STRING`：字符串类型，将被转换为模型所需的向量表示
+- `VECTOR(dim)`：向量类型，维度需与模型输入匹配
+- `REAL`：浮点数类型
+- `INTEGER`：整数类型
+
+**支持的输出数据类型**：
+- `VECTOR(dim)`：向量类型，用于返回嵌入向量、特征向量等
+- `REAL`：浮点数类型，用于返回分类分数、回归值等
+- `INTEGER`：整数类型，用于返回分类标签等
+
+**示例**：
+```sql
+-- 注册文本嵌入模型，输入为字符串，输出为768维向量
+CREATE MODEL bge_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);
+
+-- 注册图像分类模型，输入为512维向量，输出为浮点数分数
+CREATE MODEL image_classifier USING 'resnet.onnx' AS (features VECTOR(512)) RETURNS REAL;
+
+-- 注册多输入模型，输入为字符串和整数，输出为向量
+CREATE MODEL multimodal_model USING 'multimodal.onnx' AS (text STRING, image_id INTEGER) RETURNS VECTOR(256);
+```
+
+**注意事项**：
+1. 模型文件必须是有效的ONNX格式
+2. 模型输入输出的数据类型和维度必须与实际模型匹配
+3. 模型注册后，可以在SQL查询中通过模型名称调用
+4. 模型加载需要一定的内存和时间开销
+5. 同一模型名称只能注册一次，重复注册会失败
+
+### 2.11 事务相关语句
 
 RemDB支持基本的事务操作，包括开始事务、提交事务和回滚事务。
 
-#### 2.10.1 BEGIN TRANSACTION语句
+#### 2.11.1 BEGIN TRANSACTION语句
 
 用于开始一个新的事务。
 
@@ -761,7 +810,7 @@ BEGIN;
 - 后续的SQL操作将在该事务中执行
 - 支持的隔离级别为可重复读(Repeatable Read)
 
-#### 2.10.2 COMMIT语句
+#### 2.11.2 COMMIT语句
 
 用于提交当前事务，将所有更改持久化到数据库。
 
@@ -777,7 +826,7 @@ COMMIT TRANSACTION;
 - 将更改从事务日志写入到数据文件
 - 释放事务资源
 
-#### 2.10.3 ROLLBACK语句
+#### 2.11.3 ROLLBACK语句
 
 用于回滚当前事务，撤销所有未提交的更改。
 
@@ -816,7 +865,7 @@ DELETE FROM users WHERE id = 3;
 ROLLBACK;
 ```
 
-### 2.10 支持的运算符
+### 2.12 支持的运算符
 
 #### 比较运算符
 
@@ -886,7 +935,7 @@ SELECT * FROM users WHERE name LIKE 'a%b_c';
 - `<#>`：向量内积，用于计算向量点积
 - `<=>`：向量余弦相似度，用于计算向量夹角余弦值
 
-### 2.11 函数支持
+### 2.13 函数支持
 
 RemDB支持在SELECT语句中使用内嵌函数，包括聚合函数和窗口函数。
 
@@ -915,6 +964,18 @@ SELECT COUNT(*) FROM sensor_data WHERE temperature > 25;
 ```
 
 #### 支持的函数列表
+
+RemDB支持以下类型的函数：
+1. **基础统计聚合函数**：COUNT、SUM、AVG等
+2. **滑动窗口函数**：MOVING_SUM、MOVING_AVERAGE等
+3. **字符串函数**：字符串处理相关函数
+4. **数学函数**：数学运算函数
+5. **时间窗口函数**：TIME_BUCKET等
+6. **时间转换函数**：时间格式转换函数
+7. **AI模型UDF函数**：通过CREATE MODEL注册的AI模型函数
+8. **向量函数**：向量距离和相似度计算函数
+
+有关AI模型UDF函数的详细信息，请参见[2.10 模型管理语句](#210-模型管理语句)和[AI模型UDF函数](#ai模型udf函数)。
 
 ##### 基础统计聚合函数
 
@@ -1052,6 +1113,56 @@ ORDER BY sensor_id, time_window;
 | `h`/`hr`/`hour` | 小时 | `TIME_BUCKET('1h', timestamp)` |
 | `d`/`day` | 天 | `TIME_BUCKET('7d', timestamp)` |
 | `w`/`week` | 周 | `TIME_BUCKET('2w', timestamp)` |
+
+##### AI模型UDF函数
+
+RemDB支持AI模型作为用户定义函数（UDF），允许在SQL查询中直接调用预训练的AI模型进行推理。模型需要通过CREATE MODEL语句注册后使用。
+
+**模型UDF调用语法**：
+```sql
+SELECT model_name(arg1, arg2, ...) FROM table_name;
+```
+
+**示例**：
+```sql
+-- 注册的文本嵌入模型
+CREATE MODEL bge_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);
+
+-- 在查询中使用模型UDF
+SELECT bge_embedding(content) AS embedding FROM documents;
+SELECT bge_embedding('Hello world') AS embedding;
+
+-- 结合向量搜索
+SELECT id, content, vector_distance(bge_embedding(content), query_vector) AS similarity
+FROM documents
+ORDER BY similarity DESC
+LIMIT 10;
+
+-- 多输入模型
+CREATE MODEL multimodal USING 'model.onnx' AS (text STRING, image VECTOR(512)) RETURNS REAL;
+SELECT multimodal(title, image_features) AS score FROM images;
+```
+
+**模型UDF特性**：
+1. **动态加载**：模型在首次调用时加载，后续调用重用已加载的模型
+2. **批处理支持**：支持批量处理，提高推理效率
+3. **线程安全**：模型推理支持并发调用
+4. **内存管理**：自动管理模型内存，防止内存泄漏
+5. **错误处理**：提供详细的错误信息和堆栈跟踪
+
+**支持的数据类型转换**：
+- `STRING` → 模型输入：自动转换为嵌入向量（需要模型支持文本输入）
+- `VECTOR(n)` → 模型输入：直接作为向量输入
+- `REAL`/`INTEGER` → 模型输入：转换为浮点数张量
+- 模型输出 → `VECTOR(n)`：返回向量结果
+- 模型输出 → `REAL`：返回浮点数结果
+- 模型输出 → `INTEGER`：返回整数结果
+
+**性能优化建议**：
+1. 对于批量处理，使用GROUP BY或窗口函数减少模型调用次数
+2. 对于频繁调用的模型，考虑预热加载
+3. 使用向量化查询减少数据传输开销
+4. 结合索引优化查询性能
 
 ## 3. 支持的索引
 
