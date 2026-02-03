@@ -216,6 +216,22 @@ impl std::fmt::Display for IndexType {
         CreateDatabase,
         /// CREATE MODEL查询
         CreateModel,
+        /// CREATE ROLE查询
+        CreateRole,
+        /// GRANT PERMISSION查询
+        GrantPermission,
+        /// GRANT ROLE查询
+        GrantRole,
+        /// REVOKE PERMISSION查询
+        RevokePermission,
+        /// REVOKE ROLE查询
+        RevokeRole,
+        /// DROP ROLE查询
+        DropRole,
+        /// CREATE USER查询
+        CreateUser,
+        /// DROP USER查询
+        DropUser,
         /// USE DATABASE查询
         UseDatabase,
         /// CLOSE DATABASE查询
@@ -523,6 +539,14 @@ impl SqlParser {
             QueryType::CreateIndex => self.parse_create_index_query(),
             QueryType::CreateDatabase => self.parse_create_database_query(),
             QueryType::CreateModel => self.parse_create_model_query(),
+            QueryType::CreateRole => self.parse_create_role_query(),
+            QueryType::CreateUser => self.parse_create_user_query(),
+            QueryType::GrantPermission => self.parse_grant_permission_query(),
+            QueryType::GrantRole => self.parse_grant_role_query(),
+            QueryType::RevokePermission => self.parse_revoke_permission_query(),
+            QueryType::RevokeRole => self.parse_revoke_role_query(),
+            QueryType::DropRole => self.parse_drop_role_query(),
+            QueryType::DropUser => self.parse_drop_user_query(),
             QueryType::UseDatabase => self.parse_use_database_query(),
             QueryType::CloseDatabase => self.parse_close_database_query(),
             QueryType::DropDatabase => self.parse_drop_database_query(),
@@ -1771,6 +1795,10 @@ impl SqlParser {
                 Ok(QueryType::CreateDatabase)
             } else if self.match_keyword("MODEL") {
                 Ok(QueryType::CreateModel)
+            } else if self.match_keyword("ROLE") {
+                Ok(QueryType::CreateRole)
+            } else if self.match_keyword("USER") {
+                Ok(QueryType::CreateUser)
             } else {
                 Ok(QueryType::Other)
             }
@@ -1787,8 +1815,26 @@ impl SqlParser {
                 Ok(QueryType::DropTable)
             } else if self.match_keyword("DATABASE") {
                 Ok(QueryType::DropDatabase)
+            } else if self.match_keyword("ROLE") {
+                Ok(QueryType::DropRole)
+            } else if self.match_keyword("USER") {
+                Ok(QueryType::DropUser)
             } else {
                 Ok(QueryType::Other)
+            }
+        } else if self.match_keyword("GRANT") {
+            self.skip_whitespace();
+            if self.match_keyword("ROLE") {
+                Ok(QueryType::GrantRole)
+            } else {
+                Ok(QueryType::GrantPermission)
+            }
+        } else if self.match_keyword("REVOKE") {
+            self.skip_whitespace();
+            if self.match_keyword("ROLE") {
+                Ok(QueryType::RevokeRole)
+            } else {
+                Ok(QueryType::RevokePermission)
             }
         } else if self.match_keyword("USE") {
             self.skip_whitespace();
@@ -3517,6 +3563,369 @@ impl SqlParser {
         } else {
             Err(QueryParseError::InvalidSyntax)
         }
+    }
+
+    /// 解析CREATE ROLE查询
+    fn parse_create_role_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析角色名称
+        self.skip_whitespace();
+        let role_name = self.parse_identifier()?;
+
+        Ok(SqlQuery {
+            query_type: QueryType::CreateRole,
+            table_name: role_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
+        })
+    }
+
+    fn parse_create_user_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析用户名称
+        self.skip_whitespace();
+        let user_name = self.parse_identifier()?;
+
+        Ok(SqlQuery {
+            query_type: QueryType::CreateUser,
+            table_name: user_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
+        })
+    }
+
+    /// 解析GRANT PERMISSION查询
+    fn parse_grant_permission_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析权限列表
+        let mut permissions = Vec::new();
+        loop {
+            self.skip_whitespace();
+            let permission = self.parse_identifier()?;
+            permissions.push(permission);
+            self.skip_whitespace();
+            if self.match_char(',') {
+                continue;
+            } else {
+                break;
+            }
+        }
+
+        // 解析ON关键字
+        self.skip_whitespace();
+        self.expect_keyword("ON")?;
+
+        // 解析表名
+        self.skip_whitespace();
+        let table_name = self.parse_identifier()?;
+
+        // 解析TO关键字
+        self.skip_whitespace();
+        self.expect_keyword("TO")?;
+
+        // 解析角色名
+        self.skip_whitespace();
+        let role_name = self.parse_identifier()?;
+
+        Ok(SqlQuery {
+            query_type: QueryType::GrantPermission,
+            table_name,
+            table_alias: Some(role_name),
+            joins: Vec::new(),
+            columns: permissions.into_iter().map(|p| Expression::Field { name: p, alias: None }).collect(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
+        })
+    }
+
+    /// 解析GRANT ROLE查询
+    fn parse_grant_role_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析角色名
+        self.skip_whitespace();
+        let role_name = self.parse_identifier()?;
+
+        // 解析TO关键字
+        self.skip_whitespace();
+        self.expect_keyword("TO")?;
+
+        // 解析用户名
+        self.skip_whitespace();
+        let user_name = self.parse_identifier()?;
+
+        Ok(SqlQuery {
+            query_type: QueryType::GrantRole,
+            table_name: role_name,
+            table_alias: Some(user_name),
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
+        })
+    }
+
+    /// 解析REVOKE PERMISSION查询
+    fn parse_revoke_permission_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析权限列表
+        let mut permissions = Vec::new();
+        loop {
+            self.skip_whitespace();
+            let permission = self.parse_identifier()?;
+            permissions.push(permission);
+            self.skip_whitespace();
+            if self.match_char(',') {
+                continue;
+            } else {
+                break;
+            }
+        }
+
+        // 解析ON关键字
+        self.skip_whitespace();
+        self.expect_keyword("ON")?;
+
+        // 解析表名
+        self.skip_whitespace();
+        let table_name = self.parse_identifier()?;
+
+        // 解析FROM关键字
+        self.skip_whitespace();
+        self.expect_keyword("FROM")?;
+
+        // 解析角色名
+        self.skip_whitespace();
+        let role_name = self.parse_identifier()?;
+
+        Ok(SqlQuery {
+            query_type: QueryType::RevokePermission,
+            table_name,
+            table_alias: Some(role_name),
+            joins: Vec::new(),
+            columns: permissions.into_iter().map(|p| Expression::Field { name: p, alias: None }).collect(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
+        })
+    }
+
+    /// 解析REVOKE ROLE查询
+    fn parse_revoke_role_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析角色名
+        self.skip_whitespace();
+        let role_name = self.parse_identifier()?;
+
+        // 解析FROM关键字
+        self.skip_whitespace();
+        self.expect_keyword("FROM")?;
+
+        // 解析用户名
+        self.skip_whitespace();
+        let user_name = self.parse_identifier()?;
+
+        Ok(SqlQuery {
+            query_type: QueryType::RevokeRole,
+            table_name: role_name,
+            table_alias: Some(user_name),
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
+        })
+    }
+
+    /// 解析DROP ROLE查询
+    fn parse_drop_role_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析角色名
+        self.skip_whitespace();
+        let role_name = self.parse_identifier()?;
+
+        Ok(SqlQuery {
+            query_type: QueryType::DropRole,
+            table_name: role_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
+        })
+    }
+
+    /// 解析DROP USER查询
+    fn parse_drop_user_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析用户名
+        self.skip_whitespace();
+        let user_name = self.parse_identifier()?;
+
+        Ok(SqlQuery {
+            query_type: QueryType::DropUser,
+            table_name: user_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
+            index_online: true,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
+        })
     }
 }
 

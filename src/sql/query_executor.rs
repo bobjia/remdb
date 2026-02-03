@@ -142,6 +142,35 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         }
     });
 
+    // 权限检查
+    match query.query_type {
+        crate::sql::QueryType::Select => {
+            // 检查SELECT权限
+            if !db.check_permission("current_user", crate::rbac::Permission::Select, &query.table_name) {
+                return Err(QueryExecutionError::InternalError);
+            }
+        }
+        crate::sql::QueryType::Insert => {
+            // 检查INSERT权限
+            if !db.check_permission("current_user", crate::rbac::Permission::Insert, &query.table_name) {
+                return Err(QueryExecutionError::InternalError);
+            }
+        }
+        crate::sql::QueryType::Update => {
+            // 检查UPDATE权限
+            if !db.check_permission("current_user", crate::rbac::Permission::Update, &query.table_name) {
+                return Err(QueryExecutionError::InternalError);
+            }
+        }
+        crate::sql::QueryType::Delete => {
+            // 检查DELETE权限
+            if !db.check_permission("current_user", crate::rbac::Permission::Delete, &query.table_name) {
+                return Err(QueryExecutionError::InternalError);
+            }
+        }
+        _ => {}
+    }
+
     match query.query_type {
         crate::sql::QueryType::Select => {
             if is_timeseries_table {
@@ -336,6 +365,84 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                     }
                 }
                 Err(_) => Err(QueryExecutionError::InternalError),
+            }
+        },
+        crate::sql::QueryType::CreateRole => {
+            // Extract role name from table_name field
+            let role_name = query.table_name.clone();
+            db.create_role(&role_name)
+                .map_err(|_| QueryExecutionError::InternalError)?;
+            Ok(ResultSet::new(Vec::new()))
+        },
+        crate::sql::QueryType::DropRole => {
+            // Extract role name from table_name field
+            let role_name = query.table_name.clone();
+            db.drop_role(&role_name)
+                .map_err(|_| QueryExecutionError::InternalError)?;
+            Ok(ResultSet::new(Vec::new()))
+        },
+        crate::sql::QueryType::GrantPermission => {
+            // Extract role name and permission from query fields
+            let role_name = query.table_name.clone();
+            // Extract permission from the first field in table_def
+            if let Some((permission_str, _, _, _, _, _, _)) = query.table_def.first() {
+                let permission = crate::rbac::Permission::from_str(permission_str)
+                    .map_err(|_| QueryExecutionError::InternalError)?;
+                // Extract table name from the second field
+                let table_name = if let Some((_, table_name, _, _, _, _, _)) = query.table_def.first() {
+                    table_name.clone()
+                } else {
+                    String::new()
+                };
+                db.grant_permission(&role_name, permission, &table_name)
+                    .map_err(|_| QueryExecutionError::InternalError)?;
+                Ok(ResultSet::new(Vec::new()))
+            } else {
+                Err(QueryExecutionError::InternalError)
+            }
+        },
+        crate::sql::QueryType::RevokePermission => {
+            // Extract role name and permission from query fields
+            let role_name = query.table_name.clone();
+            // Extract permission from the first field in table_def
+            if let Some((permission_str, _, _, _, _, _, _)) = query.table_def.first() {
+                let permission = crate::rbac::Permission::from_str(permission_str)
+                    .map_err(|_| QueryExecutionError::InternalError)?;
+                // Extract table name from the second field
+                let table_name = if let Some((_, table_name, _, _, _, _, _)) = query.table_def.first() {
+                    table_name.clone()
+                } else {
+                    String::new()
+                };
+                db.revoke_permission(&role_name, permission, &table_name)
+                    .map_err(|_| QueryExecutionError::InternalError)?;
+                Ok(ResultSet::new(Vec::new()))
+            } else {
+                Err(QueryExecutionError::InternalError)
+            }
+        },
+        crate::sql::QueryType::GrantRole => {
+            // Extract username and role name from query fields
+            let username = query.table_name.clone();
+            // Extract role name from the first field in table_def
+            if let Some((role_name, _, _, _, _, _, _)) = query.table_def.first() {
+                db.grant_role(&username, role_name)
+                    .map_err(|_| QueryExecutionError::InternalError)?;
+                Ok(ResultSet::new(Vec::new()))
+            } else {
+                Err(QueryExecutionError::InternalError)
+            }
+        },
+        crate::sql::QueryType::RevokeRole => {
+            // Extract username and role name from query fields
+            let username = query.table_name.clone();
+            // Extract role name from the first field in table_def
+            if let Some((role_name, _, _, _, _, _, _)) = query.table_def.first() {
+                db.revoke_role(&username, role_name)
+                    .map_err(|_| QueryExecutionError::InternalError)?;
+                Ok(ResultSet::new(Vec::new()))
+            } else {
+                Err(QueryExecutionError::InternalError)
             }
         },
         _ => Err(QueryExecutionError::InternalError),

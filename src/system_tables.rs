@@ -3,6 +3,10 @@ use crate::types::{RemDbError, Result, Value};
 
 // 系统表名称
 pub const SYSTEM_CONFIG_TABLE: &str = "__remdb_system_config";
+pub const SYSTEM_ROLES_TABLE: &str = "__remdb_system_roles";
+pub const SYSTEM_ROLE_PERMISSIONS_TABLE: &str = "__remdb_system_role_permissions";
+pub const SYSTEM_USERS_TABLE: &str = "__remdb_system_users";
+pub const SYSTEM_USER_ROLES_TABLE: &str = "__remdb_system_user_roles";
 
 // 配置项缓存
 static mut CONFIG_CACHE: Option<ConfigCache> = None;
@@ -30,15 +34,28 @@ pub const COMPRESSION_ZSTD: u8 = 2;
 /// 初始化系统表
 pub unsafe fn init_system_tables(db: &mut crate::RemDb) -> Result<()> {
     // 检查系统表是否已存在
-    let system_table_exists = db.tables.iter().any(|table_opt| {
+    let system_config_table_exists = db.tables.iter().any(|table_opt| {
         table_opt.as_ref().map(|table| table.def.name == SYSTEM_CONFIG_TABLE).unwrap_or(false)
     });
     
-    if !system_table_exists {
+    if !system_config_table_exists {
         // 创建系统配置表
         create_system_config_table(db)?;
         // 插入默认配置
         insert_default_configs(db)?;
+    }
+    
+    // 检查RBAC系统表是否存在
+    let roles_table_exists = db.tables.iter().any(|table_opt| {
+        table_opt.as_ref().map(|table| table.def.name == SYSTEM_ROLES_TABLE).unwrap_or(false)
+    });
+    
+    if !roles_table_exists {
+        // 创建RBAC系统表
+        create_system_roles_table(db)?;
+        create_system_role_permissions_table(db)?;
+        create_system_users_table(db)?;
+        create_system_user_roles_table(db)?;
     }
     
     // 初始化配置缓存
@@ -135,6 +152,353 @@ unsafe fn create_system_config_table(db: &mut crate::RemDb) -> Result<()> {
         secondary_index_type: crate::types::IndexType::SortedArray,
         record_size,
         max_records: 100, // 系统表只需要少量记录
+        version: 1,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    // 创建MemoryTable
+    let table = crate::table::MemoryTable::new(alloc::sync::Arc::new(table_def))?;
+    
+    // 添加到数据库
+    db.tables.push(Some(table));
+    db.primary_indices.push(None);
+    db.secondary_indices.push(None);
+    
+    Ok(())
+}
+
+/// 创建系统角色表
+unsafe fn create_system_roles_table(db: &mut crate::RemDb) -> Result<()> {
+    // 直接创建TableDef，使用较小的max_records值
+    let now = crate::platform::get_timestamp_us();
+    
+    // 定义字段
+    let record_size = 64 + 256 + 8 + 8; // 计算系统表记录大小
+    
+    // 创建字段定义
+    let fields = vec![
+        crate::types::FieldDef {
+            name: "role_name".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 64,
+            offset: 0,
+            primary_key: true,
+            not_null: true,
+            unique: true,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "description".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 256,
+            offset: 64,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "created_at".to_string(),
+            data_type: crate::types::DataType::Timestamp,
+            size: 8,
+            offset: 64 + 256,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "updated_at".to_string(),
+            data_type: crate::types::DataType::Timestamp,
+            size: 8,
+            offset: 64 + 256 + 8,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+    ];
+    
+    // 创建表定义，使用较小的max_records值
+    let table_def = crate::types::TableDef {
+        id: (db.tables.len() + 1) as u8, // 系统表ID从1开始
+        name: SYSTEM_ROLES_TABLE.to_string(),
+        fields,
+        primary_key: vec![0], // 主键是role_name字段
+        secondary_index: None,
+        secondary_index_type: crate::types::IndexType::SortedArray,
+        record_size,
+        max_records: 100, // 系统表只需要少量记录
+        version: 1,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    // 创建MemoryTable
+    let table = crate::table::MemoryTable::new(alloc::sync::Arc::new(table_def))?;
+    
+    // 添加到数据库
+    db.tables.push(Some(table));
+    db.primary_indices.push(None);
+    db.secondary_indices.push(None);
+    
+    Ok(())
+}
+
+/// 创建系统角色权限表
+unsafe fn create_system_role_permissions_table(db: &mut crate::RemDb) -> Result<()> {
+    // 直接创建TableDef，使用较小的max_records值
+    let now = crate::platform::get_timestamp_us();
+    
+    // 定义字段
+    let record_size = 64 + 64 + 256 + 8; // 计算系统表记录大小
+    
+    // 创建字段定义
+    let fields = vec![
+        crate::types::FieldDef {
+            name: "role_name".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 64,
+            offset: 0,
+            primary_key: true,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "permission".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 64,
+            offset: 64,
+            primary_key: true,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "table_name".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 256,
+            offset: 64 + 64,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "created_at".to_string(),
+            data_type: crate::types::DataType::Timestamp,
+            size: 8,
+            offset: 64 + 64 + 256,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+    ];
+    
+    // 创建表定义，使用较小的max_records值
+    let table_def = crate::types::TableDef {
+        id: (db.tables.len() + 1) as u8, // 系统表ID从1开始
+        name: SYSTEM_ROLE_PERMISSIONS_TABLE.to_string(),
+        fields,
+        primary_key: vec![0, 1], // 联合主键：role_name + permission
+        secondary_index: None,
+        secondary_index_type: crate::types::IndexType::SortedArray,
+        record_size,
+        max_records: 500, // 系统表只需要少量记录
+        version: 1,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    // 创建MemoryTable
+    let table = crate::table::MemoryTable::new(alloc::sync::Arc::new(table_def))?;
+    
+    // 添加到数据库
+    db.tables.push(Some(table));
+    db.primary_indices.push(None);
+    db.secondary_indices.push(None);
+    
+    Ok(())
+}
+
+/// 创建系统用户表
+unsafe fn create_system_users_table(db: &mut crate::RemDb) -> Result<()> {
+    // 直接创建TableDef，使用较小的max_records值
+    let now = crate::platform::get_timestamp_us();
+    
+    // 定义字段
+    let record_size = 64 + 256 + 8 + 8; // 计算系统表记录大小
+    
+    // 创建字段定义
+    let fields = vec![
+        crate::types::FieldDef {
+            name: "username".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 64,
+            offset: 0,
+            primary_key: true,
+            not_null: true,
+            unique: true,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "description".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 256,
+            offset: 64,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "created_at".to_string(),
+            data_type: crate::types::DataType::Timestamp,
+            size: 8,
+            offset: 64 + 256,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "updated_at".to_string(),
+            data_type: crate::types::DataType::Timestamp,
+            size: 8,
+            offset: 64 + 256 + 8,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+    ];
+    
+    // 创建表定义，使用较小的max_records值
+    let table_def = crate::types::TableDef {
+        id: (db.tables.len() + 1) as u8, // 系统表ID从1开始
+        name: SYSTEM_USERS_TABLE.to_string(),
+        fields,
+        primary_key: vec![0], // 主键是username字段
+        secondary_index: None,
+        secondary_index_type: crate::types::IndexType::SortedArray,
+        record_size,
+        max_records: 100, // 系统表只需要少量记录
+        version: 1,
+        created_at: now,
+        updated_at: now,
+    };
+    
+    // 创建MemoryTable
+    let table = crate::table::MemoryTable::new(alloc::sync::Arc::new(table_def))?;
+    
+    // 添加到数据库
+    db.tables.push(Some(table));
+    db.primary_indices.push(None);
+    db.secondary_indices.push(None);
+    
+    Ok(())
+}
+
+/// 创建系统用户角色表
+unsafe fn create_system_user_roles_table(db: &mut crate::RemDb) -> Result<()> {
+    // 直接创建TableDef，使用较小的max_records值
+    let now = crate::platform::get_timestamp_us();
+    
+    // 定义字段
+    let record_size = 64 + 64 + 8; // 计算系统表记录大小
+    
+    // 创建字段定义
+    let fields = vec![
+        crate::types::FieldDef {
+            name: "username".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 64,
+            offset: 0,
+            primary_key: true,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "role_name".to_string(),
+            data_type: crate::types::DataType::String,
+            size: 64,
+            offset: 64,
+            primary_key: true,
+            not_null: true,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+        crate::types::FieldDef {
+            name: "created_at".to_string(),
+            data_type: crate::types::DataType::Timestamp,
+            size: 8,
+            offset: 64 + 64,
+            primary_key: false,
+            not_null: false,
+            unique: false,
+            auto_increment: false,
+            default_value: None,
+            vector_metadata: None,
+            json_metadata: None,
+        },
+    ];
+    
+    // 创建表定义，使用较小的max_records值
+    let table_def = crate::types::TableDef {
+        id: (db.tables.len() + 1) as u8, // 系统表ID从1开始
+        name: SYSTEM_USER_ROLES_TABLE.to_string(),
+        fields,
+        primary_key: vec![0, 1], // 联合主键：username + role_name
+        secondary_index: None,
+        secondary_index_type: crate::types::IndexType::SortedArray,
+        record_size,
+        max_records: 500, // 系统表只需要少量记录
         version: 1,
         created_at: now,
         updated_at: now,

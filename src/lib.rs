@@ -16,6 +16,7 @@ pub mod monitor;
 pub mod platform;
 #[cfg(feature = "pubsub")]
 pub mod pubsub;
+pub mod rbac;
 pub mod sql;
 pub mod table;
 pub mod time_series;
@@ -30,6 +31,7 @@ pub use types::{    DataType, DistanceType, FieldDef, IndexType, RecordStatus, R
 };
 pub use compression::CompressionScheme;
 pub use system_tables::{init_system_tables, get_vector_compression_config, get_query_resource_config};
+pub use rbac::{RbacManager, Permission, Role, User};
 
 pub use index::{
     AnySecondaryIndex, BTreeIndex, IndexStats, PrimaryIndex, PrimaryIndexItem, SecondaryIndex,
@@ -161,6 +163,8 @@ pub struct RemDb {
     pub status: DatabaseStatus,
     /// 模型管理器
     pub model_manager: model::ModelManager,
+    /// RBAC管理器
+    pub rbac_manager: rbac::RbacManager,
 }
 
 /// 数据库状态
@@ -455,6 +459,7 @@ impl RemDb {
             metrics,
             status: DatabaseStatus::Created,
             model_manager: model::ModelManager::new(),
+            rbac_manager: rbac::RbacManager::new(),
         }
     }
 
@@ -540,6 +545,87 @@ impl RemDb {
         // TODO: 实现数据库删除
 
         Ok(())
+    }
+
+    /// 创建角色
+    pub fn create_role(&mut self, role_name: &str) -> Result<()> {
+        self.rbac_manager.create_role(role_name.to_string()).map_err(|e| {
+            RemDbError::ConfigError
+        })
+    }
+
+    /// 删除角色
+    pub fn drop_role(&mut self, role_name: &str) -> Result<()> {
+        self.rbac_manager.drop_role(role_name).map_err(|e| {
+            RemDbError::ConfigError
+        })
+    }
+
+    /// 授予权限给角色
+    pub fn grant_permission(
+        &mut self, 
+        role_name: &str, 
+        permission: rbac::Permission, 
+        table_name: Option<String>, 
+        column_name: Option<String>
+    ) -> Result<()> {
+        self.rbac_manager.grant_permission(role_name, permission, table_name, column_name).map_err(|e| {
+            RemDbError::ConfigError
+        })
+    }
+
+    /// 撤销角色的权限
+    pub fn revoke_permission(
+        &mut self, 
+        role_name: &str, 
+        permission: &rbac::Permission, 
+        table_name: &Option<String>, 
+        column_name: &Option<String>
+    ) -> Result<()> {
+        self.rbac_manager.revoke_permission(role_name, permission, table_name, column_name).map_err(|e| {
+            RemDbError::ConfigError
+        })
+    }
+
+    /// 创建用户
+    pub fn create_user(&mut self, user_name: &str) -> Result<()> {
+        self.rbac_manager.create_user(user_name.to_string()).map_err(|e| {
+            RemDbError::ConfigError
+        })
+    }
+
+    /// 删除用户
+    pub fn drop_user(&mut self, user_name: &str) -> Result<()> {
+        self.rbac_manager.drop_user(user_name).map_err(|e| {
+            RemDbError::ConfigError
+        })
+    }
+
+    /// 授予角色给用户
+    pub fn grant_role(&mut self, user_name: &str, role_name: &str) -> Result<()> {
+        self.rbac_manager.grant_role(user_name, role_name).map_err(|e| {
+            RemDbError::ConfigError
+        })
+    }
+
+    /// 撤销用户的角色
+    pub fn revoke_role(&mut self, user_name: &str, role_name: &str) -> Result<()> {
+        self.rbac_manager.revoke_role(user_name, role_name).map_err(|e| {
+            RemDbError::ConfigError
+        })
+    }
+
+    /// 检查用户是否有特定权限
+    pub fn check_permission(
+        &self, 
+        user_name: &str, 
+        permission: &rbac::Permission, 
+        table_name: &Option<String>, 
+        column_name: &Option<String>
+    ) -> Result<bool> {
+        self.rbac_manager.check_permission(user_name, permission, table_name, column_name).map_err(|e| {
+            RemDbError::ConfigError
+        })
     }
 
     /// 获取当前系统中可用的数据库列表
