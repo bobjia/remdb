@@ -35,6 +35,7 @@ enum RemDbDataType {
     REMDB_TYPE_BOOL = 6,
     REMDB_TYPE_TIMESTAMP = 7,
     REMDB_TYPE_STRING = 8,
+    REMDB_TYPE_JSON = 9,
 };
 
 /**
@@ -64,6 +65,11 @@ typedef union RemDbValue {
     uint8_t boolean;
     uint64_t timestamp;
     uint8_t string[REMDB_MAX_STRING_LEN];
+    struct {
+        uint8_t pool_id;
+        uint32_t offset;
+        uint32_t length;
+    } json;
 } RemDbValue;
 
 /**
