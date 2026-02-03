@@ -21,6 +21,8 @@ pub enum ModelError {
     InvalidInput,
     /// Model not found
     ModelNotFound,
+    /// Model already exists
+    ModelAlreadyExists,
 }
 
 impl core::fmt::Display for ModelError {
@@ -31,6 +33,7 @@ impl core::fmt::Display for ModelError {
             ModelError::ExecutionFailed => write!(f, "Model execution failed"),
             ModelError::InvalidInput => write!(f, "Invalid model input"),
             ModelError::ModelNotFound => write!(f, "Model not found"),
+            ModelError::ModelAlreadyExists => write!(f, "Model already exists"),
         }
     }
 }
@@ -95,6 +98,11 @@ impl ModelManager {
         inputs: Vec<(String, String)>,
         output: (String, String),
     ) -> Result<(), ModelError> {
+        // Check if model already exists
+        if self.models.contains_key(&name) {
+            return Err(ModelError::ModelAlreadyExists);
+        }
+
         // Load the model
         let model = OnnxModel::load(&path)
             .map_err(|_| ModelError::LoadFailed)?;

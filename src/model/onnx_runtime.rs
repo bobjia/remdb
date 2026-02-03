@@ -16,16 +16,9 @@ pub struct OnnxModel {
 impl OnnxModel {
     /// Load a model from file
     pub fn load(path: &str) -> core::result::Result<Self, String> {
-        // Validate the file exists (only in non-test builds)
-        #[cfg(all(feature = "std", not(test)))] {
-            use std::path::Path;
-            if !Path::new(path).exists() {
-                return Err("Model file not found".to_string());
-            }
-        }
-
         // In a real implementation, this would load the ONNX model
         // using an ONNX runtime library
+        // The path is stored for reference or future use
 
         Ok(Self {
             path: path.to_string(),
