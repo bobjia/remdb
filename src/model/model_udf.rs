@@ -45,7 +45,7 @@ impl ModelUDF {
             println!("ModelUDF::execute: processing arg with type {:?}", arg.value_type);
             
             match arg.value_type {
-                DataType::String => {
+                DataType::VarChar | DataType::Char | DataType::Text => {
                     // For string inputs, we would typically tokenize and embed
                     // For now, we'll create a dummy input
                     // Use heap allocation instead of stack allocation to avoid stack overflow

@@ -147,7 +147,7 @@ fn test_index_recovery() -> Result<()> {
     // 创建表
     let fields = &[
         ("id", remdb::DataType::UInt64, 8, None, None),
-        ("name", remdb::DataType::String, 32, None, None),
+        ("name", remdb::DataType::VarChar, 32, None, None),
         ("value", remdb::DataType::UInt32, 4, None, None),
     ];
 

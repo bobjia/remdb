@@ -178,7 +178,7 @@ fn test_create_table() {
         "users",
         &[
             ("id", DataType::UInt32, 4, None, None),
-            ("name", DataType::String, 32, None, None),
+            ("name", DataType::VarChar, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
             ("active", DataType::Bool, 1, None, None),
         ],
@@ -240,9 +240,9 @@ fn test_create_index() {
         "products",
         &[
             ("id", DataType::UInt32, 4, None, None),
-            ("name", DataType::String, 32, None, None),
+            ("name", DataType::VarChar, 32, None, None),
             ("price", DataType::Float32, 4, None, None),
-            ("category", DataType::String, 32, None, None),
+            ("category", DataType::VarChar, 32, None, None),
         ],
         Some(vec![0]), // 主键为id字段
     );
@@ -334,8 +334,8 @@ fn test_describe_table() {
         "employees",
         &[
             ("id", DataType::UInt32, 4, None, None),
-            ("name", DataType::String, 32, None, None),
-            ("department", DataType::String, 32, None, None),
+            ("name", DataType::VarChar, 32, None, None),
+            ("department", DataType::VarChar, 32, None, None),
             ("salary", DataType::Float64, 8, None, None),
             ("active", DataType::Bool, 1, None, None),
         ],
@@ -671,7 +671,7 @@ fn test_ddl_export_with_time_series() {
         "users",
         &[
             ("id", DataType::UInt32, 4, None, None),
-            ("name", DataType::String, 32, None, None),
+            ("name", DataType::VarChar, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
         ],
         Some(vec![0]), // 主键为id字段

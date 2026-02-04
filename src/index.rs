@@ -205,7 +205,7 @@ unsafe fn encode_composite_key(
                 let value = core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp);
                 encoded_key.extend_from_slice(&value.value.to_le_bytes());
             },
-            crate::types::DataType::String => {
+            crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => {
                 // 字符串类型：编码为长度前缀 + 内容
                 let str_slice = core::slice::from_raw_parts(field_ptr, field.size);
                 let str_len = str_slice.iter().position(|&c| c == 0).unwrap_or(field.size);
@@ -1844,7 +1844,7 @@ impl SecondaryIndex {
             if let Some(field_index) = secondary_index.first() {
                 if *field_index < self.def.fields.len() {
                     let field = &self.def.fields[*field_index];
-                    if field.data_type == crate::types::DataType::String {
+                    if field.data_type == crate::types::DataType::VarChar || field.data_type == crate::types::DataType::Char || field.data_type == crate::types::DataType::Text {
                         // 尝试使用UTF-8处理器比较字符串
                         if let (Some(str1), Some(str2)) = (
                             crate::utf8::get_global_utf8_processor().to_string(&item1.key_data[..item1.key_size as usize]),
@@ -2413,7 +2413,7 @@ impl BTreeIndex {
             if let Some(field_index) = secondary_index.first() {
                 if *field_index < self.def.fields.len() {
                     let field = &self.def.fields[*field_index];
-                    if field.data_type == crate::types::DataType::String {
+                    if field.data_type == crate::types::DataType::VarChar || field.data_type == crate::types::DataType::Char || field.data_type == crate::types::DataType::Text {
                         // 尝试使用UTF-8处理器比较字符串
                         if let (Some(str1), Some(str2)) = (
                             crate::utf8::get_global_utf8_processor().to_string(&item1.key_data[..item1.key_size as usize]),

@@ -1,6 +1,10 @@
 extern crate alloc;
 
+use std::sync::Mutex;
 use remdb::{config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode}, RemDb};
+
+// 互斥锁，确保测试串行执行
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
 // 为每个测试创建单独的内存缓冲区
 static mut DB_MEMORY1: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024]; // 32MB
@@ -13,6 +17,9 @@ static mut DB_MEMORY6: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024]; // 32MB
 // 测试基本的表删除操作
 #[test]
 fn test_drop_table_basic() {
+    // 获取互斥锁，确保测试串行执行
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY1.fill(0);
@@ -92,6 +99,9 @@ fn test_drop_table_basic() {
 // 测试 IF EXISTS 选项的行为
 #[test]
 fn test_drop_table_if_exists() {
+    // 获取互斥锁，确保测试串行执行
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY2.fill(0);
@@ -147,6 +157,9 @@ fn test_drop_table_if_exists() {
 // 测试通过SQL语句删除表
 #[test]
 fn test_drop_table_sql() {
+    // 获取互斥锁，确保测试串行执行
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY3.fill(0);
@@ -219,6 +232,9 @@ fn test_drop_table_sql() {
 // 测试通过SQL语句删除不存在的表（使用IF EXISTS）
 #[test]
 fn test_drop_table_sql_if_exists() {
+    // 获取互斥锁，确保测试串行执行
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY4.fill(0);
@@ -272,6 +288,9 @@ fn test_drop_table_sql_if_exists() {
 // 测试事务中的表删除
 #[test]
 fn test_drop_table_in_transaction() {
+    // 获取互斥锁，确保测试串行执行
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY5.fill(0);
@@ -351,6 +370,9 @@ fn test_drop_table_in_transaction() {
 // 测试内存回收的完整性
 #[test]
 fn test_drop_table_memory_recovery() {
+    // 获取互斥锁，确保测试串行执行
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY6.fill(0);
@@ -407,7 +429,7 @@ fn test_drop_table_memory_recovery() {
             ),
             (
                 "name",
-                remdb::DataType::String,
+                remdb::DataType::VarChar,
                 0,
                 None,
                 None,

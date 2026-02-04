@@ -1303,7 +1303,7 @@ impl LogManager {
                                             crate::types::Value { float64: 0.0 }
                                         }
                                     }
-                                    crate::types::DataType::String => {
+                                    crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => {
                                         // 确保有足够空间读取字符串长度
                                         if offset + 1 <= new_data_len {
                                             let _str_len = log_item.new_data[offset] as usize; // 1字节长度
@@ -1375,7 +1375,7 @@ impl LogManager {
                             | crate::types::DataType::Float64
                             | crate::types::DataType::Timestamp
                             | crate::types::DataType::TimestampTZ => 8,
-                            crate::types::DataType::String => 64, // 默认64字节字符串
+                            crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => 64, // 默认64字节字符串
                             crate::types::DataType::Vector => {
                                 // 向量大小 = 维度 * 4字节（float32）
                                 if vector_dimension > 0 {
@@ -1412,6 +1412,7 @@ impl LogManager {
                             name: field_name.to_string(),
                             data_type,
                             size: field_size,
+                            string_length: None,
                             offset: 0, // 偏移量会在表创建时计算
                             primary_key: primary_key_flag,
                             not_null: not_null_flag,

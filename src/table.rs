@@ -195,7 +195,7 @@ impl<'a> RecordRef<'a> {
     /// 按列索引读取字符串（零拷贝）
     pub fn get_str(&self, col: usize) -> Result<&'a str> {
         let field = self.field_def(col)?;
-        if field.data_type != DataType::String {
+        if field.data_type != DataType::VarChar && field.data_type != DataType::Char && field.data_type != DataType::Text {
             return Err(RemDbError::TypeMismatch);
         }
         let bytes = unsafe { core::slice::from_raw_parts(self.field_ptr(field), field.size) };
@@ -436,7 +436,7 @@ impl MemoryTable {
             if field.not_null {
                 // 检查字段是否为空
                 let is_null = match field.data_type {
-                    DataType::String => {
+                    DataType::VarChar | DataType::Char | DataType::Text => {
                         // 检查字符串是否为空（全0）
                         let str_ptr = record_data.add(field.offset) as *const u8;
                         let mut all_zero = true;
@@ -628,11 +628,11 @@ impl MemoryTable {
                             current.value == existing.value
                                 && current.tz_offset == existing.tz_offset
                         }
-                        DataType::String => {
+                        DataType::VarChar | DataType::Char | DataType::Text => {
                             // 比较字符串内容
-                            let current_str =
+                            let current_str = 
                                 record_data.add(pk_field.offset) as *const u8;
-                            let existing_str =
+                            let existing_str = 
                                 record_ptr.add(pk_field.offset) as *const u8;
                             let mut is_equal = true;
                             for i in 0..pk_field.size {
@@ -814,7 +814,7 @@ impl MemoryTable {
                             current.value == existing.value
                                 && current.tz_offset == existing.tz_offset
                         }
-                        DataType::String => {
+                        DataType::VarChar | DataType::Char | DataType::Text => {
                             // 比较字符串内容
                             let current_str = record_data.add(unique_field.offset) as *const u8;
                             let existing_str = record_ptr.add(unique_field.offset) as *const u8;
@@ -903,7 +903,7 @@ impl MemoryTable {
             DataType::Interval => Value {
                 interval: core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval),
             },
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                 let copy_size = core::cmp::min(size, crate::types::MAX_STRING_LEN);
                 memcpy(str_value.as_mut_ptr(), field_ptr, copy_size);
@@ -1372,7 +1372,7 @@ impl MemoryTable {
             crate::types::DataType::TimestampTZ => Value {
                 time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp),
             },
-            crate::types::DataType::String => {
+            crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                 // 只复制不超过MAX_STRING_LEN的字节，避免缓冲区溢出
                 let copy_size = core::cmp::min(field.size, crate::types::MAX_STRING_LEN);
@@ -1451,7 +1451,7 @@ impl MemoryTable {
             crate::types::DataType::TimestampTZ => {
                 *(field_ptr as *mut crate::types::db_timestamp) = value.time;
             }
-            crate::types::DataType::String => {
+            crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => {
                 memcpy(field_ptr, value.string.as_ptr(), field.size);
             }
             crate::types::DataType::Interval => {

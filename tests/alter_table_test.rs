@@ -179,7 +179,7 @@ fn test_alter_table_add_column() {
         "users",
         &[
             ("id", DataType::UInt32, 4, None, None),
-            ("name", DataType::String, 32, None, None),
+            ("name", DataType::VarChar, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
         ],
         Some(vec![0]), // 主键为id字段
@@ -213,7 +213,7 @@ fn test_alter_table_drop_column() {
         "users",
         &[
             ("id", DataType::UInt32, 4, None, None),
-            ("name", DataType::String, 32, None, None),
+            ("name", DataType::VarChar, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
             ("active", DataType::Bool, 1, None, None),
         ],
@@ -248,7 +248,7 @@ fn test_alter_table_modify_column() {
         "users",
         &[
             ("id", DataType::UInt32, 4, None, None),
-            ("name", DataType::String, 32, None, None),
+            ("name", DataType::VarChar, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
         ],
         Some(vec![0]), // 主键为id字段
@@ -282,7 +282,7 @@ fn test_alter_table_rename_column() {
         "users",
         &[
             ("id", DataType::UInt32, 4, None, None),
-            ("name", DataType::String, 32, None, None),
+            ("name", DataType::VarChar, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
         ],
         Some(vec![0]), // 主键为id字段
@@ -321,7 +321,7 @@ fn test_alter_table_data_migration() {
         "test_table",
         &[
             ("id", DataType::UInt32, 4, None, None),
-            ("name", DataType::String, 32, None, None),
+            ("name", DataType::VarChar, 32, None, None),
             ("age", DataType::UInt8, 1, None, None),
         ],
         Some(vec![0]), // 主键为id字段

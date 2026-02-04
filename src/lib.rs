@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![recursion_limit = "1024"]
 
 use crate::table::Defer;
 use core::ptr::NonNull;
@@ -1790,7 +1791,7 @@ impl DdlExecutor for RemDb {
         {
             // 计算字段大小
             let field_size = match data_type {
-                DataType::String => MAX_STRING_LEN,
+                DataType::VarChar | DataType::Char | DataType::Text => MAX_STRING_LEN,
                 DataType::Vector => {
                     // 向量类型：根据压缩配置计算大小
                     crate::system_tables::get_vector_field_size(*dimension)
@@ -1854,6 +1855,7 @@ impl DdlExecutor for RemDb {
                 name: field_name_static.to_string(),
                 data_type: *data_type,
                 size: field_size,
+                string_length: None, // 暂时设置为None，后续从SQL解析中获取
                 offset,
                 primary_key: is_primary_key,       // 主键索引匹配当前字段
                 not_null: final_not_null,          // 应用非空约束
@@ -2119,7 +2121,7 @@ impl DdlExecutor for RemDb {
                                 }
                             }
                             // 字符串类型：1字节长度 + 64字节内容
-                            crate::types::DataType::String => {
+                            crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => {
                                 if offset + 65 <= log_data.len() {
                                     let s = default_value.string;
                                     let string_len = core::cmp::min(
@@ -2429,7 +2431,7 @@ impl DdlExecutor for RemDb {
                 
                 // 计算字段大小
                 let field_size = match data_type {
-                    DataType::String => size as usize,
+                    DataType::VarChar | DataType::Char | DataType::Text => size as usize,
                     DataType::Vector => {
                         // 向量类型：维度 * 4字节（f32）
                         size as usize * 4
@@ -2448,6 +2450,7 @@ impl DdlExecutor for RemDb {
                     name: name.clone(),
                     data_type,
                     size: field_size,
+                    string_length: if matches!(data_type, DataType::VarChar | DataType::Char) { Some(size as usize) } else { None },
                     offset: new_offset,
                     primary_key,
                     not_null,
@@ -2518,7 +2521,7 @@ impl DdlExecutor for RemDb {
 
                 // 计算新字段大小
                 let new_size = match data_type {
-                    DataType::String => size as usize,
+                    DataType::VarChar | DataType::Char | DataType::Text => size as usize,
                     DataType::Vector => {
                         // 向量类型：维度 * 4字节（f32）
                         size as usize * 4
@@ -2529,6 +2532,7 @@ impl DdlExecutor for RemDb {
                 // 更新字段定义
                 field.data_type = data_type;
                 field.size = new_size;
+                field.string_length = if matches!(data_type, DataType::VarChar | DataType::Char) { Some(size as usize) } else { None };
                 field.default_value = default_value.clone();
                 field.primary_key = constraints.primary_key;
                 field.not_null = constraints.not_null;
@@ -3053,6 +3057,7 @@ impl RemDb {
             name: time_field_name.clone(),
             data_type: DataType::Timestamp,
             size: time_field_size,
+            string_length: None,
             offset,
             primary_key: true,
             not_null: true,
@@ -3074,6 +3079,7 @@ impl RemDb {
             name: value_field_name.clone(),
             data_type: DataType::Float64,
             size: value_field_size,
+            string_length: None,
             offset,
             primary_key: false,
             not_null: true,
@@ -3093,8 +3099,9 @@ impl RemDb {
             let tag_field_size = MAX_STRING_LEN; // VARCHAR使用最大字符串长度
             field_defs.push(FieldDef {
                 name: tag_field_name.clone(),
-                data_type: DataType::String,
+                data_type: DataType::VarChar,
                 size: tag_field_size,
+                string_length: None,
                 offset,
                 primary_key: false,
                 not_null: false,
@@ -3706,7 +3713,7 @@ impl RemDb {
                                         )
                                         .value
                                     ),
-                                    DataType::String => {
+                                    DataType::VarChar | DataType::Char | DataType::Text => {
                                         // 读取字符串并去除尾部的0字节
                                         let mut str_value = alloc::string::String::new();
                                         for i in 0..field.size {

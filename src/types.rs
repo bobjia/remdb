@@ -318,14 +318,18 @@ pub enum DataType {
     Timestamp = 11,
     /// 带时区的时间戳（精度可调）
     TimestampTZ = 12,
-    /// 定长字符串
-    String = 13,
+    /// 可变长度字符串
+    VarChar = 13,
+    /// 固定长度字符串
+    Char = 14,
+    /// 大文本字符串
+    Text = 15,
     /// 时间间隔
-    Interval = 14,
+    Interval = 16,
     /// 向量类型
-    Vector = 15,
+    Vector = 17,
     /// JSON类型
-    Json = 16,
+    Json = 18,
 }
 
 /// 实现从u8到DataType的转换
@@ -345,11 +349,13 @@ impl From<u8> for DataType {
             10 => DataType::Bool,
             11 => DataType::Timestamp,
             12 => DataType::TimestampTZ,
-            13 => DataType::String,
-            14 => DataType::Interval,
-            15 => DataType::Vector,
-            16 => DataType::Json,
-            _ => DataType::String, // 默认为String类型
+            13 => DataType::VarChar,
+            14 => DataType::Char,
+            15 => DataType::Text,
+            16 => DataType::Interval,
+            17 => DataType::Vector,
+            18 => DataType::Json,
+            _ => DataType::VarChar, // 默认为VarChar类型
         }
     }
 }
@@ -378,40 +384,44 @@ impl DataType {
             DataType::Timestamp => core::mem::size_of::<db_timestamp>(), // 实际大小，包括精度和标志
             DataType::TimestampTZ => core::mem::size_of::<db_timestamp>(), // 实际大小，包括精度和时区偏移
             DataType::Interval => core::mem::size_of::<db_interval>(), // 实际大小，包括精度和标志
-            DataType::String => panic!("String size is variable at compile time"),
+            DataType::VarChar => panic!("VarChar size is variable at compile time"),
+            DataType::Char => panic!("Char size is variable at compile time"),
+            DataType::Text => panic!("Text size is variable at compile time"),
             DataType::Vector => panic!("Vector size depends on dimension at runtime"),
             DataType::Json => panic!("Json size is variable at runtime"),
         }
     }
 
     /// 将数据类型转换为SQL类型字符串
-    pub fn to_sql_type(&self, _size: usize) -> &'static str {
+    pub fn to_sql_type(&self, size: usize) -> alloc::string::String {
         match self {
             // 整数类型
-            DataType::UInt8 => "INTEGER",
-            DataType::UInt16 => "INTEGER",
-            DataType::UInt32 => "INTEGER",
-            DataType::UInt64 => "INTEGER",
-            DataType::Int8 => "INTEGER",
-            DataType::Int16 => "INTEGER",
-            DataType::Int32 => "INTEGER",
-            DataType::Int64 => "INTEGER",
+            DataType::UInt8 => "INTEGER".to_string(),
+            DataType::UInt16 => "INTEGER".to_string(),
+            DataType::UInt32 => "INTEGER".to_string(),
+            DataType::UInt64 => "INTEGER".to_string(),
+            DataType::Int8 => "INTEGER".to_string(),
+            DataType::Int16 => "INTEGER".to_string(),
+            DataType::Int32 => "INTEGER".to_string(),
+            DataType::Int64 => "INTEGER".to_string(),
             // 浮点数类型
-            DataType::Float32 => "REAL",
-            DataType::Float64 => "REAL",
+            DataType::Float32 => "REAL".to_string(),
+            DataType::Float64 => "REAL".to_string(),
             // 布尔类型
-            DataType::Bool => "BOOL",
+            DataType::Bool => "BOOL".to_string(),
             // 时间类型
-            DataType::Timestamp => "TIMESTAMP",
-            DataType::TimestampTZ => "TIMESTAMPTZ",
+            DataType::Timestamp => "TIMESTAMP".to_string(),
+            DataType::TimestampTZ => "TIMESTAMPTZ".to_string(),
             // 时间间隔类型
-            DataType::Interval => "INTERVAL",
+            DataType::Interval => "INTERVAL".to_string(),
             // 字符串类型
-            DataType::String => "TEXT",
+            DataType::VarChar => alloc::format!("VARCHAR({})", size),
+            DataType::Char => alloc::format!("CHAR({})", size),
+            DataType::Text => "TEXT".to_string(),
             // 向量类型
-            DataType::Vector => "VECTOR",
+            DataType::Vector => "VECTOR".to_string(),
             // JSON类型
-            DataType::Json => "JSON",
+            DataType::Json => "JSON".to_string(),
         }
     }
 }
@@ -802,7 +812,7 @@ impl Clone for TypedValue {
                 DataType::Timestamp => new_value.time = self.value.time,
                 DataType::TimestampTZ => new_value.time = self.value.time,
                 DataType::Interval => new_value.interval = self.value.interval,
-                DataType::String => new_value.string = self.value.string,
+                DataType::VarChar | DataType::Char | DataType::Text => new_value.string = self.value.string,
                 DataType::Vector => {
                     // For vectors, we don't copy the actual vector data,
                     // just copy the pointer
@@ -867,7 +877,7 @@ impl PartialEq for TypedValue {
                         && self.value.time.tz_offset == other.value.time.tz_offset
                 }
                 DataType::Interval => self.value.interval.value == other.value.interval.value,
-                DataType::String => {
+                DataType::VarChar | DataType::Char | DataType::Text => {
                     // 使用UTF-8处理器比较字符串
                     let a_str = self.value.string.as_ref();
                     let b_str = other.value.string.as_ref();
@@ -936,7 +946,7 @@ impl Hash for TypedValue {
                     self.value.time.tz_offset.hash(state);
                 }
                 DataType::Interval => self.value.interval.value.hash(state),
-                DataType::String => {
+                DataType::VarChar | DataType::Char | DataType::Text => {
                     // 使用UTF-8处理器哈希字符串内容
                     if let Some(s) = get_global_utf8_processor().to_string(&self.value.string) {
                         s.trim_end_matches(char::from(0)).hash(state);
@@ -1009,15 +1019,15 @@ impl PartialOrd for TypedValue {
                             }
                         }
                         DataType::Interval => {
-                            Some(self.value.interval.value.cmp(&other.value.interval.value))
-                        }
-                        DataType::String => {
-                            // 使用UTF-8处理器比较字符串
-                            let a_str = self.value.string.as_ref();
-                            let b_str = other.value.string.as_ref();
-                            Some(get_global_utf8_processor().compare(a_str, b_str))
-                        }
-                        DataType::Vector => {
+                    Some(self.value.interval.value.cmp(&other.value.interval.value))
+                }
+                DataType::VarChar | DataType::Char | DataType::Text => {
+                    // 使用UTF-8处理器比较字符串
+                    let a_str = self.value.string.as_ref();
+                    let b_str = other.value.string.as_ref();
+                    Some(get_global_utf8_processor().compare(a_str, b_str))
+                }
+                DataType::Vector => {
                             // 向量比较：比较向量指针
                             // 注意：实际使用中可能需要比较向量的距离或相似度
                             Some(self.value.vector.cmp(&other.value.vector))
@@ -1134,14 +1144,14 @@ impl fmt::Debug for TypedValue {
                         self.value.time.value, self.value.time.tz_offset, self.value.time.precision
                     )
                 }
-                DataType::String => {
+                DataType::VarChar | DataType::Char | DataType::Text => {
                     let s = get_global_utf8_processor().to_string(&self.value.string)
                         .unwrap_or("")
                         .trim_end_matches(char::from(0));
                     write!(
                         f,
-                        "TypedValue(String, \"{}\")
-",
+                        "TypedValue({}, \"{}\")\n",
+                        self.value_type.to_sql_type(0).as_str(),
                         s
                     )
                 }
@@ -1184,6 +1194,8 @@ pub struct FieldDef {
     pub data_type: DataType,
     /// 字段大小（字节）
     pub size: usize,
+    /// 字符串类型的长度限制（仅适用于 VARCHAR 和 CHAR 类型）
+    pub string_length: Option<usize>,
     /// 偏移量（在记录中的位置）
     pub offset: usize,
     /// 是否为主键
@@ -1208,6 +1220,7 @@ impl Default for FieldDef {
             name: String::new(),
             data_type: DataType::Int32,
             size: 0,
+            string_length: None,
             offset: 0,
             primary_key: false,
             not_null: false,
@@ -1245,7 +1258,7 @@ impl FieldDef {
             constraints.push_str(" DEFAULT ");
             unsafe {
                 match self.data_type {
-                    DataType::String => {
+                    DataType::VarChar | DataType::Char | DataType::Text => {
                         let s = get_global_utf8_processor().to_string(&default.string)
                             .unwrap_or("")
                             .trim_end_matches(char::from(0));

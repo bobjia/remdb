@@ -31,7 +31,7 @@ impl From<RemDbDataType> for DataType {
             RemDbDataType::Float64 => DataType::Float64,
             RemDbDataType::Bool => DataType::Bool,
             RemDbDataType::Timestamp => DataType::Timestamp,
-            RemDbDataType::String => DataType::String,
+            RemDbDataType::String => DataType::VarChar,
             RemDbDataType::Vector => DataType::Vector,
         }
     }
@@ -103,7 +103,7 @@ impl From<&FieldDef> for RemDbFieldDef {
                 DataType::Bool => RemDbDataType::Bool,
                 DataType::Timestamp => RemDbDataType::Timestamp,
                 DataType::TimestampTZ => RemDbDataType::Timestamp, // 映射为Timestamp
-                DataType::String => RemDbDataType::String,
+                DataType::VarChar | DataType::Char | DataType::Text => RemDbDataType::String,
                 DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
                 DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
                 DataType::Json => RemDbDataType::Vector,     // 暂时映射为Vector类型
@@ -389,7 +389,7 @@ impl From<crate::types::TypedValue> for RemDbTypedValue {
                 crate::DataType::Bool => RemDbDataType::Bool,
                 crate::DataType::Timestamp => RemDbDataType::Timestamp,
                 crate::DataType::TimestampTZ => RemDbDataType::Timestamp, // 映射为Timestamp
-                crate::DataType::String => RemDbDataType::String,
+                crate::DataType::VarChar | crate::DataType::Char | crate::DataType::Text => RemDbDataType::String,
                 crate::DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
                 crate::DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
                 crate::DataType::Json => RemDbDataType::Vector,     // 暂时映射为Vector类型
@@ -733,6 +733,7 @@ pub unsafe extern "C" fn remdb_init_global(
                 )).to_string(),
                 data_type: c_field.data_type.into(),
                 size: c_field.size,
+                string_length: None,
                 offset: c_field.offset,
                 primary_key: j == c_table.primary_key,
                 not_null: j == c_table.primary_key, // 主键默认非空
@@ -856,6 +857,7 @@ pub unsafe extern "C" fn remdb_init_global(
                         )).to_string(),
                         data_type: c_field.data_type.into(),
                         size: c_field.size,
+                        string_length: None,
                         offset: c_field.offset,
                         primary_key: j == c_time_series_table.primary_key,
                         not_null: j == c_time_series_table.primary_key, // 主键默认非空

@@ -212,10 +212,11 @@ static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(
             default_value: None,
             vector_metadata: None,
             json_metadata: None,
+            string_length: None,
         },
         FieldDef {
             name: "name".to_string(),
-            data_type: DataType::String,
+            data_type: DataType::VarChar,
             size: 32,
             offset: 4,
             primary_key: false,
@@ -225,6 +226,7 @@ static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(
             default_value: None,
             vector_metadata: None,
             json_metadata: None,
+            string_length: Some(32),
         },
         FieldDef {
             name: "value".to_string(),
@@ -238,6 +240,7 @@ static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(
             default_value: None,
             vector_metadata: None,
             json_metadata: None,
+            string_length: None,
         },
     ],
     primary_key: vec![0],

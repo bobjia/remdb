@@ -1,7 +1,7 @@
 use remdb::{config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode}, RemDb, sql::execute_query, sql::parse_sql_query};
 
 // 测试内存缓冲区
-static mut DB_MEMORY: [u8; 1024 * 1024] = [0; 1024 * 1024]; // 1MB
+static mut DB_MEMORY: [u8; 4 * 1024 * 1024] = [0; 4 * 1024 * 1024]; // 4MB
 
 // 测试内存分配器
 static DEFAULT_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;

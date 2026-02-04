@@ -292,7 +292,7 @@ fn main() {
         "users",
         &[
             ("id", DataType::UInt32),
-            ("name", DataType::String),
+            ("name", DataType::VarChar),
             ("age", DataType::UInt8),
             ("active", DataType::Bool),
         ],

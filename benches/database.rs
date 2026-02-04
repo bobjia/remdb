@@ -175,7 +175,7 @@ static TIME_SERIES_TABLE_DEF: LazyLock<TableDef> = LazyLock::new(|| TableDef {
         },
         FieldDef {
             name: "metric_name".to_string(),
-            data_type: DataType::String,
+            data_type: DataType::VarChar,
             size: 32,
             offset: 4,
             not_null: false,
@@ -211,7 +211,7 @@ static TIME_SERIES_TABLE_DEF: LazyLock<TableDef> = LazyLock::new(|| TableDef {
         },
         FieldDef {
             name: "tags".to_string(),
-            data_type: DataType::String,
+            data_type: DataType::VarChar,
             size: 64,
             offset: 52,
             not_null: false,

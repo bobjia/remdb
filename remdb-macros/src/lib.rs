@@ -296,16 +296,16 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let type_params = &field.type_params;
 
         // 确定数据类型和大小
-        let (data_type, size_val) = if type_name == "i32" {
-            (quote!(remdb::types::DataType::Int32), 4)
+        let (data_type, size_val, string_length) = if type_name == "i32" {
+            (quote!(remdb::types::DataType::Int32), 4, quote!(None))
         } else if type_name == "i8" {
-            (quote!(remdb::types::DataType::Int8), 1)
+            (quote!(remdb::types::DataType::Int8), 1, quote!(None))
         } else if type_name == "u64" {
-            (quote!(remdb::types::DataType::UInt64), 8)
+            (quote!(remdb::types::DataType::UInt64), 8, quote!(None))
         } else if type_name == "f64" {
-            (quote!(remdb::types::DataType::Float64), 8)
+            (quote!(remdb::types::DataType::Float64), 8, quote!(None))
         } else if type_name == "bool" {
-            (quote!(remdb::types::DataType::Bool), 1)
+            (quote!(remdb::types::DataType::Bool), 1, quote!(None))
         } else if type_name == "str" {
             // 处理str(32)这样的类型
             let str_size = if let Some(params) = type_params {
@@ -313,7 +313,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             } else {
                 32
             };
-            (quote!(remdb::types::DataType::String), str_size)
+            (quote!(remdb::types::DataType::VarChar), str_size, quote!(Some(#str_size as usize)))
         } else if type_name == "vector" {
             // 处理vector(2)这样的向量类型
             let dim = if let Some(params) = type_params {
@@ -321,9 +321,9 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             } else {
                 128
             };
-            (quote!(remdb::types::DataType::Vector), dim * 4) // 向量每个维度4字节
+            (quote!(remdb::types::DataType::Vector), dim * 4, quote!(None)) // 向量每个维度4字节
         } else {
-            (quote!(remdb::types::DataType::Int32), 4)
+            (quote!(remdb::types::DataType::Int32), 4, quote!(None))
         };
 
         // 计算对齐要求
@@ -387,6 +387,7 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 name: stringify!(#field_name).to_string(),
                 data_type: #data_type,
                 size: #size_val as usize, // 确保是usize类型
+                string_length: #string_length,
                 offset: #offset as usize,  // 确保是usize类型
                 primary_key: #primary_key_val,
                 not_null: #not_null_val,

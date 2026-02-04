@@ -222,11 +222,19 @@ fn generate_field_defs(
         let is_integer_primary_key = col.typ.to_lowercase() == "integer" && col.primary_key;
         let auto_increment = col.auto_increment || is_integer_primary_key;
 
+        // 计算 string_length
+        let string_length = if col.typ.to_lowercase().contains("varchar") || col.typ.to_lowercase().contains("text") || col.typ.to_lowercase().contains("string") {
+            quote!(Some(#size))
+        } else {
+            quote!(None)
+        };
+
         field_defs.push(quote! {
             remdb::types::FieldDef {
                 name: #name.to_string(),
                 data_type: #data_type,
                 size: #size,
+                string_length: #string_length,
                 offset: #offset,
                 primary_key: #primary_key,
                 not_null: #not_null,
@@ -294,7 +302,7 @@ fn convert_to_data_type(sql_type: &str) -> proc_macro2::TokenStream {
         "real" | "float" => quote!(remdb::types::DataType::Float32),
         "double" | "double precision" => quote!(remdb::types::DataType::Float64),
         "boolean" | "bool" => quote!(remdb::types::DataType::Bool),
-        "text" | "varchar" | "string" => quote!(remdb::types::DataType::String),
+        "text" | "varchar" | "string" => quote!(remdb::types::DataType::VarChar),
         "timestamp" => quote!(remdb::types::DataType::Timestamp),
         _ => quote!(remdb::types::DataType::Int32),
     }

@@ -312,25 +312,32 @@ fn test_model_udf_incorrect_arguments() {
 #[test]
 #[serial]
 fn test_model_udf_in_where_clause() {
-    setup_test();
+    let result = std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            setup_test();
 
-    // Initialize a database with a test table
-    let db = init_global_db(&DOCS_DB).unwrap();
-    
-    // Create test data
-    let insert_sql = "INSERT INTO DOCS_TABLE (text) VALUES ('Hello world'), ('Test document');";
-    let result = db.sql_query(insert_sql);
-    assert!(result.is_ok(), "INSERT should succeed");
-    
-    // Register model
-    let create_model_sql = "CREATE MODEL udf_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);";
-    let result = db.sql_query(create_model_sql);
-    assert!(result.is_ok(), "CREATE MODEL should succeed");
-    
-    // Test model UDF in WHERE clause - should execute (even if dummy results)
-    let select_sql = "SELECT id FROM DOCS_TABLE WHERE udf_embedding(text) = udf_embedding(text);";
-    let result = db.sql_query(select_sql);
-    assert!(result.is_ok(), "SELECT with model UDF in WHERE clause should succeed");
+            // Initialize a database with a test table
+            let db = init_global_db(&DOCS_DB).unwrap();
+            
+            // Create test data
+            let insert_sql = "INSERT INTO DOCS_TABLE (text) VALUES ('Hello world'), ('Test document');";
+            let result = db.sql_query(insert_sql);
+            assert!(result.is_ok(), "INSERT should succeed");
+            
+            // Register model
+            let create_model_sql = "CREATE MODEL udf_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);";
+            let result = db.sql_query(create_model_sql);
+            assert!(result.is_ok(), "CREATE MODEL should succeed");
+            
+            // Test model UDF in WHERE clause - should execute (even if dummy results)
+            let select_sql = "SELECT id FROM DOCS_TABLE WHERE udf_embedding(text) = udf_embedding(text);";
+            let result = db.sql_query(select_sql);
+            assert!(result.is_ok(), "SELECT with model UDF in WHERE clause should succeed");
 
-    teardown_test();
+            teardown_test();
+        })
+        .unwrap()
+        .join()
+        .unwrap();
 }

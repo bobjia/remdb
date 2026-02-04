@@ -418,7 +418,7 @@ impl ReplicationManager {
                                             offset = log_item.new_data.len();
                                         }
                                     }
-                                    crate::types::DataType::String => {
+                                    crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => {
                                         // 确保offset不超过new_data的大小
                                         if offset < log_item.new_data.len() {
                                             let string_len = log_item.new_data[offset] as usize;

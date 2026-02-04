@@ -2,6 +2,7 @@
 //! 
 //! This module defines the RbacManager struct for managing RBAC operations.
 
+use core::result::Result;
 use std::collections::HashMap;
 use std::string::String;
 use std::vec::Vec;

@@ -225,7 +225,7 @@ fn value_to_string_repr(value: &TypedValue) -> String {
             DataType::Bool => alloc::format!("{}", value.value.bool),
             DataType::Timestamp => alloc::format!("{}", value.value.time.value),
             DataType::TimestampTZ => alloc::format!("{}", value.value.time.value),
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 let string_slice = core::str::from_utf8(&value.value.string).unwrap_or("");
                 string_slice.trim_end_matches(char::from(0)).to_string()
             }

@@ -226,7 +226,9 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                                 "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64" => crate::types::DataType::Int64,
                                 "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32" | "UINT64" => crate::types::DataType::UInt64,
                                 "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" => crate::types::DataType::Float32,
-                                "VARCHAR" | "CHAR" | "TEXT" => crate::types::DataType::String,
+                                "VARCHAR" => crate::types::DataType::VarChar,
+                                "CHAR" => crate::types::DataType::Char,
+                                "TEXT" => crate::types::DataType::Text,
                                 "BOOL" | "BOOLEAN" => crate::types::DataType::Bool,
                                 "TIMESTAMP" => crate::types::DataType::Timestamp,
                                 "VECTOR" => crate::types::DataType::Vector,
@@ -1578,7 +1580,7 @@ fn evaluate_expression_for_aggregate(
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                     buf[..len].copy_from_slice(&s.as_bytes()[..len]);
-                    (DataType::String, Value { string: buf })
+                    (DataType::VarChar, Value { string: buf })
                 }
                 SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
                 SqlValue::Null => (DataType::Int64, Value { i64: 0 }),
@@ -1587,7 +1589,7 @@ fn evaluate_expression_for_aggregate(
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                     buf[..len].copy_from_slice(&s.as_bytes()[..len]);
-                    (DataType::String, Value { string: buf })
+                    (DataType::VarChar, Value { string: buf })
                 }
                 SqlValue::Json(_) => (DataType::Json, Value { json_storage: JsonStorage::Null }),
             };
@@ -2154,7 +2156,7 @@ fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
             DataType::Float32 => (left.value.float32 - right.value.float32).abs() < f32::EPSILON,
             DataType::Float64 => (left.value.float64 - right.value.float64).abs() < f64::EPSILON,
             DataType::Bool => left.value.bool == right.value.bool,
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 let left_str = core::str::from_utf8(&left.value.string)
                     .unwrap()
                     .trim_end_matches(char::from(0));
@@ -2362,7 +2364,7 @@ fn execute_select_join_query(
                                             (DataType::UInt64, crate::sql::Value::Integer(v)) => {
                                                 field_value.value.u64 == *v as u64
                                             }
-                                            (DataType::String, crate::sql::Value::String(v)) => {
+                                            (DataType::VarChar | DataType::Char | DataType::Text, crate::sql::Value::String(v)) => {
                                                 let field_str =
                                                     core::str::from_utf8(&field_value.value.string)
                                                         .unwrap()
@@ -2564,10 +2566,10 @@ fn execute_select_join_query(
                                 value_type: DataType::Bool,
                                 value: Value { bool: false },
                             },
-                            DataType::String => {
+                            DataType::VarChar | DataType::Char | DataType::Text => {
                                 let buf = [0; MAX_STRING_LEN];
                                 TypedValue {
-                                    value_type: DataType::String,
+                                    value_type: DataType::VarChar,
                                     value: Value { string: buf },
                                 }
                             }
@@ -2747,7 +2749,7 @@ fn execute_select_join_query(
                                             (DataType::UInt64, crate::sql::Value::Integer(v)) => {
                                                 field_value.value.u64 == *v as u64
                                             }
-                                            (DataType::String, crate::sql::Value::String(v)) => {
+                                            (DataType::VarChar | DataType::Char | DataType::Text, crate::sql::Value::String(v)) => {
                                                 let field_str =
                                                     core::str::from_utf8(&field_value.value.string)
                                                         .unwrap()
@@ -2834,10 +2836,10 @@ fn execute_select_join_query(
                                     value_type: DataType::Bool,
                                     value: Value { bool: false },
                                 },
-                                DataType::String => {
+                                DataType::VarChar | DataType::Char | DataType::Text => {
                                     let buf = [0; MAX_STRING_LEN];
                                     TypedValue {
-                                        value_type: DataType::String,
+                                        value_type: DataType::VarChar,
                                         value: Value { string: buf },
                                     }
                                 }
@@ -2945,6 +2947,20 @@ fn evaluate_expression(
     record_values: &[TypedValue],
     expr: &Expression,
 ) -> Result<TypedValue, QueryExecutionError> {
+    evaluate_expression_with_depth(table, record_values, expr, 0)
+}
+
+fn evaluate_expression_with_depth(
+    table: &MemoryTable,
+    record_values: &[TypedValue],
+    expr: &Expression,
+    depth: usize,
+) -> Result<TypedValue, QueryExecutionError> {
+    // Check recursion depth to prevent stack overflow
+    const MAX_RECURSION_DEPTH: usize = 100;
+    if depth > MAX_RECURSION_DEPTH {
+        return Err(QueryExecutionError::InternalError);
+    }
     match expr {
         Expression::Field {
             name: field_name, ..
@@ -2979,7 +2995,7 @@ fn evaluate_expression(
             // 评估函数参数
             let mut arg_values = Vec::with_capacity(args.len());
             for arg in args {
-                arg_values.push(evaluate_expression(table, record_values, arg)?);
+                arg_values.push(evaluate_expression_with_depth(table, record_values, arg, depth + 1)?);
             }
 
             // 执行函数调用
@@ -2999,7 +3015,7 @@ fn evaluate_expression(
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                     buf[..len].copy_from_slice(&s.as_bytes()[..len]);
-                    (DataType::String, Value { string: buf })
+                    (DataType::VarChar, Value { string: buf })
                 }
                 SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
                 SqlValue::Null => (DataType::Int64, Value { i64: 0 }),
@@ -3008,7 +3024,7 @@ fn evaluate_expression(
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                     buf[..len].copy_from_slice(&s.as_bytes()[..len]);
-                    (DataType::String, Value { string: buf })
+                    (DataType::VarChar, Value { string: buf })
                 }
                 SqlValue::Json(_) => (DataType::Json, Value { json_storage: JsonStorage::Null }),
             };
@@ -3019,8 +3035,8 @@ fn evaluate_expression(
             left, op, right, ..
         } => {
             // 评估左右操作数
-            let left_val = evaluate_expression(table, record_values, left)?;
-            let right_val = evaluate_expression(table, record_values, right)?;
+            let left_val = evaluate_expression_with_depth(table, record_values, left, depth + 1)?;
+            let right_val = evaluate_expression_with_depth(table, record_values, right, depth + 1)?;
 
             // 对于向量操作符，从表的字段定义中获取向量维度
             if matches!(
@@ -3108,7 +3124,7 @@ fn evaluate_vector_binary_op(
             let vec_slice = core::slice::from_raw_parts(vec2_ptr, vector_dim as usize);
             vec_slice.to_vec()
         };
-    } else if matches!(right.value_type, DataType::String) {
+    } else if matches!(right.value_type, DataType::VarChar | DataType::Char | DataType::Text) {
         // 右操作数是字符串类型，尝试解析为向量字面量 [x1, x2, ..., xn]
         let vec_str = unsafe {
             core::str::from_utf8(&right.value.string)
@@ -3259,7 +3275,7 @@ fn evaluate_binary_op(
                         DataType::Float32 => left.value.float32 == 0.0,
                         DataType::Float64 => left.value.float64 == 0.0,
                         DataType::Bool => !left.value.bool,
-                        DataType::String => {
+                        DataType::VarChar | DataType::Char | DataType::Text => {
                             // 检查字符串是否为空
                             // 安全地检查字符串是否为空，避免UTF-8转换错误
                             let mut is_empty = true;
@@ -3294,7 +3310,7 @@ fn evaluate_binary_op(
                 }
                 
                 // 字符串比较
-                if left.value_type == DataType::String && right.value_type == DataType::String {
+                if matches!(left.value_type, DataType::VarChar | DataType::Char | DataType::Text) && matches!(right.value_type, DataType::VarChar | DataType::Char | DataType::Text) {
                     let left_str = core::str::from_utf8(&left.value.string)
                         .map_err(|_| QueryExecutionError::TypeMismatch)?
                         .trim_end_matches(char::from(0));
@@ -3481,7 +3497,7 @@ fn evaluate_binary_op(
     // 解析间隔值，支持字符串格式（如"1 HOUR"）和数值格式（微秒）
     let interval_micros = match right.value_type {
         DataType::Int64 => unsafe { right.value.i64 },
-        DataType::String => unsafe {
+        DataType::VarChar | DataType::Char | DataType::Text => unsafe {
             let interval_str = core::str::from_utf8(&right.value.string)
                 .map_err(|_| QueryExecutionError::TypeMismatch)?
                 .trim_end_matches(char::from(0));
@@ -4092,7 +4108,7 @@ fn parse_origin_timestamp(origin_arg: &TypedValue) -> Result<i64, QueryExecution
             DataType::Int32 => Ok(origin_arg.value.i32 as i64),
             DataType::Int64 => Ok(origin_arg.value.i64),
             // 字符串形式的时间戳（如'2020-01-01'）
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 let origin_str = core::str::from_utf8(&origin_arg.value.string)
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
@@ -4128,7 +4144,7 @@ fn execute_to_iso8601(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionE
                 string_value[..len].copy_from_slice(&result.as_bytes()[..len]);
 
                 Ok(TypedValue {
-                    value_type: DataType::String,
+                    value_type: DataType::VarChar,
                     value: Value {
                         string: string_value,
                     },
@@ -4150,7 +4166,7 @@ fn execute_to_char(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionErro
 
     unsafe {
         match (timestamp_arg.value_type, format_arg.value_type) {
-            (DataType::Timestamp | DataType::TimestampTZ, DataType::String) => {
+            (DataType::Timestamp | DataType::TimestampTZ, DataType::VarChar | DataType::Char | DataType::Text) => {
                 let timestamp = &timestamp_arg.value.time;
                 // 提取字符串格式
                 let format_str = core::str::from_utf8(&format_arg.value.string)
@@ -4165,7 +4181,7 @@ fn execute_to_char(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionErro
                 string_value[..len].copy_from_slice(&result.as_bytes()[..len]);
 
                 Ok(TypedValue {
-                    value_type: DataType::String,
+                    value_type: DataType::VarChar,
                     value: Value {
                         string: string_value,
                     },
@@ -4216,7 +4232,7 @@ fn parse_time_interval(interval_arg: &TypedValue) -> Result<i64, QueryExecutionE
             DataType::Float32 => Ok(interval_arg.value.float32 as i64),
             DataType::Float64 => Ok(interval_arg.value.float64 as i64),
             // 字符串形式的时间间隔，如'5 minutes'、'1 hour'等
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 let interval_str = core::str::from_utf8(&interval_arg.value.string)
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
@@ -4242,7 +4258,7 @@ fn execute_concat(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError
     for arg in args {
         unsafe {
             let arg_str = match arg.value_type {
-                DataType::String => String::from(
+                DataType::VarChar | DataType::Char | DataType::Text => String::from(
                     core::str::from_utf8(&arg.value.string)
                         .map_err(|_| QueryExecutionError::TypeMismatch)?
                         .trim_end_matches(char::from(0)),
@@ -4270,7 +4286,7 @@ fn execute_concat(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError
     string_value[..len].copy_from_slice(&result.as_bytes()[..len]);
 
     Ok(TypedValue {
-        value_type: DataType::String,
+        value_type: DataType::VarChar,
         value: Value {
             string: string_value,
         },
@@ -4290,7 +4306,7 @@ fn execute_substring(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionEr
     unsafe {
         // 提取源字符串
         let source_str = match string_arg.value_type {
-            DataType::String => core::str::from_utf8(&string_arg.value.string)
+            DataType::VarChar | DataType::Char | DataType::Text => core::str::from_utf8(&string_arg.value.string)
                 .map_err(|_| QueryExecutionError::TypeMismatch)?
                 .trim_end_matches(char::from(0)),
             _ => return Err(QueryExecutionError::TypeMismatch),
@@ -4339,7 +4355,7 @@ fn execute_substring(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionEr
         string_value[..len].copy_from_slice(&substring.as_bytes()[..len]);
 
         Ok(TypedValue {
-            value_type: DataType::String,
+            value_type: DataType::VarChar,
             value: Value {
                 string: string_value,
             },
@@ -4357,7 +4373,7 @@ fn execute_upper(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
 
     unsafe {
         let result_str = match arg.value_type {
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 let source_str = core::str::from_utf8(&arg.value.string)
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
@@ -4372,7 +4388,7 @@ fn execute_upper(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
         string_value[..len].copy_from_slice(&result_str.as_bytes()[..len]);
 
         Ok(TypedValue {
-            value_type: DataType::String,
+            value_type: DataType::VarChar,
             value: Value {
                 string: string_value,
             },
@@ -4390,7 +4406,7 @@ fn execute_lower(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
 
     unsafe {
         let result_str = match arg.value_type {
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 let source_str = core::str::from_utf8(&arg.value.string)
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
@@ -4405,7 +4421,7 @@ fn execute_lower(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
         string_value[..len].copy_from_slice(&result_str.as_bytes()[..len]);
 
         Ok(TypedValue {
-            value_type: DataType::String,
+            value_type: DataType::VarChar,
             value: Value {
                 string: string_value,
             },
@@ -4423,7 +4439,7 @@ fn execute_length(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError
 
     unsafe {
         let length = match arg.value_type {
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 let source_str = core::str::from_utf8(&arg.value.string)
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
@@ -4449,7 +4465,7 @@ fn execute_char_length(args: &[TypedValue]) -> Result<TypedValue, QueryExecution
 
     unsafe {
         let char_count = match arg.value_type {
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 // 使用UTF-8处理器计算字符长度
                 let char_count = crate::utf8::get_global_utf8_processor().char_length(&arg.value.string);
                 char_count as u64
@@ -5060,7 +5076,7 @@ fn execute_create_table_query(
                     let columns = alloc::vec!["status".to_string()];
                     let mut result_set = ResultSet::new(columns);
                     result_set.add_row(alloc::vec![TypedValue {
-                        value_type: DataType::String,
+                        value_type: DataType::VarChar,
                         value: Value { string: [b'0'; 64] },
                     }]);
                     return Ok(result_set);
@@ -5075,7 +5091,7 @@ fn execute_create_table_query(
                     let columns = alloc::vec!["status".to_string()];
                     let mut result_set = ResultSet::new(columns);
                     result_set.add_row(alloc::vec![TypedValue {
-                        value_type: DataType::String,
+                        value_type: DataType::VarChar,
                         value: Value { string: [b'0'; 64] },
                     }]);
                     return Ok(result_set);
@@ -5129,7 +5145,9 @@ fn execute_create_table_query(
             "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => DataType::TimestampTZ,
 
             // 字符串类型
-            "STRING" | "TEXT" | "VARCHAR" | "NVARCHAR" | "CHAR" | "CLOB" => DataType::String,
+            "STRING" | "TEXT" => DataType::Text,
+            "VARCHAR" | "NVARCHAR" => DataType::VarChar,
+            "CHAR" => DataType::Char,
 
             // 向量类型
             "VECTOR" => DataType::Vector,
@@ -5217,7 +5235,7 @@ fn execute_create_table_query(
                                     0,
                                 ),
                             },
-                            DataType::String => {
+                            DataType::VarChar | DataType::Char | DataType::Text => {
                                 let mut s = [0; MAX_STRING_LEN];
                                 let str_val = actual_value.to_string();
                                 let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
@@ -5267,7 +5285,7 @@ fn execute_create_table_query(
                                 0,
                             ),
                         },
-                        DataType::String => {
+                        DataType::VarChar | DataType::Char | DataType::Text => {
                             let mut s = [0; MAX_STRING_LEN];
                             let str_val = f.to_string();
                             let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
@@ -5320,7 +5338,7 @@ fn execute_create_table_query(
                                 0,
                             ),
                         },
-                        DataType::String => {
+                        DataType::VarChar | DataType::Char | DataType::Text => {
                             let mut s = [0; MAX_STRING_LEN];
                             let str_val = b.to_string();
                             let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
@@ -5391,7 +5409,7 @@ fn execute_create_table_query(
                                 0,
                             ),
                         },
-                        DataType::String => {
+                        DataType::VarChar | DataType::Char | DataType::Text => {
                             let mut buf = [0; MAX_STRING_LEN];
                             let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                             buf[..len].copy_from_slice(&s.as_bytes()[..len]);
@@ -5463,7 +5481,7 @@ fn execute_create_table_query(
                                     0,
                                 ),
                             },
-                            DataType::String => {
+                            DataType::VarChar | DataType::Char | DataType::Text => {
                                 let mut buf = [0; MAX_STRING_LEN];
                                 let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                                 buf[..len].copy_from_slice(&s.as_bytes()[..len]);
@@ -5514,7 +5532,7 @@ fn execute_create_table_query(
                                     0,
                                 ),
                             },
-                            DataType::String => Value {
+                            DataType::VarChar | DataType::Char | DataType::Text => Value {
                                 string: [0; MAX_STRING_LEN],
                             },
                             DataType::Interval => Value {
@@ -5619,7 +5637,7 @@ fn execute_create_table_query(
     let columns = alloc::vec!["status".to_string()];
     let mut result_set = ResultSet::new(columns);
     result_set.add_row(alloc::vec![TypedValue {
-        value_type: DataType::String,
+        value_type: DataType::VarChar,
         value: Value { string: [b'0'; 64] },
     }]);
 
@@ -5668,7 +5686,7 @@ fn execute_show_index_build_status_query(
                 value: Value { u64: status.id as u64 },
             },
             TypedValue {
-                value_type: DataType::String,
+                value_type: DataType::VarChar,
                 value: Value { 
                     string: { 
                         let mut s = [0u8; 64];
@@ -5680,7 +5698,7 @@ fn execute_show_index_build_status_query(
                 },
             },
             TypedValue {
-                value_type: DataType::String,
+                value_type: DataType::VarChar,
                 value: Value { 
                     string: { 
                         let mut s = [0u8; 64];
@@ -5692,7 +5710,7 @@ fn execute_show_index_build_status_query(
                 },
             },
             TypedValue {
-                value_type: DataType::String,
+                value_type: DataType::VarChar,
                 value: Value { 
                     string: { 
                         let mut s = [0u8; 64];
@@ -5704,7 +5722,7 @@ fn execute_show_index_build_status_query(
                 },
             },
             TypedValue {
-                value_type: DataType::String,
+                value_type: DataType::VarChar,
                 value: Value { 
                     string: { 
                         let mut s = [0u8; 64];
@@ -6039,7 +6057,7 @@ fn process_group_by_query(
                 DataType::Timestamp => value.value.time.value as u64,
                 DataType::TimestampTZ => (value.value.time.value as u64) ^ (value.value.time.tz_offset as u64),
                 DataType::Interval => value.value.interval.value as u64,
-                DataType::String => {
+                DataType::VarChar | DataType::Char | DataType::Text => {
                     // 简单的字符串哈希
                     let s = core::str::from_utf8(&value.value.string).unwrap_or("");
                     let trimmed = s.trim_end_matches(char::from(0));
@@ -6563,7 +6581,7 @@ fn execute_describe_query(
                 DataType::Timestamp => alloc::format!("{}", unsafe { default_val.time.value }),
                 DataType::TimestampTZ => alloc::format!("{}", unsafe { default_val.time.value }),
                 // 字符串类型
-                DataType::String => {
+                DataType::VarChar | DataType::Char | DataType::Text => {
                     let str_val = unsafe { &default_val.string };
                     String::from_utf8_lossy(str_val)
                         .trim_end_matches(char::from(0))
@@ -6590,7 +6608,9 @@ fn execute_describe_query(
             crate::DataType::Int16 => "smallint".to_string(),
             crate::DataType::Int32 => "int".to_string(),
             crate::DataType::Int64 => "bigint".to_string(),
-            crate::DataType::String => alloc::format!("varchar({})", field.size),
+            crate::DataType::VarChar => alloc::format!("varchar({})", field.size),
+            crate::DataType::Char => alloc::format!("char({})", field.size),
+            crate::DataType::Text => "text".to_string(),
             crate::DataType::Bool => "bool".to_string(),
             crate::DataType::Timestamp => "timestamp".to_string(),
             crate::DataType::TimestampTZ => "timestamp with time zone".to_string(),
@@ -6618,7 +6638,7 @@ fn execute_describe_query(
                 .copy_from_slice(&field_name_bytes[..field_name_len]);
         }
         let field_name_typed_val = TypedValue {
-            value_type: DataType::String,
+            value_type: DataType::VarChar,
             value: field_name_val,
         };
 
@@ -6629,7 +6649,7 @@ fn execute_describe_query(
             type_val.string[..type_len].copy_from_slice(&type_bytes[..type_len]);
         }
         let type_typed_val = TypedValue {
-            value_type: DataType::String,
+            value_type: DataType::VarChar,
             value: type_val,
         };
 
@@ -6640,7 +6660,7 @@ fn execute_describe_query(
             key_val.string[..key_len].copy_from_slice(&key_bytes[..key_len]);
         }
         let key_typed_val = TypedValue {
-            value_type: DataType::String,
+            value_type: DataType::VarChar,
             value: key_val,
         };
 
@@ -6651,7 +6671,7 @@ fn execute_describe_query(
             null_val.string[..null_len].copy_from_slice(&null_bytes[..null_len]);
         }
         let null_typed_val = TypedValue {
-            value_type: DataType::String,
+            value_type: DataType::VarChar,
             value: null_val,
         };
 
@@ -6662,7 +6682,7 @@ fn execute_describe_query(
             default_val.string[..default_len].copy_from_slice(&default_bytes[..default_len]);
         }
         let default_typed_val = TypedValue {
-            value_type: DataType::String,
+            value_type: DataType::VarChar,
             value: default_val,
         };
 
@@ -6903,13 +6923,31 @@ fn execute_insert_query(
                     }
                 }
             } else if let Some(sql_value) = field_value {
+                // 验证字符串长度
+                if field.data_type == DataType::VarChar || field.data_type == DataType::Char || field.data_type == DataType::Text {
+                    if let crate::sql::Value::String(s) = sql_value {
+                        // 验证字符串长度
+                        if let Some(max_length) = field.string_length {
+                            if s.len() > max_length {
+                                return Err(QueryExecutionError::TypeMismatch);
+                            }
+                        } else if field.data_type == DataType::Text {
+                            // TEXT类型限制为10KB
+                            const MAX_TEXT_SIZE: usize = 10 * 1024; // 10KB
+                            if s.len() > MAX_TEXT_SIZE {
+                                return Err(QueryExecutionError::TypeMismatch);
+                            }
+                        }
+                    }
+                }
+
                 // 转换并设置字段值
                 // 为插入操作创建一个Expression::Constant
                 let expr = Expression::Constant {
                     value: sql_value.clone(),
                     alias: None,
                 };
-                println!("DEBUG: Setting field {} at offset {} with size {}", field.name, field.offset, field.size);
+
                 set_field_value(
                     table,
                     &mut record_data,
@@ -6998,11 +7036,13 @@ fn execute_insert_query(
                                 default_value.time,
                             );
                         }
-                        DataType::String => {
+                        DataType::VarChar | DataType::Char | DataType::Text => {
+                            // Only copy up to MAX_STRING_LEN bytes to avoid buffer overflow
+                            let copy_len = core::cmp::min(field.size, crate::types::MAX_STRING_LEN);
                             core::ptr::copy_nonoverlapping(
                                 default_value.string.as_ptr(),
                                 record_data.as_mut_ptr().add(field.offset),
-                                field.size,
+                                copy_len,
                             );
                         }
                         DataType::Interval => {
@@ -7373,7 +7413,7 @@ fn execute_update_query(
     Ok(result_set)
 }
 
-/// 设置字段值
+/// 设置字段值（包装函数，使用深度0）
 fn set_field_value(
     table: &MemoryTable,
     record_data: &mut Vec<u8>,
@@ -7382,6 +7422,25 @@ fn set_field_value(
     field_size: usize,
     expr: &Expression,
 ) -> Result<(), QueryExecutionError> {
+    set_field_value_with_depth(table, record_data, offset, data_type, field_size, expr, 0)
+}
+
+/// 设置字段值
+fn set_field_value_with_depth(
+    table: &MemoryTable,
+    record_data: &mut Vec<u8>,
+    offset: usize,
+    data_type: DataType,
+    field_size: usize,
+    expr: &Expression,
+    depth: usize,
+) -> Result<(), QueryExecutionError> {
+    // Check recursion depth to prevent stack overflow
+    const MAX_RECURSION_DEPTH: usize = 100;
+    if depth > MAX_RECURSION_DEPTH {
+        return Err(QueryExecutionError::InternalError);
+    }
+    
     unsafe {
         // 1. 从record_data中提取所有字段的当前值
         let record_values = table
@@ -7424,13 +7483,15 @@ fn set_field_value(
                     DataType::Bool => crate::types::Value {
                         bool: unsafe { *field_ptr != 0 },
                     },
-                    DataType::String => {
+                    DataType::VarChar | DataType::Char | DataType::Text => {
                         let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
+                        // Only copy up to MAX_STRING_LEN bytes to avoid buffer overflow
+                        let copy_len = core::cmp::min(field.size, crate::types::MAX_STRING_LEN);
                         unsafe {
                             core::ptr::copy_nonoverlapping(
                                 field_ptr,
                                 str_value.as_mut_ptr(),
-                                field.size,
+                                copy_len,
                             );
                         }
                         crate::types::Value { string: str_value }
@@ -7448,7 +7509,7 @@ fn set_field_value(
             .collect::<Vec<_>>();
 
         // 2. 评估表达式
-        let evaluated_value = evaluate_expression(table, &record_values, expr)?;
+        let evaluated_value = evaluate_expression_with_depth(table, &record_values, expr, depth + 1)?;
 
         // 3. 根据字段类型设置值
         match data_type {
@@ -7618,9 +7679,9 @@ fn set_field_value(
             }
 
             // 字符串类型
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 let str_value = match evaluated_value.value_type {
-                    DataType::String => {
+                    DataType::VarChar | DataType::Char | DataType::Text => {
                         core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default()
                     }
                     DataType::Int64 => &evaluated_value.value.i64.to_string(),
@@ -7651,7 +7712,7 @@ fn set_field_value(
             // 向量类型
             DataType::Vector => {
                 // 处理字符串类型的向量字面量（来自evaluate_expression的结果）
-                if matches!(evaluated_value.value_type, DataType::String) {
+                if matches!(evaluated_value.value_type, DataType::VarChar | DataType::Char | DataType::Text) {
                     // 从固定大小的字符串数组中提取有效字符串（去除后面的零字节）
                     let string_slice = evaluated_value.value.string.iter()
                         .take_while(|&&c| c != 0)
@@ -7695,7 +7756,7 @@ fn set_field_value(
                     }
                     _ => {
                         // 调试信息
-                        if matches!(evaluated_value.value_type, DataType::String) {
+                        if matches!(evaluated_value.value_type, DataType::VarChar | DataType::Char | DataType::Text) {
                             let s = core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default();
                             eprintln!("DEBUG: Vector field got string: '{}', starts_with('['): {}, ends_with(']'): {}", s, s.starts_with('['), s.ends_with(']'));
                         } else {
@@ -7740,7 +7801,7 @@ fn execute_create_time_series_table_query(
                     let columns = alloc::vec!["status".to_string()];
                     let mut result_set = ResultSet::new(columns);
                     result_set.add_row(alloc::vec![TypedValue {
-                        value_type: DataType::String,
+                        value_type: DataType::VarChar,
                         value: Value { string: [b'0'; 64] },
                     }]);
                     return Ok(result_set);
@@ -7755,7 +7816,7 @@ fn execute_create_time_series_table_query(
                     let columns = alloc::vec!["status".to_string()];
                     let mut result_set = ResultSet::new(columns);
                     result_set.add_row(alloc::vec![TypedValue {
-                        value_type: DataType::String,
+                        value_type: DataType::VarChar,
                         value: Value { string: [b'0'; 64] },
                     }]);
                     return Ok(result_set);
@@ -7799,7 +7860,9 @@ fn execute_create_time_series_table_query(
             "FLOAT32" | "FLOAT" => crate::DataType::Float32,
             "FLOAT64" | "DOUBLE" | "DOUBLE PRECISION" | "REAL" => crate::DataType::Float64,
             "BOOL" | "BOOLEAN" => crate::DataType::Bool,
-            "STRING" | "TEXT" | "VARCHAR" | "NVARCHAR" | "CHAR" | "CLOB" => crate::DataType::String,
+            "STRING" | "TEXT" => crate::DataType::Text,
+            "VARCHAR" | "NVARCHAR" => crate::DataType::VarChar,
+            "CHAR" => crate::DataType::Char,
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
 
@@ -7856,7 +7919,7 @@ fn execute_create_time_series_table_query(
     let columns = alloc::vec!["status".to_string()];
     let mut result_set = ResultSet::new(columns);
     result_set.add_row(alloc::vec![TypedValue {
-        value_type: crate::DataType::String,
+        value_type: crate::DataType::VarChar,
         value: crate::Value { string: [b'0'; 64] },
     }]);
 
@@ -8379,7 +8442,7 @@ fn compare_field_with_condition(
         }
 
         // 字符串类型
-        DataType::String => {
+        DataType::VarChar | DataType::Char | DataType::Text => {
             let f_str = unsafe { &field_value.string }; // 读取string字段
             let f_str = String::from_utf8_lossy(f_str)
                 .trim_end_matches(char::from(0))
@@ -8645,15 +8708,18 @@ unsafe fn evaluate_comparison_with_alias(
                 } else {
                     // 右值是普通字段
                     // 从record_values向量中直接获取字段值
-                    let right_field_index = table
+                    if let Some(right_field_index) = table
                         .def
                         .fields
                         .iter()
                         .position(|field| field.name == *right_field)
-                        .ok_or(QueryExecutionError::FieldNotFound)
-                        .unwrap();
-                    let right_field_value = &record_values[right_field_index];
-                    compare_values(field_value, right_field_value)
+                    {
+                        let right_field_value = &record_values[right_field_index];
+                        compare_values(field_value, right_field_value)
+                    } else {
+                        // 右值不是字段，可能是表达式，暂时返回false
+                        false
+                    }
                 }
             }
             _ => {
@@ -9465,7 +9531,7 @@ fn sort_rows(
             }
 
             // 字符串类型
-            DataType::String => {
+            DataType::VarChar | DataType::Char | DataType::Text => {
                 let a_str = unsafe { &val_a.value.string };
                 let b_str = unsafe { &val_b.value.string };
 

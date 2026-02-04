@@ -143,8 +143,8 @@ fn main() {
                 ),
                 (
                     "name",
-                    DataType::String,
-                    0,
+                    DataType::VarChar,
+                    32,
                     None,
                     None,
                 ),
@@ -183,8 +183,8 @@ fn main() {
                 ),
                 (
                     "name",
-                    DataType::String,
-                    0,
+                    DataType::VarChar,
+                    32,
                     None,
                     None,
                 ),

@@ -151,7 +151,7 @@ fn main() {
         "users",
         &[
             ("id", DataType::UInt32, 0, None, None),
-            ("name", DataType::String, 32, None, None),
+            ("name", DataType::VarChar, 32, None, None),
             ("age", DataType::UInt8, 0, None, None),
             ("active", DataType::Bool, 0, None, None),
         ],
