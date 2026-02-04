@@ -2,8 +2,8 @@ extern crate alloc;
 
 use remdb::*;
 
-// 定义内存缓冲区
-static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
+// 定义内存缓冲区（增大到2MB以容纳系统表和用户表）
+static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152];
 
 // 定义表结构
 remdb::table!(

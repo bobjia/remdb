@@ -8,7 +8,7 @@ use std::sync::Mutex;
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
 // 静态内存缓冲区，用于测试
-static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存
+static mut DB_MEMORY: [u8; 4 * 1024 * 1024] = [0u8; 4 * 1024 * 1024]; // 4MB内存
 
 // 测试用Platform实现
 struct TestPlatform;
@@ -127,7 +127,7 @@ fn init_global_db() -> Result<RemDb> {
     // 创建数据库配置
     let config = Box::leak(Box::new(remdb::config::DbConfig {
         tables: vec![],
-        total_memory: 1024 * 1024, // 1MB内存
+        total_memory: 4 * 1024 * 1024, // 4MB内存
         default_max_records: 1000,
         low_power_mode_supported: true,
         low_power_max_records: Some(100),

@@ -2,12 +2,12 @@ extern crate alloc;
 use remdb::{DataType, RemDb, Result};
 
 /// 定义静态内存缓冲区
-static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存缓冲区
+static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152]; // 2MB内存缓冲区
 
 /// 定义静态数据库配置
 static DB_CONFIG: remdb::config::DbConfig = remdb::config::DbConfig {
     tables: vec![],
-    total_memory: 1024 * 1024, // 1MB
+    total_memory: 2097152, // 2MB
     low_power_mode_supported: false,
     low_power_max_records: None,
     default_max_records: 1000,
@@ -37,6 +37,84 @@ fn main() -> Result<()> {
     // 初始化内存分配器
     unsafe {
         remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())?;
+
+        // 初始化平台抽象层
+        #[cfg(feature = "posix")]
+        remdb::platform::init_platform(remdb::platform::posix::get_posix_platform());
+        #[cfg(not(feature = "posix"))]
+        {
+            // 在非posix平台上，使用一个简单的平台实现
+            struct DummyPlatform;
+            impl remdb::platform::Platform for DummyPlatform {
+                fn get_timestamp(&self) -> u64 {
+                    0
+                }
+                fn get_timestamp_us(&self) -> u64 {
+                    0
+                }
+                fn spin_lock(&self, _lock: &mut u32) {}
+                fn spin_unlock(&self, _lock: &mut u32) {}
+                fn compiler_barrier(&self) {}
+                fn full_memory_barrier(&self) {}
+                fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
+                    unsafe {
+                        core::ptr::copy_nonoverlapping(src, dest, size);
+                    }
+                }
+                fn memset(&self, dest: *mut u8, value: u8, size: usize) {
+                    unsafe {
+                        core::ptr::write_bytes(dest, value, size);
+                    }
+                }
+                fn delay_ms(&self, _ms: u32) {}
+                fn delay_us(&self, _us: u32) {}
+                fn file_open(
+                    &self,
+                    _path: &str,
+                    _mode: remdb::platform::FileMode,
+                ) -> remdb::platform::FileResult<remdb::platform::FileHandle> {
+                    Err(())
+                }
+                fn file_close(&self, _handle: remdb::platform::FileHandle) -> remdb::platform::FileResult<()> {
+                    Err(())
+                }
+                fn file_write(
+                    &self,
+                    _handle: remdb::platform::FileHandle,
+                    _buffer: *const u8,
+                    _size: usize,
+                ) -> remdb::platform::FileResult<usize> {
+                    Err(())
+                }
+                fn file_read(
+                    &self,
+                    _handle: remdb::platform::FileHandle,
+                    _buffer: *mut u8,
+                    _size: usize,
+                ) -> remdb::platform::FileResult<usize> {
+                    Err(())
+                }
+                fn file_seek(
+                    &self,
+                    _handle: remdb::platform::FileHandle,
+                    _offset: i64,
+                    _whence: remdb::platform::SeekWhence,
+                ) -> remdb::platform::FileResult<u64> {
+                    Err(())
+                }
+                fn file_remove(&self, _path: &str) -> remdb::platform::FileResult<()> {
+                    Err(())
+                }
+                fn file_size(&self, _path: &str) -> remdb::platform::FileResult<usize> {
+                    Err(())
+                }
+                fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+                    0
+                }
+            }
+            static DUMMY_PLATFORM: DummyPlatform = DummyPlatform;
+            remdb::platform::init_platform(&DUMMY_PLATFORM);
+        }
     }
     
     // 创建数据库实例
@@ -53,7 +131,10 @@ fn main() -> Result<()> {
         ("value", DataType::Float64, 0, None, None),
     ];
     
-    db.create_table("metrics", &fields, None)?;
+    // 定义复合主键为(device_id, metric_id, timestamp)
+    let primary_key = Some(vec![0, 1, 2]);
+    
+    db.create_table("metrics", &fields, primary_key)?;
     println!("成功创建带有复合主键的表: metrics (device_id, metric_id, timestamp)");
     
     // 获取表

@@ -22,10 +22,26 @@ pub struct RbacManager {
 impl RbacManager {
     /// Create a new RbacManager
     pub fn new() -> Self {
-        Self {
+        let mut manager = Self {
             roles: HashMap::new(),
             users: HashMap::new(),
-        }
+        };
+
+        // Create default admin role with all permissions
+        let mut admin_role = Role::new("admin".to_string());
+        // Grant all permissions to admin role
+        admin_role.add_permission(Permission::Select, None, None);
+        admin_role.add_permission(Permission::Insert, None, None);
+        admin_role.add_permission(Permission::Update, None, None);
+        admin_role.add_permission(Permission::Delete, None, None);
+        manager.roles.insert("admin".to_string(), admin_role);
+
+        // Create default current_user and assign admin role
+        let mut current_user = User::new("current_user".to_string());
+        current_user.add_role("admin".to_string());
+        manager.users.insert("current_user".to_string(), current_user);
+
+        manager
     }
 
     /// Create a new role

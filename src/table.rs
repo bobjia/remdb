@@ -905,7 +905,8 @@ impl MemoryTable {
             },
             DataType::String => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
-                memcpy(str_value.as_mut_ptr(), field_ptr, size);
+                let copy_size = core::cmp::min(size, crate::types::MAX_STRING_LEN);
+                memcpy(str_value.as_mut_ptr(), field_ptr, copy_size);
                 Value { string: str_value }
             }
             DataType::Vector => {

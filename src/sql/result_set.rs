@@ -234,27 +234,7 @@ fn value_to_string_repr(value: &TypedValue) -> String {
             }
             DataType::Vector => {
                 // 向量类型转换为字符串表示
-                let vector_ptr = value.value.vector;
-                if !vector_ptr.is_null() {
-                    // 为了安全，使用固定维度（3）来避免访问未初始化的vector_metadata
-                    // 实际应用中，应该从表结构中获取向量维度
-                    let dimension = 3;
-                    let mut vec_str = alloc::string::String::from("[");
-                    
-                    // 显示前3个元素
-                    for i in 0..core::cmp::min(3, dimension) {
-                        if i > 0 {
-                            vec_str.push_str(", ");
-                        }
-                        let val = *vector_ptr.add(i);
-                        vec_str.push_str(&alloc::format!("{:.4}", val));
-                    }
-                    
-                    vec_str.push_str("]");
-                    vec_str
-                } else {
-                    alloc::format!("[null]")
-                }
+                alloc::format!("[vector]")
             }
             DataType::Json => {
                 // JSON类型转换为字符串表示

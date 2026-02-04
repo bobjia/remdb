@@ -3173,9 +3173,19 @@ impl RemDb {
         }
     }
 
+    /// 获取表数量
+    pub fn table_count(&self) -> usize {
+        self.tables.len()
+    }
+
     /// 获取时序表数量
     pub fn time_series_table_count(&self) -> usize {
         self.time_series_tables.len()
+    }
+
+    /// 获取所有表的引用
+    pub fn get_all_tables(&self) -> &Vec<Option<MemoryTable>> {
+        &self.tables
     }
 
     /// 事务化批量写入时序数据

@@ -1156,8 +1156,8 @@ impl fmt::Debug for TypedValue {
                 DataType::Vector => {
                     write!(
                         f,
-                        "TypedValue(Vector, metadata: {:?})",
-                        self.value.vector_metadata
+                        "TypedValue(Vector, pointer: {:?})",
+                        self.value.vector
                     )
                 }
                 DataType::Json => {

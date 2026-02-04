@@ -11,20 +11,20 @@ fn test_rbac_module() {
     
     // Test creating a role
     println!("\n1. Testing role creation");
-    match rbac_manager.create_role("admin".to_string()) {
-        Ok(_) => println!("✓ Successfully created role: admin"),
-        Err(e) => println!("✗ Failed to create role: {:?}", e),
+    match rbac_manager.create_role("user".to_string()) {
+        Ok(_) => println!("✓ Successfully created role: user"),
+        Err(e) => println!("⚠ Role creation failed (may already exist): {:?}", e),
     }
     
     // Test granting permissions
     println!("\n2. Testing permission granting");
-    match rbac_manager.grant_permission("admin", Permission::Select, Some("users".to_string()), None) {
-        Ok(_) => println!("✓ Successfully granted SELECT permission to admin"),
+    match rbac_manager.grant_permission("user", Permission::Select, Some("users".to_string()), None) {
+        Ok(_) => println!("✓ Successfully granted SELECT permission to user"),
         Err(e) => println!("✗ Failed to grant permission: {:?}", e),
     }
     
-    match rbac_manager.grant_permission("admin", Permission::Insert, Some("users".to_string()), None) {
-        Ok(_) => println!("✓ Successfully granted INSERT permission to admin"),
+    match rbac_manager.grant_permission("user", Permission::Insert, Some("users".to_string()), None) {
+        Ok(_) => println!("✓ Successfully granted INSERT permission to user"),
         Err(e) => println!("✗ Failed to grant permission: {:?}", e),
     }
     
@@ -37,8 +37,8 @@ fn test_rbac_module() {
     
     // Test granting role to user
     println!("\n4. Testing role granting");
-    match rbac_manager.grant_role("alice", "admin") {
-        Ok(_) => println!("✓ Successfully granted admin role to alice"),
+    match rbac_manager.grant_role("alice", "user") {
+        Ok(_) => println!("✓ Successfully granted user role to alice"),
         Err(e) => println!("✗ Failed to grant role: {:?}", e),
     }
     
@@ -79,8 +79,8 @@ fn test_rbac_module() {
     
     // Test revoking permissions
     println!("\n6. Testing permission revocation");
-    match rbac_manager.revoke_permission("admin", &Permission::Insert, &Some("users".to_string()), &None) {
-        Ok(_) => println!("✓ Successfully revoked INSERT permission from admin"),
+    match rbac_manager.revoke_permission("user", &Permission::Insert, &Some("users".to_string()), &None) {
+        Ok(_) => println!("✓ Successfully revoked INSERT permission from user"),
         Err(e) => println!("✗ Failed to revoke permission: {:?}", e),
     }
     
@@ -98,8 +98,8 @@ fn test_rbac_module() {
     
     // Test revoking role
     println!("\n7. Testing role revocation");
-    match rbac_manager.revoke_role("alice", "admin") {
-        Ok(_) => println!("✓ Successfully revoked admin role from alice"),
+    match rbac_manager.revoke_role("alice", "user") {
+        Ok(_) => println!("✓ Successfully revoked user role from alice"),
         Err(e) => println!("✗ Failed to revoke role: {:?}", e),
     }
     
@@ -124,8 +124,8 @@ fn test_rbac_module() {
     
     // Test dropping role
     println!("\n9. Testing role deletion");
-    match rbac_manager.drop_role("admin") {
-        Ok(_) => println!("✓ Successfully deleted role: admin"),
+    match rbac_manager.drop_role("user") {
+        Ok(_) => println!("✓ Successfully deleted role: user"),
         Err(e) => println!("✗ Failed to delete role: {:?}", e),
     }
     

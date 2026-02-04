@@ -34,9 +34,16 @@ impl ModelUDF {
 
     /// Execute the UDF
     pub fn execute(&self, args: &[TypedValue]) -> core::result::Result<TypedValue, String> {
+        // Debug print: start of execute
+        #[cfg(feature = "std")]
+        println!("ModelUDF::execute: start");
+
         // Convert arguments to model inputs
         let mut model_inputs = Vec::new();
         for arg in args {
+            #[cfg(feature = "std")]
+            println!("ModelUDF::execute: processing arg with type {:?}", arg.value_type);
+            
             match arg.value_type {
                 DataType::String => {
                     // For string inputs, we would typically tokenize and embed
@@ -80,19 +87,33 @@ impl ModelUDF {
             }
         }
 
+        // Debug print: after processing args
+        #[cfg(feature = "std")]
+        println!("ModelUDF::execute: after processing args, model_inputs len: {}", model_inputs.len());
+
         // Execute the model
         let output = self.model.execute(&model_inputs)?;
 
+        // Debug print: after executing model
+        #[cfg(feature = "std")]
+        println!("ModelUDF::execute: after executing model, output len: {}", output.len());
+
         // Convert model output to TypedValue
         // Assuming output is a vector
-        Ok(TypedValue {
+        let typed_value = TypedValue {
             value_type: DataType::Vector,
             value: Value {
                 // In a real implementation, this would properly store the vector
-                // For now, we'll use a placeholder
-                float32: 0.0,
+                // For now, we'll use a null pointer as placeholder
+                vector: core::ptr::null(),
             },
-        })
+        };
+
+        // Debug print: before returning
+        #[cfg(feature = "std")]
+        println!("ModelUDF::execute: before returning, typed_value type: {:?}", typed_value.value_type);
+
+        Ok(typed_value)
     }
 }
 

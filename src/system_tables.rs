@@ -151,7 +151,7 @@ unsafe fn create_system_config_table(db: &mut crate::RemDb) -> Result<()> {
         secondary_index: None,
         secondary_index_type: crate::types::IndexType::SortedArray,
         record_size,
-        max_records: 100, // 系统表只需要少量记录
+        max_records: 512, // 增加系统表记录限制
         version: 1,
         created_at: now,
         updated_at: now,
@@ -241,7 +241,7 @@ unsafe fn create_system_roles_table(db: &mut crate::RemDb) -> Result<()> {
         secondary_index: None,
         secondary_index_type: crate::types::IndexType::SortedArray,
         record_size,
-        max_records: 100, // 系统表只需要少量记录
+        max_records: 512, // 增加系统表记录限制
         version: 1,
         created_at: now,
         updated_at: now,
@@ -331,7 +331,7 @@ unsafe fn create_system_role_permissions_table(db: &mut crate::RemDb) -> Result<
         secondary_index: None,
         secondary_index_type: crate::types::IndexType::SortedArray,
         record_size,
-        max_records: 500, // 系统表只需要少量记录
+        max_records: 512, // 增加系统表记录限制
         version: 1,
         created_at: now,
         updated_at: now,
@@ -421,7 +421,7 @@ unsafe fn create_system_users_table(db: &mut crate::RemDb) -> Result<()> {
         secondary_index: None,
         secondary_index_type: crate::types::IndexType::SortedArray,
         record_size,
-        max_records: 100, // 系统表只需要少量记录
+        max_records: 512, // 增加系统表记录限制
         version: 1,
         created_at: now,
         updated_at: now,
@@ -498,7 +498,7 @@ unsafe fn create_system_user_roles_table(db: &mut crate::RemDb) -> Result<()> {
         secondary_index: None,
         secondary_index_type: crate::types::IndexType::SortedArray,
         record_size,
-        max_records: 500, // 系统表只需要少量记录
+        max_records: 512, // 增加系统表记录限制
         version: 1,
         created_at: now,
         updated_at: now,

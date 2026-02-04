@@ -71,14 +71,21 @@ fn test_drop_table_basic() {
     .unwrap();
 
     // 验证表存在
-    let table = db.get_table(1).unwrap();
+    let table_index = db.get_all_tables().iter().position(|table_opt| {
+        if let Some(table) = table_opt {
+            table.def.name == "test_table"
+        } else {
+            false
+        }
+    }).unwrap();
+    let table = db.get_table(table_index).unwrap();
     assert_eq!(table.def.name, "test_table");
 
     // 删除表
     db.drop_table("test_table", false, false).unwrap();
 
     // 验证表不存在
-    let result = db.get_table(1);
+    let result = db.get_table(table_index);
     assert!(result.is_err());
 }
 
@@ -189,7 +196,14 @@ fn test_drop_table_sql() {
     remdb::sql::execute_query(&mut db, &create_query).unwrap();
 
     // 验证表存在
-    let table = db.get_table(1).unwrap();
+    let table_index = db.get_all_tables().iter().position(|table_opt| {
+        if let Some(table) = table_opt {
+            table.def.name == "test_table"
+        } else {
+            false
+        }
+    }).unwrap();
+    let table = db.get_table(table_index).unwrap();
     assert_eq!(table.def.name, "test_table");
 
     // 通过SQL删除表
@@ -198,7 +212,7 @@ fn test_drop_table_sql() {
     remdb::sql::execute_query(&mut db, &drop_query).unwrap();
 
     // 验证表不存在
-    let result = db.get_table(1);
+    let result = db.get_table(table_index);
     assert!(result.is_err());
 }
 
@@ -316,14 +330,21 @@ fn test_drop_table_in_transaction() {
     .unwrap();
 
     // 验证表存在
-    let table = db.get_table(1).unwrap();
+    let table_index = db.get_all_tables().iter().position(|table_opt| {
+        if let Some(table) = table_opt {
+            table.def.name == "test_table"
+        } else {
+            false
+        }
+    }).unwrap();
+    let table = db.get_table(table_index).unwrap();
     assert_eq!(table.def.name, "test_table");
 
     // 删除表
     db.drop_table("test_table", false, false).unwrap();
 
     // 验证表不存在
-    let result = db.get_table(1);
+    let result = db.get_table(table_index);
     assert!(result.is_err());
 }
 
@@ -396,10 +417,19 @@ fn test_drop_table_memory_recovery() {
     )
     .unwrap();
 
+    // 验证表存在
+    let table_index = db.get_all_tables().iter().position(|table_opt| {
+        if let Some(table) = table_opt {
+            table.def.name == "test_table"
+        } else {
+            false
+        }
+    }).unwrap();
+
     // 删除表
     db.drop_table("test_table", false, false).unwrap();
 
     // 验证表不存在
-    let result = db.get_table(1);
+    let result = db.get_table(table_index);
     assert!(result.is_err());
 }

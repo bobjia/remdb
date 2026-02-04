@@ -1,11 +1,29 @@
 // 示例：验证VARCHAR类型支持
 
 extern crate alloc;
-use remdb::config::{DbConfig, DefaultMemoryAllocator, WALConfig};
 use remdb::*;
 
-// 定义数据库内存区域
-static mut DB_MEMORY: [u8; 1024 * 1024] = [0; 1024 * 1024];
+// 定义表结构
+remdb::table!(
+    users,
+    100, // 最大记录数
+    primary_key: id,
+    fields: {
+        id: i32,
+        name: str(50), // 50字节定长字符串
+        email: str(100), // 100字节定长字符串
+        age: i32
+    }
+);
+
+// 定义数据库配置
+remdb::database!(
+    DB_CONFIG,
+    tables: [users]
+);
+
+// 定义内存缓冲区
+static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152];
 
 fn main() {
     unsafe {
@@ -13,95 +31,107 @@ fn main() {
         memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
             .expect("Failed to initialize allocator");
 
-        // 创建数据库配置
-        static ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
-        static CONFIG: config::DbConfig = config::DbConfig {
-            tables: vec![],
-            total_memory: 1024 * 1024 * 10, // 10MB
-            low_power_mode_supported: false,
-            low_power_max_records: None,
-            default_max_records: 1000,
-            memory_allocator: &ALLOCATOR,
-            wal_config: WALConfig {
-                log_path: "./wal",
-                log_mode: config::LogMode::Async,
-                checkpoint_interval_ms: 60000,         // 60秒
-                log_file_size_limit: 16 * 1024 * 1024, // 16MB
-                log_prealloc_size: 1 * 1024 * 1024,    // 1MB
-                log_segment_size: 16 * 1024 * 1024,
-                retained_checkpoints: 3,
-            },
-            time_series_defaults: config::TimeSeriesConfig::DEFAULT,
-            #[cfg(feature = "pubsub")]
-            pubsub_config: None,
-            #[cfg(feature = "ha")]
-            ha_config: Some(config::HAConfig {
-                node_id: 1,
-                ha_role: remdb::ha::HARole::Auto,
-                replication_mode: remdb::ha::ReplicationMode::Async,
-                heartbeat_interval_ms: 1000,
-                failure_detection_ms: 3000,
-                sync_timeout_ms: 2000,
-                master_address: None,
-                master_port: None,
-                replication_port: 5556,
-            }),
-        };
+        // 初始化平台抽象层
+        #[cfg(feature = "posix")]
+        platform::init_platform(platform::posix::get_posix_platform());
+        #[cfg(not(feature = "posix"))]
+        {
+            // 在非posix平台上，使用一个简单的平台实现
+            struct DummyPlatform;
+            impl platform::Platform for DummyPlatform {
+                fn get_timestamp(&self) -> u64 {
+                    0
+                }
+                fn get_timestamp_us(&self) -> u64 {
+                    0
+                }
+                fn spin_lock(&self, _lock: &mut u32) {}
+                fn spin_unlock(&self, _lock: &mut u32) {}
+                fn compiler_barrier(&self) {}
+                fn full_memory_barrier(&self) {}
+                fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
+                    unsafe {
+                        core::ptr::copy_nonoverlapping(src, dest, size);
+                    }
+                }
+                fn memset(&self, dest: *mut u8, value: u8, size: usize) {
+                    unsafe {
+                        core::ptr::write_bytes(dest, value, size);
+                    }
+                }
+                fn delay_ms(&self, _ms: u32) {}
+                fn delay_us(&self, _us: u32) {}
+                fn file_open(
+                    &self,
+                    _path: &str,
+                    _mode: platform::FileMode,
+                ) -> platform::FileResult<platform::FileHandle> {
+                    Err(())
+                }
+                fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
+                    Err(())
+                }
+                fn file_write(
+                    &self,
+                    _handle: platform::FileHandle,
+                    _buffer: *const u8,
+                    _size: usize,
+                ) -> platform::FileResult<usize> {
+                    Err(())
+                }
+                fn file_read(
+                    &self,
+                    _handle: platform::FileHandle,
+                    _buffer: *mut u8,
+                    _size: usize,
+                ) -> platform::FileResult<usize> {
+                    Err(())
+                }
+                fn file_seek(
+                    &self,
+                    _handle: platform::FileHandle,
+                    _offset: i64,
+                    _whence: platform::SeekWhence,
+                ) -> platform::FileResult<u64> {
+                    Err(())
+                }
+                fn file_remove(&self, _path: &str) -> platform::FileResult<()> {
+                    Err(())
+                }
+                fn file_size(&self, _path: &str) -> platform::FileResult<usize> {
+                    Err(())
+                }
+                fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+                    0
+                }
+            }
+            static DUMMY_PLATFORM: DummyPlatform = DummyPlatform;
+            platform::init_platform(&DUMMY_PLATFORM);
+        }
 
         // 初始化数据库
-        let db = init_global_db(&CONFIG).expect("Failed to initialize database");
-
-        // 创建表，使用VARCHAR类型
-        let create_table_sql = "CREATE TABLE users (
-            id INTEGER PRIMARY KEY,
-            name VARCHAR(50),
-            email VARCHAR(100),
-            age INT
-        )";
-
-        println!("Executing: {}", create_table_sql);
-
-        // 使用db.sql_query执行SQL
-        let result = db
-            .sql_query(create_table_sql)
-            .expect("Failed to create table");
-
-        println!("Table created successfully, status: {}", result.to_string());
+        let db = init_global_db(&DB_CONFIG).expect("Failed to initialize database");
 
         // 插入数据
-        let insert_sql =
-            "INSERT INTO users (name, email, age) VALUES ('Alice', 'alice@example.com', 30)";
-
-        println!("\nExecuting: {}", insert_sql);
-
-        // 使用db.sql_query执行SQL
-        let insert_result = db.sql_query(insert_sql).expect("Failed to insert data");
-
-        println!(
-            "Data inserted successfully, affected rows: {}",
-            insert_result.to_string()
-        );
+        println!("\n插入数据:");
+        let columns = &["id", "name", "email", "age"];
+        let values = &["1", "Alice", "alice@example.com", "30"];
+        let affected_rows = db.insert_record("users", columns, values).unwrap();
+        println!("插入记录成功，影响行数: {}", affected_rows);
 
         // 查询数据
-        let select_sql = "SELECT * FROM users";
-
-        println!("\nExecuting: {}", select_sql);
-
-        // 使用db.sql_query执行SQL
-        let select_result = db.sql_query(select_sql).expect("Failed to select data");
-
-        println!("Query results:");
-        println!("{}", select_result.to_string());
+        println!("\n查询数据:");
+        let result = db.execute_query("users", &["id", "name", "email", "age"], None, None).unwrap();
+        println!("查询结果: {}", result.to_string());
 
         // 测试新的专用方法
         println!("\n=== 测试新的专用方法 ===");
 
         // 使用insert_record插入记录
         println!("\n1. 使用insert_record插入记录:");
-        let columns = &["id", "name", "email", "age"];
-        let values = &["2", "Bob", "bob@example.com", "25"];
-        let affected_rows = db.insert_record("users", columns, values).unwrap();
-        println!("插入记录成功，影响行数: {}", affected_rows);
+        let values2 = &["2", "Bob", "bob@example.com", "25"];
+        let affected_rows2 = db.insert_record("users", columns, values2).unwrap();
+        println!("插入记录成功，影响行数: {}", affected_rows2);
 
         // 使用execute_query查询记录
         println!("\n2. 使用execute_query查询记录:");
