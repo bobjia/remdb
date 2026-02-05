@@ -51,14 +51,12 @@ pub struct JsonDocument {
 impl JsonDocument {
     /// 从JSON字符串创建文档
     pub fn from_json(json_str: &str) -> Result<Self, &'static str> {
-        // 首先验证JSON字符串的有效性
-        if !json_str.is_empty() {
-            match Self::parse_json_str(json_str) {
-                Err(_) => {
-                    return Err("Invalid JSON");
-                }
-                _ => {}
-            }
+        // 处理空字符串情况
+        if json_str.trim().is_empty() {
+            return Ok(Self {
+                storage: JsonStorage::Null,
+                size: 0,
+            });
         }
         
         // 检查JSON字符串长度，限制为10KB
@@ -506,7 +504,11 @@ impl JsonDocument {
     
     /// 解析JSON字符串
     pub fn parse_json_str(s: &str) -> Result<JsonValue, &'static str> {
-        let mut chars = s.trim().chars().collect::<alloc::vec::Vec<_>>();
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return Ok(JsonValue::Null);
+        }
+        let mut chars = trimmed.chars().collect::<alloc::vec::Vec<_>>();
         let mut index = 0;
         Self::parse_value(&mut chars, &mut index)
     }

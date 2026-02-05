@@ -166,7 +166,10 @@ fn test_databases_command() -> Result<()> {
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     // 初始化数据库
-    let db = init_global_db()?;
+    let mut db = init_global_db()?;
+
+    // 创建一个数据库，这样数据库列表就不会为空
+    db.create_database("test_db")?;
 
     // 测试databases方法
     let databases = db.databases()?;

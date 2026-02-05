@@ -357,7 +357,7 @@ impl IVFIndex {
         
         // 验证输入长度是否一致
         if vectors.len() != vector_offsets.len() || vectors.len() != record_ids.len() {
-            return Err(RemDbError::InvalidInput);
+            return Err(RemDbError::InternalError);
         }
         
         // 初始化簇中心（随机选择向量）        
