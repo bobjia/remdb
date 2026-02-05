@@ -10,6 +10,7 @@ const WILDCARD_TOPIC_ID: u16 = 0xFFFF;
 type PubSubCallback = fn(topic_id: u16, data: &[u8]) -> bool;
 
 // 订阅者结构体
+#[derive(Clone)]
 struct Subscriber {
     // 订阅ID
     id: usize,
@@ -41,6 +42,24 @@ pub struct SubscriberManager {
     topic_map: alloc::collections::BTreeMap<&'static str, u16>,
     // ID到主题名称的映射
     id_map: alloc::vec::Vec<Option<&'static str>>,
+    // 每个主题的期望下一个序列号
+    expected_seq_nums: alloc::vec::Vec<u32>,
+}
+
+impl Clone for SubscriberManager {
+    fn clone(&self) -> Self {
+        Self {
+            max_topics: self.max_topics,
+            max_subscribers_per_topic: self.max_subscribers_per_topic,
+            subscribers: self.subscribers.clone(),
+            wildcard_subscribers: self.wildcard_subscribers.clone(),
+            next_subscription_id: self.next_subscription_id,
+            global_subscribers: self.global_subscribers.clone(),
+            topic_map: self.topic_map.clone(),
+            id_map: self.id_map.clone(),
+            expected_seq_nums: self.expected_seq_nums.clone(),
+        }
+    }
 }
 
 impl SubscriberManager {
@@ -70,6 +89,12 @@ impl SubscriberManager {
         // 初始化ID映射
         let id_map = alloc::vec::Vec::with_capacity(max_topics);
 
+        // 初始化期望序列号列表，每个主题初始期望序列号为1
+        let mut expected_seq_nums = alloc::vec::Vec::with_capacity(max_topics);
+        for _ in 0..max_topics {
+            expected_seq_nums.push(1);
+        }
+
         Ok(Self {
             max_topics,
             max_subscribers_per_topic,
@@ -79,6 +104,7 @@ impl SubscriberManager {
             global_subscribers: alloc::vec::Vec::new(),
             topic_map: alloc::collections::BTreeMap::new(),
             id_map,
+            expected_seq_nums,
         })
     }
 
@@ -383,6 +409,34 @@ impl SubscriberManager {
             .filter(|s| s.is_some() && s.as_ref().unwrap().active)
             .count();
         count
+    }
+
+    /// 检查序列号是否正确，并返回是否需要生成NACK
+    /// 如果返回Some(seq_num)，表示需要为该序列号生成NACK
+    pub fn check_seq_num(&mut self, topic_id: u16, seq_num: u32) -> Option<u32> {
+        // 验证主题ID
+        if topic_id as usize >= self.max_topics {
+            return None;
+        }
+
+        // 确保期望序列号列表足够长
+        while topic_id as usize >= self.expected_seq_nums.len() {
+            self.expected_seq_nums.push(1);
+        }
+
+        let expected_seq_num = self.expected_seq_nums[topic_id as usize];
+
+        if seq_num < expected_seq_num {
+            // 收到重复消息，忽略
+            return None;
+        } else if seq_num > expected_seq_num {
+            // 收到乱序消息，需要生成NACK
+            return Some(expected_seq_num);
+        } else {
+            // 收到预期消息，更新期望序列号
+            self.expected_seq_nums[topic_id as usize] = expected_seq_num + 1;
+            return None;
+        }
     }
 }
 

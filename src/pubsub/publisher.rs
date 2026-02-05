@@ -4,6 +4,7 @@ use super::protocol::ProtocolFrame;
 use super::Result;
 
 // 待重传数据结构体
+#[derive(Clone)]
 struct PendingData {
     // 帧数据
     frame: ProtocolFrame,
@@ -27,6 +28,18 @@ pub struct Publisher {
     next_seq_num: u32,
     // 待重传数据列表
     pending_data: alloc::vec::Vec<PendingData>,
+}
+
+impl Clone for Publisher {
+    fn clone(&self) -> Self {
+        Self {
+            enable_nack: self.enable_nack,
+            retransmit_timeout: self.retransmit_timeout,
+            max_retransmits: self.max_retransmits,
+            next_seq_num: self.next_seq_num,
+            pending_data: self.pending_data.clone(),
+        }
+    }
 }
 
 impl Publisher {

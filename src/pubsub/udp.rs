@@ -20,6 +20,25 @@ pub trait UdpSocketImpl: Send + Sync {
 
     // 获取实际绑定的端口
     fn get_port(&self) -> Result<u16>;
+
+    // 克隆自身，返回Box<dyn UdpSocketImpl>
+    fn clone_box(&self) -> Box<dyn UdpSocketImpl>;
+}
+
+// 为Box<dyn UdpSocketImpl>实现Clone
+impl Clone for Box<dyn UdpSocketImpl> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
+// 为UdpSocket实现Clone
+impl Clone for UdpSocket {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 // UDP套接字封装结构体
@@ -269,6 +288,17 @@ mod posix {
                 None => Err(PubSubError::NetworkError),
             }
         }
+
+        fn clone_box(&self) -> Box<dyn UdpSocketImpl> {
+            // 注意：这里创建了一个新的套接字，而不是克隆现有套接字
+            // 因为UDP套接字是面向无连接的，每个实例需要自己的套接字
+            // 在实际使用中，可能需要根据具体需求调整此实现
+            Box::new(PosixUdpSocket {
+                socket: None, // 新套接字需要重新初始化
+                dest_addr: self.dest_addr,
+                buffer_size: self.buffer_size,
+            })
+        }
     }
 }
 
@@ -314,6 +344,10 @@ mod baremetal {
 
         fn get_port(&self) -> Result<u16> {
             Err(PubSubError::UnsupportedOperation)
+        }
+
+        fn clone_box(&self) -> Box<dyn UdpSocketImpl> {
+            Box::new(BaremetalUdpSocket {})
         }
     }
 }

@@ -76,7 +76,7 @@ type SubscriptionId = usize;
 pub const WILDCARD_TOPIC_ID: u16 = 0xFFFF;
 
 // 发布/订阅配置
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PubSubConfig {
     // UDP配置
     pub udp_mode: UdpMode,
@@ -180,16 +180,33 @@ impl PubSub {
     }
 
     /// 启动接收线程（仅POSIX平台）
-    /// 注意：该方法目前不可用，需要解决生命周期问题
     #[cfg(feature = "posix")]
     pub fn start_receiver(&mut self) -> Result<()> {
         if !self.is_running {
             return Err(PubSubError::InitFailed);
         }
 
-        // TODO: 修复生命周期问题
-        // 暂时不实现线程接收，使用轮询方式
-        Err(PubSubError::UnsupportedOperation)
+        // 使用Arc<Mutex<>>包装PubSub实例，确保线程安全
+        let pubsub = std::sync::Arc::new(std::sync::Mutex::new(self.clone()));
+
+        // 启动接收线程
+        std::thread::spawn(move || {
+            let mut pubsub = pubsub.lock().unwrap();
+            pubsub.receive_loop();
+        });
+
+        Ok(())
+    }
+
+    /// 克隆PubSub实例
+    pub fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            subscribers: self.subscribers.clone(),
+            publisher: self.publisher.clone(),
+            udp_socket: self.udp_socket.clone(),
+            is_running: self.is_running,
+        }
     }
 
     /// 接收循环（外部可调用）
@@ -274,15 +291,23 @@ impl PubSub {
     fn handle_data_frame(&mut self, frame: protocol::ProtocolFrame) {
         // 获取帧信息
         let topic_id = frame.topic_id();
-        let _seq_num = frame.seq_num();
+        let seq_num = frame.seq_num();
         let payload = frame.payload();
 
-        // 检查序列号（这里简化处理，直接接收）
-        // TODO: 实现序列号检查和NACK生成
-
-        // 将数据分发给订阅者
-        if let Err(_e) = self.subscribers.handle_data(topic_id, payload) {
-            // 处理分发错误
+        // 检查序列号
+        if let Some(missing_seq_num) = self.subscribers.check_seq_num(topic_id, seq_num) {
+            // 序列号不一致，生成NACK帧
+            let nack_frame = protocol::ProtocolFrame::new_nack_frame(missing_seq_num, topic_id);
+            let nack_bytes = nack_frame.to_bytes();
+            // 发送NACK帧
+            if self.udp_socket.send(&nack_bytes).is_err() {
+                // 发送失败，记录错误
+            }
+        } else {
+            // 序列号正确，将数据分发给订阅者
+            if let Err(_e) = self.subscribers.handle_data(topic_id, payload) {
+                // 处理分发错误
+            }
         }
     }
 
