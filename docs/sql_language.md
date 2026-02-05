@@ -6,12 +6,17 @@ RemDB支持以下SQL数据类型：
 
 | SQL类型 | 内部类型 | 描述 |
 |---------|----------|------|
-| `INTEGER` | Int32/Int64/UInt32/UInt64 | 整数类型，根据实际使用自动选择合适的内部类型 |
+| `INTEGER` | Int8/Int16/Int32/Int64/UInt8/UInt16/UInt32/UInt64 | 整数类型，根据实际使用自动选择合适的内部类型 |
 | `REAL` | Float32/Float64 | 浮点数类型 |
-| `TEXT` | String | 字符串类型，最大长度64字节 |
-| `BOOLEAN` | Bool | 布尔类型，存储为0或1 |
-| `TIMESTAMP` | Timestamp | 时间戳类型，以毫秒为单位存储 |
+| `TEXT` | Text | 文本字符串类型 |
+| `VARCHAR(n)` | VarChar | 可变长度字符串类型，n为最大长度 |
+| `CHAR(n)` | Char | 固定长度字符串类型，n为长度 |
+| `BOOLEAN`/`BOOL` | Bool | 布尔类型，存储为0或1 |
+| `TIMESTAMP` | Timestamp | 时间戳类型，支持微秒精度 |
+| `TIMESTAMPTZ` | TimestampTZ | 带时区的时间戳类型 |
+| `INTERVAL` | Interval | 时间间隔类型 |
 | `VECTOR(dim)` | Vector | 向量类型，支持指定维度、距离度量及量化算法，dim为向量维度，支持1-4096 |
+| `JSON` | Json | JSON数据类型，支持复杂嵌套结构 |
 
 ### 1.1 数据类型映射
 
@@ -27,16 +32,21 @@ RemDB支持以下SQL数据类型：
 | Int64 | INTEGER | 8 |
 | Float32 | REAL | 4 |
 | Float64 | REAL | 8 |
-| Bool | INTEGER | 1 |
-| Timestamp | INTEGER | 8 |
-| String | TEXT | 64 |
+| Bool | BOOL | 1 |
+| Timestamp | TIMESTAMP | 8 (默认，根据精度调整) |
+| TimestampTZ | TIMESTAMPTZ | 8 (默认，根据精度调整) |
+| Interval | INTERVAL | 8 (默认，根据精度调整) |
+| Text | TEXT | 可变 |
+| VarChar | VARCHAR(n) | 可变 |
+| Char | CHAR(n) | 固定 |
 | Vector | VECTOR(dim) | dim * 4 |
+| Json | JSON | 可变 |
 
 ### 1.2 UTF8 字符支持
 
 RemDB 完全支持 UTF8 字符编码，包括：
 
-- **字符串存储**：TEXT 类型使用 UTF8 编码存储字符串
+- **字符串存储**：TEXT、VARCHAR 和 CHAR 类型使用 UTF8 编码存储字符串
 - **字符函数**：所有字符串函数（如 CONCAT、SUBSTRING、UPPER、LOWER）都支持 UTF8 字符
 - **LIKE 运算符**：支持 UTF8 字符的模式匹配
 - **排序**：字符串排序基于 UTF8 编码的字典序
@@ -70,13 +80,14 @@ RemDB支持基本的数据库管理语句，用于创建和管理数据库。
 
 **语法**：
 ```sql
-CREATE DATABASE database_name [WITH [ENCODING = 'encoding'] [, TEMPLATE = template_name]];
+CREATE DATABASE [IF NOT EXISTS] database_name [USING SCHEMA schema_name] [WITH CONFIGURATION (parameter=value, ...)];
 ```
 
 **参数说明**：
+- `IF NOT EXISTS`：可选，指定如果数据库已存在，操作不会报错
 - `database_name`：要创建的数据库名称
-- `ENCODING`：指定数据库的字符编码，默认为UTF-8
-- `TEMPLATE`：指定使用的模板数据库，默认为默认模板
+- `USING SCHEMA schema_name`：可选，指定使用的模式
+- `WITH CONFIGURATION`：可选，指定数据库配置参数
 
 **示例**：
 
@@ -84,8 +95,14 @@ CREATE DATABASE database_name [WITH [ENCODING = 'encoding'] [, TEMPLATE = templa
 -- 创建一个新的数据库
 CREATE DATABASE my_database;
 
--- 创建一个使用UTF-8编码的数据库
-CREATE DATABASE my_database WITH ENCODING = 'UTF-8';
+-- 创建一个数据库（如果不存在）
+CREATE DATABASE IF NOT EXISTS my_database;
+
+-- 使用指定模式创建数据库
+CREATE DATABASE my_database USING SCHEMA public;
+
+-- 带配置参数创建数据库
+CREATE DATABASE my_database WITH CONFIGURATION (max_connections=100, cache_size=1024);
 ```
 
 #### USE DATABASE语句
@@ -607,15 +624,17 @@ RemDB支持动态表结构管理，允许在表创建后添加或修改列。
 **语法**：
 ```sql
 ALTER TABLE table_name 
-    ADD COLUMN column_name datatype [constraints] | 
-    MODIFY COLUMN column_name datatype [constraints] | 
-    DROP COLUMN column_name;
+    ADD [COLUMN] column_name datatype [constraints] | 
+    MODIFY [COLUMN] column_name datatype [constraints] | 
+    DROP [COLUMN] column_name |
+    RENAME [COLUMN] old_column_name TO new_column_name;
 ```
 
 **说明**：
 - `ADD COLUMN`：添加新列到表中
 - `MODIFY COLUMN`：修改现有列的类型或约束
 - `DROP COLUMN`：从表中删除列
+- `RENAME COLUMN`：重命名表中的列
 
 #### 示例
 
@@ -628,6 +647,9 @@ ALTER TABLE users MODIFY COLUMN age INTEGER;
 
 -- 从表中删除列
 ALTER TABLE users DROP COLUMN email;
+
+-- 重命名表中的列
+ALTER TABLE users RENAME COLUMN phone TO contact_phone;
 
 -- 添加带有默认值约束的新列
 ALTER TABLE products ADD COLUMN in_stock BOOLEAN DEFAULT false;
@@ -680,12 +702,36 @@ CREATE TABLE metrics (
     value REAL NOT NULL,
     PRIMARY KEY (device_id, metric_id, timestamp)
 );
+
+-- 创建包含JSON字段的表
+CREATE TABLE customer_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    details JSON
+);
+
+-- 创建包含VARCHAR和CHAR类型的表
+CREATE TABLE contact_info (
+    id INTEGER PRIMARY KEY,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    phone CHAR(10),
+    email VARCHAR(100) UNIQUE
+);
+
+-- 创建包含TIMESTAMPTZ和INTERVAL类型的表
+CREATE TABLE events (
+    id INTEGER PRIMARY KEY,
+    event_name TEXT NOT NULL,
+    event_time TIMESTAMPTZ,
+    duration INTERVAL
+);
 ```
 
 ### 2.6 CREATE INDEX语句
 
 ```sql
-CREATE INDEX index_name ON table_name (column1, column2, ...) [USING index_type] [WITH (parameter=value, ...)] [ONLINE | OFFLINE];
+CREATE INDEX [index_name] ON table_name (column1 [ASC|DESC], column2 [ASC|DESC], ...) [USING index_type] [WITH (parameter=value, ...)] [ONLINE | OFFLINE];
 ```
 
 #### 示例
@@ -716,6 +762,9 @@ CREATE INDEX idx_vectors_cosine ON vectors (vec) USING HNSW WITH (DISTANCE=COSIN
 -- 创建复合索引
 CREATE INDEX idx_orders_customer_date ON orders (customer_id, order_date) USING BTREE;
 CREATE INDEX idx_metrics_device_metric ON metrics (device_id, metric_id) USING TTREE;
+
+-- 创建JSON索引
+CREATE INDEX idx_customer_details ON customer_data (details) USING BTREE;
 ```
 
 #### 生产级索引特性
@@ -1313,6 +1362,7 @@ RemDB支持以下类型的函数：
 7. **时间转换函数**：时间格式转换函数
 8. **AI模型UDF函数**：通过CREATE MODEL注册的AI模型函数
 9. **向量函数**：向量距离和相似度计算函数
+10. **JSON函数**：JSON数据处理函数
 
 有关AI模型UDF函数的详细信息，请参见[2.10 模型管理语句](#210-模型管理语句)和[AI模型UDF函数](#ai模型udf函数)。
 
@@ -1388,6 +1438,16 @@ RemDB支持以下类型的函数：
 | `TO_ISO8601` | 将时间戳转换为ISO8601格式字符串 | `time_field` (TIMESTAMP) | `TEXT` | `TO_ISO8601(timestamp)` |
 | `TO_CHAR` | 将时间戳按照指定格式转换为字符串 | `time_field` (TIMESTAMP), `format` (TEXT) | `TEXT` | `TO_CHAR(timestamp, 'YYYY-MM-DD HH24:MI:SS')` |
 | `TO_EPOCH` | 将时间戳转换为UNIX时间戳（秒） | `time_field` (TIMESTAMP) | `REAL` | `TO_EPOCH(timestamp)` |
+
+##### JSON函数
+
+| 函数名 | 描述 | 参数 | 返回类型 | 示例 |
+|--------|------|------|----------|------|
+| `JSON_EXTRACT` | 从JSON中提取指定路径的值 | `json_field`, `path` | 与提取值类型相同 | `JSON_EXTRACT(details, '$.address.city')` |
+| `JSON_ARRAY_LENGTH` | 计算JSON数组的长度 | `json_field` | `INTEGER` | `JSON_ARRAY_LENGTH(details)` |
+| `JSON_TYPE` | 返回JSON值的类型 | `json_field` | `TEXT` | `JSON_TYPE(details)` |
+| `JSON_ARRAY` | 创建JSON数组 | 多个值 | `JSON` | `JSON_ARRAY(1, 'text', true)` |
+| `JSON_OBJECT` | 创建JSON对象 | 键值对 | `JSON` | `JSON_OBJECT('name', 'John', 'age', 30)` |
 
 ##### TIME_BUCKET与GROUP BY组合使用
 
@@ -1534,6 +1594,7 @@ RemDB支持以下索引类型：
 | IVF | 向量索引 | 倒排文件索引，支持L2、IP、余弦相似度 |
 | IVF_FLAT | 向量索引 | 带扁平量化的IVF索引，支持L2、IP、余弦相似度 |
 | IVF_PQ | 向量索引 | 带乘积量化的IVF索引，支持L2、IP、余弦相似度 |
+| JSON索引 | JSON字段 | 支持JSON路径索引和虚拟生成列 |
 
 ### 3.2 索引功能
 
@@ -1570,13 +1631,24 @@ CREATE INDEX idx_vectors_ivf_flat ON vectors (vec) USING IVF_FLAT WITH (nlist=12
 
 -- 创建向量索引 - IVF_PQ
 CREATE INDEX idx_vectors_ivfpq ON vectors (vec) USING IVF_PQ WITH (nlist=128, nprobe=8, M=8, nbits=8);
+
+-- 创建JSON索引
+CREATE INDEX idx_customer_details ON customer_data (details) USING BTREE;
 ```
 
 ## 4. 时序相关功能
 
 ### 4.1 时间戳数据类型
 
-RemDB提供`TIMESTAMP`数据类型用于存储时间戳，以毫秒为单位。
+RemDB提供以下时间相关数据类型：
+
+| 数据类型 | 描述 | 精度 | 存储大小 |
+|---------|------|------|----------|
+| `TIMESTAMP` | 时间戳类型 | 微秒级（默认），可调整 | 4-8字节（根据精度） |
+| `TIMESTAMPTZ` | 带时区的时间戳类型 | 微秒级（默认），可调整 | 4-8字节（根据精度） |
+| `INTERVAL` | 时间间隔类型 | 微秒级 | 4-8字节（根据精度） |
+
+**示例**：
 
 ```sql
 CREATE TABLE sensor_data (
@@ -1584,6 +1656,14 @@ CREATE TABLE sensor_data (
     sensor_id INTEGER NOT NULL,
     value REAL NOT NULL,
     timestamp TIMESTAMP NOT NULL
+);
+
+-- 创建带有时区的时间戳表
+CREATE TABLE events (
+    id INTEGER PRIMARY KEY,
+    event_name TEXT NOT NULL,
+    event_time TIMESTAMPTZ NOT NULL,
+    duration INTERVAL
 );
 ```
 
@@ -1656,20 +1736,24 @@ SELECT * FROM sensor_data WHERE sensor_id = 1 ORDER BY timestamp DESC LIMIT 50;
 
 RemDB 支持 `SAMPLE BY` 语法，用于对时序数据按照指定的时间间隔进行采样，是 `TIME_BUCKET` 函数的一种便捷替代方式。
 
-### 4.3.2 FILL 子句
-
-RemDB 支持 `FILL` 子句，用于处理时序数据中的缺失值，为缺失的时间点填充适当的值。
-
 **语法**：
 ```sql
 SELECT column1, column2, ...
 FROM table_name
 [WHERE condition]
-[SAMPLE BY interval [ALIGN TO alignment_time]]
+SAMPLE BY interval [ALIGN TO alignment_time]
 [FILL fill_strategy]
 [ORDER BY column [ASC | DESC]]
 [LIMIT number];
 ```
+
+**说明**：
+- `interval`：时间间隔，支持与 `TIME_BUCKET` 相同的格式
+- `ALIGN TO alignment_time`：可选，指定采样的对齐时间点
+
+### 4.3.2 FILL 子句
+
+RemDB 支持 `FILL` 子句，用于处理时序数据中的缺失值，为缺失的时间点填充适当的值。
 
 **填充策略**：
 
@@ -1719,6 +1803,12 @@ WHERE sensor_id = 1
 GROUP BY time_window
 FILL 0
 ORDER BY time_window;
+
+-- 使用SAMPLE BY与ALIGN TO
+SELECT timestamp, temperature
+FROM sensor_readings
+SAMPLE BY '1h' ALIGN TO '2024-01-01 00:00:00'
+FILL PREV;
 ```
 
 `FILL` 子句为时序数据查询提供了灵活的缺失值处理能力，确保查询结果的连续性和完整性，便于后续的数据分析和可视化。
