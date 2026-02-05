@@ -773,11 +773,36 @@ fn test_sql_join() {
     assert!(result.is_ok(), "LEFT JOIN查询失败");
     let result_set = result.unwrap();
     println!("LEFT JOIN结果行数: {}", result_set.row_count());
+    // LEFT JOIN应该返回所有用户记录（4个用户）加上匹配的订单
+    // 预期至少4条记录（每个用户至少一条）
     assert!(
         result_set.row_count() >= user_inserts.len(),
         "LEFT JOIN应该返回至少{}条记录（每个用户一条）",
         user_inserts.len()
     );
+    // 检查是否包含没有订单的用户（David，id=4）
+    let mut has_david = false;
+    for i in 0..result_set.row_count() {
+        if let Some(row) = result_set.get_row(i) {
+            if let Ok(name_value) = row.get(0) {
+                // 检查name_value是否为字符串类型
+                if name_value.value_type == crate::DataType::VarChar || 
+                   name_value.value_type == crate::DataType::Char || 
+                   name_value.value_type == crate::DataType::Text {
+                    unsafe {
+                        let name_str = core::str::from_utf8(&name_value.value.string)
+                            .unwrap_or("")
+                            .trim_end_matches(char::from(0));
+                        if name_str == "David" {
+                            has_david = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(has_david, "LEFT JOIN应该包含没有订单的用户David");
 
     // 测试RIGHT JOIN
     println!("=== 测试RIGHT JOIN ===");
@@ -787,11 +812,36 @@ fn test_sql_join() {
     assert!(result.is_ok(), "RIGHT JOIN查询失败");
     let result_set = result.unwrap();
     println!("RIGHT JOIN结果行数: {}", result_set.row_count());
-    assert!(
-        result_set.row_count() >= order_inserts.len(),
-        "RIGHT JOIN应该返回至少{}条记录（每个订单一条）",
+    // RIGHT JOIN应该返回所有订单记录（5个订单）
+    assert_eq!(
+        result_set.row_count(),
+        order_inserts.len(),
+        "RIGHT JOIN应该返回{}条记录（每个订单一条）",
         order_inserts.len()
     );
+    // 检查是否包含没有对应用户的订单（user_id=5的订单）
+    let mut has_orphan_order = false;
+    for i in 0..result_set.row_count() {
+        if let Some(row) = result_set.get_row(i) {
+            if let Ok(product_value) = row.get(1) {
+                // 检查product_value是否为字符串类型
+                if product_value.value_type == crate::DataType::VarChar || 
+                   product_value.value_type == crate::DataType::Char || 
+                   product_value.value_type == crate::DataType::Text {
+                    unsafe {
+                        let product_str = core::str::from_utf8(&product_value.value.string)
+                            .unwrap_or("")
+                            .trim_end_matches(char::from(0));
+                        if product_str == "Product E" {
+                            has_orphan_order = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(has_orphan_order, "RIGHT JOIN应该包含没有对应用户的订单Product E");
 
     // 测试FULL JOIN
     println!("=== 测试FULL JOIN ===");
@@ -801,11 +851,51 @@ fn test_sql_join() {
     assert!(result.is_ok(), "FULL JOIN查询失败");
     let result_set = result.unwrap();
     println!("FULL JOIN结果行数: {}", result_set.row_count());
+    // FULL JOIN应该返回所有用户和订单记录
+    // 预期至少6条记录（4个用户 + 1个孤儿订单）
     assert!(
-        result_set.row_count() >= core::cmp::max(user_inserts.len(), order_inserts.len()),
-        "FULL JOIN应该返回至少{}条记录（用户和订单的最大数量）",
-        core::cmp::max(user_inserts.len(), order_inserts.len())
+        result_set.row_count() >= 6,
+        "FULL JOIN应该返回至少6条记录（4个用户 + 1个孤儿订单）"
     );
+    // 检查是否包含没有订单的用户（David）和没有用户的订单（Product E）
+    let mut has_david_full = false;
+    let mut has_orphan_order_full = false;
+    for i in 0..result_set.row_count() {
+        if let Some(row) = result_set.get_row(i) {
+            // 检查David
+            if let Ok(name_value) = row.get(0) {
+                if name_value.value_type == crate::DataType::VarChar || 
+                   name_value.value_type == crate::DataType::Char || 
+                   name_value.value_type == crate::DataType::Text {
+                    unsafe {
+                        let name_str = core::str::from_utf8(&name_value.value.string)
+                            .unwrap_or("")
+                            .trim_end_matches(char::from(0));
+                        if name_str == "David" {
+                            has_david_full = true;
+                        }
+                    }
+                }
+            }
+            // 检查Product E
+            if let Ok(product_value) = row.get(1) {
+                if product_value.value_type == crate::DataType::VarChar || 
+                   product_value.value_type == crate::DataType::Char || 
+                   product_value.value_type == crate::DataType::Text {
+                    unsafe {
+                        let product_str = core::str::from_utf8(&product_value.value.string)
+                            .unwrap_or("")
+                            .trim_end_matches(char::from(0));
+                        if product_str == "Product E" {
+                            has_orphan_order_full = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(has_david_full, "FULL JOIN应该包含没有订单的用户David");
+    assert!(has_orphan_order_full, "FULL JOIN应该包含没有对应用户的订单Product E");
 
     // 测试JOIN带WHERE条件
     println!("=== 测试JOIN带WHERE条件 ===");

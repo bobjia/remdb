@@ -2287,7 +2287,7 @@ fn validate_cross_table_columns(
                 // 没有指定表名的字段，需要在所有表中查找
                 let mut found = false;
                 for table in table_map.values() {
-                    if table.def.fields.iter().any(|f| f.name == name) {
+                    if table.def.fields.iter().any(|f| f.name.as_str() == name.as_str()) {
                         found = true;
                         break;
                     }
@@ -2903,6 +2903,61 @@ fn execute_select_join_query(
                                                 (field_value.value.float64 - *v).abs()
                                                     < f64::EPSILON
                                             }
+                                            // 支持字段引用比较
+                                            (_, crate::sql::Value::Identifier(right_field)) => {
+                                                // 右值是字段引用，处理字段到字段的比较
+                                                // 处理带表名/别名的右字段
+                                                let (right_table_name_part, right_field_name_part) = 
+                                                    if right_field.contains('.') {
+                                                        let parts: Vec<&str> = 
+                                                            right_field.split('.').collect();
+                                                        (Some(parts[0]), parts[1])
+                                                    } else {
+                                                        (None, right_field.as_str())
+                                                    };
+
+                                                // 根据表名确定从哪个记录中获取右字段值
+                                                let (right_table, right_record_values) = 
+                                                    if let Some(table_name) = right_table_name_part {
+                                                        if table_name == query.table_name
+                                                            || Some(table_name) == query.table_alias.as_deref()
+                                                        {
+                                                            (&main_table, &main_record_values)
+                                                        } else {
+                                                            (&join_table, &join_record_values)
+                                                        }
+                                                    } else {
+                                                        // 没有指定表名，尝试从主表查找，找不到再从连接表查找
+                                                        if main_table.def.fields.iter().any(|f| {
+                                                            f.name == right_field_name_part
+                                                        }) {
+                                                            (&main_table, &main_record_values)
+                                                        } else if join_table.def.fields.iter().any(
+                                                            |f| f.name == right_field_name_part,
+                                                        ) {
+                                                            (&join_table, &join_record_values)
+                                                        } else {
+                                                            // 字段不存在，使用主表作为默认
+                                                            (&main_table, &main_record_values)
+                                                        }
+                                                    };
+
+                                                // 查找右字段索引
+                                                if let Some(right_field_index) = right_table
+                                                    .def
+                                                    .fields
+                                                    .iter()
+                                                    .position(|f| f.name == right_field_name_part)
+                                                {
+                                                    // 获取右字段值
+                                                    let right_field_value = &right_record_values[right_field_index];
+
+                                                    // 使用compare_values函数比较两个字段值
+                                                    compare_values(field_value, right_field_value)
+                                                } else {
+                                                    false
+                                                }
+                                            }
                                             _ => false, // 不支持的类型比较
                                         }
                                     };
@@ -2994,7 +3049,7 @@ fn execute_select_join_query(
                                 DataType::Vector => TypedValue {
                                     value_type: DataType::Vector,
                                     value: Value {
-                                        vector: std::ptr::null(),
+                                        u64: 0,
                                     },
                                 },
                                 DataType::Json => TypedValue {
