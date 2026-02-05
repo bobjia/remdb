@@ -147,7 +147,8 @@ static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLo
 #[test]
 fn test_create_table_with_time_types() {
     // 使用静态内存缓冲区，确保它不会在函数返回时被释放
-    static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
+    // Increased from 256KB to 2MB to accommodate system tables and test table
+    static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152];
 
     // 初始化测试平台
     remdb::platform::init_platform(&TEST_PLATFORM);

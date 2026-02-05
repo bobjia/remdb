@@ -3960,6 +3960,8 @@ pub fn reset_global_db() {
         tx_manager.reset();
         // 清除日志管理器，确保测试之间的完全隔离
         tx_manager.clear_log_manager();
+        // 重置模型管理器，确保测试之间的完全隔离
+        let _ = crate::model::model_manager::reset_global_model_manager();
     }
 }
 

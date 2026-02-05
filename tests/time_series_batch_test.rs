@@ -6,7 +6,7 @@ use remdb::*;
 use serial_test::serial;
 
 // 定义内存缓冲区
-static mut DB_MEMORY: [u8; 1048576] = [0u8; 1048576]; // 增加到1MB
+static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152]; // 增加到2MB
 
 // 定义时间序列表结构
 remdb::table!(

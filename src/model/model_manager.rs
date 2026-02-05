@@ -75,6 +75,13 @@ pub fn get_global_model_manager() -> Result<std::sync::MutexGuard<'static, Model
     GLOBAL_MODEL_MANAGER.lock().map_err(|_| ModelError::LoadFailed)
 }
 
+/// Reset the global model manager (clears all registered models)
+pub fn reset_global_model_manager() -> Result<(), ModelError> {
+    let mut model_manager = get_global_model_manager()?;
+    model_manager.clear_all();
+    Ok(())
+}
+
 impl Default for ModelManager {
     fn default() -> Self {
         Self {
@@ -148,5 +155,11 @@ impl ModelManager {
     /// List all registered models
     pub fn list_models(&self) -> Vec<String> {
         self.models.keys().cloned().collect()
+    }
+
+    /// Clear all registered models
+    pub fn clear_all(&mut self) {
+        self.models.clear();
+        self.metadata.clear();
     }
 }

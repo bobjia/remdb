@@ -4,7 +4,7 @@ use remdb::platform::{FileHandle, FileMode, FileResult, Platform, SeekWhence};
 use remdb::types::Result;
 
 // 定义测试用的内存缓冲区
-static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存
+static mut DB_MEMORY: [u8; 2* 1024 * 1024] = [0u8; 2* 1024 * 1024]; // 2MB内存
 
 // 定义测试平台
 struct TestPlatform;

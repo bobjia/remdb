@@ -117,6 +117,11 @@ pub fn init(config: &'static crate::config::DbConfig) -> Result<()> {
             return Err(HAError::InitFailed);
         }
 
+        // 如果HA配置为None，跳过HA初始化
+        if config.ha_config.is_none() {
+            return Ok(());
+        }
+
         #[cfg(feature = "std")]
         println!(
             "[DEBUG] {}:{}: ha::init: Creating HAManager instance",
