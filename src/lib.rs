@@ -166,6 +166,8 @@ pub struct RemDb {
     pub model_manager: model::ModelManager,
     /// RBAC管理器
     pub rbac_manager: rbac::RbacManager,
+    /// 数据库管理器，用于管理多个数据库实例
+    database_manager: DatabaseManager,
 }
 
 /// 数据库状态
@@ -447,6 +449,9 @@ impl RemDb {
         let primary_indices = Vec::with_capacity(config.tables.len());
         let secondary_indices = Vec::with_capacity(config.tables.len());
 
+        // 初始化数据库管理器，默认最大10个数据库实例
+        let database_manager = DatabaseManager::new(10);
+
         RemDb {
             name: name.to_string(),
             config,
@@ -461,6 +466,7 @@ impl RemDb {
             status: DatabaseStatus::Created,
             model_manager: model::ModelManager::new(),
             rbac_manager: rbac::RbacManager::new(),
+            database_manager,
         }
     }
 
@@ -471,21 +477,28 @@ impl RemDb {
             return Err(RemDbError::ConfigError);
         }
 
-        // 检查数据库是否已存在
-        // 注意：这里需要检查全局数据库列表，而不是当前数据库
-        // 由于当前没有全局数据库管理器，暂时返回成功
-        // TODO: 实现数据库存在性检查
+        // 使用 DatabaseManager 创建新数据库
+        // 传递空字符串作为 schema，使用默认配置
+        let config = Some(DatabaseConfig {
+            name: name.to_string(),
+            memory_limit: Some(self.config.total_memory),
+            max_tables: Some(100), // 默认最大100个表
+            wal_mode: Some("async".to_string()),
+            default_index_type: Some(IndexType::SortedArray),
+            temp_store: Some("./tmp".to_string()),
+        });
 
-        // 创建数据库配置
-        // 注意：由于当前没有全局数据库管理器，暂时不需要创建完整的配置
-        // TODO: 实现数据库实例创建和管理
-
-        // 创建数据库实例
-        // 注意：这里需要将数据库添加到全局数据库管理器
-        // 由于当前没有全局数据库管理器，暂时返回成功
-        // TODO: 实现数据库实例创建和管理
-
-        Ok(())
+        // 调用 DatabaseManager 的 create_database 方法
+        match self.database_manager.create_database(name, "", config) {
+            Ok(_db) => {
+                // 数据库创建成功
+                Ok(())
+            }
+            Err(e) => {
+                // 数据库创建失败
+                Err(e)
+            }
+        }
     }
 
     /// 使用指定数据库
@@ -495,17 +508,17 @@ impl RemDb {
             return Err(RemDbError::ConfigError);
         }
 
-        // 检查数据库是否存在
-        // 注意：这里需要检查全局数据库列表，而不是当前数据库
-        // 由于当前没有全局数据库管理器，暂时返回成功
-        // TODO: 实现数据库存在性检查
-
-        // 切换到指定数据库
-        // 注意：这里需要从全局数据库管理器获取数据库实例
-        // 由于当前没有全局数据库管理器，暂时返回成功
-        // TODO: 实现数据库切换
-
-        Ok(())
+        // 使用 DatabaseManager 切换到指定数据库
+        match self.database_manager.use_database(name) {
+            Ok(_) => {
+                // 数据库切换成功
+                Ok(())
+            }
+            Err(e) => {
+                // 数据库切换失败
+                Err(e)
+            }
+        }
     }
 
     /// 关闭指定数据库
@@ -515,17 +528,17 @@ impl RemDb {
             return Err(RemDbError::ConfigError);
         }
 
-        // 检查数据库是否存在
-        // 注意：这里需要检查全局数据库列表，而不是当前数据库
-        // 由于当前没有全局数据库管理器，暂时返回成功
-        // TODO: 实现数据库存在性检查
-
-        // 关闭数据库
-        // 注意：这里需要从全局数据库管理器获取数据库实例并关闭
-        // 由于当前没有全局数据库管理器，暂时返回成功
-        // TODO: 实现数据库关闭
-
-        Ok(())
+        // 使用 DatabaseManager 关闭指定数据库
+        match self.database_manager.close_database(name) {
+            Ok(_) => {
+                // 数据库关闭成功
+                Ok(())
+            }
+            Err(e) => {
+                // 数据库关闭失败
+                Err(e)
+            }
+        }
     }
 
     /// 删除指定数据库
@@ -535,17 +548,17 @@ impl RemDb {
             return Err(RemDbError::ConfigError);
         }
 
-        // 检查数据库是否存在
-        // 注意：这里需要检查全局数据库列表，而不是当前数据库
-        // 由于当前没有全局数据库管理器，暂时返回成功
-        // TODO: 实现数据库存在性检查
-
-        // 删除数据库
-        // 注意：这里需要从全局数据库管理器获取数据库实例并删除
-        // 由于当前没有全局数据库管理器，暂时返回成功
-        // TODO: 实现数据库删除
-
-        Ok(())
+        // 使用 DatabaseManager 删除指定数据库
+        match self.database_manager.drop_database(name) {
+            Ok(_) => {
+                // 数据库删除成功
+                Ok(())
+            }
+            Err(e) => {
+                // 数据库删除失败
+                Err(e)
+            }
+        }
     }
 
     /// 创建角色
@@ -631,25 +644,9 @@ impl RemDb {
 
     /// 获取当前系统中可用的数据库列表
     pub fn databases(&self) -> Result<Vec<DatabaseInfo>> {
-        // 由于当前没有全局数据库管理器，暂时返回当前数据库的信息
-        // TODO: 当实现全局数据库管理器后，应返回所有数据库的信息
-        
-        // 计算表数量（排除None值）
-        let table_count = self.tables.iter().filter(|table| table.is_some()).count();
-        
-        // 计算内存使用情况
-        let memory_usage = self.metrics.used_memory.load(core::sync::atomic::Ordering::Relaxed);
-        
-        // 创建数据库信息
-        let db_info = DatabaseInfo {
-            name: self.name.clone(),
-            database_type: "RemDb".to_string(),
-            status: self.status.clone(),
-            table_count,
-            memory_usage,
-        };
-        
-        Ok(vec![db_info])
+        // 使用 DatabaseManager 获取所有数据库的信息
+        // 由于 DatabaseManager::list_databases 只需要不可变引用，我们可以直接调用
+        self.database_manager.list_databases()
     }
 
     /// 获取表
