@@ -580,14 +580,8 @@ fn execute_select_timeseries_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
-    // 从系统表获取查询超时（毫秒）
-    let (_, query_timeout_ms) = crate::get_query_resource_config();
-    let query_timeout_ms = Some(query_timeout_ms as u64);
-    
-    // 使用超时包装执行
-    execute_with_timeout(query_timeout_ms, || {
-        // 1. 查找要查询的时序表
-        let ts_table = find_timeseries_table_by_name(db, &query.table_name)?;
+    // 1. 查找要查询的时序表
+    let ts_table = find_timeseries_table_by_name(db, &query.table_name)?;
 
     // 2. 确定要返回的列表达式
     let columns = if query.select_all {
@@ -723,8 +717,7 @@ fn execute_select_timeseries_query(
     }
     */
 
-        Ok(result_set)
-    }, "timeseries_query")
+    Ok(result_set)
 }
 
 /// 对时序记录进行降采样
