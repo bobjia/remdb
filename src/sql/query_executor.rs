@@ -971,23 +971,46 @@ fn check_memory_limit(
     Ok(())
 }
 
-/// 带超时执行的查询包装器（简化实现，仅记录警告）
+/// 带超时执行的查询包装器
 fn execute_with_timeout<F, T>(
     timeout_ms: Option<u64>,
     operation: F,
     operation_name: &str,
 ) -> Result<T, QueryExecutionError>
 where
-    F: FnOnce() -> Result<T, QueryExecutionError>,
+    F: FnOnce() -> Result<T, QueryExecutionError> + Send + 'static,
+    T: Send + 'static,
 {
-    // 简化实现：目前仅记录警告，实际应该使用线程或异步超时
-    if let Some(timeout) = timeout_ms {
-        // TODO: 实现真正的超时机制
-        // println!("Warning: Query timeout set to {}ms for {}", timeout, operation_name);
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+    
+    // 如果没有设置超时，直接执行操作
+    if timeout_ms.is_none() {
+        return operation();
     }
     
-    // 直接执行操作
-    operation()
+    let timeout = Duration::from_millis(timeout_ms.unwrap());
+    
+    // 创建通道用于接收操作结果
+    let (tx, rx) = mpsc::channel();
+    
+    // 在新线程中执行操作
+    thread::spawn(move || {
+        let result = operation();
+        // 发送结果到通道，忽略发送错误（如果接收方已关闭）
+        let _ = tx.send(result);
+    });
+    
+    // 等待结果或超时
+    match rx.recv_timeout(timeout) {
+        Ok(result) => result,
+        Err(_) => {
+            Err(QueryExecutionError::ResourceLimitExceeded(
+                format!("Query timeout after {}ms for {}", timeout_ms.unwrap(), operation_name)
+            ))
+        }
+    }
 }
 
 /// 评估时序表表达式
