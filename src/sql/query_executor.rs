@@ -22,11 +22,11 @@ use crate::{
 };
 use crate::model::model_manager::get_global_model_manager;
 
-/// 解析数据类型字符串，提取基本类型和精度/维度
-/// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6)
-///       "VECTOR(768)" -> ("VECTOR", 768)
-///       "VECTOR(64) WITH DISTANCE=IP" -> ("VECTOR", 64)
-fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16), QueryExecutionError> {
+/// 解析数据类型字符串，提取基本类型、精度/维度和距离类型
+/// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6, None)
+///       "VECTOR(768)" -> ("VECTOR", 768, None)
+///       "VECTOR(64) WITH DISTANCE=IP" -> ("VECTOR", 64, Some(InnerProduct))
+fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16, Option<crate::types::DistanceType>), QueryExecutionError> {
     let type_str = type_str.to_uppercase();
 
     // 查找左括号位置
@@ -53,6 +53,21 @@ fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16), Query
             }
         }
 
+        // 解析距离类型（仅适用于向量类型）
+        let mut distance_type = None;
+        if base_type == "VECTOR" {
+            // 检查是否包含WITH DISTANCE修饰符
+            if type_str.contains("WITH DISTANCE=L2") {
+                distance_type = Some(crate::types::DistanceType::L2);
+            } else if type_str.contains("WITH DISTANCE=INNER_PRODUCT")
+                || type_str.contains("WITH DISTANCE=IP")
+            {
+                distance_type = Some(crate::types::DistanceType::InnerProduct);
+            } else if type_str.contains("WITH DISTANCE=COSINE") {
+                distance_type = Some(crate::types::DistanceType::Cosine);
+            }
+        }
+
         // 验证基本类型是否有效
         match base_type {
             "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64" |
@@ -61,7 +76,7 @@ fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16), Query
             "VARCHAR" | "CHAR" | "TEXT" |
             "BOOL" | "BOOLEAN" |
             "TIMESTAMP" | "TIMESTAMPTZ" |
-            "VECTOR" => Ok((base_type.to_string(), param)),
+            "VECTOR" => Ok((base_type.to_string(), param, distance_type)),
             _ => Err(QueryExecutionError::TypeMismatch),
         }
     } else {
@@ -75,7 +90,7 @@ fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16), Query
             "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" |
             "VARCHAR" | "CHAR" | "TEXT" |
             "BOOL" | "BOOLEAN" |
-            "TIMESTAMP" | "TIMESTAMPTZ" => Ok((base_type.to_string(), 6)), // 默认精度6（微秒）
+            "TIMESTAMP" | "TIMESTAMPTZ" => Ok((base_type.to_string(), 6, None)), // 默认精度6（微秒）
             _ => Err(QueryExecutionError::TypeMismatch),
         }
     }
@@ -221,7 +236,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                         Ok(_) => {
                             // field2是有效的数据类型，执行ADD COLUMN或MODIFY COLUMN操作
                             // 解析数据类型
-                            let (base_type, size) = parse_data_type_with_precision(field2)?;
+                            let (base_type, size, distance_type) = parse_data_type_with_precision(field2)?;
                             let data_type = match base_type.as_str() {
                                 "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64" => crate::types::DataType::Int64,
                                 "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32" | "UINT64" => crate::types::DataType::UInt64,
@@ -233,14 +248,6 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                                 "TIMESTAMP" => crate::types::DataType::Timestamp,
                                 "VECTOR" => crate::types::DataType::Vector,
                                 _ => return Err(QueryExecutionError::TypeMismatch),
-                            };
-
-                            // 确定距离类型（仅适用于向量类型）
-                            let distance_type = if data_type == crate::types::DataType::Vector {
-                                // TODO: 从字段定义中解析距离类型
-                                None
-                            } else {
-                                None
                             };
 
                             // 构建约束条件
@@ -5116,7 +5123,7 @@ fn execute_create_table_query(
     ) in &query.table_def
     {
         // 解析数据类型，支持带精度的时间类型如TIMESTAMP(6)
-        let (base_type, precision) = parse_data_type_with_precision(data_type_str)?;
+        let (base_type, precision, distance_type) = parse_data_type_with_precision(data_type_str)?;
 
         let data_type = match base_type.as_str() {
             // 无符号整数类型

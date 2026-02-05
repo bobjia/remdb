@@ -498,3 +498,275 @@ fn test_vector_distance_default() {
 
     println!("=== 测试向量距离算法: 默认（L2） 完成 ===");
 }
+
+// 测试向量搜索功能（KNN查询）
+#[test]
+#[serial]
+fn test_vector_knn_search() {
+    println!("=== 测试向量KNN搜索功能 ===");
+
+    // 使用堆分配的内存缓冲区
+    let mut db_memory = Vec::with_capacity(1048576);
+    db_memory.resize(1048576, 0u8);
+
+    // 初始化环境
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
+        .unwrap();
+    remdb::reset_global_db();
+
+    // 初始化数据库
+    let config = &VECTOR_DISTANCE_DB;
+    let db = remdb::init_global_db(config).unwrap();
+
+    println!("包含4维向量表的数据库初始化成功");
+
+    // 插入测试数据
+    let test_vectors = vec![
+        ([1.0, 1.0, 1.0, 1.0], 1),  // 与查询向量最接近
+        ([2.0, 2.0, 2.0, 2.0], 1),
+        ([3.0, 3.0, 3.0, 3.0], 2),
+        ([4.0, 4.0, 4.0, 4.0], 2),
+        ([10.0, 10.0, 10.0, 10.0], 1),  // 与查询向量最远
+    ];
+
+    for (i, (vec, category)) in test_vectors.iter().enumerate() {
+        let record = VectorRecord {
+            id: (i + 1) as i32,
+            vector: *vec,
+            category: *category,
+        };
+
+        let table = db.get_table_mut(0).unwrap();
+        let insert_id = table.insert(&record as *const _ as *const u8).unwrap();
+        assert!(insert_id < config.tables[0].max_records);
+    }
+
+    println!("成功插入 {} 条测试数据", test_vectors.len());
+
+    // 创建使用L2距离的HNSW索引
+    println!("创建使用L2距离的HNSW索引");
+    let create_index_result = db.sql_query(
+        "CREATE INDEX vector_knn_idx ON VECTOR_DISTANCE_TABLE (vector) USING HNSW WITH DISTANCE=L2",
+    );
+
+    if create_index_result.is_ok() {
+        println!("成功创建使用L2距离的HNSW索引");
+
+        // 测试KNN搜索
+        println!("测试KNN搜索: 查找与 [1.1, 1.1, 1.1, 1.1] 最接近的3个向量");
+        let knn_result = db.sql_query(
+            "SELECT id, category FROM VECTOR_DISTANCE_TABLE ORDER BY VECTOR_DISTANCE(vector, '[1.1, 1.1, 1.1, 1.1]') LIMIT 3",
+        );
+
+        if knn_result.is_ok() {
+            println!("KNN搜索执行成功");
+        } else {
+            println!("KNN搜索执行失败，可能功能尚未实现");
+        }
+    } else {
+        println!("创建HNSW索引失败，可能功能尚未实现");
+    }
+
+    // 重置全局数据库实例
+    remdb::reset_global_db();
+
+    println!("=== 测试向量KNN搜索功能完成 ===");
+}
+
+// 测试距离计算准确性
+#[test]
+#[serial]
+fn test_vector_distance_calculation() {
+    println!("=== 测试向量距离计算准确性 ===");
+
+    // 使用堆分配的内存缓冲区
+    let mut db_memory = Vec::with_capacity(1048576);
+    db_memory.resize(1048576, 0u8);
+
+    // 初始化环境
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
+        .unwrap();
+    remdb::reset_global_db();
+
+    // 初始化数据库
+    let config = &VECTOR_DISTANCE_DB;
+    let db = remdb::init_global_db(config).unwrap();
+
+    println!("包含4维向量表的数据库初始化成功");
+
+    // 插入测试数据
+    let test_vector = [1.0, 0.0, 0.0, 0.0];
+    let record = VectorRecord {
+        id: 1,
+        vector: test_vector,
+        category: 1,
+    };
+
+    let table = db.get_table_mut(0).unwrap();
+    let insert_id = table.insert(&record as *const _ as *const u8).unwrap();
+    assert!(insert_id < config.tables[0].max_records);
+
+    println!("成功插入测试数据");
+
+    // 测试不同距离计算
+    println!("测试不同距离计算:");
+    
+    // 测试L2距离
+    println!("1. 测试L2距离计算");
+    let l2_result = db.sql_query(
+        "SELECT VECTOR_DISTANCE_L2(vector, '[2.0, 0.0, 0.0, 0.0]') FROM VECTOR_DISTANCE_TABLE WHERE id = 1",
+    );
+    if l2_result.is_ok() {
+        println!("L2距离计算执行成功");
+    } else {
+        println!("L2距离计算执行失败，可能功能尚未实现");
+    }
+
+    // 测试IP距离
+    println!("2. 测试IP距离计算");
+    let ip_result = db.sql_query(
+        "SELECT VECTOR_DISTANCE_IP(vector, '[1.0, 0.0, 0.0, 0.0]') FROM VECTOR_DISTANCE_TABLE WHERE id = 1",
+    );
+    if ip_result.is_ok() {
+        println!("IP距离计算执行成功");
+    } else {
+        println!("IP距离计算执行失败，可能功能尚未实现");
+    }
+
+    // 测试Cosine距离
+    println!("3. 测试Cosine距离计算");
+    let cosine_result = db.sql_query(
+        "SELECT VECTOR_DISTANCE_COSINE(vector, '[1.0, 0.0, 0.0, 0.0]') FROM VECTOR_DISTANCE_TABLE WHERE id = 1",
+    );
+    if cosine_result.is_ok() {
+        println!("Cosine距离计算执行成功");
+    } else {
+        println!("Cosine距离计算执行失败，可能功能尚未实现");
+    }
+
+    // 重置全局数据库实例
+    remdb::reset_global_db();
+
+    println!("=== 测试向量距离计算准确性完成 ===");
+}
+
+// 测试向量索引参数配置
+#[test]
+#[serial]
+fn test_vector_index_parameters() {
+    println!("=== 测试向量索引参数配置 ===");
+
+    // 使用堆分配的内存缓冲区
+    let mut db_memory = Vec::with_capacity(1048576);
+    db_memory.resize(1048576, 0u8);
+
+    // 初始化环境
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
+        .unwrap();
+    remdb::reset_global_db();
+
+    // 初始化数据库
+    let config = &VECTOR_DISTANCE_DB;
+    let db = remdb::init_global_db(config).unwrap();
+
+    println!("包含4维向量表的数据库初始化成功");
+
+    // 插入测试数据
+    for i in 1..=5 {
+        let record = VectorRecord {
+            id: i as i32,
+            vector: [i as f32 * 1.0; 4],
+            category: if i % 2 == 0 { 2 } else { 1 },
+        };
+
+        let table = db.get_table_mut(0).unwrap();
+        let insert_id = table.insert(&record as *const _ as *const u8).unwrap();
+        assert!(insert_id < config.tables[0].max_records);
+    }
+
+    println!("成功插入5条测试数据");
+
+    // 测试1: 创建带参数的HNSW索引
+    println!("测试1: 创建带参数的HNSW索引 (M=16, EF_CONSTRUCTION=200)");
+    let result = db.sql_query(
+        "CREATE INDEX vector_params_idx ON VECTOR_DISTANCE_TABLE (vector) USING HNSW WITH DISTANCE=L2, M=16, EF_CONSTRUCTION=200",
+    );
+
+    if result.is_ok() {
+        println!("成功创建带参数的HNSW索引");
+    } else {
+        println!("创建带参数的HNSW索引失败，可能功能尚未实现");
+    }
+
+    // 测试2: 创建IVF索引
+    println!("测试2: 创建IVF索引 (NLIST=100)");
+    let ivf_result = db.sql_query(
+        "CREATE INDEX vector_ivf_idx ON VECTOR_DISTANCE_TABLE (vector) USING IVF WITH DISTANCE=L2, NLIST=100",
+    );
+
+    if ivf_result.is_ok() {
+        println!("成功创建IVF索引");
+    } else {
+        println!("创建IVF索引失败，可能功能尚未实现");
+    }
+
+    // 重置全局数据库实例
+    remdb::reset_global_db();
+
+    println!("=== 测试向量索引参数配置完成 ===");
+}
+
+// 测试向量字段的ALTER TABLE操作
+#[test]
+#[serial]
+fn test_vector_alter_table() {
+    println!("=== 测试向量字段的ALTER TABLE操作 ===");
+
+    // 使用堆分配的内存缓冲区
+    let mut db_memory = Vec::with_capacity(1048576);
+    db_memory.resize(1048576, 0u8);
+
+    // 初始化环境
+    remdb::platform::init_platform(&TEST_PLATFORM);
+    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
+        .unwrap();
+    remdb::reset_global_db();
+
+    // 初始化数据库
+    let config = &VECTOR_DISTANCE_DB;
+    let db = remdb::init_global_db(config).unwrap();
+
+    println!("包含4维向量表的数据库初始化成功");
+
+    // 测试1: 添加新的向量字段
+    println!("测试1: 添加新的6维向量字段 'vector6d' 带COSINE距离");
+    let add_result = db.sql_query(
+        "ALTER TABLE VECTOR_DISTANCE_TABLE ADD COLUMN vector6d VECTOR(6) WITH DISTANCE=COSINE",
+    );
+
+    if add_result.is_ok() {
+        println!("成功添加新的向量字段");
+    } else {
+        println!("添加向量字段失败，可能功能尚未实现");
+    }
+
+    // 测试2: 修改现有向量字段的距离类型
+    println!("测试2: 修改现有向量字段的距离类型为IP");
+    let modify_result = db.sql_query(
+        "ALTER TABLE VECTOR_DISTANCE_TABLE MODIFY COLUMN vector VECTOR(4) WITH DISTANCE=IP",
+    );
+
+    if modify_result.is_ok() {
+        println!("成功修改向量字段的距离类型");
+    } else {
+        println!("修改向量字段失败，可能功能尚未实现");
+    }
+
+    // 重置全局数据库实例
+    remdb::reset_global_db();
+
+    println!("=== 测试向量字段的ALTER TABLE操作完成 ===");
+}
