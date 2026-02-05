@@ -348,10 +348,17 @@ impl IVFIndex {
     pub unsafe fn train(
         &mut self,
         vectors: &[*const f32],
+        vector_offsets: &[usize],
+        record_ids: &[u16],
         max_iter: u32,
     ) -> Result<()> {
         let dimension = self.dimension as usize;
         let nlist = self.nlist as usize;
+        
+        // 验证输入长度是否一致
+        if vectors.len() != vector_offsets.len() || vectors.len() != record_ids.len() {
+            return Err(RemDbError::InvalidInput);
+        }
         
         // 初始化簇中心（随机选择向量）        
         for i in 0..nlist {
@@ -372,9 +379,13 @@ impl IVFIndex {
             }
             
             // 分配向量到簇            
-            for &vec_ptr in vectors {
-                let _cluster_idx = self.find_closest_cluster(vec_ptr);                
-                // TODO: 这里需要向量偏移量和记录ID，暂时跳过
+            for (i, &vec_ptr) in vectors.iter().enumerate() {
+                let cluster_idx = self.find_closest_cluster(vec_ptr);                
+                // 存储向量偏移量和记录ID
+                let cluster = &mut self.clusters[cluster_idx];
+                cluster.vector_offsets.push(vector_offsets[i]);
+                cluster.record_ids.push(record_ids[i]);
+                cluster.vector_count += 1;
             }
             
             // 更新簇中心            

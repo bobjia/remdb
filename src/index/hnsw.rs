@@ -639,25 +639,64 @@ impl HNSWIndex {
     ) -> Result<()> {
         // 查找要删除的节点        
         let mut target_node = None;
+        let mut target_node_idx = None;
         for i in 0..self.node_count {
             let node_ptr = self.nodes.as_ptr().add(i);            
             let node = node_ptr.as_ref().unwrap();
             if node.vector_offset == vector_offset {
-                target_node = Some(node_ptr);                
+                target_node = Some(NonNull::new_unchecked(node_ptr));                
+                target_node_idx = Some(i);
                 break;
             }
         }
         
-        if let Some(node_ptr) = target_node {
-            // 清空节点数据            
-            memset(node_ptr as *mut u8, 0, core::mem::size_of::<HNSWNode>());            
-            // 更新空闲节点列表            
-            let mut node = NonNull::new_unchecked(node_ptr);            
+        if let Some(target_node) = target_node {
+            // 1. 更新图结构，移除指向该节点的连接
+            // 遍历所有节点，移除对目标节点的引用
+            for i in 0..self.node_count {
+                let node_ptr = self.nodes.as_ptr().add(i);
+                let node = node_ptr.as_mut().unwrap();
+                
+                // 遍历每层
+                for level in 0..=self.max_level {
+                    // 获取当前层的邻居列表
+                    let start_offset = level * 32;
+                    let count = node.neighbor_counts[level] as usize;
+                    
+                    // 查找并移除目标节点
+                    let mut new_neighbors = Vec::new();
+                    let mut new_count = 0;
+                    
+                    for j in 0..count {
+                        let neighbor = node.neighbors[start_offset + j];
+                        if neighbor != target_node {
+                            new_neighbors.push(neighbor);
+                            new_count += 1;
+                        }
+                    }
+                    
+                    // 更新邻居列表
+                    if new_count < count {
+                        // 复制新邻居列表
+                        for (j, &neighbor) in new_neighbors.iter().enumerate() {
+                            node.neighbors[start_offset + j] = neighbor;
+                        }
+                        // 更新邻居数量
+                        node.neighbor_counts[level] = new_count as u8;
+                    }
+                }
+            }
+            
+            // 2. 清空节点数据            
+            memset(target_node.as_ptr() as *mut u8, 0, core::mem::size_of::<HNSWNode>());            
+            
+            // 3. 更新空闲节点列表            
+            let mut node = target_node;
             node.as_mut().neighbors.clear();            
             node.as_mut().neighbor_counts.clear();            
-            let _next_free = self.free_nodes;            
+            let next_free = self.free_nodes;            
             self.free_nodes = Some(node);            
-            // TODO: 更新图结构，移除指向该节点的连接            
+            
             Ok(())
         } else {
             Err(RemDbError::RecordNotFound)
