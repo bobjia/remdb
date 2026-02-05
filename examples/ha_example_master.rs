@@ -11,7 +11,7 @@ use remdb::time_series::TimeSeriesConfig;
 use remdb::*;
 
 // 定义内存缓冲区
-static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
+static mut DB_MEMORY: [u8; 8388608] = [0u8; 8388608]; // 8MB内存缓冲区
 
 // 定义表结构
 remdb::table!(

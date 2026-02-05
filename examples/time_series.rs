@@ -4,7 +4,7 @@ use core::ptr::NonNull;
 use remdb::*;
 
 // 定义内存缓冲区
-static mut DB_MEMORY: [u8; 524288] = [0u8; 524288]; // Increased to 512KB to accommodate all allocations
+static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152]; // 2MB内存缓冲区
 
 // 定义时间序列表结构
 remdb::table!(

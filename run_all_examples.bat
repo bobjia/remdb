@@ -1,19 +1,18 @@
 @echo off
 REM Batch script to run all Rust examples
 
-setlocal enabledelayedexpansion
+REM Create a unique log file name to avoid locking issues
+set LOG_FILE=example_runner_%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%%time:~6,2%.log
 
-REM Redirect output to a log file
-set LOG_FILE=example_runner.log
-echo Starting example run > %LOG_FILE%
-echo Run Time: %date% %time% >> %LOG_FILE%
-
-REM Initialize counters
+REM Initialize counters outside of setlocal to preserve values
 set success_count=0
 set failure_count=0
 set total_count=0
+set success_rate=0
 
 REM Display start information
+echo Starting example run > %LOG_FILE%
+echo Run Time: %date% %time% >> %LOG_FILE%
 echo === RemDB Example Runner === >> %LOG_FILE%
 echo Run Time: %date% %time% >> %LOG_FILE%
 echo ========================== >> %LOG_FILE%
@@ -29,11 +28,11 @@ for %%f in (examples\*.rs) do (
     set "example=%%~nf"
     set /a total_count+=1
     
-    echo === Running Example: !example! === >> %LOG_FILE%
+    echo === Running Example: %%~nf === >> %LOG_FILE%
 echo Start Time: %time% >> %LOG_FILE%
 echo. >> %LOG_FILE%
     
-    echo === Running Example: !example! ===
+    echo === Running Example: %%~nf ===
 echo Start Time: %time%
 echo.
     
@@ -41,32 +40,37 @@ echo.
     set "features="
     
     REM Examples requiring pubsub feature
-    if "!example!" == "pubsub_example" set features=--features "pubsub"
-    if "!example!" == "pubsub_sql_test_server" set features=--features "pubsub"
-    if "!example!" == "pubsub_test_system_server" set features=--features "pubsub"
-    if "!example!" == "pubsub_test_system_client" set features=--features "pubsub"
-    if "!example!" == "pubsub_wildcard" set features=--features "pubsub"
-    if "!example!" == "test_remdb_server" set features=--features "pubsub ha"
+    if "%%~nf" == "pubsub_example" set features=--features "pubsub"
+    if "%%~nf" == "pubsub_sql_test_server" set features=--features "pubsub"
+    if "%%~nf" == "pubsub_test_system_server" set features=--features "pubsub"
+    if "%%~nf" == "pubsub_test_system_client" set features=--features "pubsub"
+    if "%%~nf" == "pubsub_wildcard" set features=--features "pubsub"
+    if "%%~nf" == "test_remdb_server" set features=--features "pubsub ha"
     
     REM Examples requiring ha feature (which includes pubsub)
-    if "!example!" == "ha_example" set features=--features "pubsub ha"
+    if "%%~nf" == "ha_example" set features=--features "pubsub ha"
     
     REM Run the example with appropriate features
-    cargo run --example !example! !features! >> %LOG_FILE% 2>&1
+    REM Use separate output redirection to avoid file locking
+    cargo run --example "%%~nf" %features% > temp_output.txt 2>&1
+    
+    REM Append temp output to log file
+    type temp_output.txt >> %LOG_FILE%
+    del temp_output.txt > nul 2>&1
     
     REM Check exit code
-    if !errorlevel! equ 0 (
+    if %errorlevel% equ 0 (
         echo. >> %LOG_FILE%
-        echo [SUCCESS] Example !example! completed successfully >> %LOG_FILE%
+        echo [SUCCESS] Example %%~nf completed successfully >> %LOG_FILE%
         set /a success_count+=1
         echo.
-        echo [SUCCESS] Example !example! completed successfully
+        echo [SUCCESS] Example %%~nf completed successfully
     ) else (
         echo. >> %LOG_FILE%
-        echo [FAILURE] Example !example! failed with exit code: !errorlevel! >> %LOG_FILE%
+        echo [FAILURE] Example %%~nf failed with exit code: %errorlevel% >> %LOG_FILE%
         set /a failure_count+=1
         echo.
-        echo [FAILURE] Example !example! failed with exit code: !errorlevel!
+        echo [FAILURE] Example %%~nf failed with exit code: %errorlevel%
     )
     
     echo End Time: %time% >> %LOG_FILE%
@@ -76,11 +80,14 @@ echo. >> %LOG_FILE%
     echo End Time: %time%
 echo --------------------------
 echo.
+    
+    REM Add a delay to prevent file locking issues
+    timeout /t 2 /nobreak > nul
 )
 
 REM Calculate success rate
 if %total_count% gtr 0 (
-    set /a success_rate=!success_count! * 100 / !total_count!
+    set /a success_rate=%success_count% * 100 / %total_count%
 ) else (
     set success_rate=0
 )
@@ -95,8 +102,7 @@ echo. >> %LOG_FILE%
 echo === Run Completed === >> %LOG_FILE%
 echo End Time: %time% >> %LOG_FILE%
 
-endlocal
-
+REM Display summary
 echo === Run Summary ===
 echo Total Examples: %total_count%
 echo Successful: %success_count%

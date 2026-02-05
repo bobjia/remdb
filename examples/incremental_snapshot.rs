@@ -3,7 +3,7 @@ extern crate alloc;
 use remdb::{database, table, Result};
 
 // 定义内存缓冲区
-static mut DB_MEMORY: [u8; 262144] = [0u8; 262144]; // 256KB 内存缓冲区
+static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152]; // 2MB 内存缓冲区
 
 // 定义测试表
 table!(

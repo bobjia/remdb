@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use remdb::*;
 
 // 定义内存缓冲区
-static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
+static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152]; // 2MB内存缓冲区
 
 // 定义表结构
 remdb::table!(
@@ -37,8 +37,9 @@ fn main() {
 
     // 1. 初始化内存分配器
     println!("1. 初始化内存分配器...");
-    let mut memory = [0u8; 65536];
-    crate::memory::allocator::init_global_allocator(memory.as_mut_ptr(), memory.len()).unwrap();
+    unsafe {
+        crate::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
+    }
     println!("   内存分配器初始化成功");
 
     // 2. 初始化数据库

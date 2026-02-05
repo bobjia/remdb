@@ -13,7 +13,7 @@ use core::ptr::NonNull;
 use remdb::*;
 
 // 定义内存缓冲区
-static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
+static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152]; // 2MB内存缓冲区
 
 // 定义表结构
 remdb::table!(
