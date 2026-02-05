@@ -70,13 +70,13 @@ impl JsonDocument {
         // 首先尝试MessagePack序列化
         match Self::serialize_to_messagepack(json_str) {
             Ok((data, size)) => {
-                Self::from_binary(data, size)
+                Self::from_binary(&data, size)
             }
             Err(_) => {
                 // 尝试CBOR序列化
                 match Self::serialize_to_cbor(json_str) {
                     Ok((data, size)) => {
-                        Self::from_binary(data, size)
+                        Self::from_binary(&data, size)
                     }
                     Err(_) => {
                         Err("Failed to serialize JSON")
@@ -145,17 +145,290 @@ impl JsonDocument {
     }
     
     /// 序列化为MessagePack
-    fn serialize_to_messagepack(json_str: &str) -> Result<(&[u8], usize), &'static str> {
-        // TODO: 实现MessagePack序列化
-        // 暂时返回原始数据
-        Ok((json_str.as_bytes(), json_str.len()))
+    fn serialize_to_messagepack(json_str: &str) -> Result<(alloc::vec::Vec<u8>, usize), &'static str> {
+        // 首先解析JSON字符串为JsonValue
+        let json_value = Self::parse_json_str(json_str)?;
+        
+        // 序列化JsonValue为MessagePack
+        let mut buffer = alloc::vec::Vec::new();
+        Self::serialize_value_to_msgpack(&json_value, &mut buffer)?;
+        
+        let size = buffer.len();
+        Ok((buffer, size))
+    }
+    
+    /// 将JsonValue序列化为MessagePack
+    fn serialize_value_to_msgpack(value: &JsonValue, buffer: &mut alloc::vec::Vec<u8>) -> Result<(), &'static str> {
+        match value {
+            JsonValue::Null => {
+                buffer.push(0xc0); // nil
+            }
+            JsonValue::Boolean(b) => {
+                if *b {
+                    buffer.push(0xc3); // true
+                } else {
+                    buffer.push(0xc2); // false
+                }
+            }
+            JsonValue::String(s) => {
+                // 序列化字符串
+                let len = s.len();
+                if len < 32 {
+                    // fixstr
+                    buffer.push(0xa0 | len as u8);
+                } else if len < 256 {
+                    // str 8
+                    buffer.push(0xd9);
+                    buffer.push(len as u8);
+                } else if len < 65536 {
+                    // str 16
+                    buffer.push(0xda);
+                    buffer.extend_from_slice(&[(len >> 8) as u8, len as u8]);
+                } else {
+                    // str 32
+                    buffer.push(0xdb);
+                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                }
+                buffer.extend_from_slice(s.as_bytes());
+            }
+            JsonValue::Number(n) => {
+                // 尝试解析为整数
+                if let Ok(i) = n.parse::<i64>() {
+                    // 序列化整数
+                    if i >= 0 && i < 128 {
+                        // positive fixint
+                        buffer.push(i as u8);
+                    } else if i >= -32 && i < 0 {
+                        // negative fixint
+                        buffer.push((i as u8) & 0xff);
+                    } else if i >= -128 && i < 128 {
+                        // int 8
+                        buffer.push(0xd0);
+                        buffer.push(i as u8);
+                    } else if i >= -32768 && i < 32768 {
+                        // int 16
+                        buffer.push(0xd1);
+                        buffer.extend_from_slice(&[(i >> 8) as u8, i as u8]);
+                    } else if i >= -2147483648 && i < 2147483648 {
+                        // int 32
+                        buffer.push(0xd2);
+                        buffer.extend_from_slice(&[(i >> 24) as u8, (i >> 16) as u8, (i >> 8) as u8, i as u8]);
+                    } else {
+                        // int 64
+                        buffer.push(0xd3);
+                        buffer.extend_from_slice(&[
+                            (i >> 56) as u8, (i >> 48) as u8, (i >> 40) as u8, (i >> 32) as u8,
+                            (i >> 24) as u8, (i >> 16) as u8, (i >> 8) as u8, i as u8
+                        ]);
+                    }
+                } else if let Ok(f) = n.parse::<f64>() {
+                    // 序列化浮点数
+                    buffer.push(0xcb); // float 64
+                    buffer.extend_from_slice(&f.to_le_bytes());
+                } else {
+                    return Err("Invalid number format");
+                }
+            }
+            JsonValue::Array(arr) => {
+                // 序列化数组
+                let len = arr.len();
+                if len < 16 {
+                    // fixarray
+                    buffer.push(0x90 | len as u8);
+                } else if len < 65536 {
+                    // array 16
+                    buffer.push(0xdc);
+                    buffer.extend_from_slice(&[(len >> 8) as u8, len as u8]);
+                } else {
+                    // array 32
+                    buffer.push(0xdd);
+                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                }
+                // 序列化数组元素
+                for item in arr {
+                    Self::serialize_value_to_msgpack(item, buffer)?;
+                }
+            }
+            JsonValue::Object(obj) => {
+                // 序列化对象
+                let len = obj.len();
+                if len < 16 {
+                    // fixmap
+                    buffer.push(0x80 | len as u8);
+                } else if len < 65536 {
+                    // map 16
+                    buffer.push(0xde);
+                    buffer.extend_from_slice(&[(len >> 8) as u8, len as u8]);
+                } else {
+                    // map 32
+                    buffer.push(0xdf);
+                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                }
+                // 序列化键值对
+                for (key, val) in obj {
+                    // 键必须是字符串
+                    let key_value = JsonValue::String(key.clone());
+                    Self::serialize_value_to_msgpack(&key_value, buffer)?;
+                    Self::serialize_value_to_msgpack(val, buffer)?;
+                }
+            }
+        }
+        Ok(())
     }
     
     /// 序列化为CBOR
-    fn serialize_to_cbor(json_str: &str) -> Result<(&[u8], usize), &'static str> {
-        // TODO: 实现CBOR序列化
-        // 暂时返回原始数据
-        Ok((json_str.as_bytes(), json_str.len()))
+    fn serialize_to_cbor(json_str: &str) -> Result<(alloc::vec::Vec<u8>, usize), &'static str> {
+        // 首先解析JSON字符串为JsonValue
+        let json_value = Self::parse_json_str(json_str)?;
+        
+        // 序列化JsonValue为CBOR
+        let mut buffer = alloc::vec::Vec::new();
+        Self::serialize_value_to_cbor(&json_value, &mut buffer)?;
+        
+        let size = buffer.len();
+        Ok((buffer, size))
+    }
+    
+    /// 将JsonValue序列化为CBOR
+    fn serialize_value_to_cbor(value: &JsonValue, buffer: &mut alloc::vec::Vec<u8>) -> Result<(), &'static str> {
+        match value {
+            JsonValue::Null => {
+                buffer.push(0xf6); // null
+            }
+            JsonValue::Boolean(b) => {
+                if *b {
+                    buffer.push(0xf5); // true
+                } else {
+                    buffer.push(0xf4); // false
+                }
+            }
+            JsonValue::String(s) => {
+                // 序列化字符串
+                let len = s.len();
+                if len < 24 {
+                    // 短字符串
+                    buffer.push(0x60 | len as u8);
+                } else if len < 256 {
+                    // 8位长度字符串
+                    buffer.push(0x78);
+                    buffer.push(len as u8);
+                } else if len < 65536 {
+                    // 16位长度字符串
+                    buffer.push(0x79);
+                    buffer.extend_from_slice(&[(len >> 8) as u8, len as u8]);
+                } else {
+                    // 32位长度字符串
+                    buffer.push(0x7a);
+                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                }
+                buffer.extend_from_slice(s.as_bytes());
+            }
+            JsonValue::Number(n) => {
+                // 尝试解析为整数
+                if let Ok(i) = n.parse::<i64>() {
+                    if i >= 0 {
+                        // 无符号整数
+                        if i < 24 {
+                            buffer.push(i as u8);
+                        } else if i < 256 {
+                            buffer.push(0x18);
+                            buffer.push(i as u8);
+                        } else if i < 65536 {
+                            buffer.push(0x19);
+                            buffer.extend_from_slice(&[(i >> 8) as u8, i as u8]);
+                        } else if i < 4294967296 {
+                            buffer.push(0x1a);
+                            buffer.extend_from_slice(&[(i >> 24) as u8, (i >> 16) as u8, (i >> 8) as u8, i as u8]);
+                        } else {
+                            buffer.push(0x1b);
+                            buffer.extend_from_slice(&[
+                                (i >> 56) as u8, (i >> 48) as u8, (i >> 40) as u8, (i >> 32) as u8,
+                                (i >> 24) as u8, (i >> 16) as u8, (i >> 8) as u8, i as u8
+                            ]);
+                        }
+                    } else {
+                        // 有符号整数
+                        let abs_i = -i - 1;
+                        if abs_i < 24 {
+                            buffer.push(0x20 | abs_i as u8);
+                        } else if abs_i < 256 {
+                            buffer.push(0x38);
+                            buffer.push(abs_i as u8);
+                        } else if abs_i < 65536 {
+                            buffer.push(0x39);
+                            buffer.extend_from_slice(&[(abs_i >> 8) as u8, abs_i as u8]);
+                        } else if abs_i < 4294967296 {
+                            buffer.push(0x3a);
+                            buffer.extend_from_slice(&[(abs_i >> 24) as u8, (abs_i >> 16) as u8, (abs_i >> 8) as u8, abs_i as u8]);
+                        } else {
+                            buffer.push(0x3b);
+                            buffer.extend_from_slice(&[
+                                (abs_i >> 56) as u8, (abs_i >> 48) as u8, (abs_i >> 40) as u8, (abs_i >> 32) as u8,
+                                (abs_i >> 24) as u8, (abs_i >> 16) as u8, (abs_i >> 8) as u8, abs_i as u8
+                            ]);
+                        }
+                    }
+                } else if let Ok(f) = n.parse::<f64>() {
+                    // 序列化浮点数
+                    buffer.push(0xfb); // float 64
+                    buffer.extend_from_slice(&f.to_le_bytes());
+                } else {
+                    return Err("Invalid number format");
+                }
+            }
+            JsonValue::Array(arr) => {
+                // 序列化数组
+                let len = arr.len();
+                if len < 24 {
+                    // 短数组
+                    buffer.push(0x80 | len as u8);
+                } else if len < 256 {
+                    // 8位长度数组
+                    buffer.push(0x98);
+                    buffer.push(len as u8);
+                } else if len < 65536 {
+                    // 16位长度数组
+                    buffer.push(0x99);
+                    buffer.extend_from_slice(&[(len >> 8) as u8, len as u8]);
+                } else {
+                    // 32位长度数组
+                    buffer.push(0x9a);
+                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                }
+                // 序列化数组元素
+                for item in arr {
+                    Self::serialize_value_to_cbor(item, buffer)?;
+                }
+            }
+            JsonValue::Object(obj) => {
+                // 序列化对象
+                let len = obj.len();
+                if len < 24 {
+                    // 短映射
+                    buffer.push(0xa0 | len as u8);
+                } else if len < 256 {
+                    // 8位长度映射
+                    buffer.push(0xb8);
+                    buffer.push(len as u8);
+                } else if len < 65536 {
+                    // 16位长度映射
+                    buffer.push(0xb9);
+                    buffer.extend_from_slice(&[(len >> 8) as u8, len as u8]);
+                } else {
+                    // 32位长度映射
+                    buffer.push(0xba);
+                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                }
+                // 序列化键值对
+                for (key, val) in obj {
+                    // 键必须是字符串
+                    let key_value = JsonValue::String(key.clone());
+                    Self::serialize_value_to_cbor(&key_value, buffer)?;
+                    Self::serialize_value_to_cbor(val, buffer)?;
+                }
+            }
+        }
+        Ok(())
     }
     
     /// 反序列化为JSON字符串
