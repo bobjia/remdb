@@ -2235,6 +2235,73 @@ fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
     }
 }
 
+/// 验证跨表列引用
+fn validate_cross_table_columns(
+    main_table: &MemoryTable,
+    main_table_name: &str,
+    main_table_alias: Option<&str>,
+    joins: &[crate::sql::query_parser::JoinClause],
+    columns: &[Expression],
+    db: &RemDb,
+) -> Result<(), QueryExecutionError> {
+    // 构建表名到表定义的映射
+    let mut table_map = std::collections::HashMap::new();
+    
+    // 添加主表
+    table_map.insert(main_table_name.to_string(), main_table);
+    if let Some(alias) = main_table_alias {
+        table_map.insert(alias.to_string(), main_table);
+    }
+    
+    // 添加所有连接表
+    for join_clause in joins {
+        let join_table = find_table_by_name(db, &join_clause.table_name)?;
+        table_map.insert(join_clause.table_name.clone(), join_table);
+        if let Some(alias) = &join_clause.table_alias {
+            table_map.insert(alias.clone(), join_table);
+        }
+    }
+    
+    // 验证每个列表达式
+    for expr in columns {
+        if let Expression::Field { name, .. } = expr {
+            // 处理带表名/别名的字段
+            if name.contains('.') {
+                let parts: Vec<&str> = name.split('.').collect();
+                if parts.len() != 2 {
+                    return Err(QueryExecutionError::FieldNotFound);
+                }
+                let table_name = parts[0];
+                let field_name = parts[1];
+                
+                // 检查表是否存在
+                if let Some(table) = table_map.get(table_name) {
+                    // 检查字段是否存在于表中
+                    if !table.def.fields.iter().any(|f| f.name == field_name) {
+                        return Err(QueryExecutionError::FieldNotFound);
+                    }
+                } else {
+                    return Err(QueryExecutionError::TableNotFound);
+                }
+            } else {
+                // 没有指定表名的字段，需要在所有表中查找
+                let mut found = false;
+                for table in table_map.values() {
+                    if table.def.fields.iter().any(|f| f.name == name) {
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    return Err(QueryExecutionError::FieldNotFound);
+                }
+            }
+        }
+    }
+    
+    Ok(())
+}
+
 /// 执行连接查询（带JOIN子句）
 fn execute_select_join_query(
     db: &mut RemDb,
@@ -2263,7 +2330,15 @@ fn execute_select_join_query(
         fields
     } else {
         // 返回指定列表达式
-        // TODO: 验证跨表列引用
+        // 验证跨表列引用
+        validate_cross_table_columns(
+            main_table,
+            &query.table_name,
+            query.table_alias.as_deref(),
+            &query.joins,
+            &query.columns,
+            db,
+        )?;
         query.columns.clone()
     };
 
