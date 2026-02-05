@@ -408,6 +408,46 @@ pub enum Expression {
         /// 别名
         alias: Option<String>,
     },
+    /// 逻辑操作
+    LogicalOp {
+        /// 左操作数
+        left: Box<Expression>,
+        /// 操作符
+        op: LogicalOperator,
+        /// 右操作数
+        right: Box<Expression>,
+        /// 别名
+        alias: Option<String>,
+    },
+    /// 一元操作
+    UnaryOp {
+        /// 操作符
+        op: UnaryOperator,
+        /// 操作数
+        operand: Box<Expression>,
+        /// 别名
+        alias: Option<String>,
+    },
+}
+
+/// 一元操作符
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum UnaryOperator {
+    /// 逻辑非
+    Not,
+    /// 负号
+    Minus,
+    /// 正号
+    Plus,
+}
+
+/// 逻辑操作符
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LogicalOperator {
+    /// 逻辑与
+    And,
+    /// 逻辑或
+    Or,
 }
 
 /// 二元操作符
@@ -2216,6 +2256,21 @@ impl SqlParser {
                 left,
                 op,
                 right,
+                alias,
+            }),
+            Expression::LogicalOp {
+                left, op, right, ..
+            } => Ok(Expression::LogicalOp {
+                left,
+                op,
+                right,
+                alias,
+            }),
+            Expression::UnaryOp {
+                op, operand, ..
+            } => Ok(Expression::UnaryOp {
+                op,
+                operand,
                 alias,
             }),
         }

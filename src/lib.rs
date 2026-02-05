@@ -604,14 +604,14 @@ impl RemDb {
 
     /// 授予角色给用户
     pub fn grant_role(&mut self, user_name: &str, role_name: &str) -> Result<()> {
-        self.rbac_manager.grant_role(user_name, role_name).map_err(|e| {
+        self.rbac_manager.grant_role(user_name, role_name).map_err(|_e| {
             RemDbError::ConfigError
         })
     }
 
     /// 撤销用户的角色
     pub fn revoke_role(&mut self, user_name: &str, role_name: &str) -> Result<()> {
-        self.rbac_manager.revoke_role(user_name, role_name).map_err(|e| {
+        self.rbac_manager.revoke_role(user_name, role_name).map_err(|_e| {
             RemDbError::ConfigError
         })
     }
@@ -624,7 +624,7 @@ impl RemDb {
         table_name: &Option<String>, 
         column_name: &Option<String>
     ) -> Result<bool> {
-        self.rbac_manager.check_permission(user_name, permission, table_name, column_name).map_err(|e| {
+        self.rbac_manager.check_permission(user_name, permission, table_name, column_name).map_err(|_e| {
             RemDbError::ConfigError
         })
     }
@@ -2701,9 +2701,8 @@ impl DdlExecutor for RemDb {
                     }
                     
                     // 直接插入新记录到新表，绕过约束验证和事务处理
-                    unsafe {
                         // 获取空闲槽
-                        let mut new_slot_id = 0;
+                        let mut new_slot_id;
                         let _is_overwrite = false;
                         
                         // 自旋锁保护
@@ -2747,28 +2746,28 @@ impl DdlExecutor for RemDb {
                             // 获取当前记录的主键值
                             let pk_value = match pk_field.data_type {
                                 crate::types::DataType::UInt8 => {
-                                    unsafe { *(record_ptr.add(pk_field.offset) as *const u8) as u64 }
+                                    *(record_ptr.add(pk_field.offset) as *const u8) as u64
                                 },
                                 crate::types::DataType::UInt16 => {
-                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u16) as u64 }
+                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u16) as u64
                                 },
                                 crate::types::DataType::UInt32 => {
-                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u32) as u64 }
+                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u32) as u64
                                 },
                                 crate::types::DataType::UInt64 => {
-                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u64) }
+                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u64)
                                 },
                                 crate::types::DataType::Int8 => {
-                                    unsafe { *(record_ptr.add(pk_field.offset) as *const i8) as u64 }
+                                    *(record_ptr.add(pk_field.offset) as *const i8) as u64
                                 },
                                 crate::types::DataType::Int16 => {
-                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i16) as u64 }
+                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i16) as u64
                                 },
                                 crate::types::DataType::Int32 => {
-                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i32) as u64 }
+                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i32) as u64
                                 },
                                 crate::types::DataType::Int64 => {
-                                    unsafe { core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i64) as u64 }
+                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i64) as u64
                                 },
                                 _ => 0,
                             };
@@ -2791,7 +2790,6 @@ impl DdlExecutor for RemDb {
                                 e
                             })?;
                         }
-                    }
                 }
             }
         }

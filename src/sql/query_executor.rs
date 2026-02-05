@@ -10,7 +10,7 @@ use std::env;
 use std::time::Instant;
 
 use crate::sql::query_parser::{
-    BetweenCondition, BinaryOperator, Expression, GroupByClause, JoinType,
+    BetweenCondition, BinaryOperator, Expression, GroupByClause, JoinType, LogicalOperator, UnaryOperator,
 };
 use crate::sql::{
     ComparisonCondition, ComparisonOperator, Condition, OrderByClause, ResultSet, SqlQuery,
@@ -622,6 +622,12 @@ fn execute_select_timeseries_query(
             Expression::BinaryOp { alias, .. } => {
                 alias.clone().unwrap_or_else(|| "binary_op".to_string())
             }
+            Expression::LogicalOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "logical_op".to_string())
+            }
+            Expression::UnaryOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "unary_op".to_string())
+            }
         })
         .collect();
 
@@ -645,6 +651,16 @@ fn execute_select_timeseries_query(
                 }
             }
             Expression::BinaryOp { alias, .. } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            }
+            Expression::LogicalOp { alias, .. } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            }
+            Expression::UnaryOp { alias, .. } => {
                 if let Some(alias) = alias {
                     alias_map.insert(alias.clone(), expr);
                 }
@@ -1730,6 +1746,12 @@ fn execute_select_query(
             Expression::BinaryOp { alias, .. } => {
                 alias.clone().unwrap_or_else(|| "binary_op".to_string())
             }
+            Expression::LogicalOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "logical_op".to_string())
+            }
+            Expression::UnaryOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "unary_op".to_string())
+            }
         })
         .collect();
 
@@ -1753,6 +1775,16 @@ fn execute_select_query(
                 }
             }
             Expression::BinaryOp { alias, .. } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            }
+            Expression::LogicalOp { alias, .. } => {
+                if let Some(alias) = alias {
+                    alias_map.insert(alias.clone(), expr);
+                }
+            }
+            Expression::UnaryOp { alias, .. } => {
                 if let Some(alias) = alias {
                     alias_map.insert(alias.clone(), expr);
                 }
@@ -2232,6 +2264,12 @@ fn execute_select_join_query(
             }
             Expression::BinaryOp { alias, .. } => {
                 alias.clone().unwrap_or_else(|| "binary_op".to_string())
+            }
+            Expression::LogicalOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "logical_op".to_string())
+            }
+            Expression::UnaryOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "unary_op".to_string())
             }
         })
         .collect();
@@ -2948,6 +2986,74 @@ fn execute_select_join_query(
     Ok(result_set)
 }
 
+/// 评估一元操作表达式
+fn evaluate_unary_op(
+    op: crate::sql::query_parser::UnaryOperator,
+    operand: TypedValue,
+) -> Result<TypedValue, QueryExecutionError> {
+    match op {
+        crate::sql::query_parser::UnaryOperator::Not => {
+            // NOT操作符，返回布尔值的否定
+            unsafe {
+                let bool_value = match operand.value_type {
+                    DataType::Bool => operand.value.bool,
+                    DataType::Int8 => operand.value.i8 != 0,
+                    DataType::Int16 => operand.value.i16 != 0,
+                    DataType::Int32 => operand.value.i32 != 0,
+                    DataType::Int64 => operand.value.i64 != 0,
+                    DataType::UInt8 => operand.value.u8 != 0,
+                    DataType::UInt16 => operand.value.u16 != 0,
+                    DataType::UInt32 => operand.value.u32 != 0,
+                    DataType::UInt64 => operand.value.u64 != 0,
+                    DataType::Float32 => operand.value.float32 != 0.0,
+                    DataType::Float64 => operand.value.float64 != 0.0,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+                Ok(TypedValue {
+                    value_type: DataType::Bool,
+                    value: Value { bool: !bool_value },
+                })
+            }
+        }
+        crate::sql::query_parser::UnaryOperator::Minus => {
+            // 负号操作符，返回数值的相反数
+            unsafe {
+                match operand.value_type {
+                    DataType::Int8 => Ok(TypedValue {
+                        value_type: DataType::Int8,
+                        value: Value { i8: -operand.value.i8 },
+                    }),
+                    DataType::Int16 => Ok(TypedValue {
+                        value_type: DataType::Int16,
+                        value: Value { i16: -operand.value.i16 },
+                    }),
+                    DataType::Int32 => Ok(TypedValue {
+                        value_type: DataType::Int32,
+                        value: Value { i32: -operand.value.i32 },
+                    }),
+                    DataType::Int64 => Ok(TypedValue {
+                        value_type: DataType::Int64,
+                        value: Value { i64: -operand.value.i64 },
+                    }),
+                    DataType::Float32 => Ok(TypedValue {
+                        value_type: DataType::Float32,
+                        value: Value { float32: -operand.value.float32 },
+                    }),
+                    DataType::Float64 => Ok(TypedValue {
+                        value_type: DataType::Float64,
+                        value: Value { float64: -operand.value.float64 },
+                    }),
+                    _ => Err(QueryExecutionError::TypeMismatch),
+                }
+            }
+        }
+        crate::sql::query_parser::UnaryOperator::Plus => {
+            // 正号操作符，返回原值
+            Ok(operand)
+        }
+    }
+}
+
 /// 评估表达式值
 fn evaluate_expression(
     table: &MemoryTable,
@@ -3087,6 +3193,71 @@ fn evaluate_expression_with_depth(
 
             // 执行普通二元操作
             evaluate_binary_op(left_val, *op, right_val)
+        }
+        Expression::LogicalOp {
+            left,
+            op,
+            right,
+            ..
+        } => {
+            // 评估逻辑表达式
+            let left_val = evaluate_expression_with_depth(table, record_values, left, depth + 1)?;
+            let right_val = evaluate_expression_with_depth(table, record_values, right, depth + 1)?;
+
+            // 确保左右操作数都是布尔类型
+            let left_bool = unsafe {
+                match left_val.value_type {
+                    DataType::Bool => left_val.value.bool,
+                    DataType::Int8 => left_val.value.i8 != 0,
+                    DataType::Int16 => left_val.value.i16 != 0,
+                    DataType::Int32 => left_val.value.i32 != 0,
+                    DataType::Int64 => left_val.value.i64 != 0,
+                    DataType::UInt8 => left_val.value.u8 != 0,
+                    DataType::UInt16 => left_val.value.u16 != 0,
+                    DataType::UInt32 => left_val.value.u32 != 0,
+                    DataType::UInt64 => left_val.value.u64 != 0,
+                    DataType::Float32 => left_val.value.float32 != 0.0,
+                    DataType::Float64 => left_val.value.float64 != 0.0,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                }
+            };
+
+            let right_bool = unsafe {
+                match right_val.value_type {
+                    DataType::Bool => right_val.value.bool,
+                    DataType::Int8 => right_val.value.i8 != 0,
+                    DataType::Int16 => right_val.value.i16 != 0,
+                    DataType::Int32 => right_val.value.i32 != 0,
+                    DataType::Int64 => right_val.value.i64 != 0,
+                    DataType::UInt8 => right_val.value.u8 != 0,
+                    DataType::UInt16 => right_val.value.u16 != 0,
+                    DataType::UInt32 => right_val.value.u32 != 0,
+                    DataType::UInt64 => right_val.value.u64 != 0,
+                    DataType::Float32 => right_val.value.float32 != 0.0,
+                    DataType::Float64 => right_val.value.float64 != 0.0,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                }
+            };
+
+            // 执行逻辑操作
+            let result = match op {
+                crate::sql::query_parser::LogicalOperator::And => left_bool && right_bool,
+                crate::sql::query_parser::LogicalOperator::Or => left_bool || right_bool,
+            };
+
+            Ok(TypedValue {
+                value_type: DataType::Bool,
+                value: Value { bool: result },
+            })
+        }
+        Expression::UnaryOp {
+            op,
+            operand,
+            ..
+        } => {
+            // 评估一元操作表达式
+            let operand_val = evaluate_expression_with_depth(table, record_values, operand, depth + 1)?;
+            evaluate_unary_op(*op, operand_val)
         }
     }
 }
@@ -6473,6 +6644,15 @@ fn validate_expression(table: &MemoryTable, expr: &Expression) -> Result<(), Que
             // 验证二元操作的左右操作数
             validate_expression(table, left)?;
             validate_expression(table, right)?;
+        }
+        Expression::LogicalOp { left, right, .. } => {
+            // 验证逻辑操作的左右操作数
+            validate_expression(table, left)?;
+            validate_expression(table, right)?;
+        }
+        Expression::UnaryOp { operand, .. } => {
+            // 验证一元操作的操作数
+            validate_expression(table, operand)?;
         }
     }
 
