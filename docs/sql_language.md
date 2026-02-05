@@ -157,6 +157,7 @@ FROM table_name [AS] table_alias
 [JOIN table_name2 [AS] table_alias2 ON condition]
 [WHERE condition]
 [GROUP BY column1, column2, ...]
+[HAVING condition]
 [ORDER BY column [ASC | DESC]]
 [LIMIT number];
 ```
@@ -271,7 +272,7 @@ GROUP BY column1, column2, ... | expression1, expression2, ...
 **说明**：
 - 可以按多个列或表达式进行分组，列之间用逗号分隔
 - 分组可以是原始列名、表达式或函数调用（如TIME_BUCKET）
-- GROUP BY子句通常位于WHERE子句之后，ORDER BY子句之前
+- GROUP BY子句通常位于WHERE子句之后，HAVING子句之前
 - 可以与HAVING子句结合使用，对分组结果进行过滤
 - 支持ORDER BY子句，可按分组列或聚合结果排序
 
@@ -298,6 +299,158 @@ SELECT sensor_id, AVG(temperature) AS avg_temp FROM sensor_readings GROUP BY sen
 
 -- 单列GROUP BY
 SELECT location, COUNT(*) AS location_count FROM sensor_readings GROUP BY location;
+```
+
+#### HAVING子句
+
+HAVING子句用于对GROUP BY子句产生的分组结果进行过滤，类似于WHERE子句但专门用于分组数据。HAVING子句可以使用聚合函数，而WHERE子句不能。
+
+**语法**：
+```sql
+HAVING condition
+```
+
+**说明**：
+- `condition`：过滤条件，通常包含聚合函数（如COUNT、SUM、AVG等）
+- HAVING子句必须位于GROUP BY子句之后，ORDER BY子句之前
+- 可以使用与WHERE子句相同的运算符和逻辑
+- 可以引用SELECT语句中定义的列别名
+
+**示例**：
+
+```sql
+-- 基本HAVING子句
+SELECT sensor_id, COUNT(*) AS reading_count FROM sensor_readings GROUP BY sensor_id HAVING reading_count > 10;
+
+-- HAVING子句与聚合函数
+SELECT sensor_id, AVG(temperature) AS avg_temp FROM sensor_readings GROUP BY sensor_id HAVING AVG(temperature) > 25;
+
+-- 复杂HAVING条件
+SELECT sensor_id, AVG(temperature) AS avg_temp, MAX(temperature) AS max_temp 
+FROM sensor_readings 
+GROUP BY sensor_id 
+HAVING avg_temp > 20 AND max_temp < 40;
+
+-- HAVING与WHERE结合
+SELECT sensor_id, AVG(temperature) AS avg_temp 
+FROM sensor_readings 
+WHERE timestamp > 1609459200000 
+GROUP BY sensor_id 
+HAVING avg_temp > 25;
+```
+
+#### 窗口函数
+
+窗口函数（Window Functions）是一种特殊的函数，它可以对结果集的一个子集（称为窗口）进行计算，而不会改变结果集的行数。窗口函数在分析型SQL查询中非常有用，特别是用于计算排名、移动平均值、累积总和等。
+
+**语法**：
+```sql
+window_function([expression]) OVER (
+    [PARTITION BY partition_expression]
+    [ORDER BY order_expression [ASC | DESC]]
+    [ROWS BETWEEN frame_start AND frame_end]
+)
+```
+
+**说明**：
+- `window_function`：窗口函数名称（如ROW_NUMBER、RANK、DENSE_RANK等）
+- `expression`：函数参数，根据具体窗口函数而定
+- `PARTITION BY`：可选，按指定列或表达式对结果集进行分区
+- `ORDER BY`：可选，指定窗口内的排序方式
+- `ROWS BETWEEN`：可选，定义窗口的行范围
+
+**支持的窗口函数**：
+
+| 函数名 | 描述 | 参数 | 返回类型 |
+|--------|------|------|----------|
+| `ROW_NUMBER()` | 为每行分配唯一的序号，从1开始 | 无 | `INTEGER` |
+| `RANK()` | 为每行分配排名，相同值的行具有相同排名，后续排名会跳跃 | 无 | `INTEGER` |
+| `DENSE_RANK()` | 为每行分配排名，相同值的行具有相同排名，后续排名不会跳跃 | 无 | `INTEGER` |
+| `NTILE(n)` | 将结果集分成n个大致相等的桶，为每行分配桶号 | n：桶数 | `INTEGER` |
+| `LAG(expression, [offset], [default])` | 返回当前行之前offset行的值 | expression：列或表达式<br>offset：偏移量，默认为1<br>default：当偏移超出范围时的默认值 | 与expression相同 |
+| `LEAD(expression, [offset], [default])` | 返回当前行之后offset行的值 | expression：列或表达式<br>offset：偏移量，默认为1<br>default：当偏移超出范围时的默认值 | 与expression相同 |
+| `FIRST_VALUE(expression)` | 返回窗口内的第一个值 | expression：列或表达式 | 与expression相同 |
+| `LAST_VALUE(expression)` | 返回窗口内的最后一个值 | expression：列或表达式 | 与expression相同 |
+
+**窗口框架定义**：
+
+| 框架定义 | 描述 |
+|----------|------|
+| `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` | 从窗口开始到当前行 |
+| `ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING` | 从当前行到窗口结束 |
+| `ROWS BETWEEN n PRECEDING AND CURRENT ROW` | 从当前行之前n行到当前行 |
+| `ROWS BETWEEN CURRENT ROW AND n FOLLOWING` | 从当前行到当前行之后n行 |
+| `ROWS BETWEEN n PRECEDING AND m FOLLOWING` | 从当前行之前n行到当前行之后m行 |
+
+**窗口函数使用示例**：
+
+```sql
+-- 基本排名函数
+SELECT 
+    student_id, 
+    name, 
+    score, 
+    ROW_NUMBER() OVER (ORDER BY score DESC) AS row_num, 
+    RANK() OVER (ORDER BY score DESC) AS rank, 
+    DENSE_RANK() OVER (ORDER BY score DESC) AS dense_rank
+FROM students;
+
+-- 按科目分区排名
+SELECT 
+    student_id, 
+    name, 
+    subject, 
+    score, 
+    RANK() OVER (PARTITION BY subject ORDER BY score DESC) AS subject_rank
+FROM exam_results;
+
+-- 使用LAG和LEAD函数
+SELECT 
+    date, 
+    price, 
+    LAG(price, 1) OVER (ORDER BY date) AS prev_price, 
+    LEAD(price, 1) OVER (ORDER BY date) AS next_price,
+    price - LAG(price, 1) OVER (ORDER BY date) AS price_change
+FROM stock_prices;
+
+-- 使用FIRST_VALUE和LAST_VALUE
+SELECT 
+    department, 
+    employee_id, 
+    name, 
+    salary, 
+    FIRST_VALUE(salary) OVER (PARTITION BY department ORDER BY salary DESC) AS highest_salary,
+    LAST_VALUE(salary) OVER (PARTITION BY department ORDER BY salary DESC) AS lowest_salary
+FROM employees;
+
+-- 使用NTILE函数
+SELECT 
+    student_id, 
+    name, 
+    score, 
+    NTILE(4) OVER (ORDER BY score DESC) AS quartile
+FROM students;
+
+-- 使用窗口框架
+SELECT 
+    date, 
+    value, 
+    AVG(value) OVER (
+        ORDER BY date 
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+    ) AS moving_avg
+FROM sensor_data;
+
+-- 复杂窗口函数查询
+SELECT 
+    department, 
+    employee_id, 
+    name, 
+    salary, 
+    RANK() OVER (PARTITION BY department ORDER BY salary DESC) AS dept_rank,
+    PERCENT_RANK() OVER (PARTITION BY department ORDER BY salary DESC) AS dept_percent_rank,
+    CUME_DIST() OVER (PARTITION BY department ORDER BY salary DESC) AS dept_cume_dist
+FROM employees;
 ```
 
 #### JOIN子句
@@ -1153,12 +1306,13 @@ SELECT COUNT(*) FROM sensor_data WHERE temperature > 25;
 RemDB支持以下类型的函数：
 1. **基础统计聚合函数**：COUNT、SUM、AVG等
 2. **滑动窗口函数**：MOVING_SUM、MOVING_AVERAGE等
-3. **字符串函数**：字符串处理相关函数
-4. **数学函数**：数学运算函数
-5. **时间窗口函数**：TIME_BUCKET等
-6. **时间转换函数**：时间格式转换函数
-7. **AI模型UDF函数**：通过CREATE MODEL注册的AI模型函数
-8. **向量函数**：向量距离和相似度计算函数
+3. **窗口函数**：ROW_NUMBER、RANK、DENSE_RANK、NTILE、LAG、LEAD、FIRST_VALUE、LAST_VALUE等
+4. **字符串函数**：字符串处理相关函数
+5. **数学函数**：数学运算函数
+6. **时间窗口函数**：TIME_BUCKET等
+7. **时间转换函数**：时间格式转换函数
+8. **AI模型UDF函数**：通过CREATE MODEL注册的AI模型函数
+9. **向量函数**：向量距离和相似度计算函数
 
 有关AI模型UDF函数的详细信息，请参见[2.10 模型管理语句](#210-模型管理语句)和[AI模型UDF函数](#ai模型udf函数)。
 
@@ -1182,6 +1336,19 @@ RemDB支持以下类型的函数：
 |--------|------|------|----------|------|
 | `MOVING_SUM` | 计算滑动窗口内的数值总和 | 数值字段, 窗口大小 | `REAL` | `MOVING_SUM(temperature, 3)` |
 | `MOVING_AVERAGE` | 计算滑动窗口内的平均值 | 数值字段, 窗口大小 | `REAL` | `MOVING_AVERAGE(temperature, 3)` |
+
+##### 窗口函数
+
+| 函数名 | 描述 | 参数 | 返回类型 | 示例 |
+|--------|------|------|----------|------|
+| `ROW_NUMBER()` | 为每行分配唯一的序号，从1开始 | 无 | `INTEGER` | `ROW_NUMBER() OVER (ORDER BY score DESC)` |
+| `RANK()` | 为每行分配排名，相同值的行具有相同排名，后续排名会跳跃 | 无 | `INTEGER` | `RANK() OVER (ORDER BY score DESC)` |
+| `DENSE_RANK()` | 为每行分配排名，相同值的行具有相同排名，后续排名不会跳跃 | 无 | `INTEGER` | `DENSE_RANK() OVER (ORDER BY score DESC)` |
+| `NTILE(n)` | 将结果集分成n个大致相等的桶，为每行分配桶号 | n：桶数 | `INTEGER` | `NTILE(4) OVER (ORDER BY score)` |
+| `LAG(expression, [offset], [default])` | 返回当前行之前offset行的值 | expression：列或表达式<br>offset：偏移量，默认为1<br>default：当偏移超出范围时的默认值 | 与expression相同 | `LAG(score, 1, 0) OVER (ORDER BY date)` |
+| `LEAD(expression, [offset], [default])` | 返回当前行之后offset行的值 | expression：列或表达式<br>offset：偏移量，默认为1<br>default：当偏移超出范围时的默认值 | 与expression相同 | `LEAD(score, 1, 0) OVER (ORDER BY date)` |
+| `FIRST_VALUE(expression)` | 返回窗口内的第一个值 | expression：列或表达式 | 与expression相同 | `FIRST_VALUE(score) OVER (ORDER BY date)` |
+| `LAST_VALUE(expression)` | 返回窗口内的最后一个值 | expression：列或表达式 | 与expression相同 | `LAST_VALUE(score) OVER (ORDER BY date)` |
 
 ##### 字符串函数
 

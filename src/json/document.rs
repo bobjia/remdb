@@ -61,6 +61,12 @@ impl JsonDocument {
             }
         }
         
+        // 检查JSON字符串长度，限制为10KB
+        const MAX_JSON_SIZE: usize = 10 * 1024; // 10KB
+        if json_str.len() > MAX_JSON_SIZE {
+            return Err("JSON too large (max 10KB)");
+        }
+        
         // 首先尝试MessagePack序列化
         match Self::serialize_to_messagepack(json_str) {
             Ok((data, size)) => {
@@ -87,6 +93,12 @@ impl JsonDocument {
                 storage: JsonStorage::Null,
                 size: 0,
             });
+        }
+        
+        // 检查二进制数据长度，限制为10KB
+        const MAX_JSON_SIZE: usize = 10 * 1024; // 10KB
+        if size > MAX_JSON_SIZE {
+            return Err("JSON too large (max 10KB)");
         }
         
         if size <= 64 {

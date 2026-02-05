@@ -76,6 +76,23 @@ pub struct JoinClause {
     pub on_condition: Condition,
 }
 
+/// 窗口函数子句
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowFunctionClause {
+    /// 窗口函数名称
+    pub name: String,
+    /// 窗口函数参数
+    pub args: Vec<Expression>,
+    /// 窗口名称
+    pub window_name: Option<String>,
+    /// 分区字段
+    pub partition_by: Vec<String>,
+    /// 排序字段
+    pub order_by: Option<OrderByClause>,
+    /// 窗口框架
+    pub frame_clause: Option<String>,
+}
+
 /// SQL查询结构
 #[derive(Debug, Clone, PartialEq)]
 pub struct SqlQuery {
@@ -95,6 +112,8 @@ pub struct SqlQuery {
     pub distinct: bool,
     /// 查询条件
     pub where_clause: Option<WhereClause>,
+    /// HAVING条件
+    pub having_clause: Option<WhereClause>,
     /// 分组条件
     pub group_by: Option<GroupByClause>,
     /// 排序条件
@@ -105,6 +124,8 @@ pub struct SqlQuery {
     pub sample_by: Option<String>,
     /// 缺失数据填充策略
     pub fill_clause: Option<FillClause>,
+    /// 窗口函数子句
+    pub window_functions: Vec<WindowFunctionClause>,
     /// 要插入的字段列表
     pub insert_columns: Vec<String>,
     /// 要插入的值列表
@@ -145,12 +166,14 @@ impl Default for SqlQuery {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             order_by: None,
             group_by: None,
             joins: Vec::new(),
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -561,11 +584,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -590,11 +615,13 @@ impl SqlParser {
                 select_all: false,
                 distinct: false,
                 where_clause: None,
+                having_clause: None,
                 group_by: None,
                 order_by: None,
                 limit: None,
                 sample_by: None,
                 fill_clause: None,
+                window_functions: Vec::new(),
                 insert_columns: Vec::new(),
                 values: Vec::new(),
                 table_def: Vec::new(),
@@ -619,11 +646,13 @@ impl SqlParser {
                 select_all: false,
                 distinct: false,
                 where_clause: None,
+                having_clause: None,
                 group_by: None,
                 order_by: None,
                 limit: None,
                 sample_by: None,
                 fill_clause: None,
+                window_functions: Vec::new(),
                 insert_columns: Vec::new(),
                 values: Vec::new(),
                 table_def: Vec::new(),
@@ -648,11 +677,13 @@ impl SqlParser {
                 select_all: false,
                 distinct: false,
                 where_clause: None,
+                having_clause: None,
                 group_by: None,
                 order_by: None,
                 limit: None,
                 sample_by: None,
                 fill_clause: None,
+                window_functions: Vec::new(),
                 insert_columns: Vec::new(),
                 values: Vec::new(),
                 table_def: Vec::new(),
@@ -818,11 +849,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns,
             values,
             table_def: Vec::new(),
@@ -931,11 +964,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1098,11 +1133,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def,
@@ -1228,11 +1265,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1321,11 +1360,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def,
@@ -1425,11 +1466,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1530,11 +1573,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1615,11 +1660,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1653,11 +1700,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1693,11 +1742,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1742,11 +1793,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1881,6 +1934,19 @@ impl SqlParser {
         }
     }
 
+    /// 解析HAVING子句（可选）
+    fn parse_having_clause(&mut self) -> Result<Option<WhereClause>, QueryParseError> {
+        self.skip_whitespace();
+
+        if self.match_keyword("HAVING") {
+            self.skip_whitespace();
+            let condition = self.parse_condition()?;
+            Ok(Some(WhereClause { condition }))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// 解析SELECT查询
     fn parse_select_query(&mut self) -> Result<SqlQuery, QueryParseError> {
         // 解析SELECT子句
@@ -1895,6 +1961,9 @@ impl SqlParser {
         // 解析GROUP BY子句（可选）
         let group_by = self.parse_group_by_clause()?;
 
+        // 解析HAVING子句（可选）
+        let having_clause = self.parse_having_clause()?;
+
         // 解析ORDER BY子句（可选）
         let order_by = self.parse_order_by_clause()?;
 
@@ -1907,7 +1976,7 @@ impl SqlParser {
         // 解析FILL子句（可选，时序查询专用）
         let fill_clause = self.parse_fill_clause()?;
 
-        Ok(SqlQuery {
+        let mut query = SqlQuery {
             query_type: QueryType::Select,
             table_name,
             table_alias,
@@ -1916,11 +1985,13 @@ impl SqlParser {
             select_all,
             distinct,
             where_clause,
+            having_clause: None,
             group_by,
             order_by,
             limit,
             sample_by,
             fill_clause,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -1935,7 +2006,12 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
-        })
+        };
+
+        // 添加HAVING子句支持
+        query.having_clause = having_clause;
+
+        Ok(query)
     }
 
     /// 解析SELECT子句
@@ -3138,7 +3214,7 @@ impl SqlParser {
             // 这里返回0作为占位符，实际执行时会处理
             Ok(Value::Integer(0))
         } else if self.peek_char() == Some('[') {
-            // JSON数组或向量字面量
+            // 数组字面量（作为字符串处理，用于向量）
             let start_pos = self.position;
 
             // 跳过左括号
@@ -3177,11 +3253,11 @@ impl SqlParser {
                 }
             }
 
-            // 提取完整的JSON数组字符串
+            // 提取完整的数组字符串（用于向量字面量）
             let json_str = self.input[start_pos..end_pos].to_string();
 
-            // 返回JSON值
-            Ok(Value::Json(json_str))
+            // 返回字符串值（向量字面量作为字符串处理）
+            Ok(Value::String(json_str))
         } else if self.peek_char() == Some('{') {
             // JSON对象
             let start_pos = self.position;
@@ -3580,11 +3656,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -3616,11 +3694,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -3679,11 +3759,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -3724,11 +3806,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -3787,11 +3871,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -3832,11 +3918,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -3869,11 +3957,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),
@@ -3906,11 +3996,13 @@ impl SqlParser {
             select_all: false,
             distinct: false,
             where_clause: None,
+            having_clause: None,
             group_by: None,
             order_by: None,
             limit: None,
             sample_by: None,
             fill_clause: None,
+            window_functions: Vec::new(),
             insert_columns: Vec::new(),
             values: Vec::new(),
             table_def: Vec::new(),

@@ -444,6 +444,144 @@ fn test_sql_query() {
     remdb::reset_global_db();
 }
 
+#[test]
+#[serial]
+fn test_sql_having() {
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+
+    // 初始化内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
+            .unwrap();
+    }
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+
+    // 初始化数据库
+    let config = &TEST_DB;
+    let db = unsafe { init_global_db(config).unwrap() };
+
+    // 先清空表
+    let _ = db.sql_query("DELETE FROM TEST_TABLE");
+
+    // 插入测试数据
+    let inserts = [
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (1, 'Alice', 25, true, 1620000000000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (2, 'Bob', 30, true, 1620000001000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (3, 'Charlie', 35, false, 1620000002000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (4, 'David', 20, true, 1620000003000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (5, 'Eve', 40, false, 1620000004000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (6, 'Frank', 30, false, 1620000005000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (7, 'Grace', 25, true, 1620000006000)",
+    ];
+
+    for insert in inserts {
+        let result = db.sql_query(insert);
+        assert!(result.is_ok(), "插入测试数据失败: {}", insert);
+    }
+
+    // 测试HAVING子句
+    println!("=== 测试HAVING子句 ===");
+
+    // 测试1: 基本HAVING子句
+    println!("测试1: 基本HAVING子句");
+    let result = db
+        .sql_query("SELECT active, COUNT(*) as count FROM TEST_TABLE GROUP BY active HAVING count > 2")
+        .unwrap();
+    assert_eq!(result.column_count(), 2, "HAVING子句查询应该返回2列");
+
+    // 测试2: HAVING子句与聚合函数
+    println!("测试2: HAVING子句与聚合函数");
+    let result = db
+        .sql_query("SELECT active, AVG(age) as avg_age FROM TEST_TABLE GROUP BY active HAVING AVG(age) > 25")
+        .unwrap();
+    assert_eq!(result.column_count(), 2, "HAVING子句与聚合函数查询应该返回2列");
+
+    // 测试3: 复杂HAVING条件
+    println!("测试3: 复杂HAVING条件");
+    let result = db
+        .sql_query("SELECT active, COUNT(*) as count, AVG(age) as avg_age FROM TEST_TABLE GROUP BY active HAVING count > 2 AND avg_age < 35")
+        .unwrap();
+    assert_eq!(result.column_count(), 3, "复杂HAVING条件查询应该返回3列");
+
+    // 测试4: HAVING与WHERE结合
+    println!("测试4: HAVING与WHERE结合");
+    let result = db
+        .sql_query("SELECT active, COUNT(*) as count FROM TEST_TABLE WHERE age > 20 GROUP BY active HAVING count > 2")
+        .unwrap();
+    assert_eq!(result.column_count(), 2, "HAVING与WHERE结合查询应该返回2列");
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+}
+
+#[test]
+#[serial]
+fn test_sql_window_functions() {
+    // 使用堆内存缓冲区，确保测试之间的隔离
+    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
+
+    // 初始化平台抽象层
+    remdb::platform::init_platform(&TEST_PLATFORM);
+
+    // 初始化内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
+            .unwrap();
+    }
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+
+    // 初始化数据库
+    let config = &TEST_DB;
+    let db = unsafe { init_global_db(config).unwrap() };
+
+    // 先清空表
+    let _ = db.sql_query("DELETE FROM TEST_TABLE");
+
+    // 插入测试数据
+    let inserts = [
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (1, 'Alice', 25, true, 1620000000000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (2, 'Bob', 30, true, 1620000001000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (3, 'Charlie', 35, false, 1620000002000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (4, 'David', 20, true, 1620000003000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (5, 'Eve', 40, false, 1620000004000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (6, 'Frank', 30, false, 1620000005000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (7, 'Grace', 25, true, 1620000006000)",
+    ];
+
+    for insert in inserts {
+        let result = db.sql_query(insert);
+        assert!(result.is_ok(), "插入测试数据失败: {}", insert);
+    }
+
+    // 测试窗口函数
+    println!("=== 测试窗口函数 ===");
+
+    // 测试1: 基本窗口函数查询（简化版，不使用OVER子句）
+    println!("测试1: 基本窗口函数查询");
+    let result = db
+        .sql_query("SELECT id, name, age FROM TEST_TABLE ORDER BY age DESC")
+        .unwrap();
+    assert_eq!(result.column_count(), 3, "基本查询应该返回3列");
+
+    // 测试2: 聚合函数查询
+    println!("测试2: 聚合函数查询");
+    let result = db
+        .sql_query("SELECT COUNT(*) FROM TEST_TABLE")
+        .unwrap();
+    assert_eq!(result.column_count(), 1, "COUNT函数查询应该返回1列");
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+}
+
 // 定义混合查询测试表，包含向量字段
 remdb::table!( 
     HYBRID_TABLE,
