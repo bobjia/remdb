@@ -6,7 +6,7 @@ use crate::types::{DataType, FieldDef, TableDef, Value};
 
 /// C API: 数据类型枚举
 #[repr(u8)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum RemDbDataType {
     UInt8 = 0,
     UInt16 = 1,
@@ -17,7 +17,8 @@ pub enum RemDbDataType {
     Bool = 6,
     Timestamp = 7,
     String = 8,
-    Vector = 9,
+    Json = 9,
+    Vector = 10,
 }
 
 impl From<RemDbDataType> for DataType {
@@ -32,6 +33,7 @@ impl From<RemDbDataType> for DataType {
             RemDbDataType::Bool => DataType::Bool,
             RemDbDataType::Timestamp => DataType::Timestamp,
             RemDbDataType::String => DataType::VarChar,
+            RemDbDataType::Json => DataType::Json,
             RemDbDataType::Vector => DataType::Vector,
         }
     }
@@ -52,7 +54,26 @@ pub union RemDbValue {
     pub boolean: u8,
     pub timestamp: u64,
     pub string: [u8; REMDB_MAX_STRING_LEN],
-    pub vector: *const f32,
+    pub json: RemDbJsonValue,
+    pub vector: RemDbVectorValue,
+}
+
+/// C API: JSON值类型
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct RemDbJsonValue {
+    pub pool_id: u8,
+    pub offset: u32,
+    pub length: u32,
+}
+
+/// C API: Vector值类型
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct RemDbVectorValue {
+    pub pool_id: u8,
+    pub offset: u32,
+    pub length: u32,
 }
 
 impl From<Value> for RemDbValue {
@@ -106,7 +127,7 @@ impl From<&FieldDef> for RemDbFieldDef {
                 DataType::VarChar | DataType::Char | DataType::Text => RemDbDataType::String,
                 DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
                 DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
-                DataType::Json => RemDbDataType::Vector,     // 暂时映射为Vector类型
+                DataType::Json => RemDbDataType::Json,     // 映射为Json类型
             },
             size: rust_field.size,
             offset: rust_field.offset,
@@ -374,27 +395,83 @@ pub struct RemDbTypedValue {
 
 impl From<crate::types::TypedValue> for RemDbTypedValue {
     fn from(rust_value: crate::types::TypedValue) -> Self {
+        use crate::DataType;
+        
+        let data_type = match rust_value.value_type {
+            DataType::UInt8 => RemDbDataType::UInt8,
+            DataType::UInt16 => RemDbDataType::UInt16,
+            DataType::UInt32 => RemDbDataType::UInt32,
+            DataType::UInt64 => RemDbDataType::UInt64,
+            DataType::Int8 => RemDbDataType::UInt8, // 映射为无符号类型
+            DataType::Int16 => RemDbDataType::UInt16, // 映射为无符号类型
+            DataType::Int32 => RemDbDataType::UInt32, // 映射为无符号类型
+            DataType::Int64 => RemDbDataType::UInt64, // 映射为无符号类型
+            DataType::Float32 => RemDbDataType::Float32,
+            DataType::Float64 => RemDbDataType::Float64,
+            DataType::Bool => RemDbDataType::Bool,
+            DataType::Timestamp => RemDbDataType::Timestamp,
+            DataType::TimestampTZ => RemDbDataType::Timestamp, // 映射为Timestamp
+            DataType::VarChar | DataType::Char | DataType::Text => RemDbDataType::String,
+            DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
+            DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
+            DataType::Json => RemDbDataType::Json,     // 映射为Json类型
+        };
+        
+        let value = unsafe {
+            match rust_value.value_type {
+                DataType::UInt8 => RemDbValue { u8: rust_value.value.u8 },
+                DataType::UInt16 => RemDbValue { u16: rust_value.value.u16 },
+                DataType::UInt32 => RemDbValue { u32: rust_value.value.u32 },
+                DataType::UInt64 => RemDbValue { u64: rust_value.value.u64 },
+                DataType::Int8 => RemDbValue { u8: rust_value.value.i8 as u8 },
+                DataType::Int16 => RemDbValue { u16: rust_value.value.i16 as u16 },
+                DataType::Int32 => RemDbValue { u32: rust_value.value.i32 as u32 },
+                DataType::Int64 => RemDbValue { u64: rust_value.value.i64 as u64 },
+                DataType::Float32 => RemDbValue { float32: rust_value.value.float32 },
+                DataType::Float64 => RemDbValue { float64: rust_value.value.float64 },
+                DataType::Bool => RemDbValue { boolean: rust_value.value.bool as u8 },
+                DataType::Timestamp => RemDbValue { timestamp: rust_value.value.timestamp },
+                DataType::TimestampTZ => RemDbValue { timestamp: rust_value.value.timestamp },
+                DataType::Interval => RemDbValue { u64: rust_value.value.interval.value as u64 },
+                DataType::VarChar | DataType::Char | DataType::Text => {
+                    let mut string = [0u8; REMDB_MAX_STRING_LEN];
+                    let src = &rust_value.value.string;
+                    let len = core::cmp::min(src.len(), REMDB_MAX_STRING_LEN);
+                    string[..len].copy_from_slice(&src[..len]);
+                    RemDbValue { string }
+                }
+                DataType::Vector => {
+                    // Vector storage mapping to RemDbVectorValue
+                    RemDbValue { vector: RemDbVectorValue {
+                        pool_id: 0,
+                        offset: 0,
+                        length: 0,
+                    }}
+                }
+                DataType::Json => {
+                    // JSON storage mapping to RemDbJsonValue
+                    let json_storage = rust_value.value.json_storage;
+                    match json_storage {
+                        crate::types::JsonStorage::External { pool_id, offset, length } => {
+                            RemDbValue { json: RemDbJsonValue {
+                                pool_id,
+                                offset,
+                                length,
+                            }}
+                        }
+                        _ => RemDbValue { json: RemDbJsonValue {
+                            pool_id: 0,
+                            offset: 0,
+                            length: 0,
+                        }}
+                    }
+                }
+            }
+        };
+        
         RemDbTypedValue {
-            data_type: match rust_value.value_type {
-                crate::DataType::UInt8 => RemDbDataType::UInt8,
-                crate::DataType::UInt16 => RemDbDataType::UInt16,
-                crate::DataType::UInt32 => RemDbDataType::UInt32,
-                crate::DataType::UInt64 => RemDbDataType::UInt64,
-                crate::DataType::Int8 => RemDbDataType::UInt8, // 映射为无符号类型
-                crate::DataType::Int16 => RemDbDataType::UInt16, // 映射为无符号类型
-                crate::DataType::Int32 => RemDbDataType::UInt32, // 映射为无符号类型
-                crate::DataType::Int64 => RemDbDataType::UInt64, // 映射为无符号类型
-                crate::DataType::Float32 => RemDbDataType::Float32,
-                crate::DataType::Float64 => RemDbDataType::Float64,
-                crate::DataType::Bool => RemDbDataType::Bool,
-                crate::DataType::Timestamp => RemDbDataType::Timestamp,
-                crate::DataType::TimestampTZ => RemDbDataType::Timestamp, // 映射为Timestamp
-                crate::DataType::VarChar | crate::DataType::Char | crate::DataType::Text => RemDbDataType::String,
-                crate::DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
-                crate::DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
-                crate::DataType::Json => RemDbDataType::Vector,     // 暂时映射为Vector类型
-            },
-            value: rust_value.value.into(),
+            data_type,
+            value,
         }
     }
 }
@@ -1701,6 +1778,9 @@ pub unsafe extern "C" fn remdb_sql_query(
 
     match db.sql_query(&rust_sql) {
         Ok(rust_result_set) => {
+            println!("DEBUG C API: sql_query succeeded, columns: {:?}, rows_count: {}", 
+                rust_result_set.columns, rust_result_set.rows.len());
+            
             // 分配内存存储结果集
             let c_result_set = alloc::alloc::alloc(alloc::alloc::Layout::new::<RemDbResultSet>())
                 as *mut RemDbResultSet;
@@ -1817,9 +1897,10 @@ pub unsafe extern "C" fn remdb_sql_query(
                 }
 
                 // 转换值
-                for (j, value) in row.values.iter().enumerate() {
-                    *values.offset(j as isize) = value.clone().into();
-                }
+            for (j, value) in row.values.iter().enumerate() {
+                println!("DEBUG C API: row {}, value {}: type={:?}", i, j, value.value_type);
+                *values.offset(j as isize) = value.clone().into();
+            }
 
                 // 设置行数据
                 let row_ptr = rows.offset(i as isize);
@@ -1885,6 +1966,92 @@ pub unsafe extern "C" fn remdb_free_result_set(result_set: *mut RemDbResultSet) 
         alloc::alloc::Layout::new::<RemDbResultSet>(),
     );
 
+    RemDbError::Success
+}
+
+/// C API: 获取JSON字符串
+/// 注意：返回的字符串需要通过remdb_free_string释放内存
+#[no_mangle]
+pub unsafe extern "C" fn remdb_get_json_string(
+    value: *const RemDbTypedValue,
+    json_string: *mut *const u8,
+    length: *mut usize,
+) -> RemDbError {
+    if value.is_null() || json_string.is_null() || length.is_null() {
+        return RemDbError::ConfigError;
+    }
+
+    let typed_value = &*value;
+    
+    if typed_value.data_type != RemDbDataType::Json {
+        return RemDbError::TypeMismatch;
+    }
+
+    // 获取JSON元数据
+    let json_value = typed_value.value.json;
+    
+    // 获取全局JSON池管理器
+    let pool_manager = match crate::json::memory_pool::get_global_json_pool_manager() {
+        Some(manager) => manager,
+        None => return RemDbError::UnsupportedOperation,
+    };
+    
+    // 获取JSON池
+    let pool = match pool_manager.get_pool(json_value.pool_id) {
+        Some(p) => p,
+        None => return RemDbError::UnsupportedOperation,
+    };
+    
+    // 获取JSON数据
+    if let Some(data_ptr) = pool.get_block_data(json_value.offset as usize, 0) {
+        let data_slice = core::slice::from_raw_parts(data_ptr, json_value.length as usize);
+        
+        // 尝试解析JSON数据并转换为字符串
+        match crate::json::JsonDocument::from_binary(data_slice, json_value.length as usize) {
+            Ok(json_doc) => {
+                // 转换为JSON字符串
+                let json_str = match json_doc.to_json() {
+                    Ok(s) => s,
+                    Err(_) => return RemDbError::TypeMismatch,
+                };
+                
+                // 分配内存存储JSON字符串
+                let json_c_str = alloc::alloc::alloc(
+                    alloc::alloc::Layout::array::<u8>(json_str.len() + 1).unwrap(),
+                ) as *mut u8;
+                
+                if json_c_str.is_null() {
+                    return RemDbError::OutOfMemory;
+                }
+                
+                // 复制JSON字符串
+                core::ptr::copy_nonoverlapping(json_str.as_ptr(), json_c_str, json_str.len());
+                *json_c_str.offset(json_str.len() as isize) = 0; // 添加终止符
+                
+                *json_string = json_c_str as *const u8;
+                *length = json_str.len();
+                
+                RemDbError::Success
+            }
+            Err(_) => RemDbError::TypeMismatch,
+        }
+    } else {
+        RemDbError::UnsupportedOperation
+    }
+}
+
+/// C API: 释放字符串内存
+#[no_mangle]
+pub unsafe extern "C" fn remdb_free_string(s: *const u8) -> RemDbError {
+    if s.is_null() {
+        return RemDbError::Success;
+    }
+    
+    alloc::alloc::dealloc(
+        s as *mut u8,
+        alloc::alloc::Layout::array::<u8>(_c_strlen(s) + 1).unwrap(),
+    );
+    
     RemDbError::Success
 }
 

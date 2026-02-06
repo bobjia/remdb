@@ -855,6 +855,7 @@ impl SqlParser {
 
     /// 解析INSERT查询
     fn parse_insert_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        println!("DEBUG: parse_insert_query called");
         // 检查是否有IGNORE关键字
         let mut ignore_duplicates = false;
         self.skip_whitespace();
@@ -945,6 +946,7 @@ impl SqlParser {
 
     /// 解析值列表
     fn parse_values(&mut self) -> Result<Vec<Vec<Value>>, QueryParseError> {
+        println!("DEBUG: parse_values called");
         let mut all_values = Vec::new();
 
         loop {
@@ -959,7 +961,9 @@ impl SqlParser {
 
             loop {
                 self.skip_whitespace();
+                println!("DEBUG: About to call parse_value");
                 let value = self.parse_value()?;
+                println!("DEBUG: parse_value returned: {:?}", value);
                 values.push(value);
 
                 self.skip_whitespace();
@@ -979,6 +983,7 @@ impl SqlParser {
             }
         }
 
+        println!("DEBUG: parse_values returning {:?} values", all_values.len());
         Ok(all_values)
     }
 
@@ -3026,6 +3031,7 @@ impl SqlParser {
                         Expression::Constant { ref value, alias: None } => {
                             match value {
                                 Value::String(ref vec_str) => vec_str.clone(),
+                                Value::Json(ref json_str) => json_str.clone(),
                                 _ => return Err(QueryParseError::InvalidSyntax),
                             }
                         },
@@ -3178,13 +3184,28 @@ impl SqlParser {
                 }
                 string_value.push(c);
             }
-
+            
             // 尝试将字符串解析为时间值
             if let Ok(timestamp) = parse_time_string(&string_value) {
+                println!("DEBUG parse_value: Parsed as timestamp");
                 Ok(Value::Integer(timestamp))
+            } else if string_value.starts_with("__JSON__:") {
+                // 检查是否是带类型提示的JSON字符串
+                let json_str = string_value.trim_start_matches("__JSON__:");
+                println!("DEBUG parse_value: Parsed as JSON with prefix");
+                Ok(Value::Json(json_str.to_string()))
             } else {
-                // 不是时间格式，作为普通字符串处理
-                Ok(Value::String(string_value))
+                // 检查是否是带引号的JSON字符串，去除引号后检查
+                let unquoted = string_value.trim_start_matches('"').trim_end_matches('"').trim_start_matches('\'').trim_end_matches('\'');
+                if unquoted.starts_with('{') || unquoted.starts_with('[') {
+                    // 去除引号后是JSON格式
+                    println!("DEBUG parse_value: Parsed as JSON (unquoted starts with {{ or [)");
+                    Ok(Value::Json(unquoted.to_string()))
+                } else {
+                    // 不是JSON格式，作为普通字符串处理
+                    println!("DEBUG parse_value: Parsed as String");
+                    Ok(Value::String(string_value))
+                }
             }
         } else if self.match_keyword("NULL") {
             Ok(Value::Null)
@@ -3269,7 +3290,7 @@ impl SqlParser {
             // 这里返回0作为占位符，实际执行时会处理
             Ok(Value::Integer(0))
         } else if self.peek_char() == Some('[') {
-            // 数组字面量（作为字符串处理，用于向量）
+            // JSON数组或向量字面量
             let start_pos = self.position;
 
             // 跳过左括号
@@ -3308,11 +3329,11 @@ impl SqlParser {
                 }
             }
 
-            // 提取完整的数组字符串（用于向量字面量）
+            // 提取完整的数组字符串
             let json_str = self.input[start_pos..end_pos].to_string();
 
-            // 返回字符串值（向量字面量作为字符串处理）
-            Ok(Value::String(json_str))
+            // 返回JSON值（JSON数组作为JSON处理）
+            Ok(Value::Json(json_str))
         } else if self.peek_char() == Some('{') {
             // JSON对象
             let start_pos = self.position;

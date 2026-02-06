@@ -28,7 +28,8 @@ pub mod utf8;
 
 // 导出核心类型
 pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};
-pub use types::{    DataType, DistanceType, FieldDef, IndexType, RecordStatus, RemDbError, Result, TableDef, Value,    VectorIndexType, VectorMetadata, MAX_STRING_LEN,
+pub use types::{    DataType, DistanceType, FieldDef, IndexType, RecordStatus, RemDbError, Result, TableDef, Value,
+    VectorIndexType, VectorMetadata, MAX_STRING_LEN, MAX_TEXT_LEN,
 };
 pub use compression::CompressionScheme;
 pub use system_tables::{init_system_tables, get_vector_compression_config, get_query_resource_config};
@@ -1786,9 +1787,11 @@ impl DdlExecutor for RemDb {
         for (i, (field_name, data_type, dimension, distance_type, default_value)) in
             fields.iter().enumerate()
         {
+            eprintln!("Debug field: name={}, type={:?}, dimension={}, distance_type={:?}", field_name, data_type, dimension, distance_type);
             // 计算字段大小
             let field_size = match data_type {
-                DataType::VarChar | DataType::Char | DataType::Text => MAX_STRING_LEN,
+                DataType::VarChar | DataType::Char => MAX_STRING_LEN,
+                DataType::Text | DataType::Json => MAX_TEXT_LEN,
                 DataType::Vector => {
                     // 向量类型：根据压缩配置计算大小
                     crate::system_tables::get_vector_field_size(*dimension)

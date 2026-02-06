@@ -135,7 +135,7 @@ static TEST_PLATFORM: TestPlatform = TestPlatform;
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
 // 静态内存缓冲区，用于测试
-static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存
+static mut DB_MEMORY: [u8; 104857600] = [0u8; 104857600]; // 100MB内存
 
 /// 创建测试用的DbConfig
 static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| {

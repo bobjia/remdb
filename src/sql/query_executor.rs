@@ -27,6 +27,7 @@ use crate::model::model_manager::get_global_model_manager;
 ///       "VECTOR(768)" -> ("VECTOR", 768, None)
 ///       "VECTOR(64) WITH DISTANCE=IP" -> ("VECTOR", 64, Some(InnerProduct))
 fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16, Option<crate::types::DistanceType>), QueryExecutionError> {
+    println!("DEBUG parse_data_type_with_precision called with: {}", type_str);
     let type_str = type_str.to_uppercase();
 
     // 查找左括号位置
@@ -75,7 +76,7 @@ fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16, Option
             "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" |
             "VARCHAR" | "CHAR" | "TEXT" |
             "BOOL" | "BOOLEAN" |
-            "TIMESTAMP" | "TIMESTAMPTZ" |
+            "TIMESTAMP" | "TIMESTAMPTZ" | "JSON" |
             "VECTOR" => Ok((base_type.to_string(), param, distance_type)),
             _ => Err(QueryExecutionError::TypeMismatch),
         }
@@ -90,7 +91,7 @@ fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16, Option
             "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" |
             "VARCHAR" | "CHAR" | "TEXT" |
             "BOOL" | "BOOLEAN" |
-            "TIMESTAMP" | "TIMESTAMPTZ" => Ok((base_type.to_string(), 6, None)), // 默认精度6（微秒）
+            "TIMESTAMP" | "TIMESTAMPTZ" | "JSON" => Ok((base_type.to_string(), 6, None)), // 默认精度6（微秒）
             _ => Err(QueryExecutionError::TypeMismatch),
         }
     }
@@ -148,6 +149,7 @@ impl core::error::Error for QueryExecutionError {}
 
 /// 执行SQL查询
 pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+    println!("DEBUG execute_query called: query_type={:?}, table_name={}", query.query_type, query.table_name);
     // 检查是否是时序表查询
     let is_timeseries_table = db.time_series_tables.iter().any(|table_opt| {
         if let Some(table) = table_opt {
@@ -246,7 +248,10 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                                 "TEXT" => crate::types::DataType::Text,
                                 "BOOL" | "BOOLEAN" => crate::types::DataType::Bool,
                                 "TIMESTAMP" => crate::types::DataType::Timestamp,
+                                "TIMESTAMPTZ" => crate::types::DataType::TimestampTZ,
+                                "INTERVAL" => crate::types::DataType::Interval,
                                 "VECTOR" => crate::types::DataType::Vector,
+                                "JSON" => crate::types::DataType::Json,
                                 _ => return Err(QueryExecutionError::TypeMismatch),
                             };
 
@@ -1630,7 +1635,17 @@ fn evaluate_expression_for_aggregate(
                     buf[..len].copy_from_slice(&s.as_bytes()[..len]);
                     (DataType::VarChar, Value { string: buf })
                 }
-                SqlValue::Json(_) => (DataType::Json, Value { json_storage: JsonStorage::Null }),
+                SqlValue::Json(json_str) => {
+                    let mut buf = [0u8; 64];
+                    let len = core::cmp::min(json_str.len(), 64);
+                    buf[..len].copy_from_slice(&json_str.as_bytes()[..len]);
+                    let json_storage = if json_str.len() <= 64 {
+                        crate::types::JsonStorage::Inline(buf)
+                    } else {
+                        crate::types::JsonStorage::Null
+                    };
+                    (DataType::Json, Value { json_storage })
+                }
             };
 
             Ok(TypedValue { value_type, value })
@@ -2096,6 +2111,7 @@ fn add_joined_row(
                     .iter()
                     .position(|f| f.name == field_name_part)
                 {
+                    println!("DEBUG: get_field_value: found field '{}' at index {} in main_table", field_name_part, field_index);
                     row_data.push(main_record_values[field_index].clone());
                 }
                 // 尝试从连接表获取字段
@@ -2112,6 +2128,7 @@ fn add_joined_row(
                         value_type: DataType::Int64,
                         value: Value { i64: 0 },
                     };
+                    println!("DEBUG: get_field_value: field '{}' not found, using default value", field_name_part);
                     row_data.push(default_value);
                 }
             }
@@ -3285,7 +3302,17 @@ fn evaluate_expression_with_depth(
                     buf[..len].copy_from_slice(&s.as_bytes()[..len]);
                     (DataType::VarChar, Value { string: buf })
                 }
-                SqlValue::Json(_) => (DataType::Json, Value { json_storage: JsonStorage::Null }),
+                SqlValue::Json(json_str) => {
+                    let mut buf = [0u8; 64];
+                    let len = core::cmp::min(json_str.len(), 64);
+                    buf[..len].copy_from_slice(&json_str.as_bytes()[..len]);
+                    let json_storage = if json_str.len() <= 64 {
+                        crate::types::JsonStorage::Inline(buf)
+                    } else {
+                        crate::types::JsonStorage::Null
+                    };
+                    (DataType::Json, Value { json_storage })
+                }
             };
 
             Ok(TypedValue { value_type, value })
@@ -3483,6 +3510,42 @@ fn evaluate_vector_binary_op(
             .map(|s| s.parse::<f32>())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| QueryExecutionError::TypeMismatch)?;
+    } else if matches!(right.value_type, DataType::Json) {
+        // 右操作数是JSON类型，尝试解析为向量字面量 [x1, x2, ..., xn]
+        if let crate::types::JsonStorage::Inline(json_bytes) = unsafe { right.value.json_storage } {
+            let vec_str = core::str::from_utf8(&json_bytes)
+                .map_err(|_| QueryExecutionError::TypeMismatch)?
+                .trim_end_matches('\0');
+
+            // 解析向量字面量
+            // 检查字符串是否以[开头和]结尾
+            if !vec_str.starts_with('[') || !vec_str.ends_with(']') {
+                return Err(QueryExecutionError::TypeMismatch);
+            }
+
+            // 移除首尾的方括号
+            let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
+            // 分割逗号，得到每个元素的字符串
+            let elements: Vec<&str> = vec_str
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty()) // 过滤掉空字符串
+                .collect();
+
+            // 检查维度是否匹配
+            if elements.len() != vector_dim as usize {
+                return Err(QueryExecutionError::TypeMismatch);
+            }
+
+            // 解析每个元素为f32
+            vec2_values = elements
+                .iter()
+                .map(|s| s.parse::<f32>())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| QueryExecutionError::TypeMismatch)?;
+        } else {
+            return Err(QueryExecutionError::TypeMismatch);
+        }
     } else {
         // 处理右操作数为数值类型的情况
         // 首先检查是否为数值类型，避免unsafe块中的内存访问违规
@@ -5390,6 +5453,7 @@ fn execute_create_table_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
+    println!("DEBUG execute_create_table_query called for table: {}", query.table_name);
     // 检查IF NOT EXISTS子句
     if query.if_not_exists {
         // 检查表是否已存在
@@ -5475,6 +5539,8 @@ fn execute_create_table_query(
 
             // 向量类型
             "VECTOR" => DataType::Vector,
+            // JSON类型
+            "JSON" => DataType::Json,
 
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
@@ -5576,8 +5642,17 @@ fn execute_create_table_query(
                             DataType::Vector => Value {
                                 vector: core::ptr::null(),
                             },
-                            DataType::Json => Value {
-                                json_storage: crate::types::JsonStorage::Null,
+                            DataType::Json => {
+                                let mut buf = [0u8; 64];
+                                let str_val = actual_value.to_string();
+                                let len = core::cmp::min(str_val.len(), 64);
+                                buf[..len].copy_from_slice(&str_val.as_bytes()[..len]);
+                                let json_storage = if str_val.len() <= 64 {
+                                    crate::types::JsonStorage::Inline(buf)
+                                } else {
+                                    crate::types::JsonStorage::Null
+                                };
+                                Value { json_storage }
                             },
                         }
                     }
@@ -5626,8 +5701,17 @@ fn execute_create_table_query(
                         DataType::Vector => Value {
                             vector: core::ptr::null(),
                         },
-                        DataType::Json => Value {
-                            json_storage: crate::types::JsonStorage::Null,
+                        DataType::Json => {
+                            let mut buf = [0u8; 64];
+                            let str_val = f.to_string();
+                            let len = core::cmp::min(str_val.len(), 64);
+                            buf[..len].copy_from_slice(&str_val.as_bytes()[..len]);
+                            let json_storage = if str_val.len() <= 64 {
+                                crate::types::JsonStorage::Inline(buf)
+                            } else {
+                                crate::types::JsonStorage::Null
+                            };
+                            Value { json_storage }
                         },
                     },
                     crate::sql::Value::Boolean(b) => match data_type {
@@ -5822,7 +5906,7 @@ fn execute_create_table_query(
                                 vector: core::ptr::null(),
                             },
                             DataType::Json => Value {
-                                json_storage: crate::types::JsonStorage::Null,
+                                json_storage: crate::types::JsonStorage::Inline([0u8; 64]),
                             },
                         }
                     }
@@ -5870,7 +5954,7 @@ fn execute_create_table_query(
                                 vector: core::ptr::null(),
                             },
                             DataType::Json => Value {
-                                json_storage: crate::types::JsonStorage::Null,
+                                json_storage: crate::types::JsonStorage::Inline([0u8; 64]),
                             },
                         }
                     }
@@ -7101,6 +7185,7 @@ fn execute_insert_query(
 
         // 6. 将字段值写入缓冲区
         for (i, field) in table.def.fields.iter().enumerate() {
+            println!("DEBUG: Processing field {} (index {}), insert_columns={:?}", field.name, i, query.insert_columns);
             let field_value = if !query.insert_columns.is_empty() {
                 // 插入指定列
                 if let Some(col_index) = query
@@ -7108,12 +7193,16 @@ fn execute_insert_query(
                     .iter()
                     .position(|col| *col == field.name)
                 {
+                    println!("DEBUG: Field '{}' found in insert_columns at index {}", field.name, col_index);
                     if col_index < values.len() {
+                        println!("DEBUG: Using value at index {} for field '{}'", col_index, field.name);
                         Some(&values[col_index])
                     } else {
+                        println!("DEBUG: No value available for field '{}' (col_index {} >= values.len {})", field.name, col_index, values.len());
                         None
                     }
                 } else {
+                    println!("DEBUG: Field '{}' not found in insert_columns", field.name);
                     None
                 }
             } else {
@@ -7290,7 +7379,8 @@ fn execute_insert_query(
                     &expr,
                 )
                 .map_err(|e| {
-                    println!("DEBUG: set_field_value failed with error: {:?}", e);
+                    println!("DEBUG: set_field_value failed for field '{}' with error: {:?}", field.name, e);
+                    println!("DEBUG: field.type={:?}, field.offset={}, field.size={}", field.data_type, field.offset, field.size);
                     e
                 })?;
             } else if let Some(default_value) = &field.default_value {
@@ -7774,6 +7864,7 @@ fn set_field_value_with_depth(
         return Err(QueryExecutionError::InternalError);
     }
     
+    println!("DEBUG set_field_value_with_depth: data_type={:?}, offset={}, field_size={}, expr={:?}", data_type, offset, field_size, expr);
     unsafe {
         // 1. 从record_data中提取所有字段的当前值
         let record_values = table
@@ -7843,6 +7934,7 @@ fn set_field_value_with_depth(
 
         // 2. 评估表达式
         let evaluated_value = evaluate_expression_with_depth(table, &record_values, expr, depth + 1)?;
+        println!("DEBUG evaluated_value: value_type={:?}, field_type={:?}", evaluated_value.value_type, data_type);
 
         // 3. 根据字段类型设置值
         match data_type {
@@ -8075,6 +8167,36 @@ fn set_field_value_with_depth(
                         }
                         return Ok(());
                     }
+                } else if matches!(evaluated_value.value_type, DataType::Json) {
+                    // 处理JSON类型的向量字面量
+                    if let crate::types::JsonStorage::Inline(json_bytes) = evaluated_value.value.json_storage {
+                        let s = core::str::from_utf8(&json_bytes)
+                            .unwrap_or_default()
+                            .trim_end_matches(char::from(0));
+                        
+                        // 检查是否是向量字面量格式 [x1, x2, ..., xn]
+                        if s.starts_with('[') && s.ends_with(']') {
+                            let vec_str = &s[1..s.len()-1];
+                            let vec_values: Vec<&str> = vec_str.split(',').map(|v| v.trim()).collect();
+                            
+                            // 计算向量维度
+                            let expected_dim = field_size / 4;
+                            if vec_values.len() != expected_dim {
+                                return Err(QueryExecutionError::TypeMismatch);
+                            }
+                            
+                            // 解析向量值并写入记录
+                            let vec_ptr = record_data.as_mut_ptr().add(offset) as *mut f32;
+                            for (i, val_str) in vec_values.iter().enumerate() {
+                                if let Ok(val) = val_str.parse::<f32>() {
+                                    *vec_ptr.add(i) = val;
+                                } else {
+                                    return Err(QueryExecutionError::TypeMismatch);
+                                }
+                            }
+                            return Ok(());
+                        }
+                    }
                 }
                 
                 // 处理其他表达式类型或非向量字面量情况
@@ -8101,6 +8223,7 @@ fn set_field_value_with_depth(
             }
             // JSON类型
             DataType::Json => {
+                eprintln!("DEBUG: JSON field - evaluated_value.value_type: {:?}", evaluated_value.value_type);
                 // 处理JSON类型
                 match evaluated_value.value_type {
                     DataType::Json => {
@@ -8110,7 +8233,10 @@ fn set_field_value_with_depth(
                             evaluated_value.value.json_storage,
                         );
                     }
-                    _ => return Err(QueryExecutionError::TypeMismatch),
+                    _ => {
+                        eprintln!("DEBUG: JSON field got unexpected type: {:?}", evaluated_value.value_type);
+                        return Err(QueryExecutionError::TypeMismatch);
+                    }
                 }
             }
         }
@@ -9927,7 +10053,9 @@ unsafe fn get_field_value(
     let value = table
         .get_field(record_ptr, field_index)
         .map_err(|_| QueryExecutionError::FieldNotFound)?;
-
+    
+    println!("DEBUG: get_field_value for field '{}': value={:?}", field.name, value);
+    
     Ok(TypedValue {
         value_type: field.data_type,
         value,

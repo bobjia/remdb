@@ -1185,6 +1185,9 @@ impl fmt::Debug for TypedValue {
 /// 定长字符串最大长度
 pub const MAX_STRING_LEN: usize = 64;
 
+/// TEXT数据最大长度（10KB）
+pub const MAX_TEXT_LEN: usize = 10240;
+
 /// 字段定义
 #[derive(Clone, Debug)]
 pub struct FieldDef {

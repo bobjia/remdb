@@ -3,7 +3,7 @@
 
 #![cfg(feature = "std")]
 
-use remdb::sql::query_parser::{parse_sql_query};
+use remdb::sql::query_parser::SqlParser;
 
 #[test]
 fn test_having_clause_parsing() {
@@ -16,7 +16,8 @@ fn test_having_clause_parsing() {
     ];
     
     for query in test_queries {
-        let result = parse_sql_query(query);
+        let mut parser = SqlParser::new(query.to_string());
+        let result = parser.parse();
         assert!(result.is_ok(), "查询 '{}' 解析失败: {:?}", query, result);
         
         let sql_query = result.unwrap();
@@ -34,7 +35,8 @@ fn test_window_functions_parsing() {
     ];
     
     for query in test_queries {
-        let result = parse_sql_query(query);
+        let mut parser = SqlParser::new(query.to_string());
+        let result = parser.parse();
         assert!(result.is_ok(), "查询 '{}' 解析失败: {:?}", query, result);
         
         let sql_query = result.unwrap();

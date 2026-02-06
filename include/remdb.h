@@ -554,6 +554,24 @@ enum RemDbError remdb_execute_query(RemDbHandle handle, const char* table_name, 
  */
 enum RemDbError remdb_free_result_set(RemDbResultSet* result_set);
 
+/**
+ * @brief Get JSON string from a typed value
+ *
+ * @param value Typed value containing JSON data
+ * @param json_string Output parameter for JSON string pointer
+ * @param length Output parameter for string length
+ * @return Error code
+ */
+enum RemDbError remdb_get_json_string(const RemDbTypedValue* value, const char** json_string, size_t* length);
+
+/**
+ * @brief Free string memory allocated by RemDB
+ *
+ * @param s String pointer to free
+ * @return Error code
+ */
+enum RemDbError remdb_free_string(const char* s);
+
 /* =========================================== */
 /*              Data Manipulation Operations   */
 /* =========================================== */

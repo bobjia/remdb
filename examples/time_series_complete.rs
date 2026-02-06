@@ -62,16 +62,14 @@ fn main() {
     let ts_config = TimeSeriesConfig::DEFAULT;
 
     // 创建时序表
-    unsafe {
-        db.create_time_series_table(
-            table_name,
-            timestamp_field,
-            value_field,
-            tags,
-            Some(ts_config),
-        )
-        .expect("Failed to create time series table");
-    };
+    db.create_time_series_table(
+        table_name,
+        timestamp_field,
+        value_field,
+        tags,
+        Some(ts_config),
+    )
+    .expect("Failed to create time series table");
     println!("时序表 '{}' 创建成功", table_name);
 
     // 4. 测试时序记录创建
