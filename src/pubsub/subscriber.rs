@@ -311,16 +311,16 @@ impl SubscriberManager {
             // POSIX平台使用系统时间
             let now = std::time::SystemTime::now();
             let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
-            duration.as_millis() as u64
+            return duration.as_millis() as u64;
         }
         #[cfg(feature = "baremetal")]
         {
             // baremetal平台返回0（需要用户实现）
-            0
+            return 0u64;
         }
         #[cfg(not(any(feature = "posix", feature = "baremetal")))]
         {
-            0
+            return 0u64;
         }
     }
 

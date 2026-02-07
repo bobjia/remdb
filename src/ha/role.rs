@@ -5,6 +5,9 @@ use crate::ha::Result;
 use crate::pubsub;
 use core::sync::atomic::{AtomicU8, Ordering};
 
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
+
 // 角色变更主题ID
 const ROLE_CHANGE_TOPIC: u16 = 4;
 
@@ -30,9 +33,8 @@ fn handle_role_change(topic_id: u16, data: &[u8]) -> bool {
         _ => HARole::Auto,
     };
 
-    #[cfg(feature = "std")]
-    eprintln!("[DEBUG] Role change notification received: {:?}", role);
-
+    #[cfg(feature = "log")]
+    debug!("Role change notification received: {:?}", role);
     // 调用全局回调函数
     unsafe {
         if let Some(callback) = ROLE_CHANGE_CALLBACK {
@@ -67,7 +69,6 @@ impl RoleManager {
     pub fn init(&self) -> Result<()> {
         // 初始化pubsub系统（如果尚未初始化）
         self.init_pubsub()?;
-
         // 订阅角色变更通知
         self.subscribe_to_role_changes()?;
 
@@ -78,9 +79,8 @@ impl RoleManager {
     fn init_pubsub(&self) -> Result<()> {
         // pubsub系统已经由HA管理器统一初始化，无需再次初始化
         // 这里只做日志记录
-        #[cfg(feature = "std")]
-        eprintln!("[DEBUG] Role manager using existing pubsub system");
-
+        #[cfg(feature = "log")]
+        debug!("Role manager using existing pubsub system");
         Ok(())
     }
 
@@ -89,13 +89,13 @@ impl RoleManager {
         // 订阅角色变更主题
         match pubsub::subscribe(ROLE_CHANGE_TOPIC, handle_role_change) {
             Ok(_) => {
-                #[cfg(feature = "std")]
-                eprintln!("[DEBUG] Successfully subscribed to role change notifications");
+                #[cfg(feature = "log")]
+                debug!("Successfully subscribed to role change notifications");
                 Ok(())
             }
             Err(e) => {
-                #[cfg(feature = "std")]
-                eprintln!("[DEBUG] Failed to subscribe to role change notifications: {:?}", e);
+                #[cfg(feature = "log")]
+                error!("Failed to subscribe to role change notifications: {:?}", e);
                 // 订阅失败不影响角色管理器的初始化
                 Ok(())
             }
@@ -120,12 +120,10 @@ impl RoleManager {
             return Ok(());
         }
 
-        #[cfg(feature = "std")]
-        eprintln!("[DEBUG] Role changing from {:?} to {:?}", current_role, role);
-
+        #[cfg(feature = "log")]
+        debug!("Role changing from {:?} to {:?}", current_role, role);
         // 更新角色
         self.current_role.store(role as u8, Ordering::Relaxed);
-
         // 发布角色变更通知
         self.publish_role_change(role)?;
 
@@ -136,18 +134,17 @@ impl RoleManager {
     fn publish_role_change(&self, role: HARole) -> Result<()> {
         // 构建角色变更数据
         let role_data = [role as u8; 1];
-
         // 发布角色变更消息
         // 注意：在测试环境中，pubsub可能未正确初始化，此时忽略发布失败
         match pubsub::publish(ROLE_CHANGE_TOPIC, &role_data) {
             Ok(_) => {
-                #[cfg(feature = "std")]
-                eprintln!("[DEBUG] Role change notification published: {:?}", role);
+                #[cfg(feature = "log")]
+                debug!("Role change notification published: {:?}", role);
                 Ok(())
             }
             Err(e) => {
-                #[cfg(feature = "std")]
-                eprintln!("[DEBUG] Failed to publish role change notification: {:?}", e);
+                #[cfg(feature = "log")]
+                error!("Failed to publish role change notification: {:?}", e);
                 // 忽略发布失败，角色已经更新
                 Ok(())
             }
@@ -158,37 +155,14 @@ impl RoleManager {
     pub fn subscribe_role_change(&self, callback: fn(HARole) -> bool) -> Result<()> {
         unsafe {
             ROLE_CHANGE_CALLBACK = Some(callback);
-            #[cfg(feature = "std")]
-            eprintln!("[DEBUG] Role change callback registered");
         }
         Ok(())
     }
 
     /// 关闭角色管理器
     pub fn shutdown(&self) -> Result<()> {
-        // 清除全局回调
-        unsafe {
-            ROLE_CHANGE_CALLBACK = None;
-        }
-
-        #[cfg(feature = "std")]
-        eprintln!("[DEBUG] Role manager shutdown");
-
+        #[cfg(feature = "log")]
+        debug!("Role manager shutdown");
         Ok(())
-    }
-
-    /// 检查角色是否为主节点
-    pub fn is_master(&self) -> bool {
-        self.get_role() == HARole::Master
-    }
-
-    /// 检查角色是否为从节点
-    pub fn is_slave(&self) -> bool {
-        self.get_role() == HARole::Slave
-    }
-
-    /// 检查角色是否为自动模式
-    pub fn is_auto(&self) -> bool {
-        self.get_role() == HARole::Auto
     }
 }

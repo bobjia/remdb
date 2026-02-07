@@ -21,13 +21,16 @@ use crate::{
     MAX_STRING_LEN,
 };
 use crate::model::model_manager::get_global_model_manager;
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
 
 /// 解析数据类型字符串，提取基本类型、精度/维度和距离类型
 /// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6, None)
 ///       "VECTOR(768)" -> ("VECTOR", 768, None)
 ///       "VECTOR(64) WITH DISTANCE=IP" -> ("VECTOR", 64, Some(InnerProduct))
 fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16, Option<crate::types::DistanceType>), QueryExecutionError> {
-    println!("DEBUG parse_data_type_with_precision called with: {}", type_str);
+    #[cfg(feature = "log")]
+    debug!("parse_data_type_with_precision called with: {}", type_str);
     let type_str = type_str.to_uppercase();
 
     // 查找左括号位置
@@ -149,7 +152,8 @@ impl core::error::Error for QueryExecutionError {}
 
 /// 执行SQL查询
 pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
-    println!("DEBUG execute_query called: query_type={:?}, table_name={}", query.query_type, query.table_name);
+    #[cfg(feature = "log")]
+    debug!("execute_query called: query_type={:?}, table_name={}", query.query_type, query.table_name);
     // 检查是否是时序表查询
     let is_timeseries_table = db.time_series_tables.iter().any(|table_opt| {
         if let Some(table) = table_opt {
@@ -388,8 +392,8 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                     ) {
                         Ok(_) => Ok(ResultSet::new(Vec::new())),
                         Err(e) => {
-                            #[cfg(feature = "std")]
-                            eprintln!("Model registration failed: {:?}", e);
+                            #[cfg(feature = "log")]
+                            error!("Model registration failed: {:?}", e);
                             Err(QueryExecutionError::InternalError)
                         },
                     }
@@ -712,13 +716,13 @@ fn execute_select_timeseries_query(
     stats.execution_time = end_time.duration_since(start_time).as_micros() as u64;
 
     // 输出查询执行统计信息
-    #[cfg(feature = "std")]
+    #[cfg(feature = "log")]
     {
-        println!("Query execution stats:");
-        println!("  Used index: {}", stats.used_index);
-        println!("  Scanned records: {}", stats.scanned_records);
-        println!("  Matched records: {}", stats.matched_records);
-        println!("  Execution time: {}μs", stats.execution_time);
+        info!("Query execution stats:");
+        info!("  Used index: {}", stats.used_index);
+        info!("  Scanned records: {}", stats.scanned_records);
+        info!("  Matched records: {}", stats.matched_records);
+        info!("  Execution time: {}μs", stats.execution_time);
     }
     */
 
@@ -1705,13 +1709,13 @@ fn execute_select_query(
         let execution_time = end_time.duration_since(start_time).as_micros() as u64;
         
         // 输出查询执行统计信息
-        #[cfg(feature = "std")]
+        #[cfg(feature = "log")]
         {
-            println!("Query execution stats:");
-            println!("  Used index: false");
-            println!("  Scanned records: 0");
-            println!("  Matched records: 0");
-            println!("  Execution time: {}μs", execution_time);
+            info!("Query execution stats:");
+            info!("  Used index: false");
+            info!("  Scanned records: 0");
+            info!("  Matched records: 0");
+            info!("  Execution time: {}μs", execution_time);
         }
         
         return execute_select_join_query(db, query);
@@ -2111,7 +2115,8 @@ fn add_joined_row(
                     .iter()
                     .position(|f| f.name == field_name_part)
                 {
-                    println!("DEBUG: get_field_value: found field '{}' at index {} in main_table", field_name_part, field_index);
+                    #[cfg(feature = "log")]
+                    debug!("get_field_value: found field '{}' at index {} in main_table", field_name_part, field_index);
                     row_data.push(main_record_values[field_index].clone());
                 }
                 // 尝试从连接表获取字段
@@ -2128,7 +2133,8 @@ fn add_joined_row(
                         value_type: DataType::Int64,
                         value: Value { i64: 0 },
                     };
-                    println!("DEBUG: get_field_value: field '{}' not found, using default value", field_name_part);
+                    #[cfg(feature = "log")]
+                    debug!("get_field_value: field '{}' not found, using default value", field_name_part);
                     row_data.push(default_value);
                 }
             }
@@ -5453,7 +5459,8 @@ fn execute_create_table_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
-    println!("DEBUG execute_create_table_query called for table: {}", query.table_name);
+    #[cfg(feature = "log")]
+    debug!("execute_create_table_query called for table: {}", query.table_name);
     // 检查IF NOT EXISTS子句
     if query.if_not_exists {
         // 检查表是否已存在
@@ -6021,7 +6028,8 @@ fn execute_create_table_query(
     });
 
     // 调用DdlExecutor::create_table方法，支持约束和复合主键
-    println!("DEBUG: Before create_table, db.tables.len() = {}", db.tables.len());
+    #[cfg(feature = "log")]
+    debug!("Before create_table, db.tables.len() = {}", db.tables.len());
     DdlExecutor::create_table(
         db,
         &query.table_name,
@@ -6030,7 +6038,8 @@ fn execute_create_table_query(
         primary_key_indices,
     )
     .map_err(|e| {
-        println!("DEBUG: create_table failed with error: {:?}", e);
+        #[cfg(feature = "log")]
+        debug!("create_table failed with error: {:?}", e);
         match e {
             RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
             RemDbError::FieldNotFound => QueryExecutionError::FieldNotFound,
@@ -6039,7 +6048,8 @@ fn execute_create_table_query(
             _ => QueryExecutionError::InternalError,
         }
     })?;
-    println!("DEBUG: After create_table, db.tables.len() = {}", db.tables.len());
+    #[cfg(feature = "log")]
+    debug!("After create_table, db.tables.len() = {}", db.tables.len());
 
     // 创建结果集，返回成功消息
     let columns = alloc::vec!["status".to_string()];
@@ -6947,12 +6957,12 @@ fn execute_describe_query(
     let mut result_set = ResultSet::new(columns.clone());
 
     // 添加调试信息
-    #[cfg(feature = "std")]
+    #[cfg(feature = "log")]
     {
-        println!("DEBUG: describe table {}: id={}, name={}, fields_len={}, primary_key_len={}", 
+        debug!("describe table {}: id={}, name={}, fields_len={}, primary_key_len={}", 
                 query.table_name, table_def.id, table_def.name, table_def.fields.len(), table_def.primary_key.len());
         for (i, field) in table_def.fields.iter().enumerate() {
-            println!("DEBUG: field {}: name={}, data_type={:?}, size={}, offset={}", 
+            debug!("field {}: name={}, data_type={:?}, size={}, offset={}", 
                     i, field.name, field.data_type, field.size, field.offset);
         }
     }
@@ -7136,11 +7146,11 @@ fn execute_insert_query(
         .ok_or(QueryExecutionError::TableNotFound)?;
 
     // 2. 获取可变表引用
-    println!("DEBUG: table_id = {}, db.tables.len() = {}", table_id, db.tables.len());
-    let table = db
-        .get_table_mut(table_id)
-        .map_err(|e| {
-            println!("DEBUG: get_table_mut failed with error: {:?}", e);
+    #[cfg(feature = "log")]
+    debug!("table_id = {}, db.tables.len() = {}", table_id, db.tables.len());
+    let table = db.get_table_mut(table_id).map_err(|e| {
+            #[cfg(feature = "log")]
+            debug!("get_table_mut failed with error: {:?}", e);
             QueryExecutionError::InternalError
         })?;
 
@@ -7185,7 +7195,8 @@ fn execute_insert_query(
 
         // 6. 将字段值写入缓冲区
         for (i, field) in table.def.fields.iter().enumerate() {
-            println!("DEBUG: Processing field {} (index {}), insert_columns={:?}", field.name, i, query.insert_columns);
+            #[cfg(feature = "log")]
+            debug!("Processing field {} (index {}), insert_columns={:?}", field.name, i, query.insert_columns);
             let field_value = if !query.insert_columns.is_empty() {
                 // 插入指定列
                 if let Some(col_index) = query
@@ -7193,16 +7204,20 @@ fn execute_insert_query(
                     .iter()
                     .position(|col| *col == field.name)
                 {
-                    println!("DEBUG: Field '{}' found in insert_columns at index {}", field.name, col_index);
+                    #[cfg(feature = "log")]
+                    debug!("Field '{}' found in insert_columns at index {}", field.name, col_index);
                     if col_index < values.len() {
-                        println!("DEBUG: Using value at index {} for field '{}'", col_index, field.name);
+                        #[cfg(feature = "log")]
+                        debug!("Using value at index {} for field '{}'", col_index, field.name);
                         Some(&values[col_index])
                     } else {
-                        println!("DEBUG: No value available for field '{}' (col_index {} >= values.len {})", field.name, col_index, values.len());
+                        #[cfg(feature = "log")]
+                        debug!("No value available for field '{}' (col_index {} >= values.len {})", field.name, col_index, values.len());
                         None
                     }
                 } else {
-                    println!("DEBUG: Field '{}' not found in insert_columns", field.name);
+                    #[cfg(feature = "log")]
+                    debug!("Field '{}' not found in insert_columns", field.name);
                     None
                 }
             } else {
@@ -7379,8 +7394,10 @@ fn execute_insert_query(
                     &expr,
                 )
                 .map_err(|e| {
-                    println!("DEBUG: set_field_value failed for field '{}' with error: {:?}", field.name, e);
-                    println!("DEBUG: field.type={:?}, field.offset={}, field.size={}", field.data_type, field.offset, field.size);
+                    #[cfg(feature = "log")]
+                    debug!("set_field_value failed for field '{}' with error: {:?}", field.name, e);
+                    #[cfg(feature = "log")]
+                    debug!("field.type={:?}, field.offset={}, field.size={}", field.data_type, field.offset, field.size);
                     e
                 })?;
             } else if let Some(default_value) = &field.default_value {
@@ -7863,8 +7880,9 @@ fn set_field_value_with_depth(
     if depth > MAX_RECURSION_DEPTH {
         return Err(QueryExecutionError::InternalError);
     }
-    
-    println!("DEBUG set_field_value_with_depth: data_type={:?}, offset={}, field_size={}, expr={:?}", data_type, offset, field_size, expr);
+
+    #[cfg(feature = "log")]
+    debug!("set_field_value_with_depth: data_type={:?}, offset={}, field_size={}, expr={:?}", data_type, offset, field_size, expr);
     unsafe {
         // 1. 从record_data中提取所有字段的当前值
         let record_values = table
@@ -7934,7 +7952,8 @@ fn set_field_value_with_depth(
 
         // 2. 评估表达式
         let evaluated_value = evaluate_expression_with_depth(table, &record_values, expr, depth + 1)?;
-        println!("DEBUG evaluated_value: value_type={:?}, field_type={:?}", evaluated_value.value_type, data_type);
+        #[cfg(feature = "log")]
+        debug!("evaluated_value: value_type={:?}, field_type={:?}", evaluated_value.value_type, data_type);
 
         // 3. 根据字段类型设置值
         match data_type {
@@ -8213,9 +8232,11 @@ fn set_field_value_with_depth(
                         // 调试信息
                         if matches!(evaluated_value.value_type, DataType::VarChar | DataType::Char | DataType::Text) {
                             let s = core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default();
-                            eprintln!("DEBUG: Vector field got string: '{}', starts_with('['): {}, ends_with(']'): {}", s, s.starts_with('['), s.ends_with(']'));
+                            #[cfg(feature = "log")]
+                            debug!("Vector field got string: '{}', starts_with('['): {}, ends_with(']'): {}", s, s.starts_with('['), s.ends_with(']'));
                         } else {
-                            eprintln!("DEBUG: Vector field got unexpected type: {:?}", evaluated_value.value_type);
+                            #[cfg(feature = "log")]
+                            debug!("Vector field got unexpected type: {:?}", evaluated_value.value_type);
                         }
                         return Err(QueryExecutionError::TypeMismatch);
                     }
@@ -8223,7 +8244,8 @@ fn set_field_value_with_depth(
             }
             // JSON类型
             DataType::Json => {
-                eprintln!("DEBUG: JSON field - evaluated_value.value_type: {:?}", evaluated_value.value_type);
+                #[cfg(feature = "log")]
+                debug!("JSON field - evaluated_value.value_type: {:?}", evaluated_value.value_type);
                 // 处理JSON类型
                 match evaluated_value.value_type {
                     DataType::Json => {
@@ -8234,7 +8256,8 @@ fn set_field_value_with_depth(
                         );
                     }
                     _ => {
-                        eprintln!("DEBUG: JSON field got unexpected type: {:?}", evaluated_value.value_type);
+                        #[cfg(feature = "log")]
+                        debug!("JSON field got unexpected type: {:?}", evaluated_value.value_type);
                         return Err(QueryExecutionError::TypeMismatch);
                     }
                 }
@@ -8296,13 +8319,15 @@ fn execute_create_time_series_table_query(
 
     for (field_name, data_type_str, _, _, _, _, _) in &query.table_def {
         // 打印调试信息
-        println!("DEBUG: Field {} has data type: '{}'", field_name, data_type_str);
-        
+        #[cfg(feature = "log")]
+        debug!("Field {} has data type: '{}'", field_name, data_type_str);
+
         // 提取基本类型部分，去除参数（如 VARCHAR(32) -> VARCHAR）
         let base_type = data_type_str.split('(').next().unwrap_or(data_type_str).trim();
         let base_type_upper = base_type.to_uppercase();
-        println!("DEBUG: Base type: '{}', upper case: '{}'", base_type, base_type_upper);
-        
+        #[cfg(feature = "log")]
+        debug!("Base type: '{}', upper case: '{}'", base_type, base_type_upper);
+
         let data_type = match base_type_upper.as_str() {
             "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => crate::DataType::Timestamp,
             "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => crate::DataType::TimestampTZ,
@@ -8801,14 +8826,14 @@ fn compare_field_with_condition(
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as i8;
                     // 调试输出
-                    #[cfg(feature = "std")]
-                    println!(
+                    #[cfg(feature = "log")]
+                    debug!(
                         "Int8 comparison: field_value={}, condition_value={}, operator={:?}",
                         f_val, c_val, operator
                     );
                     let result = compare_numbers(f_val, c_val, operator);
-                    #[cfg(feature = "std")]
-                    println!("Comparison result: {}", result);
+                    #[cfg(feature = "log")]
+                    debug!("Comparison result: {}", result);
                     result
                 }
                 _ => false, // 类型不匹配
@@ -10053,9 +10078,10 @@ unsafe fn get_field_value(
     let value = table
         .get_field(record_ptr, field_index)
         .map_err(|_| QueryExecutionError::FieldNotFound)?;
-    
-    println!("DEBUG: get_field_value for field '{}': value={:?}", field.name, value);
-    
+
+    #[cfg(feature = "log")]
+    debug!("get_field_value for field '{}': value={:?}", field.name, value);
+
     Ok(TypedValue {
         value_type: field.data_type,
         value,

@@ -27,6 +27,18 @@ rand = { version = "0.8.5", optional = true }
 remdb-macros = { path = "./remdb-macros", version = "0.2.9" }
 socket2 = { version = "0.5.5", optional = true }
 lazy_static = "1.4.0"
+tracing-core = { version = "0.1", optional = true }
+heapless = { version = "0.8", optional = true }
+
+[dependencies.tracing]
+version = "0.1"
+optional = true
+features = ["attributes"]
+
+[dependencies.tracing-subscriber]
+version = "0.3"
+optional = true
+features = ["fmt", "env-filter"]
 
 [dev-dependencies]
 criterion = "0.5"
@@ -37,14 +49,15 @@ name = "database"
 harness = false
 
 [features]
-default = ["std", "posix", "ha", "pubsub", "c-api"]
-std = ["rand", "socket2"]
+default = ["std", "posix", "ha", "pubsub", "c-api", "log"]
+std = ["rand", "socket2", "tracing", "tracing-subscriber"]
 posix = ["std"]
-baremetal = []
+baremetal = ["log", "tracing-core", "heapless"]
 debug = []
 c-api = []
 pubsub = ["std"]
 ha = ["pubsub"]
+log = []
 
 [profile.release]
 opt-level = "z"          # 优化大小

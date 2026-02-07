@@ -8,6 +8,9 @@ use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
+
 /// 解析时间字符串为微秒时间戳
 /// 支持的格式：
 /// - '2024-01-15 10:30:45'
@@ -855,7 +858,8 @@ impl SqlParser {
 
     /// 解析INSERT查询
     fn parse_insert_query(&mut self) -> Result<SqlQuery, QueryParseError> {
-        println!("DEBUG: parse_insert_query called");
+        #[cfg(feature = "log")]
+        debug!("parse_insert_query called");
         // 检查是否有IGNORE关键字
         let mut ignore_duplicates = false;
         self.skip_whitespace();
@@ -946,7 +950,8 @@ impl SqlParser {
 
     /// 解析值列表
     fn parse_values(&mut self) -> Result<Vec<Vec<Value>>, QueryParseError> {
-        println!("DEBUG: parse_values called");
+        #[cfg(feature = "log")]
+        debug!("parse_values called");
         let mut all_values = Vec::new();
 
         loop {
@@ -961,9 +966,11 @@ impl SqlParser {
 
             loop {
                 self.skip_whitespace();
-                println!("DEBUG: About to call parse_value");
+                #[cfg(feature = "log")]
+                debug!("About to call parse_value");
                 let value = self.parse_value()?;
-                println!("DEBUG: parse_value returned: {:?}", value);
+                #[cfg(feature = "log")]
+                debug!("parse_value returned: {:?}", value);
                 values.push(value);
 
                 self.skip_whitespace();
@@ -983,7 +990,8 @@ impl SqlParser {
             }
         }
 
-        println!("DEBUG: parse_values returning {:?} values", all_values.len());
+        #[cfg(feature = "log")]
+        debug!("parse_values returning {:?} values", all_values.len());
         Ok(all_values)
     }
 
@@ -3187,23 +3195,27 @@ impl SqlParser {
             
             // 尝试将字符串解析为时间值
             if let Ok(timestamp) = parse_time_string(&string_value) {
-                println!("DEBUG parse_value: Parsed as timestamp");
+                #[cfg(feature = "log")]
+                debug!("parse_value: Parsed as timestamp");
                 Ok(Value::Integer(timestamp))
             } else if string_value.starts_with("__JSON__:") {
                 // 检查是否是带类型提示的JSON字符串
                 let json_str = string_value.trim_start_matches("__JSON__:");
-                println!("DEBUG parse_value: Parsed as JSON with prefix");
+                #[cfg(feature = "log")]
+                debug!("parse_value: Parsed as JSON with prefix");
                 Ok(Value::Json(json_str.to_string()))
             } else {
                 // 检查是否是带引号的JSON字符串，去除引号后检查
                 let unquoted = string_value.trim_start_matches('"').trim_end_matches('"').trim_start_matches('\'').trim_end_matches('\'');
                 if unquoted.starts_with('{') || unquoted.starts_with('[') {
                     // 去除引号后是JSON格式
-                    println!("DEBUG parse_value: Parsed as JSON (unquoted starts with {{ or [)");
+                    #[cfg(feature = "log")]
+                    debug!("parse_value: Parsed as JSON (unquoted starts with {{ or [)");
                     Ok(Value::Json(unquoted.to_string()))
                 } else {
                     // 不是JSON格式，作为普通字符串处理
-                    println!("DEBUG parse_value: Parsed as String");
+                    #[cfg(feature = "log")]
+                    debug!("parse_value: Parsed as String");
                     Ok(Value::String(string_value))
                 }
             }

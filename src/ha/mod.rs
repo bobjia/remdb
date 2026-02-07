@@ -7,6 +7,9 @@ pub mod role;
 
 use core::fmt;
 
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
+
 // HA角色
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum HARole {
@@ -122,35 +125,25 @@ pub fn init(config: &'static crate::config::DbConfig) -> Result<()> {
             return Ok(());
         }
 
-        #[cfg(feature = "std")]
-        println!(
-            "[DEBUG] {}:{}: ha::init: Creating HAManager instance",
-            file!(),
-            line!()
+        #[cfg(feature = "log")]
+        debug!(
+            "ha::init: Creating HAManager instance"
         );
         let mut ha_manager = manager::HAManager::new(config)?;
-
-        #[cfg(feature = "std")]
-        println!(
-            "[DEBUG] {}:{}: ha::init: Calling ha_manager.init()",
-            file!(),
-            line!()
+        #[cfg(feature = "log")]
+        debug!(
+            "ha::init: Calling ha_manager.init()"
         );
         ha_manager.init()?;
-
-        #[cfg(feature = "std")]
-        println!(
-            "[DEBUG] {}:{}: ha::init: Storing HAManager to global static",
-            file!(),
-            line!()
+        #[cfg(feature = "log")]
+        debug!(
+            "ha::init: Storing HAManager to global static"
         );
         *ha_manager_ptr = Some(ha_manager);
 
-        #[cfg(feature = "std")]
-        println!(
-            "[DEBUG] {}:{}: ha::init: HA initialization completed",
-            file!(),
-            line!()
+        #[cfg(feature = "log")]
+        debug!(
+            "ha::init: HA initialization completed"
         );
 
         Ok(())

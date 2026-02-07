@@ -7,6 +7,9 @@ use crate::transaction::LogItem;
 use crate::DdlExecutor;
 use std::time::Instant;
 
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
+
 // WAL复制主题ID
 const WAL_REPLICATION_TOPIC: u16 = 1;
 // 同步请求主题ID
@@ -23,8 +26,8 @@ fn handle_slave_ack(topic_id: u16, data: &[u8]) -> bool {
     }
 
     // 简化实现：只记录日志，不处理实际确认
-    #[cfg(feature = "std")]
-    eprintln!("[DEBUG] Slave ACK received, data len: {}", data.len());
+    #[cfg(feature = "log")]
+    debug!("Slave ACK received, data len: {}", data.len());
 
     true
 }
@@ -100,12 +103,14 @@ impl ReplicationManager {
         match self.subscribe_wal() {
             Ok(_) => {
                 // 订阅成功
-                eprintln!("[Slave] Successfully subscribed to WAL replication topic");
+                #[cfg(feature = "log")]
+                info!("Successfully subscribed to WAL replication topic");
             }
             Err(e) => {
                 // 订阅失败，记录错误但继续运行（测试环境可能没有网络）
-                eprintln!(
-                    "[Slave] Failed to subscribe to WAL replication topic: {:?}",
+                #[cfg(feature = "log")]
+                error!(
+                    "Failed to subscribe to WAL replication topic: {:?}",
                     e
                 );
             }
@@ -120,19 +125,22 @@ impl ReplicationManager {
         match pubsub::get_topic_id(pubsub::topics::WAL_TOPIC) {
             Some(topic_id) => match pubsub::subscribe(topic_id, handle_wal_log_callback) {
                 Ok(_) => {
-                    eprintln!(
-                        "[Slave] Successfully subscribed to WAL_TOPIC, topic_id: {}",
+                    #[cfg(feature = "log")]
+                    info!(
+                        "Successfully subscribed to WAL_TOPIC, topic_id: {}",
                         topic_id
                     );
                     Ok(())
                 }
                 Err(e) => {
-                    eprintln!("[Slave] Failed to subscribe to WAL_TOPIC: {:?}", e);
+                    #[cfg(feature = "log")]
+                    error!("Failed to subscribe to WAL_TOPIC: {:?}", e);
                     Err(HAError::ReplicationError)
                 }
             },
             None => {
-                eprintln!("[Slave] Failed to get topic_id for WAL_TOPIC");
+                #[cfg(feature = "log")]
+                error!("Failed to get topic_id for WAL_TOPIC");
                 Err(HAError::ReplicationError)
             }
         }
@@ -140,7 +148,8 @@ impl ReplicationManager {
 
     /// 处理接收到的WAL日志
     fn handle_wal_log(&mut self, data: &[u8]) {
-        eprintln!("[Slave] Received WAL log data, length: {}", data.len());
+        #[cfg(feature = "log")]
+        debug!("Received WAL log data, length: {}", data.len());
 
         // 1. 解析WAL日志 - 先检查数据长度
         let log_item: LogItem;
@@ -149,8 +158,9 @@ impl ReplicationManager {
             if data.len() >= core::mem::size_of::<LogItem>() {
                 log_item = core::ptr::read_unaligned(data.as_ptr() as *const LogItem);
             } else {
-                eprintln!(
-                    "[Slave] Invalid WAL log data length, expected: {}, got: {}",
+                #[cfg(feature = "log")]
+                error!(
+                    "Invalid WAL log data length, expected: {}, got: {}",
                     core::mem::size_of::<LogItem>(),
                     data.len()
                 );
@@ -158,15 +168,17 @@ impl ReplicationManager {
             }
         }
 
-        eprintln!(
-            "[Slave] Parsed WAL log item, op_type: {:?}, table_id: {}, record_id: {}",
+        #[cfg(feature = "log")]
+        debug!(
+            "Parsed WAL log item, op_type: {:?}, table_id: {}, record_id: {}",
             log_item.op_type, log_item.table_id, log_item.record_id
         );
 
         // 2. 应用WAL日志到本地数据库
         // 获取全局数据库实例
         if let Some(db) = unsafe { crate::get_global_db() } {
-            eprintln!("[Slave] Applying WAL log to database");
+            #[cfg(feature = "log")]
+            debug!("Applying WAL log to database");
 
             // 根据日志类型执行相应的操作
             unsafe {
@@ -542,7 +554,8 @@ impl ReplicationManager {
                             Some(vec![primary_key]),
                         );
 
-                        eprintln!("[Slave] Created table: {}", table_name);
+                        #[cfg(feature = "log")]
+                        info!("Created table: {}", table_name);
                     }
                     crate::transaction::LogOperation::CreateIndex => {
                         // 执行创建索引操作
@@ -562,15 +575,17 @@ impl ReplicationManager {
                         // 调用全局数据库的create_index方法
                         let _ = db.create_index(table_name, field_name, index_type);
 
-                        eprintln!(
-                            "[Slave] Created index for table: {}, field: {}, type: {:?}",
+                        #[cfg(feature = "log")]
+                        info!(
+                            "Created index for table: {}, field: {}, type: {:?}",
                             table_name, field_name, index_type
                         );
                     }
                     crate::transaction::LogOperation::Insert => {
                         // 执行插入操作
-                        eprintln!(
-                            "[Slave] Applying Insert operation, table_id: {}, record_id: {}",
+                        #[cfg(feature = "log")]
+                        debug!(
+                            "Applying Insert operation, table_id: {}, record_id: {}",
                             log_item.table_id, log_item.record_id
                         );
 
@@ -672,18 +687,22 @@ impl ReplicationManager {
                                     }
                                 }
 
-                                eprintln!("[Slave] Insert operation applied successfully");
+                                #[cfg(feature = "log")]
+                                debug!("Insert operation applied successfully");
                             } else {
-                                eprintln!("[Slave] Warning: Table ID {} exists but is None", table_id);
+                                #[cfg(feature = "log")]
+                                warn!("Table ID {} exists but is None", table_id);
                             }
                         } else {
-                            eprintln!("[Slave] Warning: Table ID {} out of bounds (tables.len() = {})", table_id, db.tables.len());
+                            #[cfg(feature = "log")]
+                            warn!("Table ID {} out of bounds (tables.len() = {})", table_id, db.tables.len());
                         }
                     }
                     _ => {
                         // 对于其他操作，也直接应用到数据库
-                        eprintln!(
-                            "[Slave] Applying operation: {:?}, table_id: {}, record_id: {}",
+                        #[cfg(feature = "log")]
+                        debug!(
+                            "Applying operation: {:?}, table_id: {}, record_id: {}",
                             log_item.op_type, log_item.table_id, log_item.record_id
                         );
 
@@ -719,7 +738,8 @@ impl ReplicationManager {
                                             // 更新记录计数
                                             table.record_count -= 1;
 
-                                            eprintln!("[Slave] Delete operation applied successfully");
+                                            #[cfg(feature = "log")]
+                                            debug!("Delete operation applied successfully");
                                         }
                                     }
                                     crate::transaction::LogOperation::Update => {
@@ -751,24 +771,29 @@ impl ReplicationManager {
                                                 );
                                             }
 
-                                            eprintln!("[Slave] Update operation applied successfully");
+                                            #[cfg(feature = "log")]
+                                            debug!("Update operation applied successfully");
                                         }
                                     }
                                     _ => {
-                                        eprintln!("[Slave] Unsupported operation type: {:?}", log_item.op_type);
+                                        #[cfg(feature = "log")]
+                                        error!("Unsupported operation type: {:?}", log_item.op_type);
                                     }
                                 }
                             } else {
-                                eprintln!("[Slave] Warning: Table ID {} exists but is None", table_id);
+                                #[cfg(feature = "log")]
+                                warn!("Table ID {} exists but is None", table_id);
                             }
                         } else {
-                            eprintln!("[Slave] Warning: Table ID {} out of bounds (tables.len() = {})", table_id, db.tables.len());
+                            #[cfg(feature = "log")]
+                            warn!("Table ID {} out of bounds (tables.len() = {})", table_id, db.tables.len());
                         }
                     }
                 }
             }
         } else {
-            eprintln!("[Slave] Failed to get global database instance");
+            #[cfg(feature = "log")]
+            error!("Failed to get global database instance");
         }
 
         // 3. 更新从节点状态
@@ -779,14 +804,16 @@ impl ReplicationManager {
         let current_time = Instant::now();
         self.replication_delay = current_time.elapsed().as_micros() as u64;
 
-        eprintln!(
-            "[Slave] Updated slave status, last_log_index: {}, replication_delay: {}μs",
+        #[cfg(feature = "log")]
+        debug!(
+            "Updated slave status, last_log_index: {}, replication_delay: {}μs",
             self.last_log_index, self.replication_delay
         );
 
         // 4. 发送确认给主节点
         self.send_slave_ack();
-        eprintln!("[Slave] Sent acknowledgment to master");
+        #[cfg(feature = "log")]
+        debug!("Sent acknowledgment to master");
     }
 
     /// 发送从节点确认
@@ -819,35 +846,41 @@ impl ReplicationManager {
             Some(topic_id) => {
                 match pubsub::publish(topic_id, &log_bytes) {
                     Ok(_) => {
-                        eprintln!("[Master] Successfully published WAL log item to WAL_TOPIC, index: {}, op_type: {:?}", 
+                        #[cfg(feature = "log")]
+                        info!("Successfully published WAL log item to WAL_TOPIC, index: {}, op_type: {:?}",
                                  self.last_log_index, log_item.op_type);
 
                         // 根据复制模式处理确认
                         match self.replication_mode {
                             ReplicationMode::Sync => {
                                 // 同步模式：等待至少一个从节点确认
-                                eprintln!("[Master] Waiting for slave acknowledgment...");
+                                #[cfg(feature = "log")]
+                                debug!("Waiting for slave acknowledgment...");
                                 self.wait_for_slave_ack()?;
-                                eprintln!(
-                                    "[Master] Received acknowledgment from {} slave(s)",
+                                #[cfg(feature = "log")]
+                                info!(
+                                    "Received acknowledgment from {} slave(s)",
                                     self.confirmed_slaves
                                 );
                             }
                             ReplicationMode::Async => {
                                 // 异步模式：立即返回，不等待确认
-                                eprintln!("[Master] Using async replication mode, not waiting for acknowledgment");
+                                #[cfg(feature = "log")]
+                                debug!("Using async replication mode, not waiting for acknowledgment");
                             }
                         }
                         Ok(())
                     }
                     Err(e) => {
-                        eprintln!("[Master] Failed to publish WAL log item: {:?}", e);
+                        #[cfg(feature = "log")]
+                        error!("Failed to publish WAL log item: {:?}", e);
                         Err(HAError::ReplicationError)
                     }
                 }
             }
             None => {
-                eprintln!("[Master] Failed to get topic_id for WAL_TOPIC");
+                #[cfg(feature = "log")]
+                error!("Failed to get topic_id for WAL_TOPIC");
                 Err(HAError::ReplicationError)
             }
         }
@@ -896,8 +929,8 @@ impl ReplicationManager {
         // 1. 检查从节点延迟是否超过阈值
         const MAX_REPLICATION_DELAY_US: u64 = 1000000; // 1秒
         if self.replication_delay > MAX_REPLICATION_DELAY_US {
-            #[cfg(feature = "std")]
-            eprintln!("[WARN] Replication delay exceeds threshold: {}μs", self.replication_delay);
+            #[cfg(feature = "log")]
+            warn!("Replication delay exceeds threshold: {}μs", self.replication_delay);
             // 注意：在测试环境中，我们不返回错误，只记录警告
         }
 
@@ -914,8 +947,8 @@ impl ReplicationManager {
         // 4. 检查从节点确认状态
         let active_slaves = self.slave_acks.iter().filter(|&&ack| ack).count();
         if active_slaves < self.total_slaves && self.total_slaves > 0 {
-            #[cfg(feature = "std")]
-            eprintln!("[WARN] Some slaves not responding: active={}, total={}", active_slaves, self.total_slaves);
+            #[cfg(feature = "log")]
+            warn!("Some slaves not responding: active={}, total={}", active_slaves, self.total_slaves);
         }
 
         Ok(())

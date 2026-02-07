@@ -11,6 +11,8 @@ pub mod config;
 pub mod ha;
 pub mod index;
 pub mod json;
+#[cfg(feature = "log")]
+pub mod log;
 pub mod memory;
 pub mod model;
 pub mod monitor;
@@ -56,6 +58,9 @@ use alloc::string::String;
 use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
 
 /// 字段约束信息
 #[derive(Clone, Debug)]
@@ -1419,7 +1424,8 @@ impl RemDb {
             let table = match &mut self.tables[table_id] {
                 Some(table) => table,
                 None => {
-                    println!("Warning: Table '{}' with ID {} not found, skipping data...", table_name, table_id);
+                    #[cfg(feature = "log")]
+                    warn!("Table '{}' with ID {} not found, skipping data...", table_name, table_id);
                     // 读取记录数
                     let mut record_count_bytes = [0u8; 4];
                     let read = crate::platform::file_read(
@@ -1655,9 +1661,9 @@ impl RemDb {
     /// - `Ok(())`: 删除成功
     /// - `Err(RemDbError)`: 删除失败
     pub fn drop_table(&mut self, table_name: &str, if_exists: bool, _deferred: bool) -> Result<()> {
-        #[cfg(feature = "std")]
-        eprintln!("Starting DROP TABLE operation on {}", table_name);
-        
+        #[cfg(feature = "log")]
+        info!("Starting DROP TABLE operation on {}", table_name);
+
         // 检查是否为系统表，系统表不允许DROP操作
         if crate::system_tables::is_system_table(table_name) {
             return Err(RemDbError::ConfigError);
@@ -1818,7 +1824,8 @@ impl DdlExecutor for RemDb {
         for (i, (field_name, data_type, dimension, distance_type, default_value)) in
             fields.iter().enumerate()
         {
-            eprintln!("Debug field: name={}, type={:?}, dimension={}, distance_type={:?}", field_name, data_type, dimension, distance_type);
+            #[cfg(feature = "log")]
+            debug!("field: name={}, type={:?}, dimension={}, distance_type={:?}", field_name, data_type, dimension, distance_type);
             // 计算字段大小
             let field_size = match data_type {
                 DataType::VarChar | DataType::Char => MAX_STRING_LEN,
@@ -2278,16 +2285,16 @@ impl DdlExecutor for RemDb {
         if index_type == IndexType::Vector {
             // 向量索引必须使用向量类型的字段
             if field.data_type != DataType::Vector {
-                #[cfg(feature = "std")]
-                eprintln!("TypeMismatch in create_index: field.data_type != DataType::Vector, actual: {:?}, field: {:?}", field.data_type, field.name);
+                #[cfg(feature = "log")]
+                error!("TypeMismatch in create_index: field.data_type != DataType::Vector, actual: {:?}, field: {:?}", field.data_type, field.name);
                 return Err(RemDbError::TypeMismatch);
             }
 
             let vector_meta = match field.vector_metadata.as_ref() {
                 Some(meta) => meta,
                 None => {
-                    #[cfg(feature = "std")]
-                    eprintln!(
+                    #[cfg(feature = "log")]
+                    error!(
                         "TypeMismatch in create_index: field.vector_metadata is None, field: {:?}",
                         field.name
                     );
@@ -2296,8 +2303,8 @@ impl DdlExecutor for RemDb {
             };
             // 索引的向量列维度必须在1-1024范围内
             if vector_meta.dimension == 0 || vector_meta.dimension > 1024 {
-                #[cfg(feature = "std")]
-                eprintln!(
+                #[cfg(feature = "log")]
+                error!(
                     "TypeMismatch in create_index: invalid dimension: {}, field: {:?}",
                     vector_meta.dimension, field.name
                 );
@@ -2350,8 +2357,8 @@ impl DdlExecutor for RemDb {
 
         // 获取索引统计信息
         let stats = crate::memory::allocator::get_memory_stats();
-        #[cfg(feature = "std")]
-        eprintln!(
+        #[cfg(feature = "log")]
+        debug!(
             "Index creation stats: index_size={}, used={}, total={}",
             index_size, stats.used, stats.total
         );
@@ -2430,9 +2437,9 @@ impl DdlExecutor for RemDb {
         table_name: &str,
         operation: AlterTableOperation,
     ) -> Result<()> {
-        #[cfg(feature = "std")]
-        eprintln!("Starting ALTER TABLE operation on {}", table_name);
-        
+        #[cfg(feature = "log")]
+        info!("Starting ALTER TABLE operation on {}", table_name);
+
         // 检查是否为系统表，系统表不允许ALTER操作
         if crate::system_tables::is_system_table(table_name) {
             return Err(RemDbError::ConfigError);
@@ -2447,20 +2454,20 @@ impl DdlExecutor for RemDb {
             }
         })
         .ok_or(RemDbError::TableNotFound)?;
-        
-        #[cfg(feature = "std")]
-        eprintln!("Found table at index {}", table_index);
+
+        #[cfg(feature = "log")]
+        debug!("Found table at index {}", table_index);
 
         // 2. 获取当前表定义
         let current_table = self.tables[table_index].as_ref().ok_or(RemDbError::TableNotFound)?;
         let mut new_table_def = (*current_table.def).clone();
-        
-        #[cfg(feature = "std")]
-        eprintln!("Current table def: {:?}", current_table.def.name);
+
+        #[cfg(feature = "log")]
+        debug!("Current table def: {:?}", current_table.def.name);
 
         // 3. 根据操作类型执行相应的表结构变更
-        #[cfg(feature = "std")]
-        eprintln!("Executing operation: {:?}", operation);
+        #[cfg(feature = "log")]
+        debug!("Executing operation: {:?}", operation);
         
         match operation {
             AlterTableOperation::AddColumn { ref name, data_type, size, distance_type, ref default_value, ref constraints } => {
@@ -2635,51 +2642,51 @@ impl DdlExecutor for RemDb {
         }
 
         // 4. 计算主键索引所需内存大小
-        #[cfg(feature = "std")]
-        eprintln!("Calculating primary index memory size");
-        
+        #[cfg(feature = "log")]
+        debug!("Calculating primary index memory size");
+
         let hash_table_size = (new_table_def.max_records * 2).next_power_of_two(); // 哈希表大小为记录数的2倍，取最近的2的幂
         let index_memory_size = PrimaryIndex::calculate_memory_size(&new_table_def, hash_table_size, new_table_def.max_records);
 
-        #[cfg(feature = "std")]
-        eprintln!("Hash table size: {}, index memory size: {}", hash_table_size, index_memory_size);
+        #[cfg(feature = "log")]
+        debug!("Hash table size: {}, index memory size: {}", hash_table_size, index_memory_size);
 
         // 分配内存
-        #[cfg(feature = "std")]
-        eprintln!("Allocating index memory");
-        
+        #[cfg(feature = "log")]
+        debug!("Allocating index memory");
+
         let index_memory = crate::memory::allocator::alloc(index_memory_size).map_err(|e| {
-            #[cfg(feature = "std")]
-            eprintln!("Failed to allocate index memory: {:?}", e);
+            #[cfg(feature = "log")]
+            error!("Failed to allocate index memory: {:?}", e);
             e
         })?;
-        
-        #[cfg(feature = "std")]
-        eprintln!("Allocated index memory at {:?}", index_memory.as_ptr());
-        
+
+        #[cfg(feature = "log")]
+        debug!("Allocated index memory at {:?}", index_memory.as_ptr());
+
         let hash_table_start = index_memory.as_ptr() as *mut Option<NonNull<PrimaryIndexItem>>;
         let items_start = (index_memory.as_ptr() as usize
             + hash_table_size * core::mem::size_of::<Option<NonNull<PrimaryIndexItem>>>())
             as *mut PrimaryIndexItem;
 
         // 5. 创建新的内存表
-        #[cfg(feature = "std")]
-        eprintln!("Creating new table with updated definition");
-        
+        #[cfg(feature = "log")]
+        debug!("Creating new table with updated definition");
+
         let new_table_def_arc = alloc::sync::Arc::new(new_table_def);
         let mut new_table = MemoryTable::new(new_table_def_arc.clone()).map_err(|e| {
-            #[cfg(feature = "std")]
-            eprintln!("Failed to create new table: {:?}", e);
+            #[cfg(feature = "log")]
+            error!("Failed to create new table: {:?}", e);
             e
         })?;
-        
-        #[cfg(feature = "std")]
-        eprintln!("Created new table successfully");
+
+        #[cfg(feature = "log")]
+        debug!("Created new table successfully");
 
         // 6. 迁移旧表数据到新表并同时构建索引
-        #[cfg(feature = "std")]
-        eprintln!("Starting data migration and index construction");
-        
+        #[cfg(feature = "log")]
+        debug!("Starting data migration and index construction");
+
         // 保存旧表引用
         let old_table = current_table;
         
@@ -2828,17 +2835,17 @@ impl DdlExecutor for RemDb {
                                 record_ptr,
                                 new_slot_id as u16
                             ).map_err(|e| {
-                                #[cfg(feature = "std")]
-                                eprintln!("Failed to insert into primary index: {:?}", e);
+                                #[cfg(feature = "log")]
+                                error!("Failed to insert into primary index: {:?}", e);
                                 e
                             })?;
                         }
                 }
             }
         }
-        
-        #[cfg(feature = "std")]
-        eprintln!("Data migration completed successfully");
+
+        #[cfg(feature = "log")]
+        debug!("Data migration completed successfully");
 
         // 7. 替换旧表
         self.tables[table_index] = Some(new_table);
@@ -3005,20 +3012,20 @@ impl RemDb {
 
     /// 执行SQL查询
     pub fn sql_query(&mut self, sql: &str) -> Result<sql::ResultSet> {
-        #[cfg(feature = "std")]
-        eprintln!("Executing SQL: {}", sql);
-        
+        #[cfg(feature = "log")]
+        debug!("Executing SQL: {}", sql);
+
         // 解析SQL查询
         let query = crate::sql::parse_sql_query(sql).map_err(|e| {
-            #[cfg(feature = "std")]
-            eprintln!("SQL Parse Error: {:?}", e);
+            #[cfg(feature = "log")]
+            error!("SQL Parse Error: {:?}", e);
             RemDbError::InvalidSqlQuery
         })?;
 
         // 执行查询
         let result_set = crate::sql::execute_query(self, &query).map_err(|err| {
-            #[cfg(feature = "std")]
-            eprintln!("SQL Execution Error: {:?}", err);
+            #[cfg(feature = "log")]
+            error!("SQL Execution Error: {:?}", err);
             match err {
                 crate::sql::QueryExecutionError::TableNotFound => RemDbError::TableNotFound,
                 crate::sql::QueryExecutionError::FieldNotFound => RemDbError::FieldNotFound,
@@ -3026,8 +3033,8 @@ impl RemDb {
                 crate::sql::QueryExecutionError::ConstraintsConflicts => RemDbError::DuplicateKey,
                 crate::sql::QueryExecutionError::OutOfMemory => RemDbError::OutOfMemory,
                 _ => {
-                    #[cfg(feature = "std")]
-                    eprintln!("Unhandled execution error: {:?}", err);
+                    #[cfg(feature = "log")]
+                    error!("Unhandled execution error: {:?}", err);
                     RemDbError::InternalError
                 }
             }

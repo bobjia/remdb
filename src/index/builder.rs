@@ -7,6 +7,9 @@ use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
+
 /// 索引构建状态
 enum IndexBuildState {
     /// 等待执行
@@ -218,7 +221,8 @@ impl IndexBuildThreadPool {
         // 1. 查找目标表
         let db = unsafe { crate::get_global_db() };
         if db.is_none() {
-            println!("Error: Database not initialized");
+            #[cfg(feature = "log")]
+            error!("Database not initialized");
             return;
         }
         let mut db = db.unwrap();
@@ -235,22 +239,25 @@ impl IndexBuildThreadPool {
         }
         
         if table_id.is_none() {
-            println!("Error: Table {} not found", task.table_name);
+            #[cfg(feature = "log")]
+            error!("Table {} not found", task.table_name);
             return;
         }
         let table_id = table_id.unwrap();
-        
+
         // 获取表引用
         let table = match db.get_table(table_id) {
             Ok(table) => table,
             Err(e) => {
-                println!("Error getting table: {:?}", e);
+                #[cfg(feature = "log")]
+                error!("Error getting table: {:?}", e);
                 return;
             }
         };
-        
+
         // Index building is not supported yet
-        println!("Error: Index building not supported yet");
+        #[cfg(feature = "log")]
+        error!("Index building not supported yet");
         return;
     }
     

@@ -8,6 +8,9 @@ use crate::DdlExecutor;
 extern crate alloc;
 use alloc::vec::Vec;
 
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
+
 /// 事务隔离级别
 #[derive(PartialEq)]
 #[repr(u8)]
@@ -850,7 +853,8 @@ impl LogManager {
             0
         };
 
-        println!(
+        #[cfg(feature = "log")]
+        info!(
             "WAL recovery started: file size = {}, log region size = {}, total records = {}",
             file_size, log_region_size, total_records
         );
@@ -865,8 +869,9 @@ impl LogManager {
         ) {
             Ok(handle) => handle,
             Err(_) => {
-                println!(
-                    "Warning: Failed to open log file for recovery, skipping recovery process"
+                #[cfg(feature = "log")]
+                warn!(
+                    "Failed to open log file for recovery, skipping recovery process"
                 );
                 return Ok(());
             }
@@ -885,8 +890,9 @@ impl LogManager {
                 log_offset as i64,
                 crate::platform::SeekWhence::SeekSet,
             ) {
-                println!(
-                    "Warning: Failed to seek to log item {} offset {}, skipping...",
+                #[cfg(feature = "log")]
+                warn!(
+                    "Failed to seek to log item {} offset {}, skipping...",
                     i, log_offset
                 );
                 continue;
@@ -898,13 +904,15 @@ impl LogManager {
                 match crate::platform::file_read(handle, log_bytes.as_mut_ptr(), log_bytes.len()) {
                     Ok(read) => read,
                     Err(_) => {
-                        println!("Warning: Failed to read log item {}, skipping...", i);
+                        #[cfg(feature = "log")]
+                        warn!("Failed to read log item {}, skipping...", i);
                         continue;
                     }
                 };
 
             if read != log_bytes.len() {
-                println!("Warning: Failed to read complete log item {} (read {} bytes, expected {}), skipping...", i, read, log_bytes.len());
+                #[cfg(feature = "log")]
+                warn!("Failed to read complete log item {} (read {} bytes, expected {}), skipping...", i, read, log_bytes.len());
                 continue;
             }
 
@@ -986,24 +994,27 @@ impl LogManager {
         // 关闭文件句柄
         let _ = crate::platform::file_close(handle);
 
-        println!(
+        #[cfg(feature = "log")]
+        info!(
             "Phase 1 completed: {} valid log items read",
             valid_log_items.len()
         );
 
         // 阶段2：先处理所有的数据库创建、表创建和索引创建操作，确保数据库和表结构已建立
-        println!("Phase 2: Processing schema operations (CreateDatabase, CreateTable, CreateIndex)...");
+        #[cfg(feature = "log")]
+        info!("Phase 2: Processing schema operations (CreateDatabase, CreateTable, CreateIndex)...");
         for log_item in &valid_log_items {
             match log_item.op_type {
                 LogOperation::CreateDatabase => {
                     // 执行创建数据库操作
                     // 从日志中解析数据库名
                     let db_name_len = log_item.new_data[0] as usize;
-                    let db_name = 
+                    let db_name =
                         core::str::from_utf8(&log_item.new_data[1..1 + db_name_len])
                             .unwrap_or_else(|_| "unknown");
 
-                    println!("Creating database from WAL: {}", db_name);
+                    #[cfg(feature = "log")]
+                    info!("Creating database from WAL: {}", db_name);
 
                     // 调用数据库管理器的创建数据库方法
                     let _ = db.database_manager.create_database(db_name, "", None);
@@ -1014,13 +1025,15 @@ impl LogManager {
                     let name_len = if log_item.new_data.len() > 0 {
                         log_item.new_data[0] as usize
                     } else {
-                        println!("Warning: Empty new_data for CreateTable log item, skipping...");
+                        #[cfg(feature = "log")]
+                        warn!("Empty new_data for CreateTable log item, skipping...");
                         continue;
                     };
-                    
+
                     // 检查name_len是否有效且不会导致越界
                     if name_len == 0 || name_len + 1 > log_item.new_data.len() {
-                        println!("Warning: Invalid name_len {} for CreateTable log item, skipping...", name_len);
+                        #[cfg(feature = "log")]
+                        warn!("Invalid name_len {} for CreateTable log item, skipping...", name_len);
                         continue;
                     }
                     
@@ -1035,7 +1048,8 @@ impl LogManager {
                     let field_count = if new_data_len > 65 {
                         log_item.new_data[65] as usize
                     } else {
-                        println!("Warning: Offset out of bounds when parsing field count, skipping...");
+                        #[cfg(feature = "log")]
+                        warn!("Offset out of bounds when parsing field count, skipping...");
                         continue;
                     };
 
@@ -1043,7 +1057,8 @@ impl LogManager {
                     let primary_key_count = if new_data_len > 66 {
                         log_item.new_data[66] as usize
                     } else {
-                        println!("Warning: Offset out of bounds when parsing primary key count, skipping...");
+                        #[cfg(feature = "log")]
+                        warn!("Offset out of bounds when parsing primary key count, skipping...");
                         continue;
                     };
 
@@ -1053,7 +1068,8 @@ impl LogManager {
                         // 检查offset是否超出边界，如果超出则停止解析
                         let pk_offset = 67 + i;
                         if pk_offset >= new_data_len {
-                            println!("Warning: Offset out of bounds while parsing primary key index, skipping remaining indices...");
+                            #[cfg(feature = "log")]
+                            warn!("Offset out of bounds while parsing primary key index, skipping remaining indices...");
                             break;
                         }
                         let pk_idx = log_item.new_data[pk_offset] as usize;
@@ -1066,8 +1082,9 @@ impl LogManager {
                     
                     // 确保offset初始值不超出边界
                     if offset >= new_data_len {
-                        println!(
-                            "Warning: Invalid initial offset for CreateTable log item, skipping..."
+                        #[cfg(feature = "log")]
+                        warn!(
+                            "Invalid initial offset for CreateTable log item, skipping..."
                         );
                         continue;
                     }
@@ -1075,16 +1092,18 @@ impl LogManager {
                     for _ in 0..field_count {
                         // 检查offset是否超出边界，如果超出则停止解析
                         if offset >= new_data_len {
-                            println!("Warning: Offset out of bounds while parsing field, skipping remaining fields...");
+                            #[cfg(feature = "log")]
+                            warn!("Offset out of bounds while parsing field, skipping remaining fields...");
                             break;
                         }
 
                         // 解析字段名
                         let field_name_len = log_item.new_data[offset] as usize;
                         offset += 1;
-                        
+
                         if offset + 32 > new_data_len {
-                            println!("Warning: Offset out of bounds for field name, skipping field...");
+                            #[cfg(feature = "log")]
+                            warn!("Offset out of bounds for field name, skipping field...");
                             continue;
                         }
                         
@@ -1097,7 +1116,8 @@ impl LogManager {
 
                         // 检查offset是否超出边界
                         if offset + 3 >= new_data_len {
-                            println!("Warning: Offset out of bounds while parsing field type/constraints, skipping field...");
+                            #[cfg(feature = "log")]
+                            warn!("Offset out of bounds while parsing field type/constraints, skipping field...");
                             continue;
                         }
 
@@ -1450,9 +1470,9 @@ impl LogManager {
                     }
 
                     // 创建表定义
-                    println!(
-                        "Creating table from WAL for table_id {} (table name: {})
-",
+                    #[cfg(feature = "log")]
+                    info!(
+                        "Creating table from WAL for table_id {} (table name: {})",
                         log_item.table_id, table_name
                     );
 
@@ -1497,7 +1517,8 @@ impl LogManager {
                         });
                         
                         if table_exists_by_id || table_exists_by_name {
-                            println!("Skipping CreateTable operation for table_id {} (table '{}' already exists)", log_item.table_id, table_name);
+                            #[cfg(feature = "log")]
+                            warn!("Skipping CreateTable operation for table_id {} (table '{}' already exists)", log_item.table_id, table_name);
                             continue;
                         }
 
@@ -1559,14 +1580,16 @@ impl LogManager {
                                         db.secondary_indices[table_def.id as usize] = None;
                                     }
                                     Err(err) => {
-                                        println!("Warning: Failed to allocate memory for primary index: {:?}, skipping CreateTable operation for table_id {}", err, log_item.table_id);
+                                        #[cfg(feature = "log")]
+                                        warn!("Failed to allocate memory for primary index: {:?}, skipping CreateTable operation for table_id {}", err, log_item.table_id);
                                         db.tables[table_def.id as usize] = None;
                                         continue;
                                     }
                                 }
                             }
                             Err(err) => {
-                                println!("Warning: Failed to create MemoryTable: {:?}, skipping CreateTable operation for table_id {}", err, log_item.table_id);
+                                #[cfg(feature = "log")]
+                                warn!("Failed to create MemoryTable: {:?}, skipping CreateTable operation for table_id {}", err, log_item.table_id);
                                 continue;
                             }
                         }
@@ -1692,22 +1715,25 @@ impl LogManager {
                         },
                         _ => {
                             // 未知操作类型，跳过
-                            println!(
+                            #[cfg(feature = "log")]
+                            warn!(
                                 "Unknown AlterTable operation type {} for table {} from WAL - skipping",
                                 op_type, table_name
                             );
                             continue;
                         }
                     };
-                    
+
                     // 执行ALTER TABLE操作
                     if let Err(err) = DdlExecutor::alter_table(db, table_name, alter_operation) {
-                        println!(
+                        #[cfg(feature = "log")]
+                        error!(
                             "Failed to recover AlterTable operation for table {} from WAL: {:?}",
                             table_name, err
                         );
                     } else {
-                        println!(
+                        #[cfg(feature = "log")]
+                        info!(
                             "Successfully recovered AlterTable operation for table {} from WAL",
                             table_name
                         );
@@ -1718,12 +1744,14 @@ impl LogManager {
         }
 
         // 阶段3：处理所有的数据操作和系统操作
-        println!("Phase 3: Processing operations (Insert, Update, Delete, TimeSeriesInsert, LowPowerMode)...");
+        #[cfg(feature = "log")]
+        info!("Phase 3: Processing operations (Insert, Update, Delete, TimeSeriesInsert, LowPowerMode)...");
         for log_item in &valid_log_items {
             match log_item.op_type {
                 LogOperation::EnterLowPowerMode => {
                     // 处理进入低功耗模式日志
-                    println!("Processing EnterLowPowerMode log item");
+                    #[cfg(feature = "log")]
+                    info!("Processing EnterLowPowerMode log item");
 
                     // 检查配置是否支持低功耗模式
                     if db.config.low_power_mode_supported {
@@ -1759,7 +1787,8 @@ impl LogManager {
                 }
                 LogOperation::ExitLowPowerMode => {
                     // 处理退出低功耗模式日志
-                    println!("Processing ExitLowPowerMode log item");
+                    #[cfg(feature = "log")]
+                    info!("Processing ExitLowPowerMode log item");
 
                     // 无论配置是否支持低功耗模式，都确保事务管理器处于正常模式
                     crate::transaction::set_low_power_mode(false);
@@ -1802,21 +1831,24 @@ impl LogManager {
                     let table_id = log_item.table_id as usize;
                     if table_id >= db.tables.len() {
                         // 表可能还未创建，跳过当前日志项
-                        println!("Warning: Table ID {} out of bounds (tables.len() = {}), skipping Insert log item", table_id, db.tables.len());
+                        #[cfg(feature = "log")]
+                        warn!("Table ID {} out of bounds (tables.len() = {}), skipping Insert log item", table_id, db.tables.len());
                         continue;
                     }
                     let table = match &mut db.tables[table_id] {
                         Some(table) => table,
                         None => {
-                            println!(
-                                "Warning: Table ID {} exists but is None, skipping Insert log item",
+                            #[cfg(feature = "log")]
+                            warn!(
+                                "Table ID {} exists but is None, skipping Insert log item",
                                 table_id
                             );
                             continue;
                         }
                     };
 
-                    println!("Processing Insert operation for table_id {} record_id {}", table_id, log_item.record_id);
+                    #[cfg(feature = "log")]
+                    info!("Processing Insert operation for table_id {} record_id {}", table_id, log_item.record_id);
 
                     // 无论记录是否存在，都执行插入操作
                     let status_ptr = table.get_status_ptr(log_item.record_id as usize);
@@ -1922,16 +1954,15 @@ impl LogManager {
                     let table_id = log_item.table_id as usize;
                     if table_id >= db.tables.len() {
                         // 表可能还未创建，跳过当前日志项
-                        println!("Warning: Table ID {} out of bounds (tables.len() = {}), skipping Delete log item", table_id, db.tables.len());
+                        #[cfg(feature = "log")]
+                        warn!("Table ID {} out of bounds (tables.len() = {}), skipping Delete log item", table_id, db.tables.len());
                         continue;
                     }
                     let table = match &mut db.tables[table_id] {
                         Some(table) => table,
                         None => {
-                            println!(
-                                "Warning: Table ID {} exists but is None, skipping Delete log item",
-                                table_id
-                            );
+                            #[cfg(feature = "log")]
+                            warn!("Table ID {} exists but is None, skipping Delete log item", table_id);
                             continue;
                         }
                     };
@@ -1970,16 +2001,15 @@ impl LogManager {
                     let table_id = log_item.table_id as usize;
                     if table_id >= db.tables.len() {
                         // 表可能还未创建，跳过当前日志项
-                        println!("Warning: Table ID {} out of bounds (tables.len() = {}), skipping Update log item", table_id, db.tables.len());
+                        #[cfg(feature = "log")]
+                        warn!("Table ID {} out of bounds (tables.len() = {}), skipping Update log item", table_id, db.tables.len());
                         continue;
                     }
                     let table = match &mut db.tables[table_id] {
                         Some(table) => table,
                         None => {
-                            println!(
-                                "Warning: Table ID {} exists but is None, skipping Update log item",
-                                table_id
-                            );
+                            #[cfg(feature = "log")]
+                            warn!("Table ID {} exists but is None, skipping Update log item", table_id);
                             continue;
                         }
                     };
@@ -2020,7 +2050,8 @@ impl LogManager {
                         {
                             Some(table) => table,
                             None => {
-                                println!("Warning: TimeSeries table ID {} exists but is None, skipping TimeSeriesInsert log item", log_item.table_id);
+                                #[cfg(feature = "log")]
+                                warn!("TimeSeries table ID {} exists but is None, skipping TimeSeriesInsert log item", log_item.table_id);
                                 continue;
                             }
                         };
@@ -2057,8 +2088,8 @@ impl LogManager {
             }
         }
 
-        println!("WAL recovery completed successfully");
-
+        #[cfg(feature = "log")]
+        info!("WAL recovery completed successfully");
         Ok(())
     }
 }

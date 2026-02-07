@@ -4,6 +4,9 @@ use crate::config::DbConfig;
 use crate::transaction::{IsolationLevel, TransactionType};
 use crate::types::{DataType, FieldDef, TableDef, Value};
 
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
+
 /// C API: 数据类型枚举
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq)]
@@ -1778,7 +1781,8 @@ pub unsafe extern "C" fn remdb_sql_query(
 
     match db.sql_query(&rust_sql) {
         Ok(rust_result_set) => {
-            println!("DEBUG C API: sql_query succeeded, columns: {:?}, rows_count: {}", 
+            #[cfg(feature = "log")]
+            debug!("sql_query succeeded, columns: {:?}, rows_count: {}",
                 rust_result_set.columns, rust_result_set.rows.len());
             
             // 分配内存存储结果集
@@ -1898,7 +1902,8 @@ pub unsafe extern "C" fn remdb_sql_query(
 
                 // 转换值
             for (j, value) in row.values.iter().enumerate() {
-                println!("DEBUG C API: row {}, value {}: type={:?}", i, j, value.value_type);
+                #[cfg(feature = "log")]
+                debug!("row {}, value {}: type={:?}", i, j, value.value_type);
                 *values.offset(j as isize) = value.clone().into();
             }
 

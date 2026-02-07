@@ -1,5 +1,8 @@
 pub mod builder; mod hnsw; mod ivf; use crate::platform::{memcpy, memset}; use crate::types::{DataType, DistanceType, IndexType, RemDbError, Result, TableDef, VectorIndexType}; use core::ptr::NonNull;
 
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
+
 /// B-Tree阶数（每个节点的最大键数量）
 const BTREE_ORDER: usize = 4; // 阶数为4的B-Tree
 
@@ -570,8 +573,8 @@ impl VectorIndex {
 
         // 验证该字段是向量类型且有有效metadata
         if field.data_type != DataType::Vector {
-            #[cfg(feature = "std")]
-            eprintln!(
+            #[cfg(feature = "log")]
+            error!(
                 "TypeMismatch: field.data_type != DataType::Vector, actual: {:?}",
                 field.data_type
             );
@@ -586,16 +589,16 @@ impl VectorIndex {
                 meta
             },
             None => {
-                #[cfg(feature = "std")]
-                eprintln!("TypeMismatch: field.vector_metadata is None");
+                #[cfg(feature = "log")]
+                error!("TypeMismatch: field.vector_metadata is None");
                 return Err(RemDbError::TypeMismatch);
             }
         };
 
         // 验证向量维度有效
         if dimension == 0 || dimension > 1024 {
-            #[cfg(feature = "std")]
-            eprintln!("TypeMismatch: invalid dimension: {}", dimension);
+            #[cfg(feature = "log")]
+            error!("TypeMismatch: invalid dimension: {}", dimension);
             return Err(RemDbError::TypeMismatch);
         }
 

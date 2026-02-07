@@ -1,5 +1,5 @@
 //! Model UDF wrapper
-//! 
+//!
 //! This module provides a wrapper for using models as user-defined functions (UDFs).
 
 use alloc::string::String;
@@ -8,6 +8,9 @@ use alloc::sync::Arc;
 
 use crate::model::onnx_runtime::OnnxModel;
 use crate::types::{DataType, TypedValue, Value};
+
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info, warn};
 
 /// Model UDF
 #[derive(Debug)]
@@ -32,18 +35,18 @@ impl ModelUDF {
         &self.name
     }
 
-    /// Execute the UDF
+    /// Execute UDF
     pub fn execute(&self, args: &[TypedValue]) -> core::result::Result<TypedValue, String> {
         // Debug print: start of execute
-        #[cfg(feature = "std")]
-        println!("ModelUDF::execute: start");
+        #[cfg(feature = "log")]
+        debug!("ModelUDF::execute: start");
 
         // Convert arguments to model inputs
         let mut model_inputs = Vec::new();
         for arg in args {
-            #[cfg(feature = "std")]
-            println!("ModelUDF::execute: processing arg with type {:?}", arg.value_type);
-            
+            #[cfg(feature = "log")]
+            debug!("ModelUDF::execute: processing arg with type {:?}", arg.value_type);
+
             match arg.value_type {
                 DataType::VarChar | DataType::Char | DataType::Text => {
                     // For string inputs, we would typically tokenize and embed
@@ -88,15 +91,15 @@ impl ModelUDF {
         }
 
         // Debug print: after processing args
-        #[cfg(feature = "std")]
-        println!("ModelUDF::execute: after processing args, model_inputs len: {}", model_inputs.len());
+        #[cfg(feature = "log")]
+        debug!("ModelUDF::execute: after processing args, model_inputs len: {}", model_inputs.len());
 
         // Execute the model
         let output = self.model.execute(&model_inputs)?;
 
         // Debug print: after executing model
-        #[cfg(feature = "std")]
-        println!("ModelUDF::execute: after executing model, output len: {}", output.len());
+        #[cfg(feature = "log")]
+        debug!("ModelUDF::execute: after executing model, output len: {}", output.len());
 
         // Convert model output to TypedValue
         // Assuming output is a vector
@@ -110,8 +113,8 @@ impl ModelUDF {
         };
 
         // Debug print: before returning
-        #[cfg(feature = "std")]
-        println!("ModelUDF::execute: before returning, typed_value type: {:?}", typed_value.value_type);
+        #[cfg(feature = "log")]
+        debug!("ModelUDF::execute: before returning, typed_value type: {:?}", typed_value.value_type);
 
         Ok(typed_value)
     }
@@ -120,16 +123,16 @@ impl ModelUDF {
 /// Execute a model UDF by name
 pub fn execute_model_udf(name: &str, args: &[TypedValue]) -> Result<crate::types::TypedValue, crate::sql::QueryExecutionError> {
     use crate::model::model_manager::get_global_model_manager;
-    
+
     // Get the global model manager
     let model_manager = get_global_model_manager().map_err(|_| crate::sql::QueryExecutionError::InternalError)?;
-    
+
     // Get the model
     let model = model_manager.get_model(name).map_err(|_| crate::sql::QueryExecutionError::UnsupportedFunction(name.to_string()))?;
-    
+
     // Create a model UDF
     let model_udf = ModelUDF::new(name.to_string(), model);
-    
+
     // Execute the model UDF
     model_udf.execute(args)
         .map_err(|e| crate::sql::QueryExecutionError::InternalError)
