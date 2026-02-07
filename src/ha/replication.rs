@@ -574,28 +574,195 @@ impl ReplicationManager {
                             log_item.table_id, log_item.record_id
                         );
 
-                        // 对于插入操作，使用全局TX_MANAGER的LogManager执行恢复
-                        let tx_manager = crate::transaction::get_tx_manager();
-                        if let Some(log_manager) = tx_manager.get_log_manager() {
-                            // 注意：这里我们直接调用recover方法处理单个日志项
-                            // 实际实现中可能需要更高效的方式
-                            let _ = log_manager.recover(db);
-                            eprintln!("[Slave] Insert operation recovered via log manager");
+                        // 直接应用插入操作到数据库
+                        let table_id = log_item.table_id as usize;
+                        if table_id < db.tables.len() {
+                            if let Some(table) = &mut db.tables[table_id] {
+                                let status_ptr = table.get_status_ptr(log_item.record_id as usize);
+                                let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+
+                                // 复制数据到记录位置
+                                crate::platform::memcpy(
+                                    record_ptr,
+                                    log_item.new_data.as_ptr(),
+                                    log_item.data_size as usize,
+                                );
+
+                                // 检查记录是否已存在
+                                if (*status_ptr).status != crate::types::RecordStatus::Used {
+                                    // 记录不存在，更新状态和计数
+                                    (*status_ptr).status = crate::types::RecordStatus::Used;
+                                    (*status_ptr).version += 1;
+                                    (*status_ptr).create_tx_id = log_item.tx_id;
+                                    (*status_ptr).delete_tx_id = 0;
+                                    (*status_ptr).next_version_ptr = 0;
+                                    table.record_count += 1;
+
+                                    // 从空闲槽栈中移除该槽位，确保不重复使用
+                                    if table.free_slot_count > 0 {
+                                        let mut found = false;
+                                        let mut i = 0;
+                                        while i < table.free_slot_count {
+                                            if *table.free_slots.as_ptr().add(i) == log_item.record_id as usize {
+                                                // 找到，将最后一个元素移动到当前位置
+                                                *table.free_slots.as_ptr().add(i) =
+                                                    *table.free_slots.as_ptr().add(table.free_slot_count - 1);
+                                                table.free_slot_count -= 1;
+                                                found = true;
+                                                break;
+                                            }
+                                            i += 1;
+                                        }
+                                        if !found {
+                                            // 如果没有找到，说明可能已经被移除，或者初始状态不对，直接减少free_slot_count
+                                            if table.free_slot_count > 0 {
+                                                table.free_slot_count -= 1;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // 记录已存在，更新版本号和创建事务ID
+                                    (*status_ptr).version += 1;
+                                    (*status_ptr).create_tx_id = log_item.tx_id;
+                                }
+
+                                // 更新主键索引
+                                if let Some(primary_index) = &mut db.primary_indices[table_id] {
+                                    // 先删除旧的索引项（如果存在）
+                                    let _ = primary_index.delete_composite(record_ptr);
+                                    // 使用复合键插入方法
+                                    let _ = primary_index.insert_composite(
+                                        record_ptr,
+                                        log_item.record_id as u16,
+                                    );
+                                }
+
+                                // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
+                                // 对于复合主键，只考虑第一个主键字段
+                                if !table.def.primary_key.is_empty() {
+                                    let primary_key_field = &table.def.fields[table.def.primary_key[0]];
+                                    let key_ptr = record_ptr.add(primary_key_field.offset);
+                                    let new_pk = match primary_key_field.data_type {
+                                        crate::types::DataType::UInt8 => {
+                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const u8) }) as u64
+                                        }
+                                        crate::types::DataType::UInt16 => {
+                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const u16) }) as u64
+                                        }
+                                        crate::types::DataType::UInt32 => {
+                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const u32) }) as u64
+                                        }
+                                        crate::types::DataType::UInt64 => unsafe { std::ptr::read_unaligned(key_ptr as *const u64) },
+                                        crate::types::DataType::Int8 => {
+                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const i8) }) as u64
+                                        }
+                                        crate::types::DataType::Int16 => {
+                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const i16) }) as u64
+                                        }
+                                        crate::types::DataType::Int32 => {
+                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const i32) }) as u64
+                                        }
+                                        crate::types::DataType::Int64 => {
+                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const i64) }) as u64
+                                        }
+                                        _ => 0,
+                                    };
+                                    if new_pk > table.max_pk {
+                                        table.max_pk = new_pk;
+                                    }
+                                }
+
+                                eprintln!("[Slave] Insert operation applied successfully");
+                            } else {
+                                eprintln!("[Slave] Warning: Table ID {} exists but is None", table_id);
+                            }
+                        } else {
+                            eprintln!("[Slave] Warning: Table ID {} out of bounds (tables.len() = {})", table_id, db.tables.len());
                         }
                     }
                     _ => {
-                        // 对于其他操作，使用全局TX_MANAGER的LogManager执行恢复
+                        // 对于其他操作，也直接应用到数据库
                         eprintln!(
-                            "[Slave] Applying other operation: {:?}, using log manager recover",
-                            log_item.op_type
+                            "[Slave] Applying operation: {:?}, table_id: {}, record_id: {}",
+                            log_item.op_type, log_item.table_id, log_item.record_id
                         );
 
-                        let tx_manager = crate::transaction::get_tx_manager();
-                        if let Some(log_manager) = tx_manager.get_log_manager() {
-                            // 注意：这里我们直接调用recover方法处理单个日志项
-                            // 实际实现中可能需要更高效的方式
-                            let _ = log_manager.recover(db);
-                            eprintln!("[Slave] Operation recovered via log manager");
+                        let table_id = log_item.table_id as usize;
+                        if table_id < db.tables.len() {
+                            if let Some(table) = &mut db.tables[table_id] {
+                                match log_item.op_type {
+                                    crate::transaction::LogOperation::Delete => {
+                                        // 执行删除操作
+                                        let status_ptr = table.get_status_ptr(log_item.record_id as usize);
+                                        if (*status_ptr).status == crate::types::RecordStatus::Used {
+                                            // 从主键索引中删除
+                                            if let Some(primary_index) = &mut db.primary_indices[table_id] {
+                                                let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                                                let _ = primary_index.delete_composite(record_ptr);
+                                            }
+
+                                            // 标记为Free
+                                            (*status_ptr).status = crate::types::RecordStatus::Free;
+                                            (*status_ptr).version += 1;
+
+                                            // 清空记录数据
+                                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                                            crate::platform::memset(record_ptr, 0, table.record_size);
+
+                                            // 将空闲槽压回栈中
+                                            if table.free_slot_count < table.def.max_records {
+                                                *table.free_slots.as_ptr().add(table.free_slot_count) =
+                                                    log_item.record_id as usize;
+                                                table.free_slot_count += 1;
+                                            }
+
+                                            // 更新记录计数
+                                            table.record_count -= 1;
+
+                                            eprintln!("[Slave] Delete operation applied successfully");
+                                        }
+                                    }
+                                    crate::transaction::LogOperation::Update => {
+                                        // 执行更新操作
+                                        let status_ptr = table.get_status_ptr(log_item.record_id as usize);
+                                        if (*status_ptr).status == crate::types::RecordStatus::Used {
+                                            // 从主键索引中删除旧记录
+                                            if let Some(primary_index) = &mut db.primary_indices[table_id] {
+                                                let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                                                let _ = primary_index.delete_composite(record_ptr);
+                                            }
+
+                                            // 记录存在，执行更新
+                                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                                            crate::platform::memcpy(
+                                                record_ptr,
+                                                log_item.new_data.as_ptr(),
+                                                log_item.data_size as usize,
+                                            );
+
+                                            (*status_ptr).version += 1;
+                                            (*status_ptr).create_tx_id = log_item.tx_id;
+
+                                            // 将新记录插入到主键索引中
+                                            if let Some(primary_index) = &mut db.primary_indices[table_id] {
+                                                let _ = primary_index.insert_composite(
+                                                    record_ptr,
+                                                    log_item.record_id as u16,
+                                                );
+                                            }
+
+                                            eprintln!("[Slave] Update operation applied successfully");
+                                        }
+                                    }
+                                    _ => {
+                                        eprintln!("[Slave] Unsupported operation type: {:?}", log_item.op_type);
+                                    }
+                                }
+                            } else {
+                                eprintln!("[Slave] Warning: Table ID {} exists but is None", table_id);
+                            }
+                        } else {
+                            eprintln!("[Slave] Warning: Table ID {} out of bounds (tables.len() = {})", table_id, db.tables.len());
                         }
                     }
                 }

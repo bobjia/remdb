@@ -1132,8 +1132,8 @@ impl RemDb {
             return Err(RemDbError::FileIoError);
         }
 
-        // 写入表数量
-        let table_count = self.tables.len() as u32;
+        // 写入表数量（只计算实际存在的表）
+        let table_count = self.tables.iter().filter(|t| t.is_some()).count() as u32;
         let table_count_bytes = table_count.to_le_bytes();
         let written = crate::platform::file_write(
             handle,
@@ -1145,8 +1145,8 @@ impl RemDb {
             return Err(RemDbError::FileIoError);
         }
 
-        // 写入每个表的数据
-        for table_id in 0..table_count as usize {
+        // 写入每个表的数据（只保存实际存在的表）
+        for table_id in 0..self.tables.len() {
             if let Some(table) = &mut self.tables[table_id] {
                 // 更新表快照版本号
                 table.snapshot_version = self.snapshot_version;
@@ -1363,53 +1363,76 @@ impl RemDb {
             }
 
             // 获取表引用，如果不存在则跳过
+            // 首先读取表名，用于验证表是否匹配
+            let mut table_name_len_bytes = [0u8; 1];
+            let read = crate::platform::file_read(
+                handle,
+                table_name_len_bytes.as_mut_ptr(),
+                table_name_len_bytes.len(),
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != table_name_len_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            let table_name_len = table_name_len_bytes[0] as usize;
+
+            // 读取表名
+            let mut table_name_bytes = vec![0u8; table_name_len];
+            let read = crate::platform::file_read(
+                handle,
+                table_name_bytes.as_mut_ptr(),
+                table_name_len,
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != table_name_len {
+                return Err(RemDbError::FileIoError);
+            }
+            let table_name = String::from_utf8_lossy(&table_name_bytes).to_string();
+
+            // 读取字段数量
+            let mut field_count_bytes = [0u8; 1];
+            let read = crate::platform::file_read(
+                handle,
+                field_count_bytes.as_mut_ptr(),
+                field_count_bytes.len(),
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != field_count_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            let field_count = field_count_bytes[0] as usize;
+
+            // 读取主键字段数量
+            let mut primary_key_count_bytes = [0u8; 1];
+            let read = crate::platform::file_read(
+                handle,
+                primary_key_count_bytes.as_mut_ptr(),
+                primary_key_count_bytes.len(),
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != primary_key_count_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            let _primary_key_count = primary_key_count_bytes[0] as usize;
+
+            // 检查表是否存在，如果不存在则跳过记录数据
             let table = match &mut self.tables[table_id] {
                 Some(table) => table,
                 None => {
-                    println!("Warning: Table with ID {} not found, skipping...", table_id);
-                    // 跳过该表的数据
-                    // 读取表名长度
-                    let mut table_name_len_bytes = [0u8; 1];
-                    let _ = crate::platform::file_read(
-                        handle,
-                        table_name_len_bytes.as_mut_ptr(),
-                        table_name_len_bytes.len(),
-                    );
-                    let table_name_len = table_name_len_bytes[0] as usize;
-                    
-                    // 跳过表名
-                    let mut dummy_name = vec![0u8; table_name_len];
-                    let _ = crate::platform::file_read(
-                        handle,
-                        dummy_name.as_mut_ptr(),
-                        dummy_name.len(),
-                    );
-                    
-                    // 跳过字段数量
-                    let mut field_count_bytes = [0u8; 1];
-                    let _ = crate::platform::file_read(
-                        handle,
-                        field_count_bytes.as_mut_ptr(),
-                        field_count_bytes.len(),
-                    );
-                    
-                    // 跳过主键字段数量
-                    let mut primary_key_count_bytes = [0u8; 1];
-                    let _ = crate::platform::file_read(
-                        handle,
-                        primary_key_count_bytes.as_mut_ptr(),
-                        primary_key_count_bytes.len(),
-                    );
-                    
+                    println!("Warning: Table '{}' with ID {} not found, skipping data...", table_name, table_id);
                     // 读取记录数
                     let mut record_count_bytes = [0u8; 4];
-                    let _ = crate::platform::file_read(
+                    let read = crate::platform::file_read(
                         handle,
                         record_count_bytes.as_mut_ptr(),
                         record_count_bytes.len(),
-                    );
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+                    if read != record_count_bytes.len() {
+                        return Err(RemDbError::FileIoError);
+                    }
                     let record_count = u32::from_le_bytes(record_count_bytes) as usize;
-                    
+
                     // 跳过所有记录
                     for _ in 0..record_count {
                         // 跳过记录索引
@@ -1419,8 +1442,8 @@ impl RemDb {
                             index_bytes.as_mut_ptr(),
                             index_bytes.len(),
                         );
-                        // 跳过记录数据
-                        let mut dummy_record = [0u8; 1024]; // 足够大的缓冲区
+                        // 跳过记录数据（需要知道记录大小，这里使用固定大小）
+                        let mut dummy_record = [0u8; 1024];
                         let _ = crate::platform::file_read(
                             handle,
                             dummy_record.as_mut_ptr(),
@@ -1516,7 +1539,9 @@ impl RemDb {
                     let new_pk = unsafe {
                         let key_ptr = record_ptr.add(primary_key_field.offset);
                         match primary_key_field.data_type {
-                            crate::types::DataType::UInt8 => *(key_ptr as *const u8) as u64,
+                            crate::types::DataType::UInt8 => {
+                                core::ptr::read_unaligned(key_ptr as *const u8) as u64
+                            },
                             crate::types::DataType::UInt16 => {
                                 core::ptr::read_unaligned(key_ptr as *const u16) as u64
                             },
@@ -1526,7 +1551,9 @@ impl RemDb {
                             crate::types::DataType::UInt64 => {
                                 core::ptr::read_unaligned(key_ptr as *const u64)
                             },
-                            crate::types::DataType::Int8 => *(key_ptr as *const i8) as u64,
+                            crate::types::DataType::Int8 => {
+                                core::ptr::read_unaligned(key_ptr as *const i8) as u64
+                            },
                             crate::types::DataType::Int16 => {
                                 core::ptr::read_unaligned(key_ptr as *const i16) as u64
                             },
@@ -1779,6 +1806,10 @@ impl DdlExecutor for RemDb {
             }
         }
 
+        // 3.5. 查找可重用的表ID（优先使用已删除的表ID）
+        let table_id = self.tables.iter().position(|t| t.is_none())
+            .unwrap_or(self.tables.len());
+
         // 3. 计算字段大小和偏移量
         let mut field_defs = Vec::new();
         let mut offset = 0;
@@ -1876,7 +1907,7 @@ impl DdlExecutor for RemDb {
         // 4. 创建表定义
         let now = crate::platform::get_timestamp_us();
         let table_def = TableDef {
-            id: self.tables.len() as u8,
+            id: table_id as u8,
             name: name.to_string(),
             fields: field_defs,
             primary_key: primary_key.unwrap_or_default(),
@@ -1893,8 +1924,12 @@ impl DdlExecutor for RemDb {
         let table_def_arc = alloc::sync::Arc::new(table_def.clone());
         let table = MemoryTable::new(table_def_arc.clone())?;
 
-        // 6. 添加到表向量
-        self.tables.push(Some(table));
+        // 6. 添加到表向量（在可重用位置或末尾）
+        if table_id < self.tables.len() {
+            self.tables[table_id] = Some(table);
+        } else {
+            self.tables.push(Some(table));
+        }
 
         // 7. 创建主键索引
         // 计算主键索引所需内存大小
@@ -1919,10 +1954,18 @@ impl DdlExecutor for RemDb {
                 table_def.max_records,
             )
         };
-        self.primary_indices.push(Some(primary_index));
+        if table_id < self.primary_indices.len() {
+            self.primary_indices[table_id] = Some(primary_index);
+        } else {
+            self.primary_indices.push(Some(primary_index));
+        }
 
         // 8. 初始化辅助索引位置
-        self.secondary_indices.push(None);
+        if table_id < self.secondary_indices.len() {
+            self.secondary_indices[table_id] = None;
+        } else {
+            self.secondary_indices.push(None);
+        }
 
         // Publish table creation to pubsub
         #[cfg(feature = "pubsub")]
@@ -2746,7 +2789,7 @@ impl DdlExecutor for RemDb {
                             // 获取当前记录的主键值
                             let pk_value = match pk_field.data_type {
                                 crate::types::DataType::UInt8 => {
-                                    *(record_ptr.add(pk_field.offset) as *const u8) as u64
+                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u8) as u64
                                 },
                                 crate::types::DataType::UInt16 => {
                                     core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u16) as u64
@@ -2758,7 +2801,7 @@ impl DdlExecutor for RemDb {
                                     core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u64)
                                 },
                                 crate::types::DataType::Int8 => {
-                                    *(record_ptr.add(pk_field.offset) as *const i8) as u64
+                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i8) as u64
                                 },
                                 crate::types::DataType::Int16 => {
                                     core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i16) as u64
@@ -3917,24 +3960,25 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
     unsafe {
         // 无论是否已经初始化过，都创建一个新的数据库实例
         let mut db = RemDb::new(config);
-
+        
         // 从配置创建表
         for table_def in &config.tables {
             // 创建表
             let table = MemoryTable::new(alloc::sync::Arc::new(table_def.clone()))?;
             db.tables.push(Some(table));
-
             // 创建空的索引项，后续会在需要时自动创建
             db.primary_indices.push(None);
             db.secondary_indices.push(None);
         }
-
+        
         // 初始化数据库（包括系统表）
         db.init()?;
-
+        
+        // 初始化 DatabaseManager，添加默认数据库
+        let _ = db.database_manager.create_database("default", "", None);
+        
         // 将新的数据库实例赋值给 DB_INSTANCE
         DB_INSTANCE = Some(db);
-
         Ok(DB_INSTANCE.as_mut().unwrap())
     }
 }

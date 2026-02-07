@@ -519,8 +519,12 @@ impl MemoryTable {
                         let pk_field = &self.def.fields[pk_col_idx];
                         let fields_equal = match pk_field.data_type {
                         DataType::UInt8 => {
-                            let current = *(record_data.add(pk_field.offset) as *const u8);
-                            let existing = *(record_ptr.add(pk_field.offset) as *const u8);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(pk_field.offset) as *const u8,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const u8,
+                            );
                             current == existing
                         }
                         DataType::UInt16 => {
@@ -551,8 +555,12 @@ impl MemoryTable {
                             current == existing
                         }
                         DataType::Int8 => {
-                            let current = *(record_data.add(pk_field.offset) as *const i8);
-                            let existing = *(record_ptr.add(pk_field.offset) as *const i8);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(pk_field.offset) as *const i8,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const i8,
+                            );
                             current == existing
                         }
                         DataType::Int16 => {
@@ -601,10 +609,12 @@ impl MemoryTable {
                             current == existing
                         }
                         DataType::Bool => {
-                            let current =
-                                *(record_data.add(pk_field.offset) as *const bool);
-                            let existing =
-                                *(record_ptr.add(pk_field.offset) as *const bool);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(pk_field.offset) as *const bool,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const bool,
+                            );
                             current == existing
                         }
                         DataType::Timestamp => {
@@ -709,8 +719,12 @@ impl MemoryTable {
                     // 根据字段类型比较值
                     let is_duplicate = match unique_field.data_type {
                         DataType::UInt8 => {
-                            let current = *(record_data.add(unique_field.offset) as *const u8);
-                            let existing = *(record_ptr.add(unique_field.offset) as *const u8);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const u8,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const u8,
+                            );
                             current == existing
                         }
                         DataType::UInt16 => {
@@ -741,8 +755,12 @@ impl MemoryTable {
                             current == existing
                         }
                         DataType::Int8 => {
-                            let current = *(record_data.add(unique_field.offset) as *const i8);
-                            let existing = *(record_ptr.add(unique_field.offset) as *const i8);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const i8,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const i8,
+                            );
                             current == existing
                         }
                         DataType::Int16 => {
@@ -791,8 +809,12 @@ impl MemoryTable {
                             current == existing
                         }
                         DataType::Bool => {
-                            let current = *(record_data.add(unique_field.offset) as *const bool);
-                            let existing = *(record_ptr.add(unique_field.offset) as *const bool);
+                            let current = core::ptr::read_unaligned(
+                                record_data.add(unique_field.offset) as *const bool,
+                            );
+                            let existing = core::ptr::read_unaligned(
+                                record_ptr.add(unique_field.offset) as *const bool,
+                            );
                             current == existing
                         }
                         DataType::Timestamp => {

@@ -1247,10 +1247,10 @@ impl VectorIndex {
         let range_value: f32;
         if _end_key_size > 4 && *end_key == b'[' {
             // 解析向量字面量的距离（这种情况不常见，主要用于测试）
-            range_value = 1000.0; // 默认大值，返回所有向�?
+            range_value = 1000.0; // 默认大值，返回所有向量
         } else {
-            // end_key是距离阈值的指针，正确转换并读取该�?
-            range_value = *(end_key as *const f32);
+            // end_key是距离阈值的指针，正确转换并读取该值
+            range_value = core::ptr::read_unaligned(end_key as *const f32);
         }
 
         // 线性搜索查找第一个匹配的向量
@@ -1333,10 +1333,10 @@ impl VectorIndex {
         let range_value: f32;
         if _end_key_size > 4 && *end_key == b'[' {
             // 解析向量字面量的距离（这种情况不常见，主要用于测试）
-            range_value = 1000.0; // 默认大值，返回所有向�?
+            range_value = 1000.0; // 默认大值，返回所有向量
         } else {
-            // end_key是距离阈值的指针，正确转换并读取该�?
-            range_value = *(end_key as *const f32);
+            // end_key是距离阈值的指针，正确转换并读取该值
+            range_value = core::ptr::read_unaligned(end_key as *const f32);
         }
 
         // 直接在输出缓冲区中存储结果，避免使用Vec

@@ -1005,22 +1005,10 @@ impl LogManager {
 
                     println!("Creating database from WAL: {}", db_name);
 
-                    // 这里需要调用数据库管理器的创建数据库方法
-                    // 但由于我们在恢复过程中，可能需要特殊处理
-                    // 暂时跳过，由数据库管理器在初始化时处理
+                    // 调用数据库管理器的创建数据库方法
+                    let _ = db.database_manager.create_database(db_name, "", None);
                 }
                 LogOperation::CreateTable => {
-                    // 检查表是否已经存在
-                    let table_id = log_item.table_id as usize;
-                    if table_id < db.tables.len() && db.tables[table_id].is_some() {
-                        // 表已经存在（从配置创建），跳过CreateTable操作
-                        println!(
-                            "Skipping CreateTable operation for table_id {} (table already exists)",
-                            log_item.table_id
-                        );
-                        continue;
-                    }
-
                     // 正确解析CreateTable日志项，参考lib.rs中的实现
                     // 从日志中解析表名
                     let name_len = if log_item.new_data.len() > 0 {
@@ -1495,11 +1483,21 @@ impl LogManager {
 
                     // 直接实现从TableDef创建表的逻辑
                     unsafe {
-                        // 检查表格是否已存在
-                        let table_exists = db.tables.len() > table_def.id as usize
+                        // 检查表格是否已存在（同时检查ID和表名）
+                        let table_exists_by_id = db.tables.len() > table_def.id as usize
                             && db.tables[table_def.id as usize].is_some();
-                        if table_exists {
-                            println!("Skipping CreateTable operation for table_id {} (table already exists)", log_item.table_id);
+                        
+                        // 检查是否有同名的表（即使ID不同）
+                        let table_exists_by_name = db.tables.iter().any(|t| {
+                            if let Some(table) = t {
+                                table.def.name.as_str() == table_name
+                            } else {
+                                false
+                            }
+                        });
+                        
+                        if table_exists_by_id || table_exists_by_name {
+                            println!("Skipping CreateTable operation for table_id {} (table '{}' already exists)", log_item.table_id, table_name);
                             continue;
                         }
 
@@ -1890,26 +1888,26 @@ impl LogManager {
                         let key_ptr = record_ptr.add(primary_key_field.offset);
                         let new_pk = match primary_key_field.data_type {
                             crate::types::DataType::UInt8 => {
-                                (unsafe { *(key_ptr as *const u8) }) as u64
+                                (unsafe { std::ptr::read_unaligned(key_ptr as *const u8) }) as u64
                             }
                             crate::types::DataType::UInt16 => {
-                                (unsafe { *(key_ptr as *const u16) }) as u64
+                                (unsafe { std::ptr::read_unaligned(key_ptr as *const u16) }) as u64
                             }
                             crate::types::DataType::UInt32 => {
-                                (unsafe { *(key_ptr as *const u32) }) as u64
+                                (unsafe { std::ptr::read_unaligned(key_ptr as *const u32) }) as u64
                             }
-                            crate::types::DataType::UInt64 => unsafe { *(key_ptr as *const u64) },
+                            crate::types::DataType::UInt64 => unsafe { std::ptr::read_unaligned(key_ptr as *const u64) },
                             crate::types::DataType::Int8 => {
-                                (unsafe { *(key_ptr as *const i8) }) as u64
+                                (unsafe { std::ptr::read_unaligned(key_ptr as *const i8) }) as u64
                             }
                             crate::types::DataType::Int16 => {
-                                (unsafe { *(key_ptr as *const i16) }) as u64
+                                (unsafe { std::ptr::read_unaligned(key_ptr as *const i16) }) as u64
                             }
                             crate::types::DataType::Int32 => {
-                                (unsafe { *(key_ptr as *const i32) }) as u64
+                                (unsafe { std::ptr::read_unaligned(key_ptr as *const i32) }) as u64
                             }
                             crate::types::DataType::Int64 => {
-                                (unsafe { *(key_ptr as *const i64) }) as u64
+                                (unsafe { std::ptr::read_unaligned(key_ptr as *const i64) }) as u64
                             }
                             _ => 0,
                         };
