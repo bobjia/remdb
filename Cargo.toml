@@ -40,6 +40,10 @@ version = "0.3"
 optional = true
 features = ["fmt", "env-filter"]
 
+[dependencies.tracing-appender]
+version = "0.2"
+optional = true
+
 [dev-dependencies]
 criterion = "0.5"
 serial_test = "3.0.0"
@@ -50,7 +54,7 @@ harness = false
 
 [features]
 default = ["std", "posix", "ha", "pubsub", "c-api", "log"]
-std = ["rand", "socket2", "tracing", "tracing-subscriber"]
+std = ["rand", "socket2", "tracing", "tracing-subscriber", "tracing-appender"]
 posix = ["std"]
 baremetal = ["log", "tracing-core", "heapless"]
 debug = []

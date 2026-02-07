@@ -1,6 +1,9 @@
 use core::fmt::Write;
 
 #[cfg(feature = "std")]
+use std::sync::Arc;
+
+#[cfg(feature = "std")]
 pub use tracing::{debug, error, info, trace, warn};
 
 #[cfg(all(not(feature = "std"), feature = "log"))]
@@ -188,6 +191,29 @@ pub fn init_logger() {
         .with_file(true)
         .with_line_number(true)
         .init();
+}
+
+#[cfg(feature = "std")]
+pub fn init_logger_with_file(log_path: &str, debug_mode: bool) -> Result<(), std::io::Error> {
+    use tracing::Level;
+
+    let log_level = if debug_mode { Level::DEBUG } else { Level::INFO };
+
+    let env_filter = tracing_subscriber::EnvFilter::from_default_env()
+        .add_directive(format!("remdb={}", log_level).parse().unwrap())
+        .add_directive(format!("remdb_server={}", log_level).parse().unwrap());
+
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stdout)
+        .with_ansi(true)
+        .with_level(true)
+        .with_target(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_env_filter(env_filter)
+        .init();
+
+    Ok(())
 }
 
 #[cfg(all(not(feature = "std"), feature = "log"))]

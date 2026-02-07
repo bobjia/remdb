@@ -62,6 +62,9 @@ use alloc::vec::Vec;
 #[cfg(feature = "log")]
 use crate::log::{debug, error, info, warn};
 
+#[cfg(feature = "log")]
+pub use crate::log::{init_logger, init_logger_with_file};
+
 /// 字段约束信息
 #[derive(Clone, Debug)]
 pub struct FieldConstraint {
