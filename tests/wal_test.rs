@@ -6,136 +6,25 @@ use remdb::ha::{HARole, ReplicationMode};
 use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
 use remdb::transaction::{LogItem, LogManager, LogOperation};
 
-// 测试用Platform实现
-struct TestPlatform;
+mod common;
+use common::{setup_test_db, setup_test_db_with_posix};
 
-impl Platform for TestPlatform {
-    fn get_timestamp(&self) -> u64 {
-        0
-    }
-
-    fn get_timestamp_us(&self) -> u64 {
-        0
-    }
-
-    fn spin_lock(&self, lock: &mut u32) {
-        // Simple spin lock implementation
-        unsafe {
-            while core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .compare_exchange(
-                    0,
-                    1,
-                    core::sync::atomic::Ordering::Acquire,
-                    core::sync::atomic::Ordering::Relaxed,
-                )
-                .is_err()
-            {
-                core::hint::spin_loop();
-            }
-        }
-    }
-
-    fn spin_unlock(&self, lock: &mut u32) {
-        unsafe {
-            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .store(0, core::sync::atomic::Ordering::Release);
-        }
-    }
-
-    fn compiler_barrier(&self) {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
-
-    fn full_memory_barrier(&self) {
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-    }
-
-    fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-        unsafe {
-            core::ptr::copy_nonoverlapping(src, dest, size);
-        }
-    }
-
-    fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-        unsafe {
-            core::ptr::write_bytes(dest, value, size);
-        }
-    }
-
-    fn delay_ms(&self, _ms: u32) {
-        // 空实现
-    }
-
-    fn delay_us(&self, _us: u32) {
-        // 空实现
-    }
-
-    fn file_open(&self, _path: &str, _mode: FileMode) -> FileResult<FileHandle> {
-        // 返回一个非空指针作为有效的FileHandle
-        Ok(1 as *const u8)
-    }
-
-    fn file_close(&self, _handle: FileHandle) -> FileResult<()> {
-        Ok(())
-    }
-
-    fn file_write(
-        &self,
-        _handle: FileHandle,
-        _buffer: *const u8,
-        size: usize,
-    ) -> FileResult<usize> {
-        // 模拟写入成功，返回写入的字节数
-        Ok(size)
-    }
-
-    fn file_read(&self, _handle: FileHandle, _buffer: *mut u8, _size: usize) -> FileResult<usize> {
-        // 模拟读取成功，返回0表示文件为空
-        Ok(0)
-    }
-
-    fn file_seek(&self, _handle: FileHandle, _offset: i64, _whence: SeekWhence) -> FileResult<u64> {
-        // 模拟seek成功，返回当前位置
-        Ok(0)
-    }
-
-    fn file_remove(&self, _path: &str) -> FileResult<()> {
-        Ok(())
-    }
-
-    fn file_size(&self, _path: &str) -> FileResult<usize> {
-        Ok(0)
-    }
-
-    fn crc32(&self, data: *const u8, size: usize) -> u32 {
-        // 简单的CRC32实现，仅用于测试
-        let data = unsafe { std::slice::from_raw_parts(data, size) };
-        let mut crc = 0xFFFFFFFF;
-
-        for &byte in data {
-            crc ^= byte as u32;
-            for _ in 0..8 {
-                crc = if crc & 1 != 0 {
-                    (crc >> 1) ^ 0xEDB88320
-                } else {
-                    crc >> 1
-                };
-            }
-        }
-
-        crc ^ 0xFFFFFFFF
-    }
+#[cfg(windows)]
+fn get_test_wal_path(name: &str) -> &'static str {
+    let s = format!("C:\\temp\\{}", name);
+    Box::leak(s.into_boxed_str())
 }
 
-static TEST_PLATFORM: TestPlatform = TestPlatform;
+#[cfg(not(windows))]
+fn get_test_wal_path(name: &str) -> &'static str {
+    let s = format!("/tmp/{}", name);
+    Box::leak(s.into_boxed_str())
+}
 
 // 测试 WAL 功能的测试用例
 #[test]
 fn test_wal_log_manager_creation() {
-    // 初始化平台
-    unsafe {
-        init_platform(&TEST_PLATFORM);
-    }
+    let _db_memory = setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -149,7 +38,7 @@ fn test_wal_log_manager_creation() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log",
+            log_path: &get_test_wal_path("test_wal.log"),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -176,7 +65,7 @@ fn test_wal_log_manager_creation() {
 
     // 测试创建 LogManager
     unsafe {
-        let log_path = "/tmp/test_wal.log";
+        let log_path = &get_test_wal_path("test_wal.log");
         let log_manager = LogManager::new(&config);
         assert!(log_manager.is_ok());
     }
@@ -184,10 +73,7 @@ fn test_wal_log_manager_creation() {
 
 #[test]
 fn test_wal_log_write_sync_mode() {
-    // 初始化平台
-    unsafe {
-        init_platform(&TEST_PLATFORM);
-    }
+    let _db_memory = setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -201,7 +87,7 @@ fn test_wal_log_write_sync_mode() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log",
+            log_path: &get_test_wal_path("test_wal_sync.log"),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -227,7 +113,7 @@ fn test_wal_log_write_sync_mode() {
     };
 
     unsafe {
-        let log_path = "/tmp/test_wal_sync.log";
+        let log_path = &get_test_wal_path("test_wal_sync.log");
         let mut log_manager = LogManager::new(&config).unwrap();
 
         // 创建测试日志项
@@ -254,10 +140,7 @@ fn test_wal_log_write_sync_mode() {
 
 #[test]
 fn test_wal_log_write_async_mode() {
-    // 初始化平台
-    unsafe {
-        init_platform(&TEST_PLATFORM);
-    }
+    let _db_memory = setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -271,7 +154,7 @@ fn test_wal_log_write_async_mode() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log",
+            log_path: &get_test_wal_path("test_wal_async.log"),
             log_mode: LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -297,7 +180,7 @@ fn test_wal_log_write_async_mode() {
     };
 
     unsafe {
-        let log_path = "/tmp/test_wal_async.log";
+        let log_path = &get_test_wal_path("test_wal_async.log");
         let mut log_manager = LogManager::new(&config).unwrap();
 
         // 创建测试日志项
@@ -331,10 +214,7 @@ fn test_wal_log_write_async_mode() {
 
 #[test]
 fn test_wal_checkpoint_mechanism() {
-    // 初始化平台
-    unsafe {
-        init_platform(&TEST_PLATFORM);
-    }
+    let _db_memory = setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -348,7 +228,7 @@ fn test_wal_checkpoint_mechanism() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_checkpoint.log",
+            log_path: &get_test_wal_path("test_wal_checkpoint.log"),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 100, // 100毫秒检查点间隔
             log_file_size_limit: 16 * 1024 * 1024,
@@ -374,7 +254,7 @@ fn test_wal_checkpoint_mechanism() {
     };
 
     unsafe {
-        let log_path = "/tmp/test_wal_checkpoint.log";
+        let log_path = &get_test_wal_path("test_wal_checkpoint.log");
         let mut log_manager = LogManager::new(&config).unwrap();
 
         // 模拟检查点触发
@@ -409,10 +289,7 @@ fn test_wal_checkpoint_mechanism() {
 
 #[test]
 fn test_wal_log_preallocation() {
-    // 初始化平台
-    unsafe {
-        init_platform(&TEST_PLATFORM);
-    }
+    let _db_memory = setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -426,7 +303,7 @@ fn test_wal_log_preallocation() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_prealloc.log",
+            log_path: &get_test_wal_path("test_wal_prealloc.log"),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -452,7 +329,7 @@ fn test_wal_log_preallocation() {
     };
 
     unsafe {
-        let log_path = "/tmp/test_wal_prealloc.log";
+        let log_path = &get_test_wal_path("test_wal_prealloc.log");
         let log_manager = LogManager::new(&config);
         assert!(log_manager.is_ok());
 
@@ -463,19 +340,16 @@ fn test_wal_log_preallocation() {
 
 #[test]
 fn test_wal_different_log_modes() {
-    // 初始化平台
-    unsafe {
-        init_platform(&TEST_PLATFORM);
-    }
+    let _db_memory = setup_test_db_with_posix();
 
     // 测试不同日志模式的行为差异
     // 使用静态字符串作为日志路径
-    static LOG_PATH_SYNC: &str = "/tmp/test_wal_mode_sync.log";
-    static LOG_PATH_ASYNC: &str = "/tmp/test_wal_mode_async.log";
+    static LOG_PATH_SYNC: &str = "test_wal_mode_sync.log";
+    static LOG_PATH_ASYNC: &str = "test_wal_mode_async.log";
 
     let modes = [
-        (LogMode::Sync, LOG_PATH_SYNC),
-        (LogMode::Async, LOG_PATH_ASYNC),
+        (LogMode::Sync, &get_test_wal_path(LOG_PATH_SYNC) as &str),
+        (LogMode::Async, &get_test_wal_path(LOG_PATH_ASYNC) as &str),
     ];
 
     for (mode, log_path) in modes {
@@ -490,7 +364,7 @@ fn test_wal_different_log_modes() {
             default_max_records: 1000,
             memory_allocator: &ALLOCATOR,
             wal_config: WALConfig {
-                log_path: log_path,
+                log_path,
                 log_mode: mode,
                 checkpoint_interval_ms: 60000,
                 log_file_size_limit: 16 * 1024 * 1024,
@@ -548,10 +422,7 @@ fn test_wal_different_log_modes() {
 
 #[test]
 fn test_wal_checkpoint_comprehensive() {
-    // 初始化平台
-    unsafe {
-        init_platform(&TEST_PLATFORM);
-    }
+    let _db_memory = setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -565,7 +436,7 @@ fn test_wal_checkpoint_comprehensive() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_checkpoint_comprehensive.log",
+            log_path: &get_test_wal_path("test_wal_checkpoint_comprehensive.log"),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 50, // 50毫秒检查点间隔，便于测试
             log_file_size_limit: 16 * 1024 * 1024,
@@ -747,7 +618,7 @@ fn test_wal_checkpoint_comprehensive() {
             default_max_records: 1000,
             memory_allocator: &ALLOCATOR,
             wal_config: WALConfig {
-                log_path: "/tmp/test_wal_checkpoint_async.log",
+                log_path: &get_test_wal_path("test_wal_checkpoint_async.log"),
                 log_mode: LogMode::Async,
                 checkpoint_interval_ms: 50,
                 log_file_size_limit: 16 * 1024 * 1024,
@@ -808,10 +679,7 @@ fn test_wal_checkpoint_comprehensive() {
 
 #[test]
 fn test_wal_recovery_flow() {
-    // 初始化平台
-    unsafe {
-        init_platform(&TEST_PLATFORM);
-    }
+    let _db_memory = setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -825,7 +693,7 @@ fn test_wal_recovery_flow() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal.log",
+            log_path: &get_test_wal_path("test_wal_recovery.log"),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
@@ -851,7 +719,7 @@ fn test_wal_recovery_flow() {
     };
 
     unsafe {
-        let log_path = "/tmp/test_wal_recovery.log";
+        let log_path = &get_test_wal_path("test_wal_recovery.log");
 
         // 步骤1: 创建日志管理器
         let mut log_manager = LogManager::new(&config).unwrap();
@@ -1041,10 +909,7 @@ fn test_wal_recovery_flow() {
 
 #[test]
 fn test_wal_checkpoint_with_recovery() {
-    // 初始化平台
-    unsafe {
-        init_platform(&TEST_PLATFORM);
-    }
+    let _db_memory = setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -1058,7 +923,7 @@ fn test_wal_checkpoint_with_recovery() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: "/tmp/test_wal_checkpoint_recovery.log",
+            log_path: &get_test_wal_path("test_wal_checkpoint_recovery.log"),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 100, // 100毫秒检查点间隔
             log_file_size_limit: 16 * 1024 * 1024,

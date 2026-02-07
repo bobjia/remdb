@@ -159,9 +159,9 @@ fn test_role_manager() {
     assert_eq!(role_manager.get_role(), HARole::Auto);
 
     // 检查角色状态判断方法
-    assert!(!role_manager.is_master());
-    assert!(!role_manager.is_slave());
-    assert!(role_manager.is_auto());
+    assert!(!(role_manager.get_role() == HARole::Master));
+    assert!(!(role_manager.get_role() == HARole::Slave));
+    assert!(role_manager.get_role() == HARole::Auto);
 
     // 关闭角色管理器
     role_manager

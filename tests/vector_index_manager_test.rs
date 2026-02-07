@@ -8,123 +8,8 @@ use serial_test::serial;
 use std::thread::sleep;
 use std::time::Duration;
 
-// 简单的测试平台实现
-struct TestPlatform;
-
-impl platform::Platform for TestPlatform {
-    fn get_timestamp(&self) -> u64 {
-        0
-    }
-
-    fn get_timestamp_us(&self) -> u64 {
-        0
-    }
-
-    fn spin_lock(&self, lock: &mut u32) {
-        // 简单的自旋锁实现
-        unsafe {
-            while core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .compare_exchange(
-                    0,
-                    1,
-                    core::sync::atomic::Ordering::Acquire,
-                    core::sync::atomic::Ordering::Relaxed,
-                )
-                .is_err()
-            {
-                core::hint::spin_loop();
-            }
-        }
-    }
-
-    fn spin_unlock(&self, lock: &mut u32) {
-        unsafe {
-            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .store(0, core::sync::atomic::Ordering::Release);
-        }
-    }
-
-    fn compiler_barrier(&self) {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
-
-    fn full_memory_barrier(&self) {
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-    }
-
-    fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-        unsafe {
-            core::ptr::copy_nonoverlapping(src, dest, size);
-        }
-    }
-
-    fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-        unsafe {
-            core::ptr::write_bytes(dest, value, size);
-        }
-    }
-
-    fn delay_ms(&self, _ms: u32) {
-        // 空实现
-    }
-
-    fn delay_us(&self, _us: u32) {
-        // 空实现
-    }
-
-    fn file_open(
-        &self,
-        _path: &str,
-        _mode: platform::FileMode,
-    ) -> platform::FileResult<platform::FileHandle> {
-        Ok(core::ptr::null())
-    }
-
-    fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
-        Ok(())
-    }
-
-    fn file_write(
-        &self,
-        _handle: platform::FileHandle,
-        _buffer: *const u8,
-        _size: usize,
-    ) -> platform::FileResult<usize> {
-        Ok(0)
-    }
-
-    fn file_read(
-        &self,
-        _handle: platform::FileHandle,
-        _buffer: *mut u8,
-        _size: usize,
-    ) -> platform::FileResult<usize> {
-        Ok(0)
-    }
-
-    fn file_seek(
-        &self,
-        _handle: platform::FileHandle,
-        _offset: i64,
-        _whence: platform::SeekWhence,
-    ) -> platform::FileResult<u64> {
-        Ok(0)
-    }
-
-    fn file_remove(&self, _path: &str) -> platform::FileResult<()> {
-        Ok(())
-    }
-
-    fn file_size(&self, _path: &str) -> platform::FileResult<usize> {
-        Ok(0)
-    }
-
-    fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
-        0
-    }
-}
-
-static TEST_PLATFORM: TestPlatform = TestPlatform;
+mod common;
+use common::{setup_test_db, setup_test_db_with_memory};
 
 // 定义包含向量字段的测试表
 remdb::table!(
@@ -150,15 +35,8 @@ remdb::database!(
 fn test_index_build_thread_pool_init() {
     println!("=== 测试索引构建线程池初始化 ===");
 
-    // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
+    let mut _db_memory = setup_test_db();
+    remdb::memory::allocator::init_global_allocator(_db_memory.as_mut_ptr(), _db_memory.len())
         .unwrap();
 
     // 重置全局数据库实例
@@ -191,16 +69,7 @@ fn test_index_build_thread_pool_init() {
 fn test_non_blocking_index_creation() {
     println!("=== 测试非阻塞索引创建 ===");
 
-    // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-        .unwrap();
+    let _db_memory = setup_test_db();
 
     // 重置全局数据库实例
     remdb::reset_global_db();
@@ -262,16 +131,7 @@ fn test_non_blocking_index_creation() {
 fn test_index_params_with_clause() {
     println!("=== 测试索引参数WITH子句 ===");
 
-    // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-        .unwrap();
+    let _db_memory = setup_test_db();
 
     // 重置全局数据库实例
     remdb::reset_global_db();
@@ -353,16 +213,7 @@ fn test_index_params_with_clause() {
 fn test_index_persistence_api() {
     println!("=== 测试索引持久化API ===");
 
-    // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-        .unwrap();
+    let _db_memory = setup_test_db();
 
     // 重置全局数据库实例
     remdb::reset_global_db();
@@ -413,16 +264,7 @@ fn test_index_persistence_api() {
 fn test_different_index_algorithms() {
     println!("=== 测试不同索引算法 ===");
 
-    // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-        .unwrap();
+    let _db_memory = setup_test_db();
 
     // 初始化索引构建线程池
     index::builder::init_index_build_thread_pool(2);
@@ -491,16 +333,7 @@ fn test_different_index_algorithms() {
 fn test_index_build_status_monitoring() {
     println!("=== 测试索引构建状态监控 ===");
 
-    // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-        .unwrap();
+    let _db_memory = setup_test_db();
 
     // 重置全局数据库实例
     remdb::reset_global_db();

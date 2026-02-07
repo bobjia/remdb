@@ -7,126 +7,9 @@
 use remdb::*;
 use serial_test::serial;
 
-// 简单的测试平台实现
-struct TestPlatform;
-
-impl platform::Platform for TestPlatform {
-    fn get_timestamp(&self) -> u64 {
-        0
-    }
-
-    fn get_timestamp_us(&self) -> u64 {
-        0
-    }
-
-    fn spin_lock(&self, lock: &mut u32) {
-        // 简单的自旋锁实现
-        unsafe {
-            while core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .compare_exchange(
-                    0,
-                    1,
-                    core::sync::atomic::Ordering::Acquire,
-                    core::sync::atomic::Ordering::Relaxed,
-                )
-                .is_err()
-            {
-                core::hint::spin_loop();
-            }
-        }
-    }
-
-    fn spin_unlock(&self, lock: &mut u32) {
-        unsafe {
-            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .store(0, core::sync::atomic::Ordering::Release);
-        }
-    }
-
-    fn compiler_barrier(&self) {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
-
-    fn full_memory_barrier(&self) {
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-    }
-
-    fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-        unsafe {
-            core::ptr::copy_nonoverlapping(src, dest, size);
-        }
-    }
-
-    fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-        unsafe {
-            core::ptr::write_bytes(dest, value, size);
-        }
-    }
-
-    fn delay_ms(&self, _ms: u32) {
-        // 空实现
-    }
-
-    fn delay_us(&self, _us: u32) {
-        // 空实现
-    }
-
-    fn file_open(
-        &self,
-        _path: &str,
-        _mode: platform::FileMode,
-    ) -> platform::FileResult<platform::FileHandle> {
-        Ok(core::ptr::null())
-    }
-
-    fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
-        Ok(())
-    }
-
-    fn file_write(
-        &self,
-        _handle: platform::FileHandle,
-        _buffer: *const u8,
-        _size: usize,
-    ) -> platform::FileResult<usize> {
-        Ok(0)
-    }
-
-    fn file_read(
-        &self,
-        _handle: platform::FileHandle,
-        _buffer: *mut u8,
-        _size: usize,
-    ) -> platform::FileResult<usize> {
-        Ok(0)
-    }
-
-    fn file_seek(
-        &self,
-        _handle: platform::FileHandle,
-        _offset: i64,
-        _whence: platform::SeekWhence,
-    ) -> platform::FileResult<u64> {
-        Ok(0)
-    }
-
-    fn file_remove(&self, _path: &str) -> platform::FileResult<()> {
-        Ok(())
-    }
-
-    fn file_size(&self, _path: &str) -> platform::FileResult<usize> {
-        Ok(0)
-    }
-
-    fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
-        0
-    }
-
-    // 移除这些不相关的方法，因为它们不是platform::Platform trait的一部分
-    // 这些方法是之前测试中错误添加的
-}
-
-static TEST_PLATFORM: TestPlatform = TestPlatform;
+mod common;
+use crate::common::platform::TEST_PLATFORM;
+use common::{setup_test_db, setup_test_db_with_memory};
 
 // 定义测试表
 remdb::table!(
@@ -166,20 +49,7 @@ remdb::database!(
 #[test]
 #[serial]
 fn test_sql_query() {
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 4194304]; // 4MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -281,7 +151,7 @@ fn test_sql_query() {
             i, field.name, field.size, field.offset
         );
     }
-    
+
     // 调试：手动遍历表记录
     println!("=== 手动遍历表记录 ===");
     let mut count = 0;
@@ -447,20 +317,7 @@ fn test_sql_query() {
 #[test]
 #[serial]
 fn test_sql_having() {
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -491,7 +348,9 @@ fn test_sql_having() {
     // 测试1: 基本HAVING子句
     println!("测试1: 基本HAVING子句");
     let result = db
-        .sql_query("SELECT active, COUNT(*) as count FROM TEST_TABLE GROUP BY active HAVING count > 2")
+        .sql_query(
+            "SELECT active, COUNT(*) as count FROM TEST_TABLE GROUP BY active HAVING count > 2",
+        )
         .unwrap();
     assert_eq!(result.column_count(), 2, "HAVING子句查询应该返回2列");
 
@@ -500,7 +359,11 @@ fn test_sql_having() {
     let result = db
         .sql_query("SELECT active, AVG(age) as avg_age FROM TEST_TABLE GROUP BY active HAVING AVG(age) > 25")
         .unwrap();
-    assert_eq!(result.column_count(), 2, "HAVING子句与聚合函数查询应该返回2列");
+    assert_eq!(
+        result.column_count(),
+        2,
+        "HAVING子句与聚合函数查询应该返回2列"
+    );
 
     // 测试3: 复杂HAVING条件
     println!("测试3: 复杂HAVING条件");
@@ -523,20 +386,7 @@ fn test_sql_having() {
 #[test]
 #[serial]
 fn test_sql_window_functions() {
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -573,9 +423,7 @@ fn test_sql_window_functions() {
 
     // 测试2: 聚合函数查询
     println!("测试2: 聚合函数查询");
-    let result = db
-        .sql_query("SELECT COUNT(*) FROM TEST_TABLE")
-        .unwrap();
+    let result = db.sql_query("SELECT COUNT(*) FROM TEST_TABLE").unwrap();
     assert_eq!(result.column_count(), 1, "COUNT函数查询应该返回1列");
 
     // 重置全局数据库实例，确保测试之间的隔离
@@ -583,7 +431,7 @@ fn test_sql_window_functions() {
 }
 
 // 定义混合查询测试表，包含向量字段
-remdb::table!( 
+remdb::table!(
     HYBRID_TABLE,
     100, // 最大记录数
     primary_key: id,
@@ -596,7 +444,7 @@ remdb::table!(
 );
 
 // 定义包含混合查询测试表的数据库
-remdb::database!( 
+remdb::database!(
     HYBRID_DB,
     tables: [HYBRID_TABLE]
 );
@@ -604,20 +452,7 @@ remdb::database!(
 #[test]
 #[serial]
 fn test_sql_hybrid_query() {
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let db = unsafe { init_global_db(&HYBRID_DB).unwrap() };
@@ -627,50 +462,50 @@ fn test_sql_hybrid_query() {
     let result1 = db
         .sql_query("SELECT id, category, price FROM HYBRID_TABLE WHERE category = 'electronics' AND vector <-> [1.0, 2.0, 3.0] < 0.5")
         .unwrap();
-    
+
     // 验证结果：应该返回0行（表中还没有数据）
     println!("结果行数: {}", result1.row_count());
     assert_eq!(result1.row_count(), 0, "混合查询AND条件结果行数应该为0");
-    
+
     // 测试2：插入数据后再执行混合查询
     println!("\n=== 插入测试数据 ===");
-    
+
     // 使用SQL插入数据
     let insert_result1 = db.sql_query("INSERT INTO HYBRID_TABLE (id, category, price, vector) VALUES (1, 'electronics', 999.99, [1.0, 2.0, 3.0])");
     assert!(insert_result1.is_ok(), "插入数据1失败");
-    
+
     let insert_result2 = db.sql_query("INSERT INTO HYBRID_TABLE (id, category, price, vector) VALUES (2, 'electronics', 699.99, [1.1, 2.1, 3.1])");
     assert!(insert_result2.is_ok(), "插入数据2失败");
-    
+
     let insert_result3 = db.sql_query("INSERT INTO HYBRID_TABLE (id, category, price, vector) VALUES (3, 'electronics', 399.99, [4.0, 5.0, 6.0])");
     assert!(insert_result3.is_ok(), "插入数据3失败");
-    
+
     let insert_result4 = db.sql_query("INSERT INTO HYBRID_TABLE (id, category, price, vector) VALUES (4, 'furniture', 199.99, [7.0, 8.0, 9.0])");
     assert!(insert_result4.is_ok(), "插入数据4失败");
-    
+
     let insert_result5 = db.sql_query("INSERT INTO HYBRID_TABLE (id, category, price, vector) VALUES (5, 'furniture', 499.99, [7.1, 8.1, 9.1])");
     assert!(insert_result5.is_ok(), "插入数据5失败");
-    
+
     // 测试3：插入数据后执行混合查询 - 结构化条件AND向量条件
     println!("\n=== 测试3: 插入数据后执行混合查询 - 结构化条件AND向量条件 ===");
     let result3 = db
         .sql_query("SELECT id, category, price FROM HYBRID_TABLE WHERE category = 'electronics' AND vector <-> [1.0, 2.0, 3.0] < 0.5")
         .unwrap();
-    
+
     // 验证结果：应该只返回id=1和id=2的产品（电子类别且向量距离近）
     println!("结果行数: {}", result3.row_count());
     assert!(result3.row_count() >= 2, "混合查询AND条件结果行数不足");
-    
+
     // 测试4：插入数据后执行混合查询 - 结构化条件OR向量条件
     println!("\n=== 测试4: 插入数据后执行混合查询 - 结构化条件OR向量条件 ===");
     let result4 = db
         .sql_query("SELECT id, category, price FROM HYBRID_TABLE WHERE price > 500 OR vector <-> [7.0, 8.0, 9.0] < 0.5")
         .unwrap();
-    
+
     // 验证结果：应该返回id=1（价格>500）、id=2（价格>500）、id=4（向量距离近）、id=5（向量距离近）
     println!("结果行数: {}", result4.row_count());
     assert!(result4.row_count() >= 4, "混合查询OR条件结果行数不足");
-    
+
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
 }
@@ -679,20 +514,7 @@ fn test_sql_hybrid_query() {
 #[test]
 #[serial]
 fn test_sql_join() {
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -786,9 +608,10 @@ fn test_sql_join() {
         if let Some(row) = result_set.get_row(i) {
             if let Ok(name_value) = row.get(0) {
                 // 检查name_value是否为字符串类型
-                if name_value.value_type == crate::DataType::VarChar || 
-                   name_value.value_type == crate::DataType::Char || 
-                   name_value.value_type == crate::DataType::Text {
+                if name_value.value_type == crate::DataType::VarChar
+                    || name_value.value_type == crate::DataType::Char
+                    || name_value.value_type == crate::DataType::Text
+                {
                     unsafe {
                         let name_str = core::str::from_utf8(&name_value.value.string)
                             .unwrap_or("")
@@ -825,9 +648,10 @@ fn test_sql_join() {
         if let Some(row) = result_set.get_row(i) {
             if let Ok(product_value) = row.get(1) {
                 // 检查product_value是否为字符串类型
-                if product_value.value_type == crate::DataType::VarChar || 
-                   product_value.value_type == crate::DataType::Char || 
-                   product_value.value_type == crate::DataType::Text {
+                if product_value.value_type == crate::DataType::VarChar
+                    || product_value.value_type == crate::DataType::Char
+                    || product_value.value_type == crate::DataType::Text
+                {
                     unsafe {
                         let product_str = core::str::from_utf8(&product_value.value.string)
                             .unwrap_or("")
@@ -841,7 +665,10 @@ fn test_sql_join() {
             }
         }
     }
-    assert!(has_orphan_order, "RIGHT JOIN应该包含没有对应用户的订单Product E");
+    assert!(
+        has_orphan_order,
+        "RIGHT JOIN应该包含没有对应用户的订单Product E"
+    );
 
     // 测试FULL JOIN
     println!("=== 测试FULL JOIN ===");
@@ -864,9 +691,10 @@ fn test_sql_join() {
         if let Some(row) = result_set.get_row(i) {
             // 检查David
             if let Ok(name_value) = row.get(0) {
-                if name_value.value_type == crate::DataType::VarChar || 
-                   name_value.value_type == crate::DataType::Char || 
-                   name_value.value_type == crate::DataType::Text {
+                if name_value.value_type == crate::DataType::VarChar
+                    || name_value.value_type == crate::DataType::Char
+                    || name_value.value_type == crate::DataType::Text
+                {
                     unsafe {
                         let name_str = core::str::from_utf8(&name_value.value.string)
                             .unwrap_or("")
@@ -879,9 +707,10 @@ fn test_sql_join() {
             }
             // 检查Product E
             if let Ok(product_value) = row.get(1) {
-                if product_value.value_type == crate::DataType::VarChar || 
-                   product_value.value_type == crate::DataType::Char || 
-                   product_value.value_type == crate::DataType::Text {
+                if product_value.value_type == crate::DataType::VarChar
+                    || product_value.value_type == crate::DataType::Char
+                    || product_value.value_type == crate::DataType::Text
+                {
                     unsafe {
                         let product_str = core::str::from_utf8(&product_value.value.string)
                             .unwrap_or("")
@@ -895,7 +724,10 @@ fn test_sql_join() {
         }
     }
     assert!(has_david_full, "FULL JOIN应该包含没有订单的用户David");
-    assert!(has_orphan_order_full, "FULL JOIN应该包含没有对应用户的订单Product E");
+    assert!(
+        has_orphan_order_full,
+        "FULL JOIN应该包含没有对应用户的订单Product E"
+    );
 
     // 测试JOIN带WHERE条件
     println!("=== 测试JOIN带WHERE条件 ===");
@@ -933,20 +765,7 @@ fn test_sql_join() {
 fn test_sql_distinct() {
     println!("=== 测试SQL DISTINCT语句 ===");
 
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -1025,20 +844,7 @@ fn test_sql_distinct() {
 #[test]
 #[serial]
 fn test_sql_aliases() {
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -1077,20 +883,7 @@ fn test_sql_aliases() {
 #[test]
 #[serial]
 fn test_sql_functions() {
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -1164,20 +957,7 @@ fn test_sql_functions() {
 #[test]
 #[serial]
 fn test_sql_statistical_functions() {
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -1227,20 +1007,7 @@ fn test_sql_statistical_functions() {
 #[test]
 #[serial]
 fn test_sql_aggregate_functions() {
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -1294,20 +1061,7 @@ fn test_sql_aggregate_functions() {
 #[test]
 #[serial]
 fn test_sql_group_by() {
-    // 使用堆内存缓冲区，确保测试之间的隔离
-    let mut db_memory = vec![0u8; 1048576]; // 1MB内存缓冲区，足够MVCC使用
-
-    // 初始化平台抽象层
-    remdb::platform::init_platform(&TEST_PLATFORM);
-
-    // 初始化内存分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len())
-            .unwrap();
-    }
-
-    // 重置全局数据库实例，确保测试之间的隔离
-    remdb::reset_global_db();
+    let _db_memory = setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
