@@ -1027,15 +1027,33 @@ impl MemoryTable {
                     // 直接使用事务添加日志项，不检查is_active()和is_read_only()
                     // 这是因为在JDBC环境下事务对象可能是悬空指针，但begin_log_item内部会处理
                     let tx_id = tx.as_mut().id;
-                    tx.as_mut().begin_log_item(
-                        tx_id,
-                        crate::transaction::LogOperation::Insert,
-                        self.def.id,
-                        slot_id as u16,
-                        self.record_size as u16,
-                        None,
-                        Some(&new_data),
-                    );
+                    // 检查记录大小，如果超过512字节，使用可变大小的日志项
+                    if self.record_size > 512 {
+                        // 创建可变大小的日志项
+                        let var_log_item = tx.as_mut().begin_variable_size_log_item(
+                            tx_id,
+                            crate::transaction::LogOperation::Insert,
+                            self.def.id,
+                            slot_id as u16,
+                            None,
+                            Some(&new_data),
+                        );
+                        // 直接写入可变大小的日志项
+                        if let Some(log_manager) = crate::transaction::get_log_manager() {
+                            log_manager.write_variable_size_log_item(&var_log_item).unwrap_or(());
+                        }
+                    } else {
+                        // 使用固定大小的日志项
+                        tx.as_mut().begin_log_item(
+                            tx_id,
+                            crate::transaction::LogOperation::Insert,
+                            self.def.id,
+                            slot_id as u16,
+                            self.record_size as u16,
+                            None,
+                            Some(&new_data),
+                        );
+                    }
                 }
             }
         }

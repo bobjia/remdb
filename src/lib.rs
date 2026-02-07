@@ -2041,7 +2041,8 @@ impl DdlExecutor for RemDb {
                         let actual_copy_len = copy_end - offset;
                         log_data[offset..copy_end]
                             .copy_from_slice(&field_name_bytes[..actual_copy_len]);
-                        offset += 32; // 固定32字节字段名空间
+                        // 固定32字节字段名空间，但要确保不超过缓冲区边界
+                        offset = core::cmp::min(offset + 32, log_data.len());
 
                         // 检查数据类型写入边界
                         if offset < log_data.len() {
@@ -2053,36 +2054,48 @@ impl DdlExecutor for RemDb {
                         }
 
                         // 写入字段约束
-                        let mut constraints = 0u8;
-                        if field.primary_key {
-                            constraints |= 0b0001;
+                        if offset < log_data.len() {
+                            let mut constraints = 0u8;
+                            if field.primary_key {
+                                constraints |= 0b0001;
+                            }
+                            if field.not_null {
+                                constraints |= 0b0010;
+                            }
+                            if field.unique {
+                                constraints |= 0b0100;
+                            }
+                            if field.auto_increment {
+                                constraints |= 0b1000;
+                            }
+                            log_data[offset] = constraints;
+                            offset += 1;
+                        } else {
+                            break;
                         }
-                        if field.not_null {
-                            constraints |= 0b0010;
-                        }
-                        if field.unique {
-                            constraints |= 0b0100;
-                        }
-                        if field.auto_increment {
-                            constraints |= 0b1000;
-                        }
-                        log_data[offset] = constraints;
-                        offset += 1;
 
                         // 写入向量维度（如果是向量类型）
-                        let mut vector_dimension = 0u16;
-                        if field.data_type == crate::types::DataType::Vector {
-                            if let Some(metadata) = &field.vector_metadata {
-                                vector_dimension = metadata.dimension;
+                        if offset + 2 <= log_data.len() {
+                            let mut vector_dimension = 0u16;
+                            if field.data_type == crate::types::DataType::Vector {
+                                if let Some(metadata) = &field.vector_metadata {
+                                    vector_dimension = metadata.dimension;
+                                }
                             }
+                            log_data[offset..offset+2].copy_from_slice(&vector_dimension.to_le_bytes());
+                            offset += 2;
+                        } else {
+                            break;
                         }
-                        log_data[offset..offset+2].copy_from_slice(&vector_dimension.to_le_bytes());
-                        offset += 2;
 
                         // 写入默认值存在标志
-                        let has_default = field.default_value.is_some();
-                        log_data[offset] = has_default as u8;
-                        offset += 1;
+                        if offset < log_data.len() {
+                            let has_default = field.default_value.is_some();
+                            log_data[offset] = has_default as u8;
+                            offset += 1;
+                        } else {
+                            break;
+                        }
 
                     // 写入默认值（如果有）
                     if let Some(default_value) = &field.default_value {
@@ -2193,7 +2206,8 @@ impl DdlExecutor for RemDb {
                                         core::cmp::min(offset + string_len, log_data.len());
                                     let actual_str_len = str_end - offset;
                                     log_data[offset..str_end].copy_from_slice(&s[..actual_str_len]);
-                                    offset += 64; // 固定64字节字符串空间
+                                    // 固定64字节字符串空间，但要确保不超过缓冲区边界
+                                    offset = core::cmp::min(offset + 64, log_data.len());
                                 }
                             }
                             // 区间类型：8字节值 + 1字节精度 + 1字节标志 = 10字节

@@ -99,6 +99,9 @@ pub struct LogHeader {
     pub checksum: u32,
 }
 
+/// 事务日志数据块大小
+pub const LOG_DATA_BULK_SIZE: usize = 512;
+
 /// 事务日志项（固定头部部分）
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -114,9 +117,9 @@ pub struct LogItem {
     /// 新数据大小
     pub new_data_size: u16,
     /// 旧数据（用于回滚）- 固定大小，保持向后兼容性
-    pub old_data: [u8; 512],
+    pub old_data: [u8; LOG_DATA_BULK_SIZE],
     /// 新数据 - 固定大小，保持向后兼容性
-    pub new_data: [u8; 512],
+    pub new_data: [u8; LOG_DATA_BULK_SIZE],
     /// 事务ID
     pub tx_id: u32,
     /// 时间戳（微秒）
@@ -144,8 +147,8 @@ impl Default for LogItem {
             record_id: 0,
             old_data_size: 0,
             new_data_size: 0,
-            old_data: [0; 512],
-            new_data: [0; 512],
+            old_data: [0; LOG_DATA_BULK_SIZE],
+            new_data: [0; LOG_DATA_BULK_SIZE],
             tx_id: 0,
             timestamp: 0,
             checksum: 0,
@@ -1085,8 +1088,8 @@ impl LogManager {
             record_id: 0, // 检查点操作不关联特定记录
             old_data_size: 0, // 检查点操作没有数据
             new_data_size: 0, // 检查点操作没有数据
-            old_data: [0; 512],
-            new_data: [0; 512],
+            old_data: [0; LOG_DATA_BULK_SIZE],
+            new_data: [0; LOG_DATA_BULK_SIZE],
             tx_id: 0, // 检查点操作不关联特定事务
             timestamp: now,
             checksum: 0, // 后面会计算
@@ -1206,23 +1209,21 @@ impl LogManager {
         };
 
         // 遍历所有日志记录
+        let mut current_offset = core::mem::size_of::<LogHeader>() + core::mem::size_of::<LogCheckpoint>();
         for i in 0..total_records {
-            // 直接从文件中读取日志项，绕过header.record_count检查
-            let log_offset = core::mem::size_of::<LogHeader>()
-                + core::mem::size_of::<LogCheckpoint>()
-                + (i as usize) * core::mem::size_of::<LogItem>();
-
             // 定位到日志项位置
             if let Err(_) = crate::platform::file_seek(
                 handle,
-                log_offset as i64,
+                current_offset as i64,
                 crate::platform::SeekWhence::SeekSet,
             ) {
                 #[cfg(feature = "log")]
                 warn!(
                     "Failed to seek to log item {} offset {}, skipping...",
-                    i, log_offset
+                    i, current_offset
                 );
+                // 跳过一个固定大小的日志项
+                current_offset += core::mem::size_of::<LogItem>();
                 continue;
             }
 
@@ -1234,6 +1235,8 @@ impl LogManager {
                     Err(_) => {
                         #[cfg(feature = "log")]
                         warn!("Failed to read log item {}, skipping...", i);
+                        // 跳过一个固定大小的日志项
+                        current_offset += core::mem::size_of::<LogItem>();
                         continue;
                     }
                 };
@@ -1241,14 +1244,13 @@ impl LogManager {
             if read != log_bytes.len() {
                 #[cfg(feature = "log")]
                 warn!("Failed to read complete log item {} (read {} bytes, expected {}), skipping...", i, read, log_bytes.len());
+                // 跳过一个固定大小的日志项
+                current_offset += core::mem::size_of::<LogItem>();
                 continue;
             }
 
             // 将字节数组转换为LogItem头部
             let header = core::ptr::read_unaligned(log_bytes.as_ptr() as *const LogItem);
-
-            // 检查是否是可变大小日志项（通过检查old_data_size和new_data_size字段）
-            let is_variable_size = header.old_data_size > 0 || header.new_data_size > 0;
 
             let mut var_log_item = VariableSizeLogItem {
                 header,
@@ -1256,79 +1258,115 @@ impl LogManager {
                 new_data: Vec::new(),
             };
 
-            // 如果是可变大小日志项，读取数据部分
-            if is_variable_size {
-                let mut data_offset = log_offset + core::mem::size_of::<LogItem>();
+            // 尝试两种方式验证校验和：先尝试可变大小，再尝试固定大小
+            let mut checksum_valid = false;
+            let mut is_variable_size = false;
 
+            // 判断是否为真正的可变大小日志项
+            // 如果old_data_size或new_data_size为LOG_DATA_BULK_SIZE，说明数据存储在header的数组中（固定大小格式）
+            // 只有当size < LOG_DATA_BULK_SIZE时，才是真正的可变大小数据
+            let has_variable_data = (header.old_data_size > 0 && header.old_data_size < LOG_DATA_BULK_SIZE as u16)
+                || (header.new_data_size > 0 && header.new_data_size < LOG_DATA_BULK_SIZE as u16);
+
+            // 尝试作为可变大小日志项处理
+            if has_variable_data {
+                let mut data_offset = current_offset + core::mem::size_of::<LogItem>();
+                let mut read_success = true;
+                
                 // 读取旧数据
-                if header.old_data_size > 0 {
+                if header.old_data_size > 0 && header.old_data_size < LOG_DATA_BULK_SIZE as u16 {
                     if let Err(_) = crate::platform::file_seek(
                         handle,
                         data_offset as i64,
                         crate::platform::SeekWhence::SeekSet,
                     ) {
-                        #[cfg(feature = "log")]
-                        warn!("Failed to seek to old data for log item {}, skipping...", i);
-                        continue;
+                        read_success = false;
+                    } else {
+                        var_log_item.old_data.resize(header.old_data_size as usize, 0);
+                        let old_data_read = crate::platform::file_read(
+                            handle,
+                            var_log_item.old_data.as_mut_ptr(),
+                            header.old_data_size as usize,
+                        );
+                        
+                        if old_data_read.is_err() || old_data_read.unwrap() != header.old_data_size as usize {
+                            read_success = false;
+                        } else {
+                            data_offset += header.old_data_size as usize;
+                        }
                     }
-
-                    var_log_item.old_data.resize(header.old_data_size as usize, 0);
-                    let old_data_read = crate::platform::file_read(
-                        handle,
-                        var_log_item.old_data.as_mut_ptr(),
-                        header.old_data_size as usize,
-                    );
-
-                    if old_data_read.is_err() || old_data_read.unwrap() != header.old_data_size as usize {
-                        #[cfg(feature = "log")]
-                        warn!("Failed to read old data for log item {}, skipping...", i);
-                        continue;
-                    }
-
-                    data_offset += header.old_data_size as usize;
                 }
 
                 // 读取新数据
-                if header.new_data_size > 0 {
+                if read_success && header.new_data_size > 0 && header.new_data_size < LOG_DATA_BULK_SIZE as u16 {
                     if let Err(_) = crate::platform::file_seek(
                         handle,
                         data_offset as i64,
                         crate::platform::SeekWhence::SeekSet,
                     ) {
-                        #[cfg(feature = "log")]
-                        warn!("Failed to seek to new data for log item {}, skipping...", i);
-                        continue;
-                    }
-
-                    var_log_item.new_data.resize(header.new_data_size as usize, 0);
-                    let new_data_read = crate::platform::file_read(
-                        handle,
-                        var_log_item.new_data.as_mut_ptr(),
-                        header.new_data_size as usize,
-                    );
-
-                    if new_data_read.is_err() || new_data_read.unwrap() != header.new_data_size as usize {
-                        #[cfg(feature = "log")]
-                        warn!("Failed to read new data for log item {}, skipping...", i);
-                        continue;
+                        read_success = false;
+                    } else {
+                        var_log_item.new_data.resize(header.new_data_size as usize, 0);
+                        let new_data_read = crate::platform::file_read(
+                            handle,
+                            var_log_item.new_data.as_mut_ptr(),
+                            header.new_data_size as usize,
+                        );
+                        
+                        if new_data_read.is_err() || new_data_read.unwrap() != header.new_data_size as usize {
+                            read_success = false;
+                        }
                     }
                 }
-
-                // 验证校验和
-                let calculated_checksum = Transaction::calculate_variable_size_log_item_checksum(&var_log_item);
-                if header.checksum != calculated_checksum {
-                    #[cfg(feature = "log")]
-                    warn!("Invalid checksum for log item {}, skipping...", i);
-                    continue;
+                
+                // 验证可变大小日志项的校验和
+                if read_success {
+                    let calculated_checksum = Transaction::calculate_variable_size_log_item_checksum(&var_log_item);
+                    if header.checksum == calculated_checksum {
+                        checksum_valid = true;
+                        is_variable_size = true;
+                        // 更新当前偏移量
+                        current_offset += core::mem::size_of::<LogItem>()
+                            + header.old_data_size as usize
+                            + header.new_data_size as usize;
+                    }
                 }
-            } else {
-                // 固定大小日志项，验证校验和
+            }
+            
+            // 如果不是有效的可变大小日志项，尝试作为固定大小日志项处理
+            if !checksum_valid {
                 let calculated_checksum = Transaction::calculate_log_item_checksum(&header);
-                if header.checksum != calculated_checksum {
+                if header.checksum == calculated_checksum {
+                    checksum_valid = true;
+                    is_variable_size = false;
+                    
+                    // 对于固定大小格式，从header数组中复制数据到Vec
+                    if header.old_data_size > 0 {
+                        let copy_size = core::cmp::min(header.old_data_size as usize, LOG_DATA_BULK_SIZE);
+                        var_log_item.old_data.extend_from_slice(&header.old_data[..copy_size]);
+                    }
+                    if header.new_data_size > 0 {
+                        let copy_size = core::cmp::min(header.new_data_size as usize, LOG_DATA_BULK_SIZE);
+                        var_log_item.new_data.extend_from_slice(&header.new_data[..copy_size]);
+                    }
+                    
+                    // 更新当前偏移量
+                    current_offset += core::mem::size_of::<LogItem>();
+                } else {
+                    // 校验和无效，跳过此日志项
                     #[cfg(feature = "log")]
                     warn!("Invalid checksum for log item {}, skipping...", i);
+                    current_offset += core::mem::size_of::<LogItem>();
                     continue;
                 }
+            }
+            
+            // 如果校验和无效，跳过此日志项
+            if !checksum_valid {
+                #[cfg(feature = "log")]
+                warn!("Invalid checksum for log item {}, skipping...", i);
+                current_offset += core::mem::size_of::<LogItem>();
+                continue;
             }
 
             // Check if this is a valid log item by verifying multiple indicators
@@ -2328,12 +2366,13 @@ impl LogManager {
                     let record_ptr = table.get_record_ptr_mut(log_item.header.record_id as usize);
                     
                     // 复制数据到记录位置
-                    let data_size = core::cmp::min(log_item.header.new_data_size as usize, log_item.new_data.len());
-                    crate::platform::memcpy(
-                        record_ptr,
-                        log_item.new_data.as_ptr(),
-                        data_size,
-                    );
+            // 对于固定大小的日志项，最多只能复制LOG_DATA_BULK_SIZE字节的数据
+            let actual_data_size = core::cmp::min(log_item.new_data.len(), LOG_DATA_BULK_SIZE);
+            crate::platform::memcpy(
+                record_ptr,
+                log_item.new_data.as_ptr(),
+                actual_data_size,
+            );
 
                     // 检查记录是否已存在
                     if (*status_ptr).status != crate::types::RecordStatus::Used {
@@ -2968,7 +3007,19 @@ impl Transaction {
 
             // 写入日志项到日志管理器
             if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
-                log_manager.write_log_item(log_item)?;
+                // 检查数据大小，如果超过LOG_DATA_BULK_SIZE默认512字节，使用可变大小的日志项
+                if log_item.new_data_size > LOG_DATA_BULK_SIZE as u16 || log_item.old_data_size > LOG_DATA_BULK_SIZE as u16 {
+                    // 对于超过LOG_DATA_BULK_SIZE默认512字节的数据，我们无法从log_item中获取完整数据
+                    // 这是因为begin_log_item方法会将数据截断到LOG_DATA_BULK_SIZE默认512字节
+                    // 所以我们需要跳过可变大小的日志项，因为我们无法恢复完整数据
+                    #[cfg(feature = "log")]
+                    warn!("Skipping variable size log item with data size > LOG_DATA_BULK_SIZE 默认 512, data may be truncated");
+                    // 使用固定大小的日志项
+                    log_manager.write_log_item(log_item)?;
+                } else {
+                    // 使用固定大小的日志项
+                    log_manager.write_log_item(log_item)?;
+                }
             }
         }
 
@@ -2994,8 +3045,8 @@ impl Transaction {
             record_id,
             old_data_size,
             new_data_size,
-            old_data: [0; 512],
-            new_data: [0; 512],
+            old_data: [0; LOG_DATA_BULK_SIZE],
+            new_data: [0; LOG_DATA_BULK_SIZE],
             tx_id,
             timestamp: crate::platform::get_timestamp_us(),
             checksum: 0,
@@ -3047,13 +3098,13 @@ impl Transaction {
 
         // 复制旧数据（如果有）
         if let Some(data) = old_data {
-            let copy_len = core::cmp::min(data.len(), 512);
+            let copy_len = core::cmp::min(data.len(), LOG_DATA_BULK_SIZE);
             crate::platform::memcpy(log_item.old_data.as_mut_ptr(), data.as_ptr(), copy_len);
         }
 
         // 复制新数据（如果有）
         if let Some(data) = new_data {
-            let copy_len = core::cmp::min(data.len(), 512);
+            let copy_len = core::cmp::min(data.len(), LOG_DATA_BULK_SIZE);
             crate::platform::memcpy(log_item.new_data.as_mut_ptr(), data.as_ptr(), copy_len);
         }
 

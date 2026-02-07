@@ -488,6 +488,10 @@ impl HNSWIndex {
         let mut candidates = Vec::new();
         let mut results = Vec::new();
         
+        // 添加迭代限制防止无限循环
+        const MAX_ITERATIONS: usize = 10000;
+        let mut iteration_count = 0;
+        
         // 初始化
         let entry_node = entry_point.as_ref();
         let entry_vec = self.vectors.add(entry_node.vector_offset);
@@ -495,6 +499,14 @@ impl HNSWIndex {
         candidates.push((distance, entry_point));
         results.push((distance, entry_point));        
         while let Some((current_dist, current_node)) = candidates.pop() {
+            iteration_count += 1;
+            if iteration_count > MAX_ITERATIONS {
+                // 达到最大迭代次数，返回当前结果
+                #[cfg(feature = "log")]
+                crate::log::warn!("HNSW search_layer reached max iterations, graph may be malformed");
+                break;
+            }
+            
             // 更新结果列表
             if results.len() < ef || current_dist < results.last().unwrap().0 {
                 // 获取当前节点的邻居

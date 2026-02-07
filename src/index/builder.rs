@@ -183,7 +183,7 @@ impl IndexBuildThreadPool {
         for _ in 0..thread_count {
             let task_queue_clone = task_queue.clone();
             let stop = stop_flag.clone();
-            let handle = thread::spawn(move || Self::worker_loop(task_queue_clone, stop));
+            let handle = thread::Builder::new().stack_size(8 * 1024 * 1024).spawn(move || Self::worker_loop(task_queue_clone, stop)).unwrap();
             workers.push(handle);
         }
         
