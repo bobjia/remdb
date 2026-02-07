@@ -195,22 +195,109 @@ pub fn init_logger() {
 
 #[cfg(feature = "std")]
 pub fn init_logger_with_file(log_path: &str, debug_mode: bool) -> Result<(), std::io::Error> {
+    use std::fs::OpenOptions;
+    use std::sync::Mutex;
     use tracing::Level;
 
     let log_level = if debug_mode { Level::DEBUG } else { Level::INFO };
+
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)?;
+    let file = Arc::new(Mutex::new(file));
 
     let env_filter = tracing_subscriber::EnvFilter::from_default_env()
         .add_directive(format!("remdb={}", log_level).parse().unwrap())
         .add_directive(format!("remdb_server={}", log_level).parse().unwrap());
 
+    // 使用更简单的方法：为文件输出单独创建一个不带颜色的订阅者
+    // 但保持MultiWriter的实现，确保同时输出到控制台和文件
+    struct MultiWriter {
+        file: Arc<Mutex<std::fs::File>>,
+    }
+
+    impl MultiWriter {
+        fn new(file: Arc<Mutex<std::fs::File>>) -> Self {
+            Self { file }
+        }
+        
+        // 移除ANSI颜色代码和处理特殊字符的辅助方法
+        fn clean_log_output(&self, buf: &[u8]) -> Vec<u8> {
+            let s = String::from_utf8_lossy(buf);
+            let mut result = String::new();
+            let mut in_ansi = false;
+            
+            for c in s.chars() {
+                if c == '\u{1b}' {
+                    in_ansi = true;
+                } else if in_ansi {
+                    if c == 'm' {
+                        in_ansi = false;
+                    }
+                } else {
+                    // 替换µs为us，避免Unicode编码问题
+                    if c == 'µ' {
+                        result.push_str("u");
+                    } else {
+                        result.push(c);
+                    }
+                }
+            }
+            
+            result.into_bytes()
+        }
+    }
+
+    impl std::io::Write for MultiWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            // 直接写入stdout，保留颜色
+            let _ = std::io::stdout().write(buf);
+            
+            // 清理日志输出后写入文件
+            let cleaned_buf = self.clean_log_output(buf);
+            if let Ok(mut f) = self.file.lock() {
+                let _ = f.write_all(&cleaned_buf);
+            }
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            let _ = std::io::stdout().flush();
+            if let Ok(mut f) = self.file.lock() {
+                let _ = f.flush();
+            }
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for MultiWriter {
+        type Writer = Self;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    impl Clone for MultiWriter {
+        fn clone(&self) -> Self {
+            Self {
+                file: self.file.clone(),
+            }
+        }
+    }
+
+    let multi_writer = MultiWriter::new(file);
+
     tracing_subscriber::fmt()
-        .with_writer(std::io::stdout)
-        .with_ansi(true)
+        .with_writer(multi_writer)
+        .with_ansi(false)
         .with_level(true)
         .with_target(true)
         .with_file(true)
         .with_line_number(true)
         .with_env_filter(env_filter)
+        .compact()
         .init();
 
     Ok(())
