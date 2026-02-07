@@ -600,7 +600,7 @@ impl ReplicationManager {
                                 crate::platform::memcpy(
                                     record_ptr,
                                     log_item.new_data.as_ptr(),
-                                    log_item.data_size as usize,
+                                    log_item.new_data_size as usize,
                                 );
 
                                 // 检查记录是否已存在
@@ -757,7 +757,7 @@ impl ReplicationManager {
                                             crate::platform::memcpy(
                                                 record_ptr,
                                                 log_item.new_data.as_ptr(),
-                                                log_item.data_size as usize,
+                                                log_item.new_data_size as usize,
                                             );
 
                                             (*status_ptr).version += 1;

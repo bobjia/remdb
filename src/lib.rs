@@ -333,7 +333,8 @@ impl DatabaseManager {
                     op_type: crate::transaction::LogOperation::CreateDatabase,
                     table_id: 0,  // 数据库操作不关联特定表
                     record_id: 0, // 数据库操作不关联特定记录
-                    data_size: (name.len() + 1) as u16, // 包含长度字节
+                    old_data_size: 0, // 数据库操作没有旧数据
+                    new_data_size: (name.len() + 1) as u16, // 包含长度字节
                     old_data: [0; 512],
                     new_data: new_data,
                     tx_id: 0, // 数据库操作不关联特定事务
@@ -875,7 +876,8 @@ impl RemDb {
                     op_type: crate::transaction::LogOperation::EnterLowPowerMode,
                     table_id: 0, // 低功耗模式是全局操作，不需要特定表ID
                     record_id: 0,
-                    data_size: 0,
+                    old_data_size: 0,
+                    new_data_size: 0,
                     old_data: [0; 512],
                     new_data: [0; 512],
                     tx_id: 0,
@@ -964,7 +966,8 @@ impl RemDb {
                     op_type: crate::transaction::LogOperation::ExitLowPowerMode,
                     table_id: 0, // 低功耗模式是全局操作，不需要特定表ID
                     record_id: 0,
-                    data_size: 0,
+                    old_data_size: 0,
+                    new_data_size: 0,
                     old_data: [0; 512],
                     new_data: [0; 512],
                     tx_id: 0,
@@ -1757,7 +1760,8 @@ impl RemDb {
                     op_type: crate::transaction::LogOperation::DropTable,
                     table_id: table_index as u8,
                     record_id: 0,
-                    data_size: (name_len + 1) as u16,
+                    old_data_size: 0,
+                    new_data_size: (name_len + 1) as u16,
                     old_data: [0; 512],
                     new_data: log_data,
                     tx_id: 0,
@@ -2228,7 +2232,8 @@ impl DdlExecutor for RemDb {
                     op_type: crate::transaction::LogOperation::CreateTable,
                     table_id: table_def.id,
                     record_id: 0,
-                    data_size: 512,
+                    old_data_size: 512,
+                    new_data_size: 512,
                     old_data: [0; 512],
                     new_data: log_data,
                     tx_id: 0,
@@ -2400,7 +2405,8 @@ impl DdlExecutor for RemDb {
                     op_type: crate::transaction::LogOperation::CreateIndex,
                     table_id: table.def.id,
                     record_id: 0,
-                    data_size: 512,
+                    old_data_size: 512,
+                    new_data_size: 512,
                     old_data: [0; 512],
                     new_data: log_data,
                     tx_id: 0,
@@ -2981,7 +2987,8 @@ impl DdlExecutor for RemDb {
                     op_type: crate::transaction::LogOperation::AlterTable,
                     table_id: table_index as u8,
                     record_id: 0, // ALTER TABLE操作不涉及特定记录
-                    data_size: data_size as u16,
+                    old_data_size: 0,
+                    new_data_size: data_size as u16,
                     old_data: [0; 512],
                     new_data: log_data,
                     tx_id: 0,
