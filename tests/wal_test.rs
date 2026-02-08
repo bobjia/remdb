@@ -4,7 +4,8 @@ use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig,
 #[cfg(feature = "ha")]
 use remdb::ha::{HARole, ReplicationMode};
 use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
-use remdb::transaction::{LogItem, LogManager, LogOperation};
+use remdb::transaction::{LogItem, LogManager, LogOperation, VariableSizeLogItem};
+use serial_test::serial;
 
 mod common;
 use common::{setup_test_db, setup_test_db_with_posix};
@@ -23,6 +24,7 @@ fn get_test_wal_path(name: &str) -> &'static str {
 
 // 测试 WAL 功能的测试用例
 #[test]
+#[serial]
 fn test_wal_log_manager_creation() {
     let _db_memory = setup_test_db_with_posix();
 
@@ -72,6 +74,7 @@ fn test_wal_log_manager_creation() {
 }
 
 #[test]
+#[serial]
 fn test_wal_log_write_sync_mode() {
     let _db_memory = setup_test_db_with_posix();
 
@@ -116,30 +119,31 @@ fn test_wal_log_write_sync_mode() {
         let log_path = &get_test_wal_path("test_wal_sync.log");
         let mut log_manager = LogManager::new(&config).unwrap();
 
-        // 创建测试日志项
         let mut new_data = [0u8; 512];
         new_data[0..8].copy_from_slice(&[0, 1, 2, 3, 4, 5, 6, 7]);
 
-        let log_item = LogItem {
-            op_type: LogOperation::Insert,
-            table_id: 0,
-            record_id: 1,
-            old_data_size: 0,
-            new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data,
-            tx_id: 1,
-            timestamp: 1234567890,
-            checksum: 0, // 会在写入时计算
+        let var_log_item = VariableSizeLogItem {
+            header: LogItem {
+                op_type: LogOperation::Insert,
+                table_id: 0,
+                record_id: 1,
+                old_data_size: 0,
+                new_data_size: 8,
+                tx_id: 1,
+                timestamp: 1234567890,
+                checksum: 0,
+            },
+            old_data: Vec::new(),
+            new_data: new_data[0..8].to_vec(),
         };
 
-        // 写入日志项（同步模式）
-        let result = log_manager.write_log_item(&log_item);
+        let result = log_manager.write_variable_size_log_item(&var_log_item);
         assert!(result.is_ok());
     }
 }
 
 #[test]
+#[serial]
 fn test_wal_log_write_async_mode() {
     let _db_memory = setup_test_db_with_posix();
 
@@ -184,37 +188,34 @@ fn test_wal_log_write_async_mode() {
         let log_path = &get_test_wal_path("test_wal_async.log");
         let mut log_manager = LogManager::new(&config).unwrap();
 
-        // 创建测试日志项
-        let mut old_data = [0u8; 512];
-        old_data[0..8].copy_from_slice(&[0, 1, 2, 3, 4, 5, 6, 7]);
+        let old_data: [u8; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
+        let new_data: [u8; 8] = [7, 6, 5, 4, 3, 2, 1, 0];
 
-        let mut new_data = [0u8; 512];
-        new_data[0..8].copy_from_slice(&[7, 6, 5, 4, 3, 2, 1, 0]);
-
-        let log_item = LogItem {
-            op_type: LogOperation::Update,
-            table_id: 0,
-            record_id: 1,
-            old_data_size: 8,
-            new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data,
-            tx_id: 1,
-            timestamp: 1234567890,
-            checksum: 0, // 会在写入时计算
+        let var_log_item = VariableSizeLogItem {
+            header: LogItem {
+                op_type: LogOperation::Update,
+                table_id: 0,
+                record_id: 1,
+                old_data_size: 8,
+                new_data_size: 8,
+                tx_id: 1,
+                timestamp: 1234567890,
+                checksum: 0,
+            },
+            old_data: old_data.to_vec(),
+            new_data: new_data.to_vec(),
         };
 
-        // 写入日志项（异步模式，应该进入缓冲区）
-        let result = log_manager.write_log_item(&log_item);
+        let result = log_manager.write_variable_size_log_item(&var_log_item);
         assert!(result.is_ok());
 
-        // 手动刷新缓冲区
         let result = log_manager.flush_buffer();
         assert!(result.is_ok());
     }
 }
 
 #[test]
+#[serial]
 fn test_wal_checkpoint_mechanism() {
     let _db_memory = setup_test_db_with_posix();
 
@@ -265,17 +266,12 @@ fn test_wal_checkpoint_mechanism() {
 
         // 写入一些日志项
         for i in 0..5 {
-            let mut new_data = [0u8; 512];
-            new_data[0] = i as u8;
-
             let log_item = LogItem {
                 op_type: LogOperation::Insert,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 8,
                 new_data_size: 8,
-                old_data: [0u8; 512],
-                new_data,
                 tx_id: 1,
                 timestamp: 1234567890u64 + i as u64,
                 checksum: 0,
@@ -291,6 +287,7 @@ fn test_wal_checkpoint_mechanism() {
 }
 
 #[test]
+#[serial]
 fn test_wal_log_preallocation() {
     let _db_memory = setup_test_db_with_posix();
 
@@ -342,6 +339,7 @@ fn test_wal_log_preallocation() {
 }
 
 #[test]
+#[serial]
 fn test_wal_different_log_modes() {
     let _db_memory = setup_test_db_with_posix();
 
@@ -395,27 +393,27 @@ fn test_wal_different_log_modes() {
         unsafe {
             let mut log_manager = LogManager::new(&config).unwrap();
 
-            // 写入测试日志项
             let mut new_data = [0u8; 512];
             new_data[0..8].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
 
-            let log_item = LogItem {
-                op_type: LogOperation::Insert,
-                table_id: 0,
-                record_id: 1,
-                old_data_size: 8,
-                new_data_size: 8,
-                old_data: [0u8; 512],
-                new_data,
-                tx_id: 1,
-                timestamp: 1234567890,
-                checksum: 0,
+            let var_log_item = VariableSizeLogItem {
+                header: LogItem {
+                    op_type: LogOperation::Insert,
+                    table_id: 0,
+                    record_id: 1,
+                    old_data_size: 0,
+                    new_data_size: 8,
+                    tx_id: 1,
+                    timestamp: 1234567890,
+                    checksum: 0,
+                },
+                old_data: Vec::new(),
+                new_data: new_data[0..8].to_vec(),
             };
 
-            let result = log_manager.write_log_item(&log_item);
+            let result = log_manager.write_variable_size_log_item(&var_log_item);
             assert!(result.is_ok());
 
-            // 对于异步模式，手动刷新
             if mode == LogMode::Async {
                 let result = log_manager.flush_buffer();
                 assert!(result.is_ok());
@@ -425,6 +423,7 @@ fn test_wal_different_log_modes() {
 }
 
 #[test]
+#[serial]
 fn test_wal_checkpoint_comprehensive() {
     let _db_memory = setup_test_db_with_posix();
 
@@ -477,18 +476,12 @@ fn test_wal_checkpoint_comprehensive() {
 
         // 写入第一组日志并触发checkpoint
         for i in 0..3 {
-            let mut new_data = [0u8; 512];
-            new_data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-            new_data[4..8].copy_from_slice(&(((i + 1) * 100) as u32).to_le_bytes());
-
             let log_item = LogItem {
                 op_type: LogOperation::Insert,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 8,
                 new_data_size: 8,
-                old_data: [0u8; 512],
-                new_data,
                 tx_id: 1,
                 timestamp: 1234567890u64 + i as u64,
                 checksum: 0,
@@ -503,18 +496,12 @@ fn test_wal_checkpoint_comprehensive() {
 
         // 写入第二组日志
         for i in 3..6 {
-            let mut new_data = [0u8; 512];
-            new_data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-            new_data[4..8].copy_from_slice(&(((i + 1) * 100) as u32).to_le_bytes());
-
             let log_item = LogItem {
                 op_type: LogOperation::Insert,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 8,
                 new_data_size: 8,
-                old_data: [0u8; 512],
-                new_data,
                 tx_id: 2,
                 timestamp: 1234567900 + i,
                 checksum: 0,
@@ -529,18 +516,12 @@ fn test_wal_checkpoint_comprehensive() {
 
         // 写入第三组日志
         for i in 6..9 {
-            let mut new_data = [0u8; 512];
-            new_data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-            new_data[4..8].copy_from_slice(&(((i + 1) * 100) as u32).to_le_bytes());
-
             let log_item = LogItem {
                 op_type: LogOperation::Insert,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 8,
                 new_data_size: 8,
-                old_data: [0u8; 512],
-                new_data,
                 tx_id: 3,
                 timestamp: 1234567910u64 + i as u64,
                 checksum: 0,
@@ -557,18 +538,12 @@ fn test_wal_checkpoint_comprehensive() {
         println!("\n3. 测试checkpoint与恢复的交互...");
 
         // 写入一些未提交的事务日志
-        let mut update_data = [0u8; 512];
-        update_data[0..4].copy_from_slice(&1u32.to_le_bytes());
-        update_data[4..8].copy_from_slice(&999u32.to_le_bytes());
-
         let update_log = LogItem {
             op_type: LogOperation::Update,
             table_id: 0,
             record_id: 1,
             old_data_size: 8,
             new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data: update_data,
             tx_id: 4,
             timestamp: 1234567920,
             checksum: 0,
@@ -589,18 +564,12 @@ fn test_wal_checkpoint_comprehensive() {
         println!("\n4. 验证恢复后操作...");
 
         // 写入新的日志项
-        let mut new_data = [0u8; 512];
-        new_data[0..4].copy_from_slice(&10u32.to_le_bytes());
-        new_data[4..8].copy_from_slice(&1100u32.to_le_bytes());
-
         let new_log = LogItem {
             op_type: LogOperation::Insert,
             table_id: 0,
             record_id: 10,
             old_data_size: 8,
             new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data,
             tx_id: 5,
             timestamp: 1234567930,
             checksum: 0,
@@ -656,17 +625,12 @@ fn test_wal_checkpoint_comprehensive() {
 
         // 写入日志并触发checkpoint
         for i in 0..3 {
-            let mut data = [0u8; 512];
-            data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-
             let log_item = LogItem {
                 op_type: LogOperation::Insert,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 0,
                 new_data_size: 4,
-                old_data: [0u8; 512],
-                new_data: data,
                 tx_id: 1,
                 timestamp: 1234567890 + i,
                 checksum: 0,
@@ -688,6 +652,7 @@ fn test_wal_checkpoint_comprehensive() {
 }
 
 #[test]
+#[serial]
 fn test_wal_recovery_flow() {
     let _db_memory = setup_test_db_with_posix();
 
@@ -740,18 +705,12 @@ fn test_wal_recovery_flow() {
         println!("=== 写入初始数据日志 ===");
 
         // 写入第一条日志（插入操作）
-        let mut initial_data1 = [0u8; 512];
-        initial_data1[0..4].copy_from_slice(&1u32.to_le_bytes()); // id: 1
-        initial_data1[4..8].copy_from_slice(&100u32.to_le_bytes()); // value: 100
-
         let log_item1 = LogItem {
             op_type: LogOperation::Insert,
             table_id: 0,
             record_id: 1,
             old_data_size: 0,
             new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data: initial_data1,
             tx_id: 1,
             timestamp: 1234567890,
             checksum: 0,
@@ -761,18 +720,12 @@ fn test_wal_recovery_flow() {
         println!("写入日志1: 插入记录 id=1, value=100");
 
         // 写入第二条日志（插入操作）
-        let mut initial_data2 = [0u8; 512];
-        initial_data2[0..4].copy_from_slice(&2u32.to_le_bytes()); // id: 2
-        initial_data2[4..8].copy_from_slice(&200u32.to_le_bytes()); // value: 200
-
         let log_item2 = LogItem {
             op_type: LogOperation::Insert,
             table_id: 0,
             record_id: 2,
             old_data_size: 0,
             new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data: initial_data2,
             tx_id: 1,
             timestamp: 1234567891,
             checksum: 0,
@@ -789,8 +742,6 @@ fn test_wal_recovery_flow() {
             record_id: 0,
             old_data_size: 0,
             new_data_size: 0,
-            old_data: [0u8; 512],
-            new_data: [0u8; 512],
             tx_id: 0,
             timestamp: 1234567900,
             checksum: 0,
@@ -803,22 +754,12 @@ fn test_wal_recovery_flow() {
         println!("=== 写入检查点后的数据日志 ===");
 
         // 更新操作日志
-        let mut update_old_data = [0u8; 512];
-        update_old_data[0..4].copy_from_slice(&1u32.to_le_bytes()); // id: 1
-        update_old_data[4..8].copy_from_slice(&100u32.to_le_bytes()); // old value: 100
-
-        let mut update_new_data = [0u8; 512];
-        update_new_data[0..4].copy_from_slice(&1u32.to_le_bytes()); // id: 1
-        update_new_data[4..8].copy_from_slice(&150u32.to_le_bytes()); // new value: 150
-
         let update_log = LogItem {
             op_type: LogOperation::Update,
             table_id: 0,
             record_id: 1,
             old_data_size: 8,
             new_data_size: 8,
-            old_data: update_old_data,
-            new_data: update_new_data,
             tx_id: 2,
             timestamp: 1234567910,
             checksum: 0,
@@ -828,18 +769,12 @@ fn test_wal_recovery_flow() {
         println!("写入日志3: 更新记录 id=1, value=150");
 
         // 新插入操作日志
-        let mut new_insert_data = [0u8; 512];
-        new_insert_data[0..4].copy_from_slice(&3u32.to_le_bytes()); // id: 3
-        new_insert_data[4..8].copy_from_slice(&300u32.to_le_bytes()); // value: 300
-
         let insert_log = LogItem {
             op_type: LogOperation::Insert,
             table_id: 0,
             record_id: 3,
             old_data_size: 0,
             new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data: new_insert_data,
             tx_id: 2,
             timestamp: 1234567920,
             checksum: 0,
@@ -855,8 +790,6 @@ fn test_wal_recovery_flow() {
             record_id: 0,
             old_data_size: 0,
             new_data_size: 0,
-            old_data: [0u8; 512],
-            new_data: [0u8; 512],
             tx_id: 2,
             timestamp: 1234567930,
             checksum: 0,
@@ -883,18 +816,12 @@ fn test_wal_recovery_flow() {
         let mut final_log_manager = LogManager::new(&config).unwrap();
 
         // 测试继续写入新日志
-        let mut new_log_data = [0u8; 512];
-        new_log_data[0..4].copy_from_slice(&4u32.to_le_bytes()); // id: 4
-        new_log_data[4..8].copy_from_slice(&400u32.to_le_bytes()); // value: 400
-
         let new_log = LogItem {
             op_type: LogOperation::Insert,
             table_id: 0,
             record_id: 4,
             old_data_size: 0,
             new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data: new_log_data,
             tx_id: 3,
             timestamp: 1234567940,
             checksum: 0,
@@ -925,6 +852,7 @@ fn test_wal_recovery_flow() {
 }
 
 #[test]
+#[serial]
 fn test_wal_checkpoint_with_recovery() {
     let _db_memory = setup_test_db_with_posix();
 
@@ -977,18 +905,12 @@ fn test_wal_checkpoint_with_recovery() {
 
         // 写入10条插入日志
         for i in 0..10 {
-            let mut new_data = [0u8; 512];
-            new_data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-            new_data[4..8].copy_from_slice(&((i + 1) * 100 as u32).to_le_bytes());
-
             let log_item = LogItem {
                 op_type: LogOperation::Insert,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 0,
                 new_data_size: 8,
-                old_data: [0u8; 512],
-                new_data,
                 tx_id: 1,
                 timestamp: 1234567890u64 + i as u64,
                 checksum: 0,
@@ -1006,8 +928,6 @@ fn test_wal_checkpoint_with_recovery() {
             record_id: 0,
             old_data_size: 0,
             new_data_size: 0,
-            old_data: [0u8; 512],
-            new_data: [0u8; 512],
             tx_id: 0,
             timestamp: 1234567900,
             checksum: 0,
@@ -1021,22 +941,12 @@ fn test_wal_checkpoint_with_recovery() {
 
         // 更新前5条记录
         for i in 0..5 {
-            let mut old_data = [0u8; 512];
-            old_data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-            old_data[4..8].copy_from_slice(&((i + 1) * 100 as u32).to_le_bytes());
-
-            let mut new_data = [0u8; 512];
-            new_data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-            new_data[4..8].copy_from_slice(&((i + 1) * 200 as u32).to_le_bytes()); // 将值翻倍
-
             let log_item = LogItem {
                 op_type: LogOperation::Update,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 8,
                 new_data_size: 8,
-                old_data,
-                new_data,
                 tx_id: 2,
                 timestamp: 1234567910u64 + i as u64,
                 checksum: 0,
@@ -1054,8 +964,6 @@ fn test_wal_checkpoint_with_recovery() {
             record_id: 0,
             old_data_size: 0,
             new_data_size: 0,
-            old_data: [0u8; 512],
-            new_data: [0u8; 512],
             tx_id: 0,
             timestamp: 1234567920,
             checksum: 0,
@@ -1069,18 +977,12 @@ fn test_wal_checkpoint_with_recovery() {
 
         // 插入5条新记录
         for i in 10..15 {
-            let mut new_data = [0u8; 512];
-            new_data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-            new_data[4..8].copy_from_slice(&((i + 1) * 50 as u32).to_le_bytes());
-
             let log_item = LogItem {
                 op_type: LogOperation::Insert,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 0,
                 new_data_size: 8,
-                old_data: [0u8; 512],
-                new_data,
                 tx_id: 3,
                 timestamp: 1234567930u64 + i as u64,
                 checksum: 0,
@@ -1091,18 +993,12 @@ fn test_wal_checkpoint_with_recovery() {
 
         // 删除2条记录
         for i in 0..2 {
-            let mut old_data = [0u8; 512];
-            old_data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-            old_data[4..8].copy_from_slice(&((i + 1) * 200 as u32).to_le_bytes());
-
             let log_item = LogItem {
                 op_type: LogOperation::Delete,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 8,
                 new_data_size: 8,
-                old_data,
-                new_data: [0u8; 512],
                 tx_id: 3,
                 timestamp: 1234567940u64 + i as u64,
                 checksum: 0,
@@ -1116,18 +1012,12 @@ fn test_wal_checkpoint_with_recovery() {
         // 步骤7: 写入部分事务日志但不提交
         println!("\n5. 写入未提交事务日志...");
 
-        let mut update_data = [0u8; 512];
-        update_data[0..4].copy_from_slice(&5u32.to_le_bytes());
-        update_data[4..8].copy_from_slice(&1000u32.to_le_bytes());
-
         let update_log = LogItem {
             op_type: LogOperation::Update,
             table_id: 0,
             record_id: 5,
             old_data_size: 8,
             new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data: update_data,
             tx_id: 4,
             timestamp: 1234567950,
             checksum: 0,
@@ -1155,18 +1045,12 @@ fn test_wal_checkpoint_with_recovery() {
         println!("   验证恢复后的系统可以继续写入日志...");
 
         // 写入一条新的日志记录
-        let mut new_data = [0u8; 512];
-        new_data[0..4].copy_from_slice(&(100u32).to_le_bytes());
-        new_data[4..8].copy_from_slice(&(2000u32).to_le_bytes());
-
         let new_log_item = LogItem {
             op_type: LogOperation::Insert,
             table_id: 0,
             record_id: 15,
             old_data_size: 0,
             new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data,
             tx_id: 5,
             timestamp: 1234567970u64,
             checksum: 0,
@@ -1188,18 +1072,12 @@ fn test_wal_checkpoint_with_recovery() {
 
         // 连续写入多条日志，验证系统稳定性
         for i in 16..20 {
-            let mut data = [0u8; 512];
-            data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-            data[4..8].copy_from_slice(&(i * 200u32).to_le_bytes());
-
             let log_item = LogItem {
                 op_type: LogOperation::Insert,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 0,
                 new_data_size: 8,
-                old_data: [0u8; 512],
-                new_data: data,
                 tx_id: 6,
                 timestamp: 1234567980u64 + i as u64,
                 checksum: 0,
@@ -1218,18 +1096,12 @@ fn test_wal_checkpoint_with_recovery() {
         println!("\n9. 验证恢复后操作...");
 
         // 写入新的日志项，验证恢复后系统正常
-        let mut new_data = [0u8; 512];
-        new_data[0..4].copy_from_slice(&15u32.to_le_bytes());
-        new_data[4..8].copy_from_slice(&800u32.to_le_bytes());
-
         let new_log = LogItem {
             op_type: LogOperation::Insert,
             table_id: 0,
             record_id: 15,
             old_data_size: 0,
             new_data_size: 8,
-            old_data: [0u8; 512],
-            new_data,
             tx_id: 5,
             timestamp: 1234567960,
             checksum: 0,
@@ -1249,18 +1121,12 @@ fn test_wal_checkpoint_with_recovery() {
 
         // 连续写入多条日志，验证系统稳定性
         for i in 16..20 {
-            let mut data = [0u8; 512];
-            data[0..4].copy_from_slice(&(i as u32).to_le_bytes());
-            data[4..8].copy_from_slice(&(i * 100 as u32).to_le_bytes());
-
             let log_item = LogItem {
                 op_type: LogOperation::Insert,
                 table_id: 0,
                 record_id: i as u16,
                 old_data_size: 0,
                 new_data_size: 8,
-                old_data: [0u8; 512],
-                new_data: data,
                 tx_id: 6,
                 timestamp: 1234567970u64 + i as u64,
                 checksum: 0,

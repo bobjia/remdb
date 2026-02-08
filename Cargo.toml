@@ -77,6 +77,7 @@ panic = "unwind"         # 开发模式也使用unwind，以便调试
 # Test settings have been moved to tool.cargo.test in newer Cargo versions
 [tool.cargo.test]
 test-threads = 1
+stack-size = 16777216  # 16MB stack size for tests
 
 [build-dependencies]
 cc = "1.0"

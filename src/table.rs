@@ -1024,35 +1024,17 @@ impl MemoryTable {
             // 检查当前事务是否有效，避免访问悬空指针
             unsafe {
                 if let Some(mut tx) = crate::transaction::get_current_tx() {
-                    // 直接使用事务添加日志项，不检查is_active()和is_read_only()
-                    // 这是因为在JDBC环境下事务对象可能是悬空指针，但begin_log_item内部会处理
                     let tx_id = tx.as_mut().id;
-                    // 检查记录大小，如果超过512字节，使用可变大小的日志项
-                    if self.record_size > 512 {
-                        // 创建可变大小的日志项
-                        let var_log_item = tx.as_mut().begin_variable_size_log_item(
-                            tx_id,
-                            crate::transaction::LogOperation::Insert,
-                            self.def.id,
-                            slot_id as u16,
-                            None,
-                            Some(&new_data),
-                        );
-                        // 直接写入可变大小的日志项
-                        if let Some(log_manager) = crate::transaction::get_log_manager() {
-                            log_manager.write_variable_size_log_item(&var_log_item).unwrap_or(());
-                        }
-                    } else {
-                        // 使用固定大小的日志项
-                        tx.as_mut().begin_log_item(
-                            tx_id,
-                            crate::transaction::LogOperation::Insert,
-                            self.def.id,
-                            slot_id as u16,
-                            self.record_size as u16,
-                            None,
-                            Some(&new_data),
-                        );
+                    let var_log_item = tx.as_mut().begin_variable_size_log_item(
+                        tx_id,
+                        crate::transaction::LogOperation::Insert,
+                        self.def.id,
+                        slot_id as u16,
+                        None,
+                        Some(&new_data),
+                    );
+                    if let Some(log_manager) = crate::transaction::get_log_manager() {
+                        log_manager.write_variable_size_log_item(&var_log_item).unwrap_or(());
                     }
                 }
             }
@@ -1191,19 +1173,19 @@ impl MemoryTable {
 
             // 检查当前事务是否有效，避免访问悬空指针
             if let Some(mut tx) = crate::transaction::get_current_tx() {
-                // 直接使用事务添加日志项，不检查is_active()和is_read_only()
-                // 这是因为在JDBC环境下事务对象可能是悬空指针，但begin_log_item内部会处理
                 unsafe {
                     let tx_id = tx.as_mut().id;
-                    tx.as_mut().begin_log_item(
+                    let var_log_item = tx.as_mut().begin_variable_size_log_item(
                         tx_id,
                         crate::transaction::LogOperation::Update,
                         self.def.id,
                         id as u16,
-                        self.record_size as u16,
                         Some(&old_data),
                         Some(&new_data),
                     );
+                    if let Some(log_manager) = crate::transaction::get_log_manager() {
+                        log_manager.write_variable_size_log_item(&var_log_item).unwrap_or(());
+                    }
                 }
             }
         }
@@ -1235,29 +1217,26 @@ impl MemoryTable {
             return Err(RemDbError::RecordNotFound);
         }
 
-        // 记录日志（如果有活跃事务）
         if crate::transaction::has_active_tx() {
-            // 保存旧数据
             let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
             let mut old_data = Vec::with_capacity(self.record_size);
             old_data.resize(self.record_size, 0);
             memcpy(old_data.as_mut_ptr(), record_ptr, self.record_size);
 
-            // 检查当前事务是否有效，避免访问悬空指针
             if let Some(mut tx) = crate::transaction::get_current_tx() {
-                // 直接使用事务添加日志项，不检查is_active()和is_read_only()
-                // 这是因为在JDBC环境下事务对象可能是悬空指针，但begin_log_item内部会处理
                 unsafe {
                     let tx_id = tx.as_mut().id;
-                    tx.as_mut().begin_log_item(
+                    let var_log_item = tx.as_mut().begin_variable_size_log_item(
                         tx_id,
                         crate::transaction::LogOperation::Delete,
                         self.def.id,
                         id as u16,
-                        self.record_size as u16,
                         Some(&old_data),
                         None,
                     );
+                    if let Some(log_manager) = crate::transaction::get_log_manager() {
+                        log_manager.write_variable_size_log_item(&var_log_item).unwrap_or(());
+                    }
                 }
             }
         }
@@ -1887,21 +1866,21 @@ impl MemoryTable {
             if let Some(mut tx) = current_tx {
                 let tx_mut = tx.as_mut();
                 if tx_mut.is_active() && !tx_mut.is_read_only() {
-                    // 保存新数据
                     let mut new_data = Vec::with_capacity(self.record_size);
                     new_data.resize(self.record_size, 0);
                     memcpy(new_data.as_mut_ptr(), src_ptr, self.record_size);
 
-                    // 添加日志项
-                    tx_mut.begin_log_item(
+                    let var_log_item = tx_mut.begin_variable_size_log_item(
                         tx_mut.id,
                         crate::transaction::LogOperation::Insert,
                         self.def.id,
                         slot_id as u16,
-                        self.record_size as u16,
                         None,
                         Some(&new_data),
-                    ); // begin_log_item返回Option<&mut LogItem>，这里不需要处理返回值
+                    );
+                    if let Some(log_manager) = crate::transaction::get_log_manager() {
+                        log_manager.write_variable_size_log_item(&var_log_item).unwrap_or(());
+                    }
                 }
             }
 
@@ -1999,21 +1978,21 @@ impl MemoryTable {
             if let Some(mut tx) = current_tx {
                 let tx_mut = tx.as_mut();
                 if tx_mut.is_active() && !tx_mut.is_read_only() {
-                    // 保存新数据
                     let mut new_data = Vec::with_capacity(self.record_size);
                     new_data.resize(self.record_size, 0);
                     memcpy(new_data.as_mut_ptr(), src_ptr, self.record_size);
 
-                    // 添加日志项（使用TimeSeriesInsert操作类型）
-                    tx_mut.begin_log_item(
+                    let var_log_item = tx_mut.begin_variable_size_log_item(
                         tx_mut.id,
                         crate::transaction::LogOperation::TimeSeriesInsert,
                         self.def.id,
                         slot_id as u16,
-                        self.record_size as u16,
                         None,
                         Some(&new_data),
-                    ); // begin_log_item返回Option<&mut LogItem>，这里不需要处理返回值
+                    );
+                    if let Some(log_manager) = crate::transaction::get_log_manager() {
+                        log_manager.write_variable_size_log_item(&var_log_item).unwrap_or(());
+                    }
                 }
             }
 

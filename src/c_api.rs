@@ -1155,7 +1155,7 @@ pub unsafe extern "C" fn remdb_begin_transaction(
     
     // 创建本地的事务缓冲区和日志缓冲区
     let mut tx_buffer = crate::transaction::Transaction::default();
-    let mut log_buffer = [crate::transaction::LogItem::default(); 1024];
+    let mut log_buffer = vec![crate::transaction::VariableSizeLogItem::default(); 1024];
 
     match db.begin_transaction(
         tx_type.into(),

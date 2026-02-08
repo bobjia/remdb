@@ -318,37 +318,31 @@ impl DatabaseManager {
         // 记录CreateDatabase操作的WAL日志
         unsafe {
             if let Some(log_manager) = crate::transaction::get_log_manager() {
-                // 构建日志数据：包含数据库名
-                let mut new_data = [0u8; 512];
-                new_data[0] = name.len() as u8;
-                if name.len() > 0 && name.len() <= 511 {
-                    let name_bytes = name.as_bytes();
-                    for (i, &byte) in name_bytes.iter().enumerate() {
-                        new_data[1 + i] = byte;
-                    }
-                }
+                let mut new_data = alloc::vec::Vec::new();
+                new_data.push(name.len() as u8);
+                new_data.extend_from_slice(name.as_bytes());
 
-                // 创建日志项
-                let log_item = crate::transaction::LogItem {
-                    op_type: crate::transaction::LogOperation::CreateDatabase,
-                    table_id: 0,  // 数据库操作不关联特定表
-                    record_id: 0, // 数据库操作不关联特定记录
-                    old_data_size: 0, // 数据库操作没有旧数据
-                    new_data_size: (name.len() + 1) as u16, // 包含长度字节
-                    old_data: [0; 512],
-                    new_data: new_data,
-                    tx_id: 0, // 数据库操作不关联特定事务
-                    timestamp: crate::platform::get_timestamp_us(),
-                    checksum: 0, // 后面会计算
+                let new_data_size = new_data.len() as u16;
+
+                let mut var_log_item = crate::transaction::VariableSizeLogItem {
+                    header: crate::transaction::LogItem {
+                        op_type: crate::transaction::LogOperation::CreateDatabase,
+                        table_id: 0,
+                        record_id: 0,
+                        old_data_size: 0,
+                        new_data_size,
+                        tx_id: 0,
+                        timestamp: crate::platform::get_timestamp_us(),
+                        checksum: 0,
+                    },
+                    old_data: Vec::new(),
+                    new_data,
                 };
 
-                // 计算校验和
-                let calculated_checksum = crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
-                let mut final_log_item = log_item;
-                final_log_item.checksum = calculated_checksum;
+                let calculated_checksum = crate::transaction::Transaction::calculate_variable_size_log_item_checksum(&var_log_item);
+                var_log_item.header.checksum = calculated_checksum;
 
-                // 写入日志
-                let _ = log_manager.write_log_item(&final_log_item);
+                let _ = log_manager.write_variable_size_log_item(&var_log_item);
             }
         }
 
@@ -878,8 +872,6 @@ impl RemDb {
                     record_id: 0,
                     old_data_size: 0,
                     new_data_size: 0,
-                    old_data: [0; 512],
-                    new_data: [0; 512],
                     tx_id: 0,
                     timestamp: crate::platform::get_timestamp_us(),
                     checksum: 0,
@@ -968,8 +960,6 @@ impl RemDb {
                     record_id: 0,
                     old_data_size: 0,
                     new_data_size: 0,
-                    old_data: [0; 512],
-                    new_data: [0; 512],
                     tx_id: 0,
                     timestamp: crate::platform::get_timestamp_us(),
                     checksum: 0,
@@ -998,7 +988,7 @@ impl RemDb {
         tx_type: transaction::TransactionType,
         isolation_level: transaction::IsolationLevel,
         tx_buffer: *mut transaction::Transaction,
-        log_buffer: *mut transaction::LogItem,
+        log_buffer: *mut transaction::VariableSizeLogItem,
         max_log_items: usize,
     ) -> Result<NonNull<transaction::Transaction>> {
         crate::transaction::begin(
@@ -2123,8 +2113,6 @@ impl RemDb {
                     record_id: 0,
                     old_data_size: 0,
                     new_data_size: (name_len + 1) as u16,
-                    old_data: [0; 512],
-                    new_data: log_data,
                     tx_id: 0,
                     timestamp: crate::platform::get_timestamp_us(),
                     checksum: 0,
@@ -2609,30 +2597,29 @@ impl DdlExecutor for RemDb {
                     }
                 }
 
-                // 创建日志项
-                let log_item = crate::transaction::LogItem {
-                    op_type: crate::transaction::LogOperation::CreateTable,
-                    table_id: table_def.id,
-                    record_id: 0,
-                    old_data_size: 512,
-                    new_data_size: 512,
-                    old_data: [0; 512],
-                    new_data: log_data,
-                    tx_id: 0,
-                    timestamp: crate::platform::get_timestamp_us(),
-                    checksum: 0,
+                let new_data_size = log_data.len() as u16;
+
+                let mut var_log_item = crate::transaction::VariableSizeLogItem {
+                    header: crate::transaction::LogItem {
+                        op_type: crate::transaction::LogOperation::CreateTable,
+                        table_id: table_def.id,
+                        record_id: 0,
+                        old_data_size: 0,
+                        new_data_size,
+                        tx_id: 0,
+                        timestamp: crate::platform::get_timestamp_us(),
+                        checksum: 0,
+                    },
+                    old_data: Vec::new(),
+                    new_data: log_data.to_vec(),
                 };
 
-                // 计算校验和：使用基于字段的校验和计算方法
                 let calculated_checksum =
-                    crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
+                    crate::transaction::Transaction::calculate_variable_size_log_item_checksum(&var_log_item);
 
-                let mut final_log_item = log_item;
-                final_log_item.checksum = calculated_checksum;
+                var_log_item.header.checksum = calculated_checksum;
 
-                // 写入日志
-                let _ = log_manager.write_log_item(&final_log_item);
-                // 立即刷新缓冲区，确保CreateTable日志被持久化
+                let _ = log_manager.write_variable_size_log_item(&var_log_item);
                 let _ = log_manager.flush_buffer();
             }
         }
@@ -2762,49 +2749,44 @@ impl DdlExecutor for RemDb {
 
         // 9. 记录CREATE_INDEX日志到WAL
         unsafe {
-            // 直接使用LogManager写入日志，而不是通过TransactionManager
             let tx_manager = crate::transaction::get_tx_manager();
             if let Some(log_manager) = tx_manager.get_log_manager_mut() {
-                // 序列化索引创建信息
-                let mut log_data = [0u8; 512];
-                // 写入表名
+                let mut log_data = alloc::vec::Vec::new();
                 let table_name_bytes = table_name.as_bytes();
                 let table_name_len = core::cmp::min(table_name_bytes.len(), 64);
-                log_data[0] = table_name_len as u8;
-                log_data[1..1 + table_name_len]
-                    .copy_from_slice(&table_name_bytes[..table_name_len]);
-                // 写入字段名
+                log_data.push(table_name_len as u8);
+                log_data.extend_from_slice(&table_name_bytes[..table_name_len]);
                 let field_name_bytes = field_name.as_bytes();
                 let field_name_len = core::cmp::min(field_name_bytes.len(), 64);
+                log_data.resize(65, 0);
                 log_data[65] = field_name_len as u8;
-                log_data[66..66 + field_name_len]
-                    .copy_from_slice(&field_name_bytes[..field_name_len]);
-                // 写入索引类型
-                log_data[130] = index_type as u8;
+                log_data.extend_from_slice(&field_name_bytes[..field_name_len]);
+                log_data.resize(130, 0);
+                log_data.push(index_type as u8);
 
-                // 创建日志项
-                let log_item = crate::transaction::LogItem {
-                    op_type: crate::transaction::LogOperation::CreateIndex,
-                    table_id: table.def.id,
-                    record_id: 0,
-                    old_data_size: 512,
-                    new_data_size: 512,
-                    old_data: [0; 512],
+                let new_data_size = log_data.len() as u16;
+
+                let mut var_log_item = crate::transaction::VariableSizeLogItem {
+                    header: crate::transaction::LogItem {
+                        op_type: crate::transaction::LogOperation::CreateIndex,
+                        table_id: table.def.id,
+                        record_id: 0,
+                        old_data_size: 0,
+                        new_data_size,
+                        tx_id: 0,
+                        timestamp: crate::platform::get_timestamp_us(),
+                        checksum: 0,
+                    },
+                    old_data: Vec::new(),
                     new_data: log_data,
-                    tx_id: 0,
-                    timestamp: crate::platform::get_timestamp_us(),
-                    checksum: 0,
                 };
 
-                // 计算校验和：使用基于字段的校验和计算方法
                 let calculated_checksum =
-                    crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
+                    crate::transaction::Transaction::calculate_variable_size_log_item_checksum(&var_log_item);
 
-                let mut final_log_item = log_item;
-                final_log_item.checksum = calculated_checksum;
+                var_log_item.header.checksum = calculated_checksum;
 
-                // 写入日志
-                let _ = log_manager.write_log_item(&final_log_item);
+                let _ = log_manager.write_variable_size_log_item(&var_log_item);
             }
         }
 
@@ -3371,8 +3353,6 @@ impl DdlExecutor for RemDb {
                     record_id: 0, // ALTER TABLE操作不涉及特定记录
                     old_data_size: 0,
                     new_data_size: data_size as u16,
-                    old_data: [0; 512],
-                    new_data: log_data,
                     tx_id: 0,
                     timestamp: crate::platform::get_timestamp_us(),
                     checksum: 0,

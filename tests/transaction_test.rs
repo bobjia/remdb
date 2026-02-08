@@ -145,18 +145,10 @@ fn test_transaction_begin_commit() {
         let mut tx_buffer =
             unsafe { core::mem::MaybeUninit::<Transaction>::uninit().assume_init() };
 
-        let mut log_buffer = [LogItem {
-            op_type: LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            old_data_size: 0,
-            new_data_size: 0,
-            old_data: [0; 512],
-            new_data: [0; 512],
-            tx_id: 0,
-            timestamp: 0,
-            checksum: 0,
-        }; 10];
+        let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+        for item in &mut log_buffer {
+            *item = VariableSizeLogItem::default();
+        }
 
         // 开始事务
         let tx = unsafe {
@@ -232,18 +224,10 @@ fn test_mvcc_snapshot_isolation() {
 
         // 事务1：插入初始记录
         let mut tx1_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-        let mut tx1_log_buffer = [LogItem {
-            op_type: LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            old_data_size: 0,
-            new_data_size: 0,
-            old_data: [0; 512],
-            new_data: [0; 512],
-            tx_id: 0,
-            timestamp: 0,
-            checksum: 0,
-        }; 10];
+        let mut tx1_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+        for item in &mut tx1_log_buffer {
+            *item = VariableSizeLogItem::default();
+        }
 
         let tx1 = db
             .begin_transaction(
@@ -278,18 +262,10 @@ fn test_mvcc_snapshot_isolation() {
 
         // 事务2：开始读取事务，建立快照
         let mut tx2_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-        let mut tx2_log_buffer = [LogItem {
-            op_type: LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            old_data_size: 0,
-            new_data_size: 0,
-            old_data: [0; 512],
-            new_data: [0; 512],
-            tx_id: 0,
-            timestamp: 0,
-            checksum: 0,
-        }; 10];
+        let mut tx2_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+        for item in &mut tx2_log_buffer {
+            *item = VariableSizeLogItem::default();
+        }
 
         let tx2 = db
             .begin_transaction(
@@ -317,18 +293,10 @@ fn test_mvcc_snapshot_isolation() {
 
         // 事务3：更新记录
         let mut tx3_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-        let mut tx3_log_buffer = [LogItem {
-            op_type: LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            old_data_size: 0,
-            new_data_size: 0,
-            old_data: [0; 512],
-            new_data: [0; 512],
-            tx_id: 0,
-            timestamp: 0,
-            checksum: 0,
-        }; 10];
+        let mut tx3_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+        for item in &mut tx3_log_buffer {
+            *item = VariableSizeLogItem::default();
+        }
 
         let tx3 = db
             .begin_transaction(
@@ -361,18 +329,10 @@ fn test_mvcc_snapshot_isolation() {
 
         // 新事务：读取最新值
         let mut tx4_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-        let mut tx4_log_buffer = [LogItem {
-            op_type: LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            old_data_size: 0,
-            new_data_size: 0,
-            old_data: [0; 512],
-            new_data: [0; 512],
-            tx_id: 0,
-            timestamp: 0,
-            checksum: 0,
-        }; 10];
+        let mut tx4_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+        for item in &mut tx4_log_buffer {
+            *item = VariableSizeLogItem::default();
+        }
 
         let tx4 = db
             .begin_transaction(
@@ -457,18 +417,10 @@ fn test_mvcc_version_chain() {
         for i in 0..3 {
             // 为每个事务单独创建缓冲区
             let mut tx_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-            let mut log_buffer = [LogItem {
-                op_type: LogOperation::Insert,
-                table_id: 0,
-                record_id: 0,
-                old_data_size: 0,
-                new_data_size: 0,
-                old_data: [0; 512],
-                new_data: [0; 512],
-                tx_id: 0,
-                timestamp: 0,
-                checksum: 0,
-            }; 10];
+            let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+            for item in &mut log_buffer {
+                *item = VariableSizeLogItem::default();
+            }
 
             // 开始事务
             db.begin_transaction(
@@ -577,18 +529,10 @@ fn test_mvcc_gc() {
         for i in 0..5 {
             // 为每个事务单独创建缓冲区
             let mut tx_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-            let mut log_buffer = [LogItem {
-                op_type: LogOperation::Insert,
-                table_id: 0,
-                record_id: 0,
-                old_data_size: 0,
-                new_data_size: 0,
-                old_data: [0; 512],
-                new_data: [0; 512],
-                tx_id: 0,
-                timestamp: 0,
-                checksum: 0,
-            }; 10];
+            let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+            for item in &mut log_buffer {
+                *item = VariableSizeLogItem::default();
+            }
 
             // 开始事务
             db.begin_transaction(
@@ -696,18 +640,10 @@ fn test_mvcc_visibility() {
         // 事务1：更新记录
         {
             let mut tx1_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-            let mut tx1_log_buffer = [LogItem {
-                op_type: LogOperation::Insert,
-                table_id: 0,
-                record_id: 0,
-                old_data_size: 0,
-                new_data_size: 0,
-                old_data: [0; 512],
-                new_data: [0; 512],
-                tx_id: 0,
-                timestamp: 0,
-                checksum: 0,
-            }; 10];
+            let mut tx1_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+            for item in &mut tx1_log_buffer {
+                *item = VariableSizeLogItem::default();
+            }
 
             let tx1 = db
                 .begin_transaction(
@@ -746,18 +682,10 @@ fn test_mvcc_visibility() {
         // 事务2：读取记录（应该能看到事务1的更新）
         {
             let mut tx2_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-            let mut tx2_log_buffer = [LogItem {
-                op_type: LogOperation::Insert,
-                table_id: 0,
-                record_id: 0,
-                old_data_size: 0,
-                new_data_size: 0,
-                old_data: [0; 512],
-                new_data: [0; 512],
-                tx_id: 0,
-                timestamp: 0,
-                checksum: 0,
-            }; 10];
+            let mut tx2_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+            for item in &mut tx2_log_buffer {
+                *item = VariableSizeLogItem::default();
+            }
 
             let tx2 = db
                 .begin_transaction(
@@ -825,18 +753,10 @@ fn test_transaction_rollback() {
         #[allow(invalid_value)]
         let mut tx_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
 
-        let mut log_buffer = [LogItem {
-            op_type: LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            old_data_size: 0,
-            new_data_size: 0,
-            old_data: [0; 512],
-            new_data: [0; 512],
-            tx_id: 0,
-            timestamp: 0,
-            checksum: 0,
-        }; 10];
+        let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+        for item in &mut log_buffer {
+            *item = VariableSizeLogItem::default();
+        }
 
         // 开始事务
         let tx = db
@@ -931,18 +851,10 @@ fn test_transaction_update_rollback() {
         #[allow(invalid_value)]
         let mut tx_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
 
-        let mut log_buffer = [LogItem {
-            op_type: LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            old_data_size: 0,
-            new_data_size: 0,
-            old_data: [0; 512],
-            new_data: [0; 512],
-            tx_id: 0,
-            timestamp: 0,
-            checksum: 0,
-        }; 10];
+        let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+        for item in &mut log_buffer {
+            *item = VariableSizeLogItem::default();
+        }
 
         // 开始事务
         let tx = db
@@ -1049,18 +961,10 @@ fn test_transaction_delete_rollback() {
         #[allow(invalid_value)]
         let mut tx_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
 
-        let mut log_buffer = [LogItem {
-            op_type: LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            old_data: [0u8; 512],
-            old_data_size: 0,
-            new_data_size: 0,
-            new_data: [0; 512],
-            tx_id: 0,
-            timestamp: 0,
-            checksum: 0,
-        }; 10];
+        let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+        for item in &mut log_buffer {
+            *item = VariableSizeLogItem::default();
+        }
 
         // 开始事务
         let tx = db

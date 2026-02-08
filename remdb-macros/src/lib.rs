@@ -199,6 +199,7 @@ struct DatabaseArgs {
     low_power: bool,
     low_power_max_records: Option<usize>,
     default_max_records: usize,
+    total_memory: usize,
 }
 
 impl Parse for DatabaseArgs {
@@ -235,6 +236,7 @@ impl Parse for DatabaseArgs {
         let mut low_power = false;
         let mut low_power_max_records = None;
         let mut default_max_records = 100000; // 默认值
+        let mut total_memory = 65536; // 默认64KB
 
         // 检查是否还有更多参数
         while !input.is_empty() {
@@ -259,6 +261,10 @@ impl Parse for DatabaseArgs {
                 // 解析数字
                 let lit_int = input.parse::<syn::LitInt>()?;
                 default_max_records = lit_int.base10_parse().unwrap_or(100000);
+            } else if param_name == "total_memory" {
+                // 解析数字
+                let lit_int = input.parse::<syn::LitInt>()?;
+                total_memory = lit_int.base10_parse().unwrap_or(65536);
             }
         }
 
@@ -268,6 +274,7 @@ impl Parse for DatabaseArgs {
             low_power,
             low_power_max_records,
             default_max_records,
+            total_memory,
         })
     }
 }
@@ -470,6 +477,7 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let tables = &args.tables;
     let low_power = args.low_power;
     let default_max_records = args.default_max_records;
+    let total_memory = args.total_memory;
 
     // 处理low_power_max_records，转换为Option<usize>
     let low_power_max_records = match args.low_power_max_records {
@@ -482,8 +490,8 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         #[allow(non_upper_case_globals)]
         pub static #name: std::sync::LazyLock<remdb::config::DbConfig> = std::sync::LazyLock::new(|| {
             remdb::config::DbConfig {
-                tables: vec![#( #tables.clone(), )*],
-                total_memory: 65536,
+                tables: vec![#( std::sync::LazyLock::force(&#tables).clone(), )*],
+                total_memory: #total_memory,
                 low_power_mode_supported: #low_power,
                 low_power_max_records: #low_power_max_records,
                 default_max_records: #default_max_records,

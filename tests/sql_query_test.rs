@@ -14,7 +14,7 @@ use common::{setup_test_db, setup_test_db_with_memory};
 // 定义测试表
 remdb::table!(
     TEST_TABLE,
-    100, // 最大记录数
+    10, // 最大记录数 - 减少以节省内存
     primary_key: id,
     secondary_index: name,
     fields: {
@@ -29,7 +29,7 @@ remdb::table!(
 // 定义订单表，用于测试JOIN查询
 remdb::table!(
     ORDERS_TABLE,
-    100, // 最大记录数
+    10, // 最大记录数 - 减少以节省内存
     primary_key: id,
     secondary_index: user_id,
     fields: {
@@ -43,7 +43,8 @@ remdb::table!(
 // 定义测试数据库配置
 remdb::database!(
     TEST_DB,
-    tables: [TEST_TABLE, ORDERS_TABLE]
+    tables: [TEST_TABLE, ORDERS_TABLE],
+    total_memory: 1048576 // 1MB
 );
 
 #[test]
@@ -433,7 +434,7 @@ fn test_sql_window_functions() {
 // 定义混合查询测试表，包含向量字段
 remdb::table!(
     HYBRID_TABLE,
-    100, // 最大记录数
+    10, // 最大记录数 - 减少以节省内存
     primary_key: id,
     fields: {
         id: i32,
@@ -446,7 +447,8 @@ remdb::table!(
 // 定义包含混合查询测试表的数据库
 remdb::database!(
     HYBRID_DB,
-    tables: [HYBRID_TABLE]
+    tables: [HYBRID_TABLE],
+    total_memory: 1048576 // 1MB
 );
 
 #[test]

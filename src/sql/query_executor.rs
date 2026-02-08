@@ -7179,7 +7179,7 @@ fn execute_insert_query(
                 crate::transaction::TransactionType::ReadWrite,
                 crate::transaction::IsolationLevel::ReadCommitted,
                 tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
-                log_buffer.as_mut_ptr() as *mut crate::transaction::LogItem,
+                log_buffer.as_mut_ptr() as *mut crate::transaction::VariableSizeLogItem,
                 10,
             )
             .map_err(|_| QueryExecutionError::InternalError)?;
@@ -7629,7 +7629,7 @@ fn execute_delete_query(
                 crate::transaction::TransactionType::ReadWrite,
                 crate::transaction::IsolationLevel::ReadCommitted,
                 tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
-                log_buffer.as_mut_ptr() as *mut crate::transaction::LogItem,
+                log_buffer.as_mut_ptr() as *mut crate::transaction::VariableSizeLogItem,
                 10,
             )
             .map_err(|_| QueryExecutionError::InternalError)?;
@@ -7729,7 +7729,7 @@ fn execute_update_query(
                 crate::transaction::TransactionType::ReadWrite,
                 crate::transaction::IsolationLevel::ReadCommitted,
                 tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
-                log_buffer.as_mut_ptr() as *mut crate::transaction::LogItem,
+                log_buffer.as_mut_ptr() as *mut crate::transaction::VariableSizeLogItem,
                 10,
             )
             .map_err(|_| QueryExecutionError::InternalError)?;
@@ -9252,9 +9252,9 @@ unsafe fn evaluate_comparison_with_alias(
                 
                 // 计算距离
             let distance = match op {
-                "<->" => unsafe { calculate_vector_l2_distance(vector_ptr, &compare_vec, dimension) },
-                "<#>" => unsafe { calculate_vector_inner_product(vector_ptr, &compare_vec, dimension) },
-                "<=>" => unsafe { calculate_vector_cosine_similarity(vector_ptr, &compare_vec, dimension) },
+                "<->" => calculate_vector_l2_distance(vector_ptr, &compare_vec, dimension),
+                "<#>" => calculate_vector_inner_product(vector_ptr, &compare_vec, dimension),
+                "<=>" => calculate_vector_cosine_similarity(vector_ptr, &compare_vec, dimension),
                 _ => return false,
             };
                 

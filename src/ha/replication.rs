@@ -174,6 +174,16 @@ impl ReplicationManager {
             log_item.op_type, log_item.table_id, log_item.record_id
         );
 
+        // 解析 new_data（从 LogItem 头部之后开始）
+        let header_size = core::mem::size_of::<LogItem>();
+        let log_data_start = header_size + log_item.old_data_size as usize;
+        let log_data_end = log_data_start + log_item.new_data_size as usize;
+        let log_data = if log_data_end <= data.len() {
+            &data[log_data_start..log_data_end]
+        } else {
+            &data[log_data_start..]
+        };
+
         // 2. 应用WAL日志到本地数据库
         // 获取全局数据库实例
         if let Some(db) = unsafe { crate::get_global_db() } {
@@ -186,69 +196,69 @@ impl ReplicationManager {
                     crate::transaction::LogOperation::CreateTable => {
                         // 执行创建表操作
                         // 从日志中解析表名 - 添加安全检查
-                        let name_len = log_item.new_data[0] as usize;
-                        // 确保name_len不超过new_data的剩余空间
-                        let safe_name_len = core::cmp::min(name_len, log_item.new_data.len() - 1);
-                        let table_name = core::str::from_utf8(&log_item.new_data[1..1 + safe_name_len])
+                        let name_len = log_data[0] as usize;
+                        // 确保name_len不超过log_data的剩余空间
+                        let safe_name_len = core::cmp::min(name_len, log_data.len() - 1);
+                        let table_name = core::str::from_utf8(&log_data[1..1 + safe_name_len])
                             .unwrap_or("unknown");
 
                         // 从日志中解析字段数量
-                        let field_count = log_item.new_data[65] as usize;
+                        let field_count = log_data[65] as usize;
 
                         // 从日志中解析主键索引
-                        let primary_key = log_item.new_data[66] as usize;
+                        let primary_key = log_data[66] as usize;
 
                         // 解析字段定义
                         let mut offset = 67;
                         let mut fields = Vec::with_capacity(field_count);
 
                         for _ in 0..field_count {
-                            // 确保offset不超过new_data的大小
-                            if offset >= log_item.new_data.len() {
+                            // 确保offset不超过log_data的大小
+                            if offset >= log_data.len() {
                                 break;
                             }
                             
                             // 解析字段名 - 添加安全检查
-                            let field_name_len = log_item.new_data[offset] as usize;
+                            let field_name_len = log_data[offset] as usize;
                             offset += 1;
-                            // 确保offset + field_name_len不超过new_data的大小
-                            let safe_field_name_len = core::cmp::min(field_name_len, log_item.new_data.len() - offset);
+                            // 确保offset + field_name_len不超过log_data的大小
+                            let safe_field_name_len = core::cmp::min(field_name_len, log_data.len() - offset);
                             let field_name = core::str::from_utf8(
-                                &log_item.new_data[offset..offset + safe_field_name_len],
+                                &log_data[offset..offset + safe_field_name_len],
                             )
                             .unwrap_or("unknown");
-                            // 跳过固定32字节字段名空间 - 确保offset不超过new_data的大小
-                            offset = core::cmp::min(offset + 32, log_item.new_data.len());
+                            // 跳过固定32字节字段名空间 - 确保offset不超过log_data的大小
+                            offset = core::cmp::min(offset + 32, log_data.len());
 
-                            // 确保offset不超过new_data的大小
-                            if offset >= log_item.new_data.len() {
+                            // 确保offset不超过log_data的大小
+                            if offset >= log_data.len() {
                                 break;
                             }
                             
                             // 解析数据类型
-                            let data_type = crate::types::DataType::from(log_item.new_data[offset]);
+                            let data_type = crate::types::DataType::from(log_data[offset]);
                             offset += 1;
 
-                            // 确保offset不超过new_data的大小
-                            if offset >= log_item.new_data.len() {
+                            // 确保offset不超过log_data的大小
+                            if offset >= log_data.len() {
                                 break;
                             }
                             
                             // 解析字段约束
-                            let constraints = log_item.new_data[offset];
+                            let constraints = log_data[offset];
                             offset += 1;
                             let _primary_key_flag = (constraints & 0b0001) != 0;
                             let _not_null_flag = (constraints & 0b0010) != 0;
                             let _unique_flag = (constraints & 0b0100) != 0;
                             let _auto_increment_flag = (constraints & 0b1000) != 0;
 
-                            // 确保offset不超过new_data的大小
-                            if offset >= log_item.new_data.len() {
+                            // 确保offset不超过log_data的大小
+                            if offset >= log_data.len() {
                                 break;
                             }
                             
                             // 解析默认值存在标志
-                            let has_default = log_item.new_data[offset] != 0;
+                            let has_default = log_data[offset] != 0;
                             offset += 1;
 
                             // 解析默认值（如果有）
@@ -257,9 +267,9 @@ impl ReplicationManager {
                                 let mut value = crate::types::Value { u64: 0 };
                                 match data_type {
                                     crate::types::DataType::Bool => {
-                                        // 确保offset不超过new_data的大小
-                                        if offset < log_item.new_data.len() {
-                                            let bool_value = log_item.new_data[offset] != 0;
+                                        // 确保offset不超过log_data的大小
+                                        if offset < log_data.len() {
+                                            let bool_value = log_data[offset] != 0;
                                             offset += 1;
                                             unsafe {
                                                 value.bool = bool_value;
@@ -267,9 +277,9 @@ impl ReplicationManager {
                                         }
                                     }
                                     crate::types::DataType::Int8 => {
-                                        // 确保offset不超过new_data的大小
-                                        if offset < log_item.new_data.len() {
-                                            let i8_value = i8::from_le_bytes([log_item.new_data[offset]]);
+                                        // 确保offset不超过log_data的大小
+                                        if offset < log_data.len() {
+                                            let i8_value = i8::from_le_bytes([log_data[offset]]);
                                             offset += 1;
                                             unsafe {
                                                 value.i8 = i8_value;
@@ -277,9 +287,9 @@ impl ReplicationManager {
                                         }
                                     }
                                     crate::types::DataType::UInt8 => {
-                                        // 确保offset不超过new_data的大小
-                                        if offset < log_item.new_data.len() {
-                                            let u8_value = log_item.new_data[offset];
+                                        // 确保offset不超过log_data的大小
+                                        if offset < log_data.len() {
+                                            let u8_value = log_data[offset];
                                             offset += 1;
                                             unsafe {
                                                 value.u8 = u8_value;
@@ -287,166 +297,166 @@ impl ReplicationManager {
                                         }
                                     }
                                     crate::types::DataType::Int16 => {
-                                        // 确保offset + 1不超过new_data的大小
-                                        if offset + 1 < log_item.new_data.len() {
+                                        // 确保offset + 1不超过log_data的大小
+                                        if offset + 1 < log_data.len() {
                                             let i16_value = i16::from_le_bytes([
-                                                log_item.new_data[offset],
-                                                log_item.new_data[offset + 1],
+                                                log_data[offset],
+                                                log_data[offset + 1],
                                             ]);
                                             offset += 2;
                                             unsafe {
                                                 value.i16 = i16_value;
                                             }
                                         } else {
-                                            offset = log_item.new_data.len();
+                                            offset = log_data.len();
                                         }
                                     }
                                     crate::types::DataType::UInt16 => {
-                                        // 确保offset + 1不超过new_data的大小
-                                        if offset + 1 < log_item.new_data.len() {
+                                        // 确保offset + 1不超过log_data的大小
+                                        if offset + 1 < log_data.len() {
                                             let u16_value = u16::from_le_bytes([
-                                                log_item.new_data[offset],
-                                                log_item.new_data[offset + 1],
+                                                log_data[offset],
+                                                log_data[offset + 1],
                                             ]);
                                             offset += 2;
                                             unsafe {
                                                 value.u16 = u16_value;
                                             }
                                         } else {
-                                            offset = log_item.new_data.len();
+                                            offset = log_data.len();
                                         }
                                     }
                                     crate::types::DataType::Int32 => {
-                                        // 确保offset + 3不超过new_data的大小
-                                        if offset + 3 < log_item.new_data.len() {
+                                        // 确保offset + 3不超过log_data的大小
+                                        if offset + 3 < log_data.len() {
                                             let i32_value = i32::from_le_bytes([
-                                                log_item.new_data[offset],
-                                                log_item.new_data[offset + 1],
-                                                log_item.new_data[offset + 2],
-                                                log_item.new_data[offset + 3],
+                                                log_data[offset],
+                                                log_data[offset + 1],
+                                                log_data[offset + 2],
+                                                log_data[offset + 3],
                                             ]);
                                             offset += 4;
                                             unsafe {
                                                 value.i32 = i32_value;
                                             }
                                         } else {
-                                            offset = log_item.new_data.len();
+                                            offset = log_data.len();
                                         }
                                     }
                                     crate::types::DataType::UInt32 => {
-                                        // 确保offset + 3不超过new_data的大小
-                                        if offset + 3 < log_item.new_data.len() {
+                                        // 确保offset + 3不超过log_data的大小
+                                        if offset + 3 < log_data.len() {
                                             let u32_value = u32::from_le_bytes([
-                                                log_item.new_data[offset],
-                                                log_item.new_data[offset + 1],
-                                                log_item.new_data[offset + 2],
-                                                log_item.new_data[offset + 3],
+                                                log_data[offset],
+                                                log_data[offset + 1],
+                                                log_data[offset + 2],
+                                                log_data[offset + 3],
                                             ]);
                                             offset += 4;
                                             unsafe {
                                                 value.u32 = u32_value;
                                             }
                                         } else {
-                                            offset = log_item.new_data.len();
+                                            offset = log_data.len();
                                         }
                                     }
                                     crate::types::DataType::Int64 => {
-                                        // 确保offset + 7不超过new_data的大小
-                                        if offset + 7 < log_item.new_data.len() {
+                                        // 确保offset + 7不超过log_data的大小
+                                        if offset + 7 < log_data.len() {
                                             let i64_value = i64::from_le_bytes([
-                                                log_item.new_data[offset],
-                                                log_item.new_data[offset + 1],
-                                                log_item.new_data[offset + 2],
-                                                log_item.new_data[offset + 3],
-                                                log_item.new_data[offset + 4],
-                                                log_item.new_data[offset + 5],
-                                                log_item.new_data[offset + 6],
-                                                log_item.new_data[offset + 7],
+                                                log_data[offset],
+                                                log_data[offset + 1],
+                                                log_data[offset + 2],
+                                                log_data[offset + 3],
+                                                log_data[offset + 4],
+                                                log_data[offset + 5],
+                                                log_data[offset + 6],
+                                                log_data[offset + 7],
                                             ]);
                                             offset += 8;
                                             unsafe {
                                                 value.i64 = i64_value;
                                             }
                                         } else {
-                                            offset = log_item.new_data.len();
+                                            offset = log_data.len();
                                         }
                                     }
                                     crate::types::DataType::UInt64 => {
-                                        // 确保offset + 7不超过new_data的大小
-                                        if offset + 7 < log_item.new_data.len() {
+                                        // 确保offset + 7不超过log_data的大小
+                                        if offset + 7 < log_data.len() {
                                             let u64_value = u64::from_le_bytes([
-                                                log_item.new_data[offset],
-                                                log_item.new_data[offset + 1],
-                                                log_item.new_data[offset + 2],
-                                                log_item.new_data[offset + 3],
-                                                log_item.new_data[offset + 4],
-                                                log_item.new_data[offset + 5],
-                                                log_item.new_data[offset + 6],
-                                                log_item.new_data[offset + 7],
+                                                log_data[offset],
+                                                log_data[offset + 1],
+                                                log_data[offset + 2],
+                                                log_data[offset + 3],
+                                                log_data[offset + 4],
+                                                log_data[offset + 5],
+                                                log_data[offset + 6],
+                                                log_data[offset + 7],
                                             ]);
                                             offset += 8;
                                             unsafe {
                                                 value.u64 = u64_value;
                                             }
                                         } else {
-                                            offset = log_item.new_data.len();
+                                            offset = log_data.len();
                                         }
                                     }
                                     crate::types::DataType::Float32 => {
-                                        // 确保offset + 3不超过new_data的大小
-                                        if offset + 3 < log_item.new_data.len() {
+                                        // 确保offset + 3不超过log_data的大小
+                                        if offset + 3 < log_data.len() {
                                             let float32_value = f32::from_le_bytes([
-                                                log_item.new_data[offset],
-                                                log_item.new_data[offset + 1],
-                                                log_item.new_data[offset + 2],
-                                                log_item.new_data[offset + 3],
+                                                log_data[offset],
+                                                log_data[offset + 1],
+                                                log_data[offset + 2],
+                                                log_data[offset + 3],
                                             ]);
                                             offset += 4;
                                             unsafe {
                                                 value.float32 = float32_value;
                                             }
                                         } else {
-                                            offset = log_item.new_data.len();
+                                            offset = log_data.len();
                                         }
                                     }
                                     crate::types::DataType::Float64 => {
-                                        // 确保offset + 7不超过new_data的大小
-                                        if offset + 7 < log_item.new_data.len() {
+                                        // 确保offset + 7不超过log_data的大小
+                                        if offset + 7 < log_data.len() {
                                             let float64_value = f64::from_le_bytes([
-                                                log_item.new_data[offset],
-                                                log_item.new_data[offset + 1],
-                                                log_item.new_data[offset + 2],
-                                                log_item.new_data[offset + 3],
-                                                log_item.new_data[offset + 4],
-                                                log_item.new_data[offset + 5],
-                                                log_item.new_data[offset + 6],
-                                                log_item.new_data[offset + 7],
+                                                log_data[offset],
+                                                log_data[offset + 1],
+                                                log_data[offset + 2],
+                                                log_data[offset + 3],
+                                                log_data[offset + 4],
+                                                log_data[offset + 5],
+                                                log_data[offset + 6],
+                                                log_data[offset + 7],
                                             ]);
                                             offset += 8;
                                             unsafe {
                                                 value.float64 = float64_value;
                                             }
                                         } else {
-                                            offset = log_item.new_data.len();
+                                            offset = log_data.len();
                                         }
                                     }
                                     crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => {
-                                        // 确保offset不超过new_data的大小
-                                        if offset < log_item.new_data.len() {
-                                            let string_len = log_item.new_data[offset] as usize;
+                                        // 确保offset不超过log_data的大小
+                                        if offset < log_data.len() {
+                                            let string_len = log_data[offset] as usize;
                                             offset += 1;
                                             let mut string_data = [0u8; 64];
                                             // 安全检查：确保string_len不超过缓冲区大小
                                             let copy_len = core::cmp::min(string_len, 64);
-                                            // 确保offset + copy_len不超过new_data的大小
-                                            let safe_copy_len = core::cmp::min(copy_len, log_item.new_data.len() - offset);
+                                            // 确保offset + copy_len不超过log_data的大小
+                                            let safe_copy_len = core::cmp::min(copy_len, log_data.len() - offset);
                                             if safe_copy_len > 0 {
                                                 string_data[..safe_copy_len].copy_from_slice(
-                                                    &log_item.new_data[offset..offset + safe_copy_len],
+                                                    &log_data[offset..offset + safe_copy_len],
                                                 );
                                             }
-                                            // 跳过固定64字节字符串空间 - 确保offset不超过new_data的大小
-                                            offset = core::cmp::min(offset + 64, log_item.new_data.len());
+                                            // 跳过固定64字节字符串空间 - 确保offset不超过log_data的大小
+                                            offset = core::cmp::min(offset + 64, log_data.len());
                                             unsafe {
                                                 value.string = string_data;
                                             }
@@ -457,14 +467,14 @@ impl ReplicationManager {
                                     crate::types::DataType::Timestamp
                                     | crate::types::DataType::TimestampTZ => {
                                         let timestamp_value = u64::from_le_bytes([
-                                            log_item.new_data[offset],
-                                            log_item.new_data[offset + 1],
-                                            log_item.new_data[offset + 2],
-                                            log_item.new_data[offset + 3],
-                                            log_item.new_data[offset + 4],
-                                            log_item.new_data[offset + 5],
-                                            log_item.new_data[offset + 6],
-                                            log_item.new_data[offset + 7],
+                                            log_data[offset],
+                                            log_data[offset + 1],
+                                            log_data[offset + 2],
+                                            log_data[offset + 3],
+                                            log_data[offset + 4],
+                                            log_data[offset + 5],
+                                            log_data[offset + 6],
+                                            log_data[offset + 7],
                                         ]);
                                         offset += 8;
                                         unsafe {
@@ -473,16 +483,16 @@ impl ReplicationManager {
                                     }
                                     crate::types::DataType::Interval => {
                                         // 解析Interval类型，读取value、precision和flags
-                                        let interval_value_bytes = log_item.new_data
+                                        let interval_value_bytes = log_data
                                             [offset..offset + 8]
                                             .try_into()
                                             .unwrap();
                                         let interval_value =
                                             i64::from_le_bytes(interval_value_bytes);
                                         offset += 8;
-                                        let precision = log_item.new_data[offset];
+                                        let precision = log_data[offset];
                                         offset += 1;
-                                        let flags = log_item.new_data[offset];
+                                        let flags = log_data[offset];
                                         offset += 1;
                                         unsafe {
                                             value.interval = crate::types::db_interval {
@@ -498,8 +508,8 @@ impl ReplicationManager {
                                         // 只需要确保数据被正确复制到数据库
                                         // 解析向量维度
                                         let dimensions = u16::from_le_bytes([
-                                            log_item.new_data[offset],
-                                            log_item.new_data[offset + 1],
+                                            log_data[offset],
+                                            log_data[offset + 1],
                                         ]);
                                         offset += 2;
 
@@ -516,7 +526,7 @@ impl ReplicationManager {
                                         // 因为在复制场景中，我们不需要直接访问JSON内容
                                         // 只需要确保数据被正确复制到数据库
                                         // 跳过固定64字节内联存储空间
-                                        offset = core::cmp::min(offset + 64, log_item.new_data.len());
+                                        offset = core::cmp::min(offset + 64, log_data.len());
                                     }
                                 }
                                 Some(value)
@@ -560,17 +570,17 @@ impl ReplicationManager {
                     crate::transaction::LogOperation::CreateIndex => {
                         // 执行创建索引操作
                         // 从日志中解析表名和字段名
-                        let table_name_len = log_item.new_data[0] as usize;
+                        let table_name_len = log_data[0] as usize;
                         let table_name =
-                            core::str::from_utf8(&log_item.new_data[1..1 + table_name_len])
+                            core::str::from_utf8(&log_data[1..1 + table_name_len])
                                 .unwrap_or("unknown");
 
-                        let field_name_len = log_item.new_data[65] as usize;
+                        let field_name_len = log_data[65] as usize;
                         let field_name =
-                            core::str::from_utf8(&log_item.new_data[66..66 + field_name_len])
+                            core::str::from_utf8(&log_data[66..66 + field_name_len])
                                 .unwrap_or("unknown");
 
-                        let index_type: crate::types::IndexType = log_item.new_data[130].into();
+                        let index_type: crate::types::IndexType = log_data[130].into();
 
                         // 调用全局数据库的create_index方法
                         let _ = db.create_index(table_name, field_name, index_type);
@@ -599,8 +609,8 @@ impl ReplicationManager {
                                 // 复制数据到记录位置
                                 crate::platform::memcpy(
                                     record_ptr,
-                                    log_item.new_data.as_ptr(),
-                                    log_item.new_data_size as usize,
+                                    log_data.as_ptr(),
+                                    log_data.len(),
                                 );
 
                                 // 检查记录是否已存在
@@ -756,8 +766,8 @@ impl ReplicationManager {
                                             let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
                                             crate::platform::memcpy(
                                                 record_ptr,
-                                                log_item.new_data.as_ptr(),
-                                                log_item.new_data_size as usize,
+                                                log_data.as_ptr(),
+                                                log_data.len(),
                                             );
 
                                             (*status_ptr).version += 1;

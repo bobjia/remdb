@@ -97,18 +97,10 @@ fn master_example() {
         let mut tx_buffer: transaction::Transaction =
             core::mem::MaybeUninit::uninit().assume_init();
 
-        let mut log_buffer = [transaction::LogItem {
-            op_type: transaction::LogOperation::Insert,
-            table_id: 0,
-            record_id: 0,
-            old_data_size: 0,
-            new_data_size: 0,
-            old_data: [0u8; 512],
-            new_data: [0u8; 512],
-            tx_id: 0,
-            timestamp: 0,
-            checksum: 0,
-        }; 10];
+        let mut log_buffer: [transaction::VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+        for item in &mut log_buffer {
+            *item = transaction::VariableSizeLogItem::default();
+        }
 
         let _tx = transaction::begin(
             transaction::TransactionType::ReadWrite,

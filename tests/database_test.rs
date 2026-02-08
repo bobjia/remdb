@@ -1,7 +1,6 @@
 extern crate alloc;
-use alloc::boxed::Box;
 use remdb::platform::*;
-use remdb::{DatabaseStatus, RemDb, RemDbError, Result};
+use remdb::{DatabaseStatus, RemDb, Result, config::DbConfig, config::WALConfig, config::LogMode, time_series::TimeSeriesConfig, time_series::CompressionType, DataType, FieldDef, TableDef};
 use std::sync::Mutex;
 
 mod common;
@@ -10,53 +9,41 @@ use common::{setup_test_db, setup_test_db_with_memory};
 // 全局互斥锁，确保测试串行执行
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
-// 初始化全局数据库
-fn init_global_db(db_memory: &Vec<u8>) -> Result<RemDb> {
-    // 创建数据库配置
-    let config = Box::leak(Box::new(remdb::config::DbConfig {
+// 测试数据库配置
+static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(|| {
+    DbConfig {
         tables: vec![],
-        total_memory: 4 * 1024 * 1024, // 4MB内存
-        default_max_records: 1000,
-        low_power_mode_supported: true,
-        low_power_max_records: Some(100),
+        total_memory: 1024 * 1024, // 1MB
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        default_max_records: 100000,
         memory_allocator: &remdb::config::DefaultMemoryAllocator,
-        wal_config: remdb::config::WALConfig {
-            log_path: "./data/test",
-            log_mode: remdb::config::LogMode::Async,
+        wal_config: WALConfig {
+            log_path: "./wal",
+            log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 0,
+            log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
-            retained_checkpoints: 2,
+            retained_checkpoints: 3,
         },
-        time_series_defaults: remdb::time_series::TimeSeriesConfig {
-            max_partitions: 10,
-            partition_duration_secs: 3600,
-            retention_period_secs: 86400 * 30,
-            compression: remdb::time_series::CompressionType::None,
-        },
+        time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
-    }));
-
-    // 创建数据库实例
-    let mut db = RemDb::new_with_name("test_db", config);
-    db.init()?;
-
-    Ok(db)
-}
+    }
+});
 
 #[test]
 fn test_databases_command() -> Result<()> {
     // 处理可能的互斥锁 poisoning
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
-    let db_memory = setup_test_db();
+    let _db_memory = setup_test_db_with_memory(1024 * 1024); // 1MB to match TEST_DB_CONFIG
 
     // 初始化数据库
-    let mut db = init_global_db(&db_memory)?;
+    let mut db = unsafe { remdb::init_global_db(&TEST_DB_CONFIG)? };
 
     // 创建一个数据库，这样数据库列表就不会为空
     db.create_database("test_db")?;
@@ -65,8 +52,8 @@ fn test_databases_command() -> Result<()> {
     let databases = db.databases()?;
     assert!(!databases.is_empty());
 
-    // 验证返回的数据库信息
-    let db_info = &databases[0];
+    // 验证返回的数据库信息 - 找到我们创建的数据库
+    let db_info = databases.iter().find(|info| info.name == "test_db").expect("test_db database not found");
     assert_eq!(db_info.name, "test_db");
     assert_eq!(db_info.database_type, "RemDb");
     assert_eq!(db_info.status, DatabaseStatus::Created);
