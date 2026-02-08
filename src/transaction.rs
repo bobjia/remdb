@@ -1443,6 +1443,31 @@ impl LogManager {
             valid_log_items.len()
         );
 
+        // 检查是否有有效的日志项
+        if valid_log_items.is_empty() {
+            #[cfg(feature = "log")]
+            info!("WAL file is empty, no data to recover");
+            return Err(RemDbError::FileIoError);
+        }
+
+        // 检查是否有有效的数据操作（INSERT, UPDATE, DELETE）
+        let mut data_operations_count = 0;
+        for log_item in &valid_log_items {
+            match log_item.header.op_type {
+                LogOperation::Insert | LogOperation::Update | LogOperation::Delete => {
+                    data_operations_count += 1;
+                }
+                _ => {}
+            }
+        }
+
+        // 如果没有有效的数据操作，返回错误
+        if data_operations_count == 0 {
+            #[cfg(feature = "log")]
+            info!("WAL file contains only schema operations, no data operations");
+            return Err(RemDbError::FileIoError);
+        }
+
         // 阶段2：先处理所有的数据库创建、表创建和索引创建操作，确保数据库和表结构已建立
         #[cfg(feature = "log")]
         info!("Phase 2: Processing schema operations (CreateDatabase, CreateTable, CreateIndex)...");
@@ -1579,6 +1604,20 @@ impl LogManager {
                         let not_null_flag = (constraints & 0b0010) != 0;
                         let unique_flag = (constraints & 0b0100) != 0;
                         let auto_increment_flag = (constraints & 0b1000) != 0;
+
+                        // 解析字段大小（4字节）
+                        let field_size = if offset + 4 <= new_data_len {
+                            u32::from_le_bytes([
+                                log_item.new_data[offset],
+                                log_item.new_data[offset + 1],
+                                log_item.new_data[offset + 2],
+                                log_item.new_data[offset + 3],
+                            ]) as usize
+                        } else {
+                            // 如果没有字段大小信息，使用默认值
+                            0
+                        };
+                        offset += 4;
 
                         // 解析向量维度（2字节）
                         let vector_dimension = if offset + 1 < new_data_len {
@@ -1816,31 +1855,36 @@ impl LogManager {
                             None
                         };
 
-                        // 计算字段大小：根据数据类型计算，而不是从日志中读取
-                        let field_size = match data_type {
-                            crate::types::DataType::Bool
-                            | crate::types::DataType::Int8
-                            | crate::types::DataType::UInt8 => 1,
-                            crate::types::DataType::Int16 | crate::types::DataType::UInt16 => 2,
-                            crate::types::DataType::Int32
-                            | crate::types::DataType::UInt32
-                            | crate::types::DataType::Float32 => 4,
-                            crate::types::DataType::Int64
-                            | crate::types::DataType::UInt64
-                            | crate::types::DataType::Float64
-                            | crate::types::DataType::Timestamp
-                            | crate::types::DataType::TimestampTZ => 8,
-                            crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => 64, // 默认64字节字符串
-                            crate::types::DataType::Vector => {
-                                // 向量大小 = 维度 * 4字节（float32）
-                                if vector_dimension > 0 {
-                                    vector_dimension as usize * 4
-                                } else {
-                                    8 // 默认8字节
+                        // 计算字段大小：优先使用从日志中读取的field_size，如果为0则根据数据类型计算
+                        let final_field_size = if field_size > 0 {
+                            field_size
+                        } else {
+                            match data_type {
+                                crate::types::DataType::Bool
+                                | crate::types::DataType::Int8
+                                | crate::types::DataType::UInt8 => 1,
+                                crate::types::DataType::Int16 | crate::types::DataType::UInt16 => 2,
+                                crate::types::DataType::Int32
+                                | crate::types::DataType::UInt32
+                                | crate::types::DataType::Float32 => 4,
+                                crate::types::DataType::Int64
+                                | crate::types::DataType::UInt64
+                                | crate::types::DataType::Float64
+                                | crate::types::DataType::Timestamp
+                                | crate::types::DataType::TimestampTZ => 8,
+                                crate::types::DataType::VarChar | crate::types::DataType::Char => 64, // 默认64字节字符串
+                                crate::types::DataType::Text => 10240, // TEXT类型默认10KB
+                                crate::types::DataType::Vector => {
+                                    // 向量大小 = 维度 * 4字节（float32）
+                                    if vector_dimension > 0 {
+                                        vector_dimension as usize * 4
+                                    } else {
+                                        8 // 默认8字节
+                                    }
                                 }
+                                crate::types::DataType::Interval => 10, // 8字节值 + 1字节精度 + 1字节标志
+                                _ => 8,                                 // 默认8字节
                             }
-                            crate::types::DataType::Interval => 10, // 8字节值 + 1字节精度 + 1字节标志
-                            _ => 8,                                 // 默认8字节
                         };
 
                         // 创建向量元数据（如果是向量类型且维度大于0）
@@ -1866,7 +1910,7 @@ impl LogManager {
                         let field_def = crate::types::FieldDef {
                             name: field_name.to_string(),
                             data_type,
-                            size: field_size,
+                            size: final_field_size,
                             string_length: None,
                             offset: 0, // 偏移量会在表创建时计算
                             primary_key: primary_key_flag,
@@ -2257,6 +2301,7 @@ impl LogManager {
         // 阶段3：处理所有的数据操作和系统操作
         #[cfg(feature = "log")]
         info!("Phase 3: Processing operations (Insert, Update, Delete, TimeSeriesInsert, LowPowerMode)...");
+        let mut data_operations_count = 0;
         for log_item in &valid_log_items {
             match log_item.header.op_type {
                 LogOperation::EnterLowPowerMode => {
@@ -2360,6 +2405,7 @@ impl LogManager {
 
                     #[cfg(feature = "log")]
                     info!("Processing Insert operation for table_id {} record_id {}", table_id, log_item.header.record_id);
+                    data_operations_count += 1;
 
                     // 无论记录是否存在，都执行插入操作
                     let status_ptr = table.get_status_ptr(log_item.header.record_id as usize);
@@ -2605,6 +2651,12 @@ impl LogManager {
 
         #[cfg(feature = "log")]
         info!("WAL recovery completed successfully");
+        // 检查是否真的恢复了数据（至少有一个数据操作）
+        if data_operations_count == 0 {
+            #[cfg(feature = "log")]
+            info!("WAL file contains only schema operations, no data operations");
+            return Err(RemDbError::FileIoError);
+        }
         Ok(())
     }
 }

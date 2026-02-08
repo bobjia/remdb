@@ -1222,7 +1222,175 @@ impl RemDb {
                     return Err(RemDbError::FileIoError);
                 }
 
-                // 写入已使用的记录数（4字节）
+                // 4. 写入辅助索引字段数量
+                let secondary_index_count = table.def.secondary_index.as_ref().map_or(0, |idx| idx.len()) as u8;
+                let written = crate::platform::file_write(
+                    handle,
+                    &secondary_index_count as *const u8,
+                    1,
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if written != 1 {
+                    return Err(RemDbError::FileIoError);
+                }
+
+                // 5. 写入辅助索引类型
+                let secondary_index_type = table.def.secondary_index_type as u8;
+                let written = crate::platform::file_write(
+                    handle,
+                    &secondary_index_type as *const u8,
+                    1,
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if written != 1 {
+                    return Err(RemDbError::FileIoError);
+                }
+
+                // 6. 写入最大记录数
+                let max_records_u32 = table.def.max_records as u32;
+                let max_records_bytes = max_records_u32.to_le_bytes();
+                let written = crate::platform::file_write(
+                    handle,
+                    max_records_bytes.as_ptr(),
+                    max_records_bytes.len(),
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if written != max_records_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+
+                // 7. 写入每个字段的完整定义
+                for field in &table.def.fields {
+                    // 写入字段名称长度和字段名称
+                    let field_name_len = field.name.len() as u8;
+                    let written = crate::platform::file_write(
+                        handle,
+                        &field_name_len as *const u8,
+                        1,
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+                    if written != 1 {
+                        return Err(RemDbError::FileIoError);
+                    }
+                    let written = crate::platform::file_write(
+                        handle,
+                        field.name.as_bytes().as_ptr(),
+                        field.name.len(),
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+                    if written != field.name.len() {
+                        return Err(RemDbError::FileIoError);
+                    }
+
+                    // 写入数据类型
+                    let data_type = field.data_type as u8;
+                    let written = crate::platform::file_write(
+                        handle,
+                        &data_type as *const u8,
+                        1,
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+                    if written != 1 {
+                        return Err(RemDbError::FileIoError);
+                    }
+
+                    // 写入字段大小
+                    let field_size_u32 = field.size as u32;
+                    let field_size_bytes = field_size_u32.to_le_bytes();
+                    let written = crate::platform::file_write(
+                        handle,
+                        field_size_bytes.as_ptr(),
+                        field_size_bytes.len(),
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+                    if written != field_size_bytes.len() {
+                        return Err(RemDbError::FileIoError);
+                    }
+
+                    // 写入字符串长度限制（如果有）
+                    let has_string_length = field.string_length.is_some() as u8;
+                    let written = crate::platform::file_write(
+                        handle,
+                        &has_string_length as *const u8,
+                        1,
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+                    if written != 1 {
+                        return Err(RemDbError::FileIoError);
+                    }
+                    if let Some(len) = field.string_length {
+                        let string_len_u32 = len as u32;
+                        let string_len_bytes = string_len_u32.to_le_bytes();
+                        let written = crate::platform::file_write(
+                            handle,
+                            string_len_bytes.as_ptr(),
+                            string_len_bytes.len(),
+                        )
+                        .map_err(|_| RemDbError::FileIoError)?;
+                        if written != string_len_bytes.len() {
+                            return Err(RemDbError::FileIoError);
+                        }
+                    }
+
+                    // 写入字段标志（主键、非空、唯一、自增）
+                    let flags = (field.primary_key as u8) << 0
+                        | (field.not_null as u8) << 1
+                        | (field.unique as u8) << 2
+                        | (field.auto_increment as u8) << 3;
+                    let written = crate::platform::file_write(
+                        handle,
+                        &flags as *const u8,
+                        1,
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+                    if written != 1 {
+                        return Err(RemDbError::FileIoError);
+                    }
+
+                    // 暂时不支持默认值的序列化
+                    let has_default = 0u8;
+                    let written = crate::platform::file_write(
+                        handle,
+                        &has_default as *const u8,
+                        1,
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+                    if written != 1 {
+                        return Err(RemDbError::FileIoError);
+                    }
+                }
+
+                // 8. 写入主键字段索引列表
+                for &pk_idx in &table.def.primary_key {
+                    let pk_idx_u8 = pk_idx as u8;
+                    let written = crate::platform::file_write(
+                        handle,
+                        &pk_idx_u8 as *const u8,
+                        1,
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+                    if written != 1 {
+                        return Err(RemDbError::FileIoError);
+                    }
+                }
+
+                // 9. 写入辅助索引字段索引列表（如果有）
+                if let Some(ref secondary_index) = table.def.secondary_index {
+                    for &idx in secondary_index {
+                        let idx_u8 = idx as u8;
+                        let written = crate::platform::file_write(
+                            handle,
+                            &idx_u8 as *const u8,
+                            1,
+                        )
+                        .map_err(|_| RemDbError::FileIoError)?;
+                        if written != 1 {
+                            return Err(RemDbError::FileIoError);
+                        }
+                    }
+                }
+
+                // 10. 写入已使用的记录数（4字节）
                 let used_count_u32 = table.record_count() as u32;
                 let used_count_bytes = used_count_u32.to_le_bytes();
                 let written = crate::platform::file_write(
@@ -1424,46 +1592,239 @@ impl RemDb {
             if read != primary_key_count_bytes.len() {
                 return Err(RemDbError::FileIoError);
             }
-            let _primary_key_count = primary_key_count_bytes[0] as usize;
+            let primary_key_count = primary_key_count_bytes[0] as usize;
 
-            // 检查表是否存在，如果不存在则跳过记录数据
-            let table = match &mut self.tables[table_id] {
-                Some(table) => table,
-                None => {
-                    #[cfg(feature = "log")]
-                    warn!("Table '{}' with ID {} not found, skipping data...", table_name, table_id);
-                    // 读取记录数
-                    let mut record_count_bytes = [0u8; 4];
+            // 读取辅助索引字段数量
+            let mut secondary_index_count_bytes = [0u8; 1];
+            let read = crate::platform::file_read(
+                handle,
+                secondary_index_count_bytes.as_mut_ptr(),
+                secondary_index_count_bytes.len(),
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != secondary_index_count_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            let secondary_index_count = secondary_index_count_bytes[0] as usize;
+
+            // 读取辅助索引类型
+            let mut secondary_index_type_bytes = [0u8; 1];
+            let read = crate::platform::file_read(
+                handle,
+                secondary_index_type_bytes.as_mut_ptr(),
+                secondary_index_type_bytes.len(),
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != secondary_index_type_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            let secondary_index_type = secondary_index_type_bytes[0];
+
+            // 读取最大记录数
+            let mut max_records_bytes = [0u8; 4];
+            let read = crate::platform::file_read(
+                handle,
+                max_records_bytes.as_mut_ptr(),
+                max_records_bytes.len(),
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+            if read != max_records_bytes.len() {
+                return Err(RemDbError::FileIoError);
+            }
+            let max_records = u32::from_le_bytes(max_records_bytes) as usize;
+
+            // 读取字段定义
+            let mut fields = Vec::new();
+            for _ in 0..field_count {
+                // 读取字段名称
+                let mut field_name_len_bytes = [0u8; 1];
+                let read = crate::platform::file_read(
+                    handle,
+                    field_name_len_bytes.as_mut_ptr(),
+                    field_name_len_bytes.len(),
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if read != field_name_len_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+                let field_name_len = field_name_len_bytes[0] as usize;
+
+                let mut field_name_bytes = vec![0u8; field_name_len];
+                let read = crate::platform::file_read(
+                    handle,
+                    field_name_bytes.as_mut_ptr(),
+                    field_name_len,
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if read != field_name_len {
+                    return Err(RemDbError::FileIoError);
+                }
+                let field_name = String::from_utf8_lossy(&field_name_bytes).to_string();
+
+                // 读取数据类型
+                let mut data_type_bytes = [0u8; 1];
+                let read = crate::platform::file_read(
+                    handle,
+                    data_type_bytes.as_mut_ptr(),
+                    data_type_bytes.len(),
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if read != data_type_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+                let data_type = crate::types::DataType::from(data_type_bytes[0]);
+
+                // 读取字段大小
+                let mut field_size_bytes = [0u8; 4];
+                let read = crate::platform::file_read(
+                    handle,
+                    field_size_bytes.as_mut_ptr(),
+                    field_size_bytes.len(),
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if read != field_size_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+                let field_size = u32::from_le_bytes(field_size_bytes) as usize;
+
+                // 读取字符串长度限制
+                let mut has_string_length_bytes = [0u8; 1];
+                let read = crate::platform::file_read(
+                    handle,
+                    has_string_length_bytes.as_mut_ptr(),
+                    has_string_length_bytes.len(),
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if read != has_string_length_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+                let string_length = if has_string_length_bytes[0] == 1 {
+                    let mut string_len_bytes = [0u8; 4];
                     let read = crate::platform::file_read(
                         handle,
-                        record_count_bytes.as_mut_ptr(),
-                        record_count_bytes.len(),
+                        string_len_bytes.as_mut_ptr(),
+                        string_len_bytes.len(),
                     )
                     .map_err(|_| RemDbError::FileIoError)?;
-                    if read != record_count_bytes.len() {
+                    if read != string_len_bytes.len() {
                         return Err(RemDbError::FileIoError);
                     }
-                    let record_count = u32::from_le_bytes(record_count_bytes) as usize;
+                    Some(u32::from_le_bytes(string_len_bytes) as usize)
+                } else {
+                    None
+                };
 
-                    // 跳过所有记录
-                    for _ in 0..record_count {
-                        // 跳过记录索引
-                        let mut index_bytes = [0u8; 4];
-                        let _ = crate::platform::file_read(
-                            handle,
-                            index_bytes.as_mut_ptr(),
-                            index_bytes.len(),
-                        );
-                        // 跳过记录数据（需要知道记录大小，这里使用固定大小）
-                        let mut dummy_record = [0u8; 1024];
-                        let _ = crate::platform::file_read(
-                            handle,
-                            dummy_record.as_mut_ptr(),
-                            1024,
-                        );
-                    }
-                    continue;
+                // 读取字段标志
+                let mut flags_bytes = [0u8; 1];
+                let read = crate::platform::file_read(
+                    handle,
+                    flags_bytes.as_mut_ptr(),
+                    flags_bytes.len(),
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if read != flags_bytes.len() {
+                    return Err(RemDbError::FileIoError);
                 }
+                let flags = flags_bytes[0];
+                let primary_key = (flags & 0x01) != 0;
+                let not_null = (flags & 0x02) != 0;
+                let unique = (flags & 0x04) != 0;
+                let auto_increment = (flags & 0x08) != 0;
+
+                // 读取默认值标志（暂时不支持默认值）
+                let mut has_default_bytes = [0u8; 1];
+                let read = crate::platform::file_read(
+                    handle,
+                    has_default_bytes.as_mut_ptr(),
+                    has_default_bytes.len(),
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if read != has_default_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+
+                fields.push(crate::types::FieldDef {
+                    name: field_name,
+                    data_type,
+                    size: field_size,
+                    string_length,
+                    offset: 0,
+                    primary_key,
+                    not_null,
+                    unique,
+                    auto_increment,
+                    default_value: None,
+                    vector_metadata: None,
+                    json_metadata: None,
+                });
+            }
+
+            // 读取主键字段索引列表
+            let mut primary_key_indices = Vec::new();
+            for _ in 0..primary_key_count {
+                let mut pk_idx_bytes = [0u8; 1];
+                let read = crate::platform::file_read(
+                    handle,
+                    pk_idx_bytes.as_mut_ptr(),
+                    pk_idx_bytes.len(),
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+                if read != pk_idx_bytes.len() {
+                    return Err(RemDbError::FileIoError);
+                }
+                primary_key_indices.push(pk_idx_bytes[0] as usize);
+            }
+
+            // 读取辅助索引字段索引列表
+            let mut secondary_index_indices = if secondary_index_count > 0 {
+                let mut indices = Vec::new();
+                for _ in 0..secondary_index_count {
+                    let mut idx_bytes = [0u8; 1];
+                    let read = crate::platform::file_read(
+                        handle,
+                        idx_bytes.as_mut_ptr(),
+                        idx_bytes.len(),
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+                    if read != idx_bytes.len() {
+                        return Err(RemDbError::FileIoError);
+                    }
+                    indices.push(idx_bytes[0] as usize);
+                }
+                Some(indices)
+            } else {
+                None
+            };
+
+            // 检查表是否存在，如果不存在则创建
+            let table = if let Some(table) = &mut self.tables[table_id] {
+                table
+            } else {
+                #[cfg(feature = "log")]
+                info!("Creating table '{}' with ID {} from snapshot...", table_name, table_id);
+
+                // 创建表定义
+                let table_def = crate::types::TableDef {
+                    id: table_id as u8,
+                    name: table_name.clone(),
+                    fields,
+                    primary_key: primary_key_indices,
+                    secondary_index: secondary_index_indices,
+                    secondary_index_type: crate::types::IndexType::from(secondary_index_type),
+                    record_size: 0,
+                    max_records,
+                    version: 0,
+                    created_at: 0,
+                    updated_at: 0,
+                };
+
+                // 创建表
+                let table_def_arc = alloc::sync::Arc::new(table_def);
+                let table = crate::table::MemoryTable::new(table_def_arc)
+                    .map_err(|_| RemDbError::OutOfMemory)?;
+
+                self.tables[table_id] = Some(table);
+                self.tables[table_id].as_mut().unwrap()
             };
 
             // 读取记录数
@@ -1849,18 +2210,16 @@ impl DdlExecutor for RemDb {
 
             // 检查是否为自增主键
             let is_primary_key = primary_key.as_ref().map(|pk| pk.contains(&i)).unwrap_or(false);
-
             // 获取字段约束信息
             let default_constraint = FieldConstraint {
                 primary_key: is_primary_key,
                 not_null: is_primary_key,
                 unique: is_primary_key,
-                auto_increment: false,
+                auto_increment: is_primary_key, // 主键默认支持自增
             };
             let constraint = constraints
                 .and_then(|c| c.get(i))
                 .unwrap_or(&default_constraint);
-
             let is_auto_increment = constraint.auto_increment
                 && (data_type == &DataType::Int32
                     || data_type == &DataType::Int64
@@ -2070,6 +2429,15 @@ impl DdlExecutor for RemDb {
                             }
                             log_data[offset] = constraints;
                             offset += 1;
+                        } else {
+                            break;
+                        }
+
+                        // 写入字段大小（4字节）
+                        if offset + 4 <= log_data.len() {
+                            let field_size_u32 = field.size as u32;
+                            log_data[offset..offset + 4].copy_from_slice(&field_size_u32.to_le_bytes());
+                            offset += 4;
                         } else {
                             break;
                         }
@@ -3104,7 +3472,20 @@ impl RemDb {
         primary_key: Option<Vec<usize>>,
     ) -> Result<()> {
         // 调用已有的DdlExecutor实现，不传递约束信息
+        // 注意：这个方法签名不包含约束参数，所以无法传递约束信息
+        // 如果需要支持约束，应该使用 DdlExecutor::create_table 直接调用
         DdlExecutor::create_table(self, table_name, fields, None, primary_key)
+    }
+
+    /// 创建表（带约束支持）
+    pub fn create_table_with_constraints(
+        &mut self,
+        table_name: &str,
+        fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)],
+        constraints: Option<&[FieldConstraint]>,
+        primary_key: Option<Vec<usize>>,
+    ) -> Result<()> {
+        DdlExecutor::create_table(self, table_name, fields, constraints, primary_key)
     }
 
     /// 创建时序表

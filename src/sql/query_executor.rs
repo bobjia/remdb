@@ -6030,8 +6030,8 @@ fn execute_create_table_query(
     // 调用DdlExecutor::create_table方法，支持约束和复合主键
     #[cfg(feature = "log")]
     debug!("Before create_table, db.tables.len() = {}", db.tables.len());
-    DdlExecutor::create_table(
-        db,
+    // 使用 create_table_with_constraints 方法传递约束信息
+    db.create_table_with_constraints(
         &query.table_name,
         &fields,
         Some(&field_constraints),
