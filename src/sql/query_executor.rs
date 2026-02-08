@@ -1701,6 +1701,12 @@ fn execute_select_query(
     let start_time = Instant::now();
     let mut stats = QueryStats::default();
 
+    // 检查是否有FROM子句（如果没有FROM子句，则执行表达式查询）
+    if query.table_name.is_empty() {
+        // 没有FROM子句，执行表达式查询
+        return execute_expression_query(db, query);
+    }
+
     // 检查是否有JOIN子句
     if !query.joins.is_empty() {
         // 有JOIN子句，执行连接查询
@@ -4073,6 +4079,19 @@ fn execute_function_call(
                 "CEIL" => execute_ceil(args),
                 "FLOOR" => execute_floor(args),
                 "MOD" => execute_mod(args),
+                // JSON函数
+                "JSON_EXTRACT" => execute_json_extract(args),
+                "JSON_VALUE" => execute_json_value(args),
+                "JSON_QUERY" => execute_json_query(args),
+                "JSON_HAS" => execute_json_has(args),
+                "JSON_TYPE" => execute_json_type(args),
+                "JSON_SET" => execute_json_set(args),
+                "JSON_REMOVE" => execute_json_remove(args),
+                "JSON_MERGE_PATCH" => execute_json_merge_patch(args),
+                "JSON_ARRAY_APPEND" => execute_json_array_append(args),
+                "JSON_ARRAY_LENGTH" => execute_json_array_length(args),
+                "JSON_ARRAY" => execute_json_array(args),
+                "JSON_OBJECT" => execute_json_object(args),
                 _ => {
                     // 不支持的函数
                     Err(QueryExecutionError::UnsupportedFunction(name.to_string()))
@@ -5410,6 +5429,721 @@ fn execute_mod(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
             }
         }
     }
+}
+
+/// 执行没有FROM子句的表达式查询
+fn execute_expression_query(
+    db: &mut RemDb,
+    query: &SqlQuery,
+) -> Result<ResultSet, QueryExecutionError> {
+    // 确定要返回的列表达式
+    let columns = if query.select_all {
+        // 没有FROM子句时，* 是不允许的
+        return Err(QueryExecutionError::InvalidCondition);
+    } else {
+        // 返回指定列表达式
+        query.columns.clone()
+    };
+
+    // 生成结果集的列名
+    let result_columns = columns
+        .iter()
+        .map(|expr| match expr {
+            Expression::Field { name, alias } => alias.clone().unwrap_or_else(|| name.clone()),
+            Expression::FunctionCall { alias, name, .. } => {
+                alias.clone().unwrap_or_else(|| name.clone())
+            }
+            Expression::Constant { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "constant".to_string())
+            }
+            Expression::BinaryOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "binary_op".to_string())
+            }
+            Expression::LogicalOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "logical_op".to_string())
+            }
+            Expression::UnaryOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "unary_op".to_string())
+            }
+        })
+        .collect();
+
+    // 创建结果集
+    let mut result_set = ResultSet::new(result_columns);
+
+    // 评估每个表达式
+    let mut row_values = Vec::with_capacity(columns.len());
+    for expr in &columns {
+        let value = evaluate_expression_without_table(db, expr)?;
+        row_values.push(value);
+    }
+
+    // 添加行到结果集
+    result_set.add_row(row_values);
+
+    Ok(result_set)
+}
+
+/// 评估表达式（没有表上下文）
+fn evaluate_expression_without_table(
+    db: &mut RemDb,
+    expr: &Expression,
+) -> Result<TypedValue, QueryExecutionError> {
+    evaluate_expression_without_table_with_depth(db, expr, 0)
+}
+
+fn evaluate_expression_without_table_with_depth(
+    db: &mut RemDb,
+    expr: &Expression,
+    depth: usize,
+) -> Result<TypedValue, QueryExecutionError> {
+    // Check recursion depth to prevent stack overflow
+    const MAX_RECURSION_DEPTH: usize = 100;
+    if depth > MAX_RECURSION_DEPTH {
+        return Err(QueryExecutionError::InternalError);
+    }
+    match expr {
+        Expression::Field {
+            name: field_name, ..
+        } => {
+            // 没有表上下文时，字段引用是无效的
+            Err(QueryExecutionError::FieldNotFound)
+        }
+        Expression::FunctionCall { name, args, .. } => {
+            // 评估函数参数
+            let mut evaluated_args = Vec::with_capacity(args.len());
+            for arg in args {
+                evaluated_args.push(evaluate_expression_without_table_with_depth(db, arg, depth + 1)?);
+            }
+
+            // 执行函数调用
+            execute_function_call(name, &evaluated_args)
+        }
+        Expression::Constant { value, .. } => {
+            // 返回常量值
+            // 需要将 query_parser::Value 转换为 TypedValue
+            match value {
+                crate::sql::query_parser::Value::Integer(i) => {
+                    Ok(TypedValue {
+                        value_type: DataType::Int64,
+                        value: Value { i64: *i },
+                    })
+                }
+                crate::sql::query_parser::Value::Float(f) => {
+                    Ok(TypedValue {
+                        value_type: DataType::Float64,
+                        value: Value { float64: *f },
+                    })
+                }
+                crate::sql::query_parser::Value::String(s) => {
+                    let mut buf = [0; MAX_STRING_LEN];
+                    let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                    buf[..len].copy_from_slice(s.as_bytes());
+                    Ok(TypedValue {
+                        value_type: DataType::VarChar,
+                        value: Value { string: buf },
+                    })
+                }
+                crate::sql::query_parser::Value::Boolean(b) => {
+                    Ok(TypedValue {
+                        value_type: DataType::Bool,
+                        value: Value { bool: *b },
+                    })
+                }
+                crate::sql::query_parser::Value::Null => {
+                    Ok(TypedValue {
+                        value_type: DataType::Int64,
+                        value: Value { i64: 0 },
+                    })
+                }
+                crate::sql::query_parser::Value::Identifier(_) => {
+                    Err(QueryExecutionError::InvalidValue)
+                }
+                crate::sql::query_parser::Value::Json(s) => {
+                    let mut buf = [0u8; 64];
+                    let len = core::cmp::min(s.len(), 64);
+                    buf[..len].copy_from_slice(s.as_bytes());
+                    Ok(TypedValue {
+                        value_type: DataType::Json,
+                        value: Value { json_storage: JsonStorage::Inline(buf) },
+                    })
+                }
+            }
+        }
+        Expression::BinaryOp { op, left, right, .. } => {
+            // 评估左右操作数
+            let left_val = evaluate_expression_without_table_with_depth(db, left, depth + 1)?;
+            let right_val = evaluate_expression_without_table_with_depth(db, right, depth + 1)?;
+
+            // 执行二元运算
+            evaluate_binary_op(left_val, *op, right_val)
+        }
+        Expression::LogicalOp { op, left, right, .. } => {
+            // 评估左右操作数
+            let left_val = evaluate_expression_without_table_with_depth(db, left, depth + 1)?;
+            let right_val = evaluate_expression_without_table_with_depth(db, right, depth + 1)?;
+
+            // 执行逻辑运算
+            unsafe {
+                // 将左右操作数转换为布尔值
+                let left_bool = match left_val.value_type {
+                    DataType::Bool => left_val.value.bool,
+                    DataType::Int8 => left_val.value.i8 != 0,
+                    DataType::Int16 => left_val.value.i16 != 0,
+                    DataType::Int32 => left_val.value.i32 != 0,
+                    DataType::Int64 => left_val.value.i64 != 0,
+                    DataType::UInt8 => left_val.value.u8 != 0,
+                    DataType::UInt16 => left_val.value.u16 != 0,
+                    DataType::UInt32 => left_val.value.u32 != 0,
+                    DataType::UInt64 => left_val.value.u64 != 0,
+                    DataType::Float32 => left_val.value.float32 != 0.0,
+                    DataType::Float64 => left_val.value.float64 != 0.0,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+
+                let right_bool = match right_val.value_type {
+                    DataType::Bool => right_val.value.bool,
+                    DataType::Int8 => right_val.value.i8 != 0,
+                    DataType::Int16 => right_val.value.i16 != 0,
+                    DataType::Int32 => right_val.value.i32 != 0,
+                    DataType::Int64 => right_val.value.i64 != 0,
+                    DataType::UInt8 => right_val.value.u8 != 0,
+                    DataType::UInt16 => right_val.value.u16 != 0,
+                    DataType::UInt32 => right_val.value.u32 != 0,
+                    DataType::UInt64 => right_val.value.u64 != 0,
+                    DataType::Float32 => right_val.value.float32 != 0.0,
+                    DataType::Float64 => right_val.value.float64 != 0.0,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+
+                // 执行逻辑操作
+                let result = match op {
+                    crate::sql::query_parser::LogicalOperator::And => left_bool && right_bool,
+                    crate::sql::query_parser::LogicalOperator::Or => left_bool || right_bool,
+                };
+
+                Ok(TypedValue {
+                    value_type: DataType::Bool,
+                    value: Value { bool: result },
+                })
+            }
+        }
+        Expression::UnaryOp { op, operand, .. } => {
+            // 评估操作数
+            let operand_val = evaluate_expression_without_table_with_depth(db, operand, depth + 1)?;
+
+            // 执行一元运算
+            evaluate_unary_op(*op, operand_val)
+        }
+    }
+}
+
+/// 从TypedValue中提取JSON字符串
+fn typed_value_to_json_string(arg: &TypedValue) -> Result<String, QueryExecutionError> {
+    match arg.value_type {
+        DataType::Json => {
+            let json_storage = unsafe { &arg.value.json_storage };
+            match json_storage {
+                JsonStorage::Inline(data) => {
+                    let len = data.iter().position(|&b| b == 0).unwrap_or(64);
+                    Ok(String::from_utf8_lossy(&data[..len]).to_string())
+                }
+                JsonStorage::External { pool_id, offset, length } => {
+                    let pool_manager = crate::json::memory_pool::get_global_json_pool_manager()
+                        .ok_or(QueryExecutionError::InternalError)?;
+                    let pool = pool_manager.get_pool(*pool_id)
+                        .ok_or(QueryExecutionError::InternalError)?;
+                    
+                    if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
+                        let data = unsafe { core::slice::from_raw_parts(data_ptr, *length as usize) };
+                        Ok(String::from_utf8_lossy(data).to_string())
+                    } else {
+                        Err(QueryExecutionError::InternalError)
+                    }
+                }
+                JsonStorage::Null => Ok("null".to_string()),
+            }
+        }
+        _ => Err(QueryExecutionError::TypeMismatch),
+    }
+}
+
+/// 从TypedValue中提取字符串
+fn typed_value_to_string(arg: &TypedValue) -> Result<String, QueryExecutionError> {
+    match arg.value_type {
+        DataType::VarChar | DataType::Char | DataType::Text => {
+            let data = unsafe { &arg.value.string };
+            let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
+            Ok(String::from_utf8_lossy(&data[..len]).to_string())
+        }
+        DataType::Int8 => {
+            Ok(unsafe { arg.value.i8 }.to_string())
+        }
+        DataType::Int16 => {
+            Ok(unsafe { arg.value.i16 }.to_string())
+        }
+        DataType::Int32 => {
+            Ok(unsafe { arg.value.i32 }.to_string())
+        }
+        DataType::Int64 => {
+            Ok(unsafe { arg.value.i64 }.to_string())
+        }
+        DataType::UInt8 => {
+            Ok(unsafe { arg.value.u8 }.to_string())
+        }
+        DataType::UInt16 => {
+            Ok(unsafe { arg.value.u16 }.to_string())
+        }
+        DataType::UInt32 => {
+            Ok(unsafe { arg.value.u32 }.to_string())
+        }
+        DataType::UInt64 => {
+            Ok(unsafe { arg.value.u64 }.to_string())
+        }
+        DataType::Float32 => {
+            Ok(unsafe { arg.value.float32 }.to_string())
+        }
+        DataType::Float64 => {
+            Ok(unsafe { arg.value.float64 }.to_string())
+        }
+        DataType::Bool => {
+            Ok(unsafe { arg.value.bool }.to_string())
+        }
+        DataType::Json => {
+            typed_value_to_json_string(arg)
+        }
+        _ => Err(QueryExecutionError::TypeMismatch),
+    }
+}
+
+/// 执行JSON_EXTRACT函数
+fn execute_json_extract(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+    let path = typed_value_to_string(&args[1])?;
+
+    let doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    match crate::json::document::json_extract(&doc, &path) {
+        crate::json::document::JsonQueryResult::Scalar(s) => {
+            let mut buf = [0u8; 64];
+            let len = core::cmp::min(s.len(), 64);
+            buf[..len].copy_from_slice(s.as_bytes());
+            Ok(TypedValue {
+                value_type: DataType::Json,
+                value: Value { json_storage: JsonStorage::Inline(buf) },
+            })
+        }
+        crate::json::document::JsonQueryResult::Object(_) | 
+        crate::json::document::JsonQueryResult::Array(_) => {
+            let result_json = match crate::json::document::json_extract(&doc, &path) {
+                crate::json::document::JsonQueryResult::Object(obj_doc) => {
+                    obj_doc.to_json().unwrap_or_else(|_| "null".to_string())
+                }
+                crate::json::document::JsonQueryResult::Array(arr) => {
+                    let json_str = arr.iter()
+                        .map(|item| match item {
+                            crate::json::document::JsonQueryResult::Scalar(s) => s.clone(),
+                            _ => "null".to_string(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    format!("[{}]", json_str)
+                }
+                _ => "null".to_string(),
+            };
+            
+            let mut buf = [0u8; 64];
+            let len = core::cmp::min(result_json.len(), 64);
+            buf[..len].copy_from_slice(result_json.as_bytes());
+            Ok(TypedValue {
+                value_type: DataType::Json,
+                value: Value { json_storage: JsonStorage::Inline(buf) },
+            })
+        }
+        crate::json::document::JsonQueryResult::None => {
+            let mut buf = [0u8; 64];
+            Ok(TypedValue {
+                value_type: DataType::Json,
+                value: Value { json_storage: JsonStorage::Inline(buf) },
+            })
+        }
+    }
+}
+
+/// 执行JSON_VALUE函数
+fn execute_json_value(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+    let path = typed_value_to_string(&args[1])?;
+
+    let doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    match crate::json::document::json_extract(&doc, &path) {
+        crate::json::document::JsonQueryResult::Scalar(s) => {
+            let mut buf = [0; MAX_STRING_LEN];
+            let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+            buf[..len].copy_from_slice(s.as_bytes());
+            Ok(TypedValue {
+                value_type: DataType::VarChar,
+                value: Value { string: buf },
+            })
+        }
+        _ => {
+            let mut buf = [0; MAX_STRING_LEN];
+            Ok(TypedValue {
+                value_type: DataType::VarChar,
+                value: Value { string: buf },
+            })
+        }
+    }
+}
+
+/// 执行JSON_QUERY函数
+fn execute_json_query(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+    let path = typed_value_to_string(&args[1])?;
+
+    let doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    match crate::json::document::json_extract(&doc, &path) {
+        crate::json::document::JsonQueryResult::Object(obj_doc) => {
+            let result_json = obj_doc.to_json()
+                .unwrap_or_else(|_| "null".to_string());
+            let mut buf = [0u8; 64];
+            let len = core::cmp::min(result_json.len(), 64);
+            buf[..len].copy_from_slice(result_json.as_bytes());
+            Ok(TypedValue {
+                value_type: DataType::Json,
+                value: Value { json_storage: JsonStorage::Inline(buf) },
+            })
+        }
+        crate::json::document::JsonQueryResult::Array(arr) => {
+            let json_str = arr.iter()
+                .map(|item| match item {
+                    crate::json::document::JsonQueryResult::Scalar(s) => s.clone(),
+                    _ => "null".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let result_json = format!("[{}]", json_str);
+            let mut buf = [0u8; 64];
+            let len = core::cmp::min(result_json.len(), 64);
+            buf[..len].copy_from_slice(result_json.as_bytes());
+            Ok(TypedValue {
+                value_type: DataType::Json,
+                value: Value { json_storage: JsonStorage::Inline(buf) },
+            })
+        }
+        _ => {
+            let mut buf = [0u8; 64];
+            Ok(TypedValue {
+                value_type: DataType::Json,
+                value: Value { json_storage: JsonStorage::Inline(buf) },
+            })
+        }
+    }
+}
+
+/// 执行JSON_HAS函数
+fn execute_json_has(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+    let path = typed_value_to_string(&args[1])?;
+
+    let doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    let has = crate::json::document::json_has(&doc, &path);
+    Ok(TypedValue {
+        value_type: DataType::Bool,
+        value: Value { bool: has },
+    })
+}
+
+/// 执行JSON_TYPE函数
+fn execute_json_type(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+    let path = typed_value_to_string(&args[1])?;
+
+    let doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    let type_str = crate::json::document::json_type(&doc, &path);
+    let mut buf = [0; MAX_STRING_LEN];
+    let len = core::cmp::min(type_str.len(), MAX_STRING_LEN);
+    buf[..len].copy_from_slice(type_str.as_bytes());
+    Ok(TypedValue {
+        value_type: DataType::VarChar,
+        value: Value { string: buf },
+    })
+}
+
+/// 执行JSON_SET函数
+fn execute_json_set(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 3 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+    let path = typed_value_to_string(&args[1])?;
+    let value_str = typed_value_to_string(&args[2])?;
+
+    let mut doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    crate::json::document::json_set(&mut doc, &path, &value_str)
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    let new_json_str = doc.to_json()
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    let mut buf = [0u8; 64];
+    let len = core::cmp::min(new_json_str.len(), 64);
+    buf[..len].copy_from_slice(new_json_str.as_bytes());
+    Ok(TypedValue {
+        value_type: DataType::Json,
+        value: Value { json_storage: JsonStorage::Inline(buf) },
+    })
+}
+
+/// 执行JSON_REMOVE函数
+fn execute_json_remove(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+    let path = typed_value_to_string(&args[1])?;
+
+    let mut doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    crate::json::document::json_remove(&mut doc, &path)
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    let new_json_str = doc.to_json()
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    let mut buf = [0u8; 64];
+    let len = core::cmp::min(new_json_str.len(), 64);
+    buf[..len].copy_from_slice(new_json_str.as_bytes());
+    Ok(TypedValue {
+        value_type: DataType::Json,
+        value: Value { json_storage: JsonStorage::Inline(buf) },
+    })
+}
+
+/// 执行JSON_MERGE_PATCH函数
+fn execute_json_merge_patch(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 2 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+    let patch_str = typed_value_to_string(&args[1])?;
+
+    let mut doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    crate::json::document::json_merge_patch(&mut doc, &patch_str)
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    let new_json_str = doc.to_json()
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    let mut buf = [0u8; 64];
+    let len = core::cmp::min(new_json_str.len(), 64);
+    buf[..len].copy_from_slice(new_json_str.as_bytes());
+    Ok(TypedValue {
+        value_type: DataType::Json,
+        value: Value { json_storage: JsonStorage::Inline(buf) },
+    })
+}
+
+/// 执行JSON_ARRAY_APPEND函数
+fn execute_json_array_append(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.len() < 3 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+    let path = typed_value_to_string(&args[1])?;
+    let value_str = typed_value_to_string(&args[2])?;
+
+    let mut doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    let json_value = crate::json::document::JsonDocument::parse_json_str(&value_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    let value_json_str = json_value.to_json_string();
+    
+    crate::json::document::json_set(&mut doc, &path, &value_json_str)
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    let new_json_str = doc.to_json()
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    let mut buf = [0u8; 64];
+    let len = core::cmp::min(new_json_str.len(), 64);
+    buf[..len].copy_from_slice(new_json_str.as_bytes());
+    Ok(TypedValue {
+        value_type: DataType::Json,
+        value: Value { json_storage: JsonStorage::Inline(buf) },
+    })
+}
+
+/// 执行JSON_ARRAY_LENGTH函数
+fn execute_json_array_length(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+
+    let doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    match crate::json::document::json_extract(&doc, "$") {
+        crate::json::document::JsonQueryResult::Array(arr) => {
+            let length = arr.len() as u64;
+            Ok(TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: length },
+            })
+        }
+        _ => {
+            Ok(TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: 0 },
+            })
+        }
+    }
+}
+
+/// 执行JSON_ARRAY函数
+fn execute_json_array(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        let mut buf = [0u8; 64];
+        let json_str = "[]";
+        let len = core::cmp::min(json_str.len(), 64);
+        buf[..len].copy_from_slice(json_str.as_bytes());
+        return Ok(TypedValue {
+            value_type: DataType::Json,
+            value: Value { json_storage: JsonStorage::Inline(buf) },
+        });
+    }
+
+    let mut array_items = Vec::new();
+    for arg in args {
+        let item_str: String = unsafe {
+            match arg.value_type {
+                DataType::Json => {
+                    typed_value_to_json_string(arg)?
+                }
+                DataType::VarChar | DataType::Char | DataType::Text => {
+                    let data = &arg.value.string;
+                    let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
+                    let s = String::from_utf8_lossy(&data[..len]).to_string();
+                    format!("\"{}\"", s)
+                }
+                DataType::Int8 => format!("{}", arg.value.i8),
+                DataType::Int16 => format!("{}", arg.value.i16),
+                DataType::Int32 => format!("{}", arg.value.i32),
+                DataType::Int64 => format!("{}", arg.value.i64),
+                DataType::UInt8 => format!("{}", arg.value.u8),
+                DataType::UInt16 => format!("{}", arg.value.u16),
+                DataType::UInt32 => format!("{}", arg.value.u32),
+                DataType::UInt64 => format!("{}", arg.value.u64),
+                DataType::Float32 => format!("{}", arg.value.float32),
+                DataType::Float64 => format!("{}", arg.value.float64),
+                DataType::Bool => {
+                    if arg.value.bool { "true".to_string() } else { "false".to_string() }
+                }
+                _ => "null".to_string(),
+            }
+        };
+        array_items.push(item_str);
+    }
+
+    let json_str = format!("[{}]", array_items.join(","));
+    let mut buf = [0u8; 64];
+    let len = core::cmp::min(json_str.len(), 64);
+    buf[..len].copy_from_slice(json_str.as_bytes());
+    Ok(TypedValue {
+        value_type: DataType::Json,
+        value: Value { json_storage: JsonStorage::Inline(buf) },
+    })
+}
+
+/// 执行JSON_OBJECT函数
+fn execute_json_object(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() || args.len() % 2 != 0 {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let mut object_items = Vec::new();
+    for i in (0..args.len()).step_by(2) {
+        let key_str = typed_value_to_string(&args[i])?;
+        let value_str: String = unsafe {
+            match args[i + 1].value_type {
+                DataType::Json => {
+                    typed_value_to_json_string(&args[i + 1])?
+                }
+                DataType::VarChar | DataType::Char | DataType::Text => {
+                    let data = &args[i + 1].value.string;
+                    let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
+                    let s = String::from_utf8_lossy(&data[..len]).to_string();
+                    format!("\"{}\"", s)
+                }
+                DataType::Int8 => format!("{}", args[i + 1].value.i8),
+                DataType::Int16 => format!("{}", args[i + 1].value.i16),
+                DataType::Int32 => format!("{}", args[i + 1].value.i32),
+                DataType::Int64 => format!("{}", args[i + 1].value.i64),
+                DataType::UInt8 => format!("{}", args[i + 1].value.u8),
+                DataType::UInt16 => format!("{}", args[i + 1].value.u16),
+                DataType::UInt32 => format!("{}", args[i + 1].value.u32),
+                DataType::UInt64 => format!("{}", args[i + 1].value.u64),
+                DataType::Float32 => format!("{}", args[i + 1].value.float32),
+                DataType::Float64 => format!("{}", args[i + 1].value.float64),
+                DataType::Bool => {
+                    if args[i + 1].value.bool { "true".to_string() } else { "false".to_string() }
+                }
+                _ => "null".to_string(),
+            }
+        };
+        object_items.push(format!("\"{}\":{}", key_str, value_str));
+    }
+
+    let json_str = format!("{{{}}}", object_items.join(","));
+    let mut buf = [0u8; 64];
+    let len = core::cmp::min(json_str.len(), 64);
+    buf[..len].copy_from_slice(json_str.as_bytes());
+    Ok(TypedValue {
+        value_type: DataType::Json,
+        value: Value { json_storage: JsonStorage::Inline(buf) },
+    })
 }
 
 /// 解析时间间隔字符串

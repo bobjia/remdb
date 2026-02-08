@@ -2557,7 +2557,12 @@ impl SqlParser {
         &mut self,
     ) -> Result<(String, Option<String>, Vec<JoinClause>), QueryParseError> {
         self.skip_whitespace();
-        self.expect_keyword("FROM")?;
+
+        // 检查是否有FROM关键字（FROM是可选的）
+        if !self.match_keyword("FROM") {
+            // 没有FROM子句，返回空值
+            return Ok((String::new(), None, Vec::new()));
+        }
 
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
