@@ -2758,7 +2758,7 @@ impl DdlExecutor for RemDb {
                 log_data.extend_from_slice(&table_name_bytes[..table_name_len]);
                 let field_name_bytes = field_name.as_bytes();
                 let field_name_len = core::cmp::min(field_name_bytes.len(), 64);
-                log_data.resize(65, 0);
+                log_data.resize(66, 0);
                 log_data[65] = field_name_len as u8;
                 log_data.extend_from_slice(&field_name_bytes[..field_name_len]);
                 log_data.resize(130, 0);

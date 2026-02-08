@@ -1169,6 +1169,8 @@ impl LogManager {
 
         let mut current_offset = header_size;
         let mut record_index = 0u32;
+        let mut consecutive_invalid_records = 0u32;
+        const MAX_CONSECUTIVE_INVALID: u32 = 100;
 
         while current_offset < file_size {
             if let Err(_) = crate::platform::file_seek(
@@ -1292,14 +1294,22 @@ impl LogManager {
                             valid_log_items.push(var_log_item);
                             current_offset += header_size_bytes + header.old_data_size as usize + header.new_data_size as usize;
                             record_index += 1;
+                            consecutive_invalid_records = 0;
                             continue;
                         }
                     }
                 }
             }
 
+            consecutive_invalid_records += 1;
+            if consecutive_invalid_records > MAX_CONSECUTIVE_INVALID {
+                #[cfg(feature = "log")]
+                error!("Too many consecutive invalid records ({}), stopping recovery at offset {}", consecutive_invalid_records, current_offset);
+                break;
+            }
+
             #[cfg(feature = "log")]
-            warn!("Invalid log item at offset {}, skipping to next record", current_offset);
+            warn!("Invalid log item at offset {}, skipping to next record (consecutive invalid: {})", current_offset, consecutive_invalid_records);
             current_offset += header_size_bytes;
         }
 
