@@ -3193,13 +3193,8 @@ impl SqlParser {
                 string_value.push(c);
             }
             
-            // 尝试将字符串解析为时间值
-            if let Ok(timestamp) = parse_time_string(&string_value) {
-                #[cfg(feature = "log")]
-                debug!("parse_value: Parsed as timestamp");
-                Ok(Value::Integer(timestamp))
-            } else if string_value.starts_with("__JSON__:") {
-                // 检查是否是带类型提示的JSON字符串
+            // 先检查是否是带类型提示的JSON字符串
+            if string_value.starts_with("__JSON__:") {
                 let json_str = string_value.trim_start_matches("__JSON__:");
                 #[cfg(feature = "log")]
                 debug!("parse_value: Parsed as JSON with prefix");
@@ -3213,10 +3208,17 @@ impl SqlParser {
                     debug!("parse_value: Parsed as JSON (unquoted starts with {{ or [)");
                     Ok(Value::Json(unquoted.to_string()))
                 } else {
-                    // 不是JSON格式，作为普通字符串处理
-                    #[cfg(feature = "log")]
-                    debug!("parse_value: Parsed as String");
-                    Ok(Value::String(string_value))
+                    // 尝试将字符串解析为时间值
+                    if let Ok(timestamp) = parse_time_string(&string_value) {
+                        #[cfg(feature = "log")]
+                        debug!("parse_value: Parsed as timestamp");
+                        Ok(Value::Integer(timestamp))
+                    } else {
+                        // 不是JSON格式，作为普通字符串处理
+                        #[cfg(feature = "log")]
+                        debug!("parse_value: Parsed as String");
+                        Ok(Value::String(string_value))
+                    }
                 }
             }
         } else if self.match_keyword("NULL") {

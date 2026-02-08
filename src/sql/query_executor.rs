@@ -8255,6 +8255,19 @@ fn set_field_value_with_depth(
                             evaluated_value.value.json_storage,
                         );
                     }
+                    DataType::Int64 => {
+                        // 处理NULL值（Int64(0)表示NULL）
+                        if evaluated_value.value.i64 == 0 {
+                            core::ptr::write_unaligned(
+                                record_data.as_mut_ptr().add(offset) as *mut crate::types::JsonStorage,
+                                crate::types::JsonStorage::Null,
+                            );
+                        } else {
+                            #[cfg(feature = "log")]
+                            debug!("JSON field got unexpected Int64 value: {}", evaluated_value.value.i64);
+                            return Err(QueryExecutionError::TypeMismatch);
+                        }
+                    }
                     _ => {
                         #[cfg(feature = "log")]
                         debug!("JSON field got unexpected type: {:?}", evaluated_value.value_type);
