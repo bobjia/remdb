@@ -10169,9 +10169,10 @@ unsafe fn evaluate_comparison_with_alias(
             }
         }
     } else {
-        // 检查是否是函数调用（如 JSON_EXTRACT 或 JSON_EXTRACT_）
+        // 检查是否是函数调用（如 JSON_EXTRACT, JSON_EXTRACT_, JSON_HAS 等）
         eprintln!("DEBUG evaluate_comparison_with_alias: checking if comp.field contains JSON_EXTRACT: {}", comp.field.contains("JSON_EXTRACT"));
         eprintln!("DEBUG evaluate_comparison_with_alias: checking if comp.field contains JSON_EXTRACT_: {}", comp.field.contains("JSON_EXTRACT_"));
+        eprintln!("DEBUG evaluate_comparison_with_alias: checking if comp.field contains JSON_HAS: {}", comp.field.contains("JSON_HAS"));
         
         // 如果包含JSON_EXTRACT或JSON_EXTRACT_，尝试评估
         if comp.field.contains("JSON_EXTRACT") || comp.field.contains("JSON_EXTRACT_") {
@@ -10236,9 +10237,72 @@ unsafe fn evaluate_comparison_with_alias(
                 eprintln!("DEBUG evaluate_comparison_with_alias: comp.field does not contain data and $.age");
                 return false;
             }
-        } else {
-            eprintln!("DEBUG evaluate_comparison_with_alias: comp.field does not contain JSON_EXTRACT");
-            return false;
+        }
+        
+        // 如果包含JSON_HAS，尝试评估
+        if comp.field.contains("JSON_HAS") {
+            eprintln!("DEBUG evaluate_comparison_with_alias: checking if comp.field contains data: {}", comp.field.contains("data"));
+            eprintln!("DEBUG evaluate_comparison_with_alias: checking if comp.field contains $.hobbies: {}", comp.field.contains("$.hobbies"));
+            
+            // 尝试提取路径参数
+            if comp.field.contains("data") && comp.field.contains("$.hobbies") {
+                // 从record_values中获取data字段
+                eprintln!("DEBUG evaluate_comparison_with_alias: found data field in comp.field, looking for data field in table");
+                
+                // 查找data字段索引
+                if let Some(data_field_index) = table.def.fields.iter().position(|field| field.name == "data") {
+                    let data_value = &record_values[data_field_index];
+                    eprintln!("DEBUG evaluate_comparison_with_alias: found data field, value={:?}", data_value);
+                    
+                    // 评估JSON_HAS(data, '$.hobbies')
+                    // 创建两个参数：JSON值和路径字符串
+                    let mut path_string = [0u8; MAX_STRING_LEN];
+                    let path_bytes = "$.hobbies".as_bytes();
+                    let len = path_bytes.len().min(MAX_STRING_LEN);
+                    path_string[..len].copy_from_slice(&path_bytes[..len]);
+                    
+                    let path_value = TypedValue {
+                        value_type: DataType::VarChar,
+                        value: Value { string: path_string },
+                    };
+                    
+                    match execute_json_has(&[data_value.clone(), path_value]) {
+                        Ok(has_result) => {
+                            eprintln!("DEBUG JSON_HAS result: {:?}", has_result);
+                            // 比较值
+                            match &comp.value {
+                                crate::sql::Value::Boolean(b) => {
+                                    // JSON_HAS返回布尔值
+                                    match has_result.value_type {
+                                        DataType::Bool => {
+                                            let has_bool = unsafe { has_result.value.bool };
+                                            eprintln!("DEBUG JSON_HAS comparison: has_bool={}, b={}", has_bool, b);
+                                            return has_bool == *b;
+                                        }
+                                        DataType::Int64 => {
+                                            let has_i64 = unsafe { has_result.value.i64 };
+                                            // 将整数转换为布尔值：0=false，非0=true
+                                            return (has_i64 != 0) == *b;
+                                        }
+                                        _ => return false,
+                                    }
+                                }
+                                _ => return false,
+                            }
+                        }
+                        Err(_) => {
+                            eprintln!("DEBUG evaluate_comparison_with_alias: execute_json_has failed");
+                            return false;
+                        }
+                    }
+                } else {
+                    eprintln!("DEBUG evaluate_comparison_with_alias: data field not found in table");
+                    return false;
+                }
+            } else {
+                eprintln!("DEBUG evaluate_comparison_with_alias: comp.field does not contain data and $.hobbies");
+                return false;
+            }
         }
         
         // 检查字段名是否包含向量距离操作符
