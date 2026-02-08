@@ -2,7 +2,22 @@
 REM Batch script to run all Rust examples
 
 REM Create a unique log file name to avoid locking issues
-set LOG_FILE=example_runner_%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%%time:~6,2%.log
+REM Fix date and time format to avoid issues with regional settings
+set "YYYY=%date:~0,4%"
+set "MM=%date:~5,2%"
+set "DD=%date:~8,2%"
+set "HH=%time:~0,2%"
+set "MI=%time:~3,2%"
+set "SS=%time:~6,2%"
+
+REM Ensure leading zero for hours (fixes issues with single-digit hours)
+if "%HH:~0,1%"==" " set "HH=0%HH:~1,1%"
+
+REM Remove slashes from date to make valid filename
+set "MM=%MM:/=%%"
+set "DD=%DD:/=%%"
+
+set "LOG_FILE=example_runner_%YYYY%%MM%%DD%_%HH%%MI%%SS%.log"
 
 REM Initialize counters outside of setlocal to preserve values
 set success_count=0
@@ -54,9 +69,13 @@ echo.
     REM Use separate output redirection to avoid file locking
     cargo run --example "%%~nf" %features% > temp_output.txt 2>&1
     
-    REM Append temp output to log file
-    type temp_output.txt >> %LOG_FILE%
-    del temp_output.txt > nul 2>&1
+    REM Append temp output to log file (if it exists)
+    if exist temp_output.txt (
+        type temp_output.txt >> %LOG_FILE%
+        del temp_output.txt > nul 2>&1
+    ) else (
+        echo [NOTE] No output file generated for this example >> %LOG_FILE%
+    )
     
     REM Check exit code
     if %errorlevel% equ 0 (
