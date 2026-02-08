@@ -7168,8 +7168,8 @@ fn execute_insert_query(
     }
 
     // 4. 暂时跳过事务处理，直接执行插入操作
-    let mut tx_buffer = [0u8; core::mem::size_of::<crate::transaction::Transaction>()];
-    let mut log_buffer = [0u8; core::mem::size_of::<crate::transaction::LogItem>() * 10];
+    let mut tx_buffer = crate::transaction::Transaction::default();
+    let mut log_buffer = alloc::vec![crate::transaction::VariableSizeLogItem::default(); 10];
     let has_active_tx = crate::transaction::has_active_tx();
 
     if !has_active_tx {
@@ -7178,8 +7178,8 @@ fn execute_insert_query(
             crate::transaction::begin(
                 crate::transaction::TransactionType::ReadWrite,
                 crate::transaction::IsolationLevel::ReadCommitted,
-                tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
-                log_buffer.as_mut_ptr() as *mut crate::transaction::VariableSizeLogItem,
+                &mut tx_buffer,
+                log_buffer.as_mut_ptr(),
                 10,
             )
             .map_err(|_| QueryExecutionError::InternalError)?;
@@ -7619,8 +7619,8 @@ fn execute_delete_query(
 
     // 3. 检查是否有活跃事务，如果没有则创建一个
     let has_active_tx = crate::transaction::has_active_tx();
-    let mut tx_buffer = [0u8; core::mem::size_of::<crate::transaction::Transaction>()];
-    let mut log_buffer = [0u8; core::mem::size_of::<crate::transaction::LogItem>() * 10];
+    let mut tx_buffer = crate::transaction::Transaction::default();
+    let mut log_buffer = alloc::vec![crate::transaction::VariableSizeLogItem::default(); 10];
 
     if !has_active_tx {
         // 没有活跃事务，开始一个新事务
@@ -7628,8 +7628,8 @@ fn execute_delete_query(
             crate::transaction::begin(
                 crate::transaction::TransactionType::ReadWrite,
                 crate::transaction::IsolationLevel::ReadCommitted,
-                tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
-                log_buffer.as_mut_ptr() as *mut crate::transaction::VariableSizeLogItem,
+                &mut tx_buffer,
+                log_buffer.as_mut_ptr(),
                 10,
             )
             .map_err(|_| QueryExecutionError::InternalError)?;
@@ -7719,8 +7719,8 @@ fn execute_update_query(
 
     // 3. 检查是否有活跃事务，如果没有则创建一个
     let has_active_tx = crate::transaction::has_active_tx();
-    let mut tx_buffer = [0u8; core::mem::size_of::<crate::transaction::Transaction>()];
-    let mut log_buffer = [0u8; core::mem::size_of::<crate::transaction::LogItem>() * 10];
+    let mut tx_buffer = crate::transaction::Transaction::default();
+    let mut log_buffer = alloc::vec![crate::transaction::VariableSizeLogItem::default(); 10];
 
     if !has_active_tx {
         // 没有活跃事务，开始一个新事务
@@ -7728,8 +7728,8 @@ fn execute_update_query(
             crate::transaction::begin(
                 crate::transaction::TransactionType::ReadWrite,
                 crate::transaction::IsolationLevel::ReadCommitted,
-                tx_buffer.as_mut_ptr() as *mut crate::transaction::Transaction,
-                log_buffer.as_mut_ptr() as *mut crate::transaction::VariableSizeLogItem,
+                &mut tx_buffer,
+                log_buffer.as_mut_ptr(),
                 10,
             )
             .map_err(|_| QueryExecutionError::InternalError)?;

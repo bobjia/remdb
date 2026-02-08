@@ -1025,17 +1025,16 @@ impl MemoryTable {
             unsafe {
                 if let Some(mut tx) = crate::transaction::get_current_tx() {
                     let tx_id = tx.as_mut().id;
-                    let var_log_item = tx.as_mut().begin_variable_size_log_item(
+                    // 使用begin_log_item将日志项添加到事务的日志缓冲区
+                    tx.as_mut().begin_log_item(
                         tx_id,
                         crate::transaction::LogOperation::Insert,
                         self.def.id,
                         slot_id as u16,
+                        self.record_size as u16,
                         None,
                         Some(&new_data),
                     );
-                    if let Some(log_manager) = crate::transaction::get_log_manager() {
-                        log_manager.write_variable_size_log_item(&var_log_item).unwrap_or(());
-                    }
                 }
             }
         }
@@ -1175,17 +1174,16 @@ impl MemoryTable {
             if let Some(mut tx) = crate::transaction::get_current_tx() {
                 unsafe {
                     let tx_id = tx.as_mut().id;
-                    let var_log_item = tx.as_mut().begin_variable_size_log_item(
+                    // 使用begin_log_item将日志项添加到事务的日志缓冲区
+                    tx.as_mut().begin_log_item(
                         tx_id,
                         crate::transaction::LogOperation::Update,
                         self.def.id,
                         id as u16,
+                        self.record_size as u16,
                         Some(&old_data),
                         Some(&new_data),
                     );
-                    if let Some(log_manager) = crate::transaction::get_log_manager() {
-                        log_manager.write_variable_size_log_item(&var_log_item).unwrap_or(());
-                    }
                 }
             }
         }
@@ -1226,17 +1224,16 @@ impl MemoryTable {
             if let Some(mut tx) = crate::transaction::get_current_tx() {
                 unsafe {
                     let tx_id = tx.as_mut().id;
-                    let var_log_item = tx.as_mut().begin_variable_size_log_item(
+                    // 使用begin_log_item将日志项添加到事务的日志缓冲区
+                    tx.as_mut().begin_log_item(
                         tx_id,
                         crate::transaction::LogOperation::Delete,
                         self.def.id,
                         id as u16,
+                        self.record_size as u16,
                         Some(&old_data),
                         None,
                     );
-                    if let Some(log_manager) = crate::transaction::get_log_manager() {
-                        log_manager.write_variable_size_log_item(&var_log_item).unwrap_or(());
-                    }
                 }
             }
         }

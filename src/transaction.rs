@@ -3169,16 +3169,24 @@ pub unsafe fn begin(
 
 /// 简化的事务开始函数，用于SQL查询
 pub unsafe fn begin_transaction() {
-    // 创建临时事务缓冲区和日志缓冲区
-    let mut tx_buffer = Transaction::default();
-    let mut log_buffer = vec![VariableSizeLogItem::default(); 1024];
+    // 使用Box::leak创建静态缓冲区，确保生命周期足够长
+    static mut TX_BUFFER: Option<Box<Transaction>> = None;
+    static mut LOG_BUFFER: Option<Box<[VariableSizeLogItem]>> = None;
+    
+    // 初始化缓冲区（仅第一次调用时）
+    if TX_BUFFER.is_none() {
+        TX_BUFFER = Some(Box::new(Transaction::default()));
+    }
+    if LOG_BUFFER.is_none() {
+        LOG_BUFFER = Some(vec![VariableSizeLogItem::default(); 1024].into_boxed_slice());
+    }
     
     // 默认使用读写事务和可重复读隔离级别
     let _ = TX_MANAGER.begin(
         TransactionType::ReadWrite,
         IsolationLevel::RepeatableRead,
-        &mut tx_buffer as *mut Transaction,
-        log_buffer.as_mut_ptr(),
+        &mut **TX_BUFFER.as_mut().unwrap(),
+        LOG_BUFFER.as_mut().unwrap().as_mut_ptr(),
         1024,
     );
 }

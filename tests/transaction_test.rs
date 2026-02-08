@@ -141,13 +141,11 @@ fn test_transaction_begin_commit() {
         let db = init_global_db(&TEST_DB_CONFIG).unwrap();
 
         // 事务缓冲区
-        #[allow(invalid_value)]
-        let mut tx_buffer =
-            unsafe { core::mem::MaybeUninit::<Transaction>::uninit().assume_init() };
+        let mut tx_buffer = Transaction::default();
 
-        let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut log_buffer {
-            *item = VariableSizeLogItem::default();
+        let mut log_buffer = Vec::with_capacity(10);
+        for _ in 0..10 {
+            log_buffer.push(VariableSizeLogItem::default());
         }
 
         // 开始事务
@@ -223,10 +221,10 @@ fn test_mvcc_snapshot_isolation() {
         let db = init_global_db(&TEST_DB_CONFIG).unwrap();
 
         // 事务1：插入初始记录
-        let mut tx1_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-        let mut tx1_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut tx1_log_buffer {
-            *item = VariableSizeLogItem::default();
+        let mut tx1_buffer = Transaction::default();
+        let mut tx1_log_buffer = Vec::with_capacity(10);
+        for _ in 0..10 {
+            tx1_log_buffer.push(VariableSizeLogItem::default());
         }
 
         let tx1 = db
@@ -261,10 +259,10 @@ fn test_mvcc_snapshot_isolation() {
         db.commit_transaction().unwrap();
 
         // 事务2：开始读取事务，建立快照
-        let mut tx2_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-        let mut tx2_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut tx2_log_buffer {
-            *item = VariableSizeLogItem::default();
+        let mut tx2_buffer = Transaction::default();
+        let mut tx2_log_buffer = Vec::with_capacity(10);
+        for _ in 0..10 {
+            tx2_log_buffer.push(VariableSizeLogItem::default());
         }
 
         let tx2 = db
@@ -292,10 +290,10 @@ fn test_mvcc_snapshot_isolation() {
         db.commit_transaction().unwrap();
 
         // 事务3：更新记录
-        let mut tx3_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-        let mut tx3_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut tx3_log_buffer {
-            *item = VariableSizeLogItem::default();
+        let mut tx3_buffer = Transaction::default();
+        let mut tx3_log_buffer = Vec::with_capacity(10);
+        for _ in 0..10 {
+            tx3_log_buffer.push(VariableSizeLogItem::default());
         }
 
         let tx3 = db
@@ -328,10 +326,10 @@ fn test_mvcc_snapshot_isolation() {
         db.commit_transaction().unwrap();
 
         // 新事务：读取最新值
-        let mut tx4_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-        let mut tx4_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut tx4_log_buffer {
-            *item = VariableSizeLogItem::default();
+        let mut tx4_buffer = Transaction::default();
+        let mut tx4_log_buffer = Vec::with_capacity(10);
+        for _ in 0..10 {
+            tx4_log_buffer.push(VariableSizeLogItem::default());
         }
 
         let tx4 = db
@@ -416,10 +414,10 @@ fn test_mvcc_version_chain() {
 
         for i in 0..3 {
             // 为每个事务单独创建缓冲区
-            let mut tx_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-            let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-            for item in &mut log_buffer {
-                *item = VariableSizeLogItem::default();
+            let mut tx_buffer = Transaction::default();
+            let mut log_buffer = Vec::with_capacity(10);
+            for _ in 0..10 {
+                log_buffer.push(VariableSizeLogItem::default());
             }
 
             // 开始事务
@@ -479,7 +477,7 @@ fn test_mvcc_version_chain() {
 #[serial]
 fn test_mvcc_gc() {
     unsafe {
-        let _db_memory = setup_test_db();
+        let _db_memory = setup_test_db_with_memory(10 * 1024 * 1024); // 10MB内存
 
         // 重置事务管理器
         crate::transaction::init_tx_manager();
@@ -528,10 +526,10 @@ fn test_mvcc_gc() {
         // 多次更新记录，创建版本链
         for i in 0..5 {
             // 为每个事务单独创建缓冲区
-            let mut tx_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-            let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-            for item in &mut log_buffer {
-                *item = VariableSizeLogItem::default();
+            let mut tx_buffer = Transaction::default();
+            let mut log_buffer = Vec::with_capacity(10);
+            for _ in 0..10 {
+                log_buffer.push(VariableSizeLogItem::default());
             }
 
             // 开始事务
@@ -639,10 +637,10 @@ fn test_mvcc_visibility() {
 
         // 事务1：更新记录
         {
-            let mut tx1_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-            let mut tx1_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-            for item in &mut tx1_log_buffer {
-                *item = VariableSizeLogItem::default();
+            let mut tx1_buffer = Transaction::default();
+            let mut tx1_log_buffer = Vec::with_capacity(10);
+            for _ in 0..10 {
+                tx1_log_buffer.push(VariableSizeLogItem::default());
             }
 
             let tx1 = db
@@ -681,10 +679,10 @@ fn test_mvcc_visibility() {
 
         // 事务2：读取记录（应该能看到事务1的更新）
         {
-            let mut tx2_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
-            let mut tx2_log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-            for item in &mut tx2_log_buffer {
-                *item = VariableSizeLogItem::default();
+            let mut tx2_buffer = Transaction::default();
+            let mut tx2_log_buffer = Vec::with_capacity(10);
+            for _ in 0..10 {
+                tx2_log_buffer.push(VariableSizeLogItem::default());
             }
 
             let tx2 = db
@@ -750,12 +748,11 @@ fn test_transaction_rollback() {
         let db = init_global_db(&TEST_DB_CONFIG).unwrap();
 
         // 事务缓冲区
-        #[allow(invalid_value)]
-        let mut tx_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
+        let mut tx_buffer = Transaction::default();
 
-        let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut log_buffer {
-            *item = VariableSizeLogItem::default();
+        let mut log_buffer = Vec::with_capacity(10);
+        for _ in 0..10 {
+            log_buffer.push(VariableSizeLogItem::default());
         }
 
         // 开始事务
@@ -848,12 +845,11 @@ fn test_transaction_update_rollback() {
             .unwrap();
 
         // 事务缓冲区
-        #[allow(invalid_value)]
-        let mut tx_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
+        let mut tx_buffer = Transaction::default();
 
-        let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut log_buffer {
-            *item = VariableSizeLogItem::default();
+        let mut log_buffer = Vec::with_capacity(10);
+        for _ in 0..10 {
+            log_buffer.push(VariableSizeLogItem::default());
         }
 
         // 开始事务
@@ -958,12 +954,11 @@ fn test_transaction_delete_rollback() {
             .unwrap();
 
         // 事务缓冲区
-        #[allow(invalid_value)]
-        let mut tx_buffer = core::mem::MaybeUninit::<Transaction>::uninit().assume_init();
+        let mut tx_buffer = Transaction::default();
 
-        let mut log_buffer: [VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut log_buffer {
-            *item = VariableSizeLogItem::default();
+        let mut log_buffer = Vec::with_capacity(10);
+        for _ in 0..10 {
+            log_buffer.push(VariableSizeLogItem::default());
         }
 
         // 开始事务

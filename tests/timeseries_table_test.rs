@@ -138,7 +138,7 @@ static ROLLBACK_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::syn
 fn test_write_timeseries_batch_acid() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    let _db_memory = setup_test_db_with_memory(10 * 1024 * 1024); // 10MB内存
 
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -229,7 +229,7 @@ fn test_write_timeseries_batch_acid() {
 fn test_write_timeseries_batch_performance() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    let _db_memory = setup_test_db_with_memory(20 * 1024 * 1024); // 20MB内存
 
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -303,7 +303,7 @@ fn test_write_timeseries_batch_performance() {
 fn test_write_timeseries_batch_rollback() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    let _db_memory = setup_test_db_with_memory(10 * 1024 * 1024); // 10MB内存
 
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -353,7 +353,7 @@ fn test_write_timeseries_batch_rollback() {
 fn test_time_type_support() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    let _db_memory = setup_test_db_with_memory(10 * 1024 * 1024); // 10MB内存
 
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -427,7 +427,7 @@ fn test_time_type_support() {
 fn test_time_arithmetic() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    let _db_memory = setup_test_db_with_memory(10 * 1024 * 1024); // 10MB内存
 
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -508,7 +508,7 @@ fn test_time_arithmetic() {
 fn test_time_precision_support() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    let _db_memory = setup_test_db_with_memory(10 * 1024 * 1024); // 10MB内存
 
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
@@ -555,7 +555,7 @@ fn test_time_precision_support() {
 fn test_time_series_pre_aggregation() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    let _db_memory = setup_test_db_with_memory(10 * 1024 * 1024); // 10MB内存
 
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
