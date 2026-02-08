@@ -2329,13 +2329,21 @@ impl SqlParser {
             // 检查是否是布尔值
             let saved_pos_bool = self.position;
             if self.match_keyword("TRUE") {
+                eprintln!("DEBUG parse_primary_expression: matched TRUE");
                 return Ok(Expression::Constant { 
                     value: Value::Boolean(true), 
                     alias: None 
                 });
             } else if self.match_keyword("FALSE") {
+                eprintln!("DEBUG parse_primary_expression: matched FALSE");
                 return Ok(Expression::Constant { 
                     value: Value::Boolean(false), 
+                    alias: None 
+                });
+            } else if self.match_keyword("NULL") {
+                eprintln!("DEBUG parse_primary_expression: matched NULL");
+                return Ok(Expression::Constant { 
+                    value: Value::Null, 
                     alias: None 
                 });
             }
@@ -3227,10 +3235,13 @@ impl SqlParser {
                 }
             }
         } else if self.match_keyword("NULL") {
+            eprintln!("DEBUG parse_value: matched NULL keyword");
             Ok(Value::Null)
         } else if self.match_keyword("TRUE") {
+            eprintln!("DEBUG parse_value: matched TRUE keyword");
             Ok(Value::Boolean(true))
         } else if self.match_keyword("FALSE") {
+            eprintln!("DEBUG parse_value: matched FALSE keyword");
             Ok(Value::Boolean(false))
         } else if self.match_keyword("NOW") {
             // 处理NOW()函数

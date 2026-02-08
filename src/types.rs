@@ -543,9 +543,9 @@ impl db_timestamp {
 /// JSON存储方式枚举
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum JsonStorage {
-    /// 内联存储（最多64字节）
-    Inline([u8; 64]),
-    /// 外部存储（超过64字节）
+    /// 内联存储（最多256字节）
+    Inline([u8; 256]),
+    /// 外部存储（超过256字节）
     External {
         /// 内存池ID
         pool_id: u8,
