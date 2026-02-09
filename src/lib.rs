@@ -299,6 +299,10 @@ impl DatabaseManager {
                 log_prealloc_size: 0,
                 log_segment_size: 16 * 1024 * 1024,
                 retained_checkpoints: 2,
+                max_consecutive_invalid: 100,
+                skip_threshold: 20,
+                skip_block_size: 4096,
+                max_skip_attempts: 10,
             },
             time_series_defaults: crate::time_series::TimeSeriesConfig {
                 max_partitions: 100,

@@ -906,6 +906,10 @@ pub unsafe extern "C" fn remdb_init_global(
             log_prealloc_size: 16 * 1024 * 1024,   // 默认16MB
             log_segment_size: 16 * 1024 * 1024,    // 默认16MB
             retained_checkpoints: 2,               // 默认保留2个检查点
+            max_consecutive_invalid: 100,
+            skip_threshold: 20,
+            skip_block_size: 4096,
+            max_skip_attempts: 10,
         },
         time_series_defaults: crate::time_series::TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -1072,6 +1076,10 @@ pub unsafe extern "C" fn remdb_get_global(handle: *mut RemDbHandle) -> RemDbErro
             log_prealloc_size: 0,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 2,
+            max_consecutive_invalid: 100,
+            skip_threshold: 20,
+            skip_block_size: 4096,
+            max_skip_attempts: 10,
         },
         time_series_defaults: crate::time_series::TimeSeriesConfig {
             max_partitions: 100,

@@ -256,6 +256,14 @@ pub struct LogManager {
     log_segment_size: usize,
     /// 当前日志项的偏移量（用于可变大小日志项）
     current_log_offset: usize,
+    /// 恢复时最大连续无效记录数
+    max_consecutive_invalid: u32,
+    /// 恢复时跳过预分配空间的阈值
+    skip_threshold: u32,
+    /// 恢复时跳过的块大小
+    skip_block_size: usize,
+    /// 恢复时最大跳过尝试次数
+    max_skip_attempts: u32,
 }
 
 impl Transaction {
@@ -359,6 +367,10 @@ impl LogManager {
             log_file_size_limit: config.wal_config.log_file_size_limit,
             log_segment_size: config.wal_config.log_segment_size,
             current_log_offset: core::mem::size_of::<LogHeader>() + core::mem::size_of::<LogCheckpoint>(),
+            max_consecutive_invalid: config.wal_config.max_consecutive_invalid,
+            skip_threshold: config.wal_config.skip_threshold,
+            skip_block_size: config.wal_config.skip_block_size,
+            max_skip_attempts: config.wal_config.max_skip_attempts,
         };
 
         // 预分配缓冲区空间
@@ -1170,7 +1182,10 @@ impl LogManager {
         let mut current_offset = header_size;
         let mut record_index = 0u32;
         let mut consecutive_invalid_records = 0u32;
-        const MAX_CONSECUTIVE_INVALID: u32 = 100;
+        let max_consecutive_invalid = self.max_consecutive_invalid;
+        let skip_block_size = self.skip_block_size;
+        let skip_threshold = self.skip_threshold;
+        let max_skip_attempts = self.max_skip_attempts;
 
         while current_offset < file_size {
             if let Err(_) = crate::platform::file_seek(
@@ -1302,7 +1317,48 @@ impl LogManager {
             }
 
             consecutive_invalid_records += 1;
-            if consecutive_invalid_records > MAX_CONSECUTIVE_INVALID {
+            
+            // 如果连续无效记录达到跳过阈值，尝试跳过预分配的未使用空间
+            if consecutive_invalid_records == skip_threshold {
+                #[cfg(feature = "log")]
+                warn!("Detected {} consecutive invalid records, attempting to skip preallocated space at offset {}", consecutive_invalid_records, current_offset);
+                
+                let mut skip_attempts = 0;
+                let mut found_valid = false;
+                
+                // 尝试多次跳过，直到找到有效记录或达到最大尝试次数
+                while skip_attempts < max_skip_attempts {
+                    let new_offset = current_offset + skip_block_size;
+                    if new_offset >= file_size {
+                        break;
+                    }
+                    
+                    #[cfg(feature = "log")]
+                    warn!("Skip attempt {}: trying offset {} (+{} bytes)", skip_attempts + 1, new_offset, skip_block_size);
+                    
+                    // 检查新偏移量处是否有有效记录
+                    // 这里我们直接跳过，让主循环的下一次迭代来检查
+                    // 如果跳过后仍然是无效记录，计数器会增加，我们会继续尝试
+                    current_offset = new_offset;
+                    skip_attempts += 1;
+                    
+                    // 重置计数器，因为我们已经跳过了这些无效记录
+                    consecutive_invalid_records = 0;
+                    
+                    // 继续主循环，让下一次迭代检查新位置
+                    found_valid = true;
+                    break;
+                }
+                
+                if found_valid {
+                    continue;
+                } else {
+                    #[cfg(feature = "log")]
+                    warn!("Failed to find valid records after {} skip attempts, continuing normal recovery", skip_attempts);
+                }
+            }
+            
+            if consecutive_invalid_records > max_consecutive_invalid {
                 #[cfg(feature = "log")]
                 error!("Too many consecutive invalid records ({}), stopping recovery at offset {}", consecutive_invalid_records, current_offset);
                 break;

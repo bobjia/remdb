@@ -76,6 +76,14 @@ pub struct WALConfig {
     pub log_segment_size: usize,
     /// 保留的检查点数量
     pub retained_checkpoints: usize,
+    /// 恢复时最大连续无效记录数，达到此值后停止恢复
+    pub max_consecutive_invalid: u32,
+    /// 恢复时跳过预分配空间的阈值（连续无效记录数）
+    pub skip_threshold: u32,
+    /// 恢复时跳过的块大小（字节）
+    pub skip_block_size: usize,
+    /// 恢复时最大跳过尝试次数
+    pub max_skip_attempts: u32,
 }
 
 /// 数据库全局配置
