@@ -659,6 +659,8 @@ pub enum RemDbError {
     PubSubCrcCheckFailed = 24,
     PubSubTopicNotFound = 25,
     PubSubSubscriptionNotFound = 26,
+    /// 操作不允许
+    NotAllowed = 27,
 }
 
 impl From<crate::RemDbError> for RemDbError {
@@ -672,6 +674,7 @@ impl From<crate::RemDbError> for RemDbError {
             crate::RemDbError::NotNullViolation => RemDbError::TypeMismatch, // 映射为TypeMismatch
             crate::RemDbError::TransactionError => RemDbError::TransactionError,
             crate::RemDbError::ConfigError => RemDbError::ConfigError,
+            crate::RemDbError::NotAllowed => RemDbError::NotAllowed,
             crate::RemDbError::UnsupportedOperation => RemDbError::UnsupportedOperation,
             crate::RemDbError::FileIoError => RemDbError::FileIoError,
             crate::RemDbError::SnapshotFormatError => RemDbError::SnapshotFormatError,

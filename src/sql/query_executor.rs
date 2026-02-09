@@ -117,6 +117,8 @@ pub enum QueryExecutionError {
     ConstraintsConflicts,
     /// 内部错误
     InternalError,
+    /// 操作不允许
+    NotAllowed,
     /// 不支持的函数
     UnsupportedFunction(String),
     /// 无效的值
@@ -135,6 +137,7 @@ impl core::fmt::Display for QueryExecutionError {
             QueryExecutionError::OutOfMemory => write!(f, "Out of memory"),
             QueryExecutionError::ConstraintsConflicts => write!(f, "Constraints conflicts"),
             QueryExecutionError::InternalError => write!(f, "Internal error"),
+            QueryExecutionError::NotAllowed => write!(f, "Operation not allowed"),
             QueryExecutionError::UnsupportedFunction(func) => {
                 write!(f, "Unsupported function: {}", func)
             }
@@ -1080,7 +1083,11 @@ fn execute_drop_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSe
 
     // 调用RemDb的drop_table方法
     db.drop_table(&query.table_name, if_exists, is_deferred)
-        .map_err(|_| QueryExecutionError::InternalError)?;
+        .map_err(|err| match err {
+            crate::RemDbError::NotAllowed => QueryExecutionError::NotAllowed,
+            crate::RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
+            _ => QueryExecutionError::InternalError,
+        })?;
 
     // 返回空结果集
     Ok(ResultSet::new(Vec::new()))

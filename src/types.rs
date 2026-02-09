@@ -1446,6 +1446,8 @@ pub enum RemDbError {
     TransactionError,
     /// 配置错误
     ConfigError,
+    /// 操作不允许
+    NotAllowed,
     /// 不支持多个索引
     TwoMoreIndexNotSupported,
     /// 操作不支持
@@ -1497,6 +1499,7 @@ impl fmt::Display for RemDbError {
             RemDbError::NotNullViolation => write!(f, "NOT NULL constraint violation"),
             RemDbError::TransactionError => write!(f, "Transaction error"),
             RemDbError::ConfigError => write!(f, "Config error"),
+            RemDbError::NotAllowed => write!(f, "Operation not allowed"),
             RemDbError::TwoMoreIndexNotSupported => write!(f, "Two more index not supported"),
             RemDbError::UnsupportedOperation => write!(f, "Unsupported operation"),
             RemDbError::FileIoError => write!(f, "File I/O error"),

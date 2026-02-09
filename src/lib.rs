@@ -2118,7 +2118,7 @@ impl RemDb {
 
         // 检查是否为系统表，系统表不允许DROP操作
         if crate::system_tables::is_system_table(table_name) {
-            return Err(RemDbError::ConfigError);
+            return Err(RemDbError::NotAllowed);
         }
         
         // 1. 查找表的位置
@@ -2910,7 +2910,7 @@ impl DdlExecutor for RemDb {
 
         // 检查是否为系统表，系统表不允许ALTER操作
         if crate::system_tables::is_system_table(table_name) {
-            return Err(RemDbError::ConfigError);
+            return Err(RemDbError::NotAllowed);
         }
         
         // 1. 查找表
@@ -3499,6 +3499,7 @@ impl RemDb {
                 crate::sql::QueryExecutionError::TypeMismatch => RemDbError::TypeMismatch,
                 crate::sql::QueryExecutionError::ConstraintsConflicts => RemDbError::DuplicateKey,
                 crate::sql::QueryExecutionError::OutOfMemory => RemDbError::OutOfMemory,
+                crate::sql::QueryExecutionError::NotAllowed => RemDbError::NotAllowed,
                 _ => {
                     #[cfg(feature = "log")]
                     error!("Unhandled execution error: {:?}", err);
