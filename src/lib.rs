@@ -119,6 +119,7 @@ pub trait DdlExecutor {
         fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)],
         constraints: Option<&[FieldConstraint]>,
         primary_key: Option<Vec<usize>>,
+        max_records: Option<usize>,
     ) -> Result<()>;
 
     /// 修改表结构
@@ -2238,6 +2239,7 @@ impl DdlExecutor for RemDb {
         fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)],
         constraints: Option<&[FieldConstraint]>,
         primary_key: Option<Vec<usize>>,
+        max_records: Option<usize>,
     ) -> Result<()> {
         // 1. 检查字段数量是否合法
         if fields.is_empty() {
@@ -2360,7 +2362,19 @@ impl DdlExecutor for RemDb {
             record_size += field_size;
         }
 
-        // 4. 创建表定义
+        // 4. 计算有效的max_records
+        // 如果低功耗模式开启，实际的最大记录数以max_records与低功耗模式下的最大记录数的较小值为准
+        let effective_max_records = if self.config.low_power_mode_supported {
+            let low_power_max = self.config.low_power_max_records.unwrap_or(usize::MAX);
+            match max_records {
+                Some(table_max) => table_max.min(low_power_max),
+                None => self.config.default_max_records.min(low_power_max),
+            }
+        } else {
+            max_records.unwrap_or(self.config.default_max_records)
+        };
+
+        // 5. 创建表定义
         let now = crate::platform::get_timestamp_us();
         let table_def = TableDef {
             id: table_id as u8,
@@ -2370,24 +2384,24 @@ impl DdlExecutor for RemDb {
             secondary_index: None,
             secondary_index_type: IndexType::SortedArray,
             record_size,
-            max_records: self.config.default_max_records,
+            max_records: effective_max_records,
             version: 1,
             created_at: now,
             updated_at: now,
         };
 
-        // 5. 创建内存表
+        // 6. 创建内存表
         let table_def_arc = alloc::sync::Arc::new(table_def.clone());
         let table = MemoryTable::new(table_def_arc.clone())?;
 
-        // 6. 添加到表向量（在可重用位置或末尾）
+        // 7. 添加到表向量（在可重用位置或末尾）
         if table_id < self.tables.len() {
             self.tables[table_id] = Some(table);
         } else {
             self.tables.push(Some(table));
         }
 
-        // 7. 创建主键索引
+        // 8. 创建主键索引
         // 计算主键索引所需内存大小
         let hash_table_size = (table_def.max_records * 2).next_power_of_two(); // 哈希表大小为记录数的2倍，取最近的2的幂
         let index_memory_size =
@@ -2416,7 +2430,7 @@ impl DdlExecutor for RemDb {
             self.primary_indices.push(Some(primary_index));
         }
 
-        // 8. 初始化辅助索引位置
+        // 9. 初始化辅助索引位置
         if table_id < self.secondary_indices.len() {
             self.secondary_indices[table_id] = None;
         } else {
@@ -3550,7 +3564,7 @@ impl RemDb {
         // 调用已有的DdlExecutor实现，不传递约束信息
         // 注意：这个方法签名不包含约束参数，所以无法传递约束信息
         // 如果需要支持约束，应该使用 DdlExecutor::create_table 直接调用
-        DdlExecutor::create_table(self, table_name, fields, None, primary_key)
+        DdlExecutor::create_table(self, table_name, fields, None, primary_key, None)
     }
 
     /// 创建表（带约束支持）
@@ -3560,8 +3574,9 @@ impl RemDb {
         fields: &[(&str, DataType, u16, Option<DistanceType>, Option<Value>)],
         constraints: Option<&[FieldConstraint]>,
         primary_key: Option<Vec<usize>>,
+        max_records: Option<usize>,
     ) -> Result<()> {
-        DdlExecutor::create_table(self, table_name, fields, constraints, primary_key)
+        DdlExecutor::create_table(self, table_name, fields, constraints, primary_key, max_records)
     }
 
     /// 创建时序表

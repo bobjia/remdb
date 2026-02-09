@@ -562,6 +562,7 @@ impl ReplicationManager {
                             &fields,
                             Some(&field_constraints),
                             Some(vec![primary_key]),
+                            None,
                         );
 
                         #[cfg(feature = "log")]

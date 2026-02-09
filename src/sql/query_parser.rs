@@ -208,6 +208,8 @@ pub struct SqlQuery {
     pub model_inputs: Vec<(String, String)>,
     /// 模型输出（用于CREATE MODEL）：(名称, 类型)
     pub model_output: (String, String),
+    /// 表配置参数（用于CREATE TABLE WITH CONFIGURATION子句）
+    pub table_config: HashMap<String, String>,
 }
 
 impl Default for SqlQuery {
@@ -242,6 +244,7 @@ impl Default for SqlQuery {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         }
     }
 }
@@ -699,6 +702,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         }),
             QueryType::Commit => Ok(SqlQuery {
                 query_type: QueryType::Commit,
@@ -730,6 +734,7 @@ impl SqlParser {
                 model_path: String::new(),
                 model_inputs: Vec::new(),
                 model_output: (String::new(), String::new()),
+                table_config: HashMap::new(),
             }),
             QueryType::Rollback => Ok(SqlQuery {
                 query_type: QueryType::Rollback,
@@ -761,6 +766,7 @@ impl SqlParser {
                 model_path: String::new(),
                 model_inputs: Vec::new(),
                 model_output: (String::new(), String::new()),
+                table_config: HashMap::new(),
             }),
             QueryType::ShowIndexBuildStatus => Ok(SqlQuery {
                 query_type: QueryType::ShowIndexBuildStatus,
@@ -792,6 +798,7 @@ impl SqlParser {
                 model_path: String::new(),
                 model_inputs: Vec::new(),
                 model_output: (String::new(), String::new()),
+                table_config: HashMap::new(),
             }),
             QueryType::Other => Err(QueryParseError::UnsupportedKeyword),
         }?;
@@ -966,6 +973,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -1089,6 +1097,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -1228,6 +1237,46 @@ impl SqlParser {
             primary_key = primary_key_fields.into_iter().collect::<Vec<_>>().into();
         }
 
+        // 解析WITH CONFIGURATION子句
+        let mut table_config = HashMap::new();
+        self.skip_whitespace();
+        if self.match_keyword("WITH") {
+            self.skip_whitespace();
+            self.expect_keyword("CONFIGURATION")?;
+            self.skip_whitespace();
+            self.expect_char('(')?;
+
+            // 解析配置参数
+            loop {
+                self.skip_whitespace();
+                let param_name = self.parse_identifier()?.to_uppercase();
+
+                self.skip_whitespace();
+                self.expect_char('=')?;
+
+                self.skip_whitespace();
+                let param_value = self.parse_value()?;
+                let value_str = match param_value {
+                    Value::String(s) => s,
+                    Value::Identifier(id) => id,
+                    Value::Integer(i) => i.to_string(),
+                    Value::Float(f) => f.to_string(),
+                    Value::Boolean(b) => b.to_string(),
+                    Value::Json(s) => s,
+                    _ => return Err(QueryParseError::InvalidValue),
+                };
+
+                table_config.insert(param_name, value_str);
+
+                self.skip_whitespace();
+                if self.match_char(')') {
+                    break;
+                } else if !self.match_char(',') {
+                    return Err(QueryParseError::InvalidSyntax);
+                }
+            }
+        }
+
         Ok(SqlQuery {
             query_type: QueryType::CreateTable,
             table_name,
@@ -1258,6 +1307,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config,
         })
     }
 
@@ -1390,6 +1440,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -1485,6 +1536,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -1591,6 +1643,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         };
 
         // 使用table_def字段存储额外信息
@@ -1698,6 +1751,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         };
 
         Ok(query)
@@ -1785,6 +1839,7 @@ impl SqlParser {
             model_path,
             model_inputs,
             model_output: ("result".to_string(), return_type),
+            table_config: HashMap::new(),
         })
     }
 
@@ -1825,6 +1880,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         };
 
         Ok(query)
@@ -1867,6 +1923,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         };
 
         Ok(query)
@@ -1918,6 +1975,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         };
 
         Ok(query)
@@ -2110,6 +2168,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         };
 
         // 添加HAVING子句支持
@@ -3839,6 +3898,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -3877,6 +3937,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -3942,6 +4003,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -3989,6 +4051,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -4054,6 +4117,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -4101,6 +4165,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -4140,6 +4205,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 
@@ -4179,6 +4245,7 @@ impl SqlParser {
             model_path: String::new(),
             model_inputs: Vec::new(),
             model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
         })
     }
 }

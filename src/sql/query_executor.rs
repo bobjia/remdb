@@ -6964,6 +6964,10 @@ fn execute_create_table_query(
             .collect()
     });
 
+    // 从WITH CONFIGURATION子句中提取max_records配置
+    let max_records = query.table_config.get("MAX_RECORDS")
+        .and_then(|v| v.parse::<usize>().ok());
+
     // 调用DdlExecutor::create_table方法，支持约束和复合主键
     #[cfg(feature = "log")]
     debug!("Before create_table, db.tables.len() = {}", db.tables.len());
@@ -6973,6 +6977,7 @@ fn execute_create_table_query(
         &fields,
         Some(&field_constraints),
         primary_key_indices,
+        max_records,
     )
     .map_err(|e| {
         #[cfg(feature = "log")]

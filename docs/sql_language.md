@@ -605,7 +605,7 @@ CREATE TABLE table_name (
     column2 datatype [constraints],
     ...
     [PRIMARY KEY (column1, column2, ...)]
-);
+) [WITH CONFIGURATION (parameter=value, ...)];
 
 #### 支持的约束
 
@@ -614,6 +614,47 @@ CREATE TABLE table_name (
 - `UNIQUE`：唯一约束
 - `AUTOINCREMENT`/`AUTO_INCREMENT`：自增约束
 - `DEFAULT value`：默认值约束
+
+### 2.5.2 表配置参数
+
+RemDB支持在创建表时通过`WITH CONFIGURATION`子句指定表级配置参数。这些参数可以控制表的行为和资源限制。
+
+**语法**：
+```sql
+WITH CONFIGURATION (parameter=value, ...)
+```
+
+**支持的配置参数**：
+
+| 参数名 | 数据类型 | 默认值 | 描述 |
+|--------|----------|--------|------|
+| `max_records` | 整数 | 1000 | 表的最大记录数限制。当表达到此限制时，新的插入操作可能会失败或触发旧数据的清理策略。 |
+
+**低功耗模式交互**：
+当数据库运行在低功耗模式下（通过`low_power_mode_supported`和`low_power_max_records`配置），表的最大记录数将受到进一步限制。实际生效的`max_records`值为配置值与低功耗模式限制值中的较小者。
+
+**示例**：
+
+```sql
+-- 创建带有max_records配置的表
+CREATE TABLE my_memory_table (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    data VARCHAR(255)
+) WITH CONFIGURATION (max_records=100);
+
+-- 创建带有多个配置参数的表（支持扩展）
+CREATE TABLE sensor_data (
+    sensor_id INTEGER,
+    timestamp TIMESTAMP,
+    value REAL,
+    PRIMARY KEY (sensor_id, timestamp)
+) WITH CONFIGURATION (max_records=10000, compression_level=2);
+```
+
+**注意**：
+- 配置参数名称不区分大小写（例如，`MAX_RECORDS`和`max_records`等效）。
+- 如果指定的配置参数不被支持，该参数将被忽略。
+- 配置参数值可以是字符串、整数、浮点数、布尔值或JSON格式。
 
 ### 2.5.1 动态表结构管理
 
