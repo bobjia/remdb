@@ -2575,6 +2575,11 @@ impl SqlParser {
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
 
+        // 检查表名是否为空（FROM后面没有表名的情况）
+        if table_name.is_empty() {
+            return Err(QueryParseError::InvalidSyntax);
+        }
+
         // 解析主表别名
         self.skip_whitespace();
         let table_alias = self.parse_alias()?;

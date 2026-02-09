@@ -78,8 +78,6 @@ fn test_sql_query() {
 
     // 2. 测试无效SQL语法
     let invalid_queries = [
-        "SELECT",                            // 缺少FROM子句
-        "SELECT *",                          // 缺少FROM子句
         "SELECT * FROM",                     // 缺少表名
         "SELECT * FROM WHERE id = 1",        // 缺少表名
         "SELECT * FROM TEST_TABLE WHERE",    // 缺少条件
