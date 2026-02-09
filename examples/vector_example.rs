@@ -10,7 +10,7 @@ struct SimpleAllocator;
 impl remdb::config::MemoryAllocator for SimpleAllocator {
     fn allocate(&self, _size: usize) -> Option<NonNull<u8>> {
         static mut BUFFER: [u8; 4 * 1024 * 1024] = [0u8; 4 * 1024 * 1024];
-        unsafe { Some(NonNull::new(BUFFER.as_mut_ptr()).unwrap()) }
+        unsafe { Some(NonNull::new(core::ptr::addr_of_mut!(BUFFER) as *mut u8).unwrap()) }
     }
 
     fn deallocate(&self, _ptr: NonNull<u8>, _size: usize) {

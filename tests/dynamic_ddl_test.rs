@@ -161,8 +161,8 @@ fn test_create_table() {
 
     // 使用共享内存缓冲区初始化全局内存分配器
     let result =
-        memory::allocator::init_global_allocator(unsafe { DB_MEMORY.as_mut_ptr() }, unsafe {
-            DB_MEMORY.len()
+        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
+            1024 * 1024
         });
     assert!(
         result.is_ok(),
@@ -223,8 +223,8 @@ fn test_create_index() {
 
     // 使用共享内存缓冲区初始化全局内存分配器
     let result =
-        memory::allocator::init_global_allocator(unsafe { DB_MEMORY.as_mut_ptr() }, unsafe {
-            DB_MEMORY.len()
+        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
+            1024 * 1024
         });
     assert!(
         result.is_ok(),
@@ -317,8 +317,8 @@ fn test_describe_table() {
 
     // 使用共享内存缓冲区初始化全局内存分配器
     let result =
-        memory::allocator::init_global_allocator(unsafe { DB_MEMORY.as_mut_ptr() }, unsafe {
-            DB_MEMORY.len()
+        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
+            1024 * 1024
         });
     assert!(
         result.is_ok(),
@@ -562,8 +562,8 @@ fn test_create_time_series_table() {
 
     // 使用共享内存缓冲区初始化全局内存分配器
     let result =
-        memory::allocator::init_global_allocator(unsafe { DB_MEMORY.as_mut_ptr() }, unsafe {
-            DB_MEMORY.len()
+        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
+            1024 * 1024
         });
     assert!(
         result.is_ok(),
@@ -654,8 +654,8 @@ fn test_ddl_export_with_time_series() {
 
     // 使用共享内存缓冲区初始化全局内存分配器
     let result =
-        memory::allocator::init_global_allocator(unsafe { DB_MEMORY.as_mut_ptr() }, unsafe {
-            DB_MEMORY.len()
+        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
+            1024 * 1024
         });
     assert!(
         result.is_ok(),
@@ -712,8 +712,8 @@ fn test_describe_time_series_table() {
 
     // 使用共享内存缓冲区初始化全局内存分配器
     let result =
-        memory::allocator::init_global_allocator(unsafe { DB_MEMORY.as_mut_ptr() }, unsafe {
-            DB_MEMORY.len()
+        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
+            1024 * 1024
         });
     assert!(
         result.is_ok(),

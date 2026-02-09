@@ -1,6 +1,4 @@
 use remdb::json::{JsonDocument};
-use remdb::types::{DataType};
-use remdb::table::MemoryTable;
 
 #[test]
 fn test_json_document_creation() {
@@ -42,10 +40,15 @@ fn test_json_null() {
 
 #[test]
 fn test_json_parse_error() {
-    // 测试无效JSON
+    // 测试无效JSON - from_json存储原始字符串，解析时才会验证
     let invalid_json = r#"{"name": "test", "age": 25"#; // 缺少结束大括号
     let result = JsonDocument::from_json(invalid_json);
-    assert!(result.is_err());
+    // from_json不验证JSON，只存储原始字符串
+    assert!(result.is_ok());
+    let doc = result.unwrap();
+    // 解析时才会验证JSON并返回错误
+    let parse_result = doc.parse_json();
+    assert!(parse_result.is_err());
 }
 
 #[test]
