@@ -1892,6 +1892,21 @@ impl LogManager {
                         max_records = 100000; // 使用默认值
                     }
 
+                    // 检查并限制max_records，避免内存不足
+                    // 优先使用低功耗模式限制，否则使用默认最大记录数
+                    let max_allowed = if db.config.low_power_mode_supported {
+                        db.config.low_power_max_records.unwrap_or(db.config.default_max_records)
+                    } else {
+                        db.config.default_max_records
+                    };
+                    
+                    if max_records > max_allowed {
+                        #[cfg(feature = "log")]
+                        info!("Limiting table '{}' max_records from {} to {} to prevent memory exhaustion", 
+                            table_name, max_records, max_allowed);
+                        max_records = max_allowed;
+                    }
+
                     // 创建表定义
                     #[cfg(feature = "log")]
                     info!(
@@ -3008,29 +3023,14 @@ impl Transaction {
 
             // 写入日志项到日志管理器
             if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
-                // 检查数据大小，如果超过LOG_DATA_BULK_SIZE默认512字节，使用可变大小的日志项
-                if log_item.header.new_data_size > LOG_DATA_BULK_SIZE as u16 || log_item.header.old_data_size > LOG_DATA_BULK_SIZE as u16 {
-                    // 对于超过LOG_DATA_BULK_SIZE默认512字节的数据，我们无法从log_item中获取完整数据
-                    // 这是因为begin_log_item方法会将数据截断到LOG_DATA_BULK_SIZE默认512字节
-                    // 所以我们需要跳过可变大小的日志项，因为我们无法恢复完整数据
-                    #[cfg(feature = "log")]
-                    warn!("Skipping variable size log item with data size > LOG_DATA_BULK_SIZE 默认 512, data may be truncated");
-                    // 使用固定大小的日志项
-                    let var_log_item = VariableSizeLogItem {
-                        header: log_item.header,
-                        old_data: log_item.old_data.clone(),
-                        new_data: log_item.new_data.clone(),
-                    };
-                    log_manager.write_variable_size_log_item(&var_log_item)?;
-                } else {
-                    // 使用固定大小的日志项
-                    let var_log_item = VariableSizeLogItem {
-                        header: log_item.header,
-                        old_data: log_item.old_data.clone(),
-                        new_data: log_item.new_data.clone(),
-                    };
-                    log_manager.write_variable_size_log_item(&var_log_item)?;
-                }
+                // 创建可变大小的日志项并写入
+                // 注意：系统已完全支持可变大小日志，begin_log_item不会截断数据
+                let var_log_item = VariableSizeLogItem {
+                    header: log_item.header,
+                    old_data: log_item.old_data.clone(),
+                    new_data: log_item.new_data.clone(),
+                };
+                log_manager.write_variable_size_log_item(&var_log_item)?;
             }
         }
 
