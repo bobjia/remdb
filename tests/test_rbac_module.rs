@@ -9,6 +9,16 @@ fn test_rbac_module() {
     // Create a new RBAC manager
     let mut rbac_manager = RbacManager::new();
     
+    // Test that root user exists by default
+    println!("\n0. Testing root user exists by default");
+    assert!(rbac_manager.get_user("root").is_some(), "Root user should exist by default");
+    println!("✓ Root user exists");
+    
+    // Test that admin role exists by default
+    println!("\n0.1. Testing admin role exists by default");
+    assert!(rbac_manager.get_role("admin").is_some(), "Admin role should exist by default");
+    println!("✓ Admin role exists");
+    
     // Test creating a role
     println!("\n1. Testing role creation");
     match rbac_manager.create_role("user".to_string()) {
@@ -74,6 +84,31 @@ fn test_rbac_module() {
         Err(e) => {
             println!("✗ Failed to check permission: {:?}", e);
             assert!(false);
+        }
+    }
+    
+    // Test root user has all permissions
+    println!("\n5.1. Testing root user has all permissions");
+    let all_permissions = vec![
+        Permission::Admin,
+        Permission::Select,
+        Permission::Insert,
+        Permission::Update,
+        Permission::Delete,
+        Permission::Create,
+        Permission::Drop,
+    ];
+    
+    for permission in &all_permissions {
+        match rbac_manager.check_permission("root", permission, &Some("users".to_string()), &None) {
+            Ok(has_perm) => {
+                println!("✓ Root user has {:?} permission: {}", permission, has_perm);
+                assert!(has_perm);
+            }
+            Err(e) => {
+                println!("✗ Failed to check permission: {:?}", e);
+                assert!(false);
+            }
         }
     }
     

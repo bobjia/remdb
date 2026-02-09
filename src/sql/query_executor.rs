@@ -167,7 +167,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
     match query.query_type {
         crate::sql::QueryType::Select => {
             // 检查SELECT权限
-            if let Ok(has_permission) = db.check_permission("current_user", &crate::rbac::Permission::Select, &Some(query.table_name.clone()), &None) {
+            if let Ok(has_permission) = db.check_permission("root", &crate::rbac::Permission::Select, &Some(query.table_name.clone()), &None) {
                 if !has_permission {
                     return Err(QueryExecutionError::InternalError);
                 }
@@ -177,7 +177,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         }
         crate::sql::QueryType::Insert => {
             // 检查INSERT权限
-            if let Ok(has_permission) = db.check_permission("current_user", &crate::rbac::Permission::Insert, &Some(query.table_name.clone()), &None) {
+            if let Ok(has_permission) = db.check_permission("root", &crate::rbac::Permission::Insert, &Some(query.table_name.clone()), &None) {
                 if !has_permission {
                     return Err(QueryExecutionError::InternalError);
                 }
@@ -187,7 +187,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         }
         crate::sql::QueryType::Update => {
             // 检查UPDATE权限
-            if let Ok(has_permission) = db.check_permission("current_user", &crate::rbac::Permission::Update, &Some(query.table_name.clone()), &None) {
+            if let Ok(has_permission) = db.check_permission("root", &crate::rbac::Permission::Update, &Some(query.table_name.clone()), &None) {
                 if !has_permission {
                     return Err(QueryExecutionError::InternalError);
                 }
@@ -197,7 +197,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         }
         crate::sql::QueryType::Delete => {
             // 检查DELETE权限
-            if let Ok(has_permission) = db.check_permission("current_user", &crate::rbac::Permission::Delete, &Some(query.table_name.clone()), &None) {
+            if let Ok(has_permission) = db.check_permission("root", &crate::rbac::Permission::Delete, &Some(query.table_name.clone()), &None) {
                 if !has_permission {
                     return Err(QueryExecutionError::InternalError);
                 }

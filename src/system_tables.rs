@@ -32,17 +32,20 @@ pub const COMPRESSION_FLOAT16: u8 = 1;
 pub const COMPRESSION_ZSTD: u8 = 2;
 
 /// 初始化系统表
-pub unsafe fn init_system_tables(db: &mut crate::RemDb) -> Result<()> {
+pub unsafe fn init_system_tables(db: &mut crate::RemDb) -> Result<bool> {
     // 检查系统表是否已存在
     let system_config_table_exists = db.tables.iter().any(|table_opt| {
         table_opt.as_ref().map(|table| table.def.name == SYSTEM_CONFIG_TABLE).unwrap_or(false)
     });
+    
+    let mut tables_created = false;
     
     if !system_config_table_exists {
         // 创建系统配置表
         create_system_config_table(db)?;
         // 插入默认配置
         insert_default_configs(db)?;
+        tables_created = true;
     }
     
     // 检查RBAC系统表是否存在
@@ -56,12 +59,15 @@ pub unsafe fn init_system_tables(db: &mut crate::RemDb) -> Result<()> {
         create_system_role_permissions_table(db)?;
         create_system_users_table(db)?;
         create_system_user_roles_table(db)?;
+        // 插入默认RBAC数据
+        insert_default_rbac_data(db)?;
+        tables_created = true;
     }
     
     // 初始化配置缓存
     load_config_cache(db)?;
     
-    Ok(())
+    Ok(tables_created)
 }
 
 /// 创建系统配置表
@@ -596,6 +602,152 @@ unsafe fn insert_default_configs(db: &mut crate::RemDb) -> Result<()> {
         
         // 插入记录
         table.insert(record_data.as_ptr())?;
+    }
+    
+    Ok(())
+}
+
+/// 插入默认RBAC数据
+unsafe fn insert_default_rbac_data(db: &mut crate::RemDb) -> Result<()> {
+    let now = crate::platform::get_timestamp_us();
+    
+    // 1. 插入默认的 admin 角色
+    let roles_table_id = db.tables.iter()
+        .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_ROLES_TABLE).unwrap_or(false))
+        .ok_or(RemDbError::TableNotFound)?;
+    
+    let roles_table = db.get_table_mut(roles_table_id)?;
+    
+    // 插入 admin 角色
+    {
+        let mut record_data = [0u8; 64 + 256 + 8 + 8];
+        let mut offset = 0;
+        
+        // 写入role_name
+        memset(record_data.as_mut_ptr().add(offset), 0, 64);
+        let role_name = "admin";
+        let role_name_bytes = role_name.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), role_name_bytes.as_ptr(), role_name_bytes.len());
+        offset += 64;
+        
+        // 写入description
+        memset(record_data.as_mut_ptr().add(offset), 0, 256);
+        let description = "超级管理员角色，拥有所有权限";
+        let desc_bytes = description.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), desc_bytes.as_ptr(), desc_bytes.len());
+        offset += 256;
+        
+        // 写入created_at
+        memcpy(record_data.as_mut_ptr().add(offset), &now as *const u64 as *const u8, 8);
+        offset += 8;
+        
+        // 写入updated_at
+        memcpy(record_data.as_mut_ptr().add(offset), &now as *const u64 as *const u8, 8);
+        
+        roles_table.insert(record_data.as_ptr())?;
+    }
+    
+    // 2. 插入 admin 角色的所有权限
+    let role_permissions_table_id = db.tables.iter()
+        .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_ROLE_PERMISSIONS_TABLE).unwrap_or(false))
+        .ok_or(RemDbError::TableNotFound)?;
+    
+    let role_permissions_table = db.get_table_mut(role_permissions_table_id)?;
+    
+    // 所有权限列表
+    let permissions = ["ADMIN", "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP"];
+    
+    for permission in permissions {
+        let mut record_data = [0u8; 64 + 64 + 256 + 8];
+        let mut offset = 0;
+        
+        // 写入role_name
+        memset(record_data.as_mut_ptr().add(offset), 0, 64);
+        let role_name = "admin";
+        let role_name_bytes = role_name.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), role_name_bytes.as_ptr(), role_name_bytes.len());
+        offset += 64;
+        
+        // 写入permission
+        memset(record_data.as_mut_ptr().add(offset), 0, 64);
+        let perm_bytes = permission.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), perm_bytes.as_ptr(), perm_bytes.len());
+        offset += 64;
+        
+        // 写入table_name (NULL)
+        memset(record_data.as_mut_ptr().add(offset), 0, 256);
+        offset += 256;
+        
+        // 写入created_at
+        memcpy(record_data.as_mut_ptr().add(offset), &now as *const u64 as *const u8, 8);
+        
+        role_permissions_table.insert(record_data.as_ptr())?;
+    }
+    
+    // 3. 插入默认的 root 用户
+    let users_table_id = db.tables.iter()
+        .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_USERS_TABLE).unwrap_or(false))
+        .ok_or(RemDbError::TableNotFound)?;
+    
+    let users_table = db.get_table_mut(users_table_id)?;
+    
+    {
+        let mut record_data = [0u8; 64 + 256 + 8 + 8];
+        let mut offset = 0;
+        
+        // 写入username
+        memset(record_data.as_mut_ptr().add(offset), 0, 64);
+        let username = "root";
+        let username_bytes = username.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), username_bytes.as_ptr(), username_bytes.len());
+        offset += 64;
+        
+        // 写入description
+        memset(record_data.as_mut_ptr().add(offset), 0, 256);
+        let description = "超级管理员用户";
+        let desc_bytes = description.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), desc_bytes.as_ptr(), desc_bytes.len());
+        offset += 256;
+        
+        // 写入created_at
+        memcpy(record_data.as_mut_ptr().add(offset), &now as *const u64 as *const u8, 8);
+        offset += 8;
+        
+        // 写入updated_at
+        memcpy(record_data.as_mut_ptr().add(offset), &now as *const u64 as *const u8, 8);
+        
+        users_table.insert(record_data.as_ptr())?;
+    }
+    
+    // 4. 插入 root 用户与 admin 角色的关联
+    let user_roles_table_id = db.tables.iter()
+        .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_USER_ROLES_TABLE).unwrap_or(false))
+        .ok_or(RemDbError::TableNotFound)?;
+    
+    let user_roles_table = db.get_table_mut(user_roles_table_id)?;
+    
+    {
+        let mut record_data = [0u8; 64 + 64 + 8];
+        let mut offset = 0;
+        
+        // 写入username
+        memset(record_data.as_mut_ptr().add(offset), 0, 64);
+        let username = "root";
+        let username_bytes = username.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), username_bytes.as_ptr(), username_bytes.len());
+        offset += 64;
+        
+        // 写入role_name
+        memset(record_data.as_mut_ptr().add(offset), 0, 64);
+        let role_name = "admin";
+        let role_name_bytes = role_name.as_bytes();
+        memcpy(record_data.as_mut_ptr().add(offset), role_name_bytes.as_ptr(), role_name_bytes.len());
+        offset += 64;
+        
+        // 写入created_at
+        memcpy(record_data.as_mut_ptr().add(offset), &now as *const u64 as *const u8, 8);
+        
+        user_roles_table.insert(record_data.as_ptr())?;
     }
     
     Ok(())

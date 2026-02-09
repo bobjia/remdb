@@ -5,6 +5,60 @@ use remdb::RemDb;
 use remdb::config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode};
 
 #[test]
+fn test_rbac_default_root_user() {
+    println!("=== Testing RBAC Default Root User ===");
+    
+    // Create a new RBAC manager
+    let rbac_manager = RbacManager::new();
+    
+    // Test that root user exists by default
+    println!("\n1. Testing root user exists by default");
+    assert!(rbac_manager.get_user("root").is_some(), "Root user should exist by default");
+    println!("✓ Root user exists");
+    
+    // Test that admin role exists by default
+    println!("\n2. Testing admin role exists by default");
+    assert!(rbac_manager.get_role("admin").is_some(), "Admin role should exist by default");
+    println!("✓ Admin role exists");
+    
+    // Test that root user has admin role
+    println!("\n3. Testing root user has admin role");
+    let root_user = rbac_manager.get_user("root").unwrap();
+    assert!(root_user.has_role("admin"), "Root user should have admin role");
+    println!("✓ Root user has admin role");
+    
+    // Test that admin role has all permissions
+    println!("\n4. Testing admin role has all permissions");
+    let admin_role = rbac_manager.get_role("admin").unwrap();
+    
+    let all_permissions = vec![
+        Permission::Admin,
+        Permission::Select,
+        Permission::Insert,
+        Permission::Update,
+        Permission::Delete,
+        Permission::Create,
+        Permission::Drop,
+    ];
+    
+    for permission in &all_permissions {
+        assert!(admin_role.has_permission(permission, &None, &None), 
+                 "Admin role should have {:?} permission", permission);
+        println!("✓ Admin role has {:?} permission", permission);
+    }
+    
+    // Test that root user has all permissions through admin role
+    println!("\n5. Testing root user has all permissions");
+    for permission in &all_permissions {
+        let has_perm = rbac_manager.check_permission("root", permission, &None, &None).unwrap();
+        assert!(has_perm, "Root user should have {:?} permission", permission);
+        println!("✓ Root user has {:?} permission", permission);
+    }
+    
+    println!("\n=== RBAC Default Root User Test Complete ===");
+}
+
+#[test]
 fn test_rbac_basic_operations() {
     println!("=== Testing RBAC Basic Operations ===");
     
@@ -263,6 +317,11 @@ fn test_rbac_fine_grained_permissions() {
         Err(e) => panic!("✗ Failed to grant permission: {:?}", e),
     }
     
+    match rbac_manager.grant_permission("editor", Permission::Delete, Some("users".to_string()), None) {
+        Ok(_) => println!("✓ Successfully granted DELETE permission to editor"),
+        Err(e) => panic!("✗ Failed to grant permission: {:?}", e),
+    }
+    
     // Test creating users with different roles
     println!("\n3. Testing user creation with different roles");
     match rbac_manager.create_user("bob".to_string()) {
@@ -335,9 +394,31 @@ fn test_rbac_fine_grained_permissions() {
     match rbac_manager.check_permission("charlie", &Permission::Delete, &Some("users".to_string()), &None) {
         Ok(has_perm) => {
             println!("✓ User charlie has DELETE permission: {}", has_perm);
-            assert!(!has_perm);
+            assert!(has_perm);
         }
         Err(e) => panic!("✗ Failed to check permission: {:?}", e),
+    }
+    
+    // Test root user has all permissions
+    println!("\n6. Testing root user has all permissions");
+    let all_permissions = vec![
+        Permission::Admin,
+        Permission::Select,
+        Permission::Insert,
+        Permission::Update,
+        Permission::Delete,
+        Permission::Create,
+        Permission::Drop,
+    ];
+    
+    for permission in &all_permissions {
+        match rbac_manager.check_permission("root", permission, &Some("users".to_string()), &None) {
+            Ok(has_perm) => {
+                println!("✓ Root user has {:?} permission: {}", permission, has_perm);
+                assert!(has_perm);
+            }
+            Err(e) => panic!("✗ Failed to check permission: {:?}", e),
+        }
     }
     
     println!("\n=== RBAC Fine-Grained Permissions Test Complete ===");

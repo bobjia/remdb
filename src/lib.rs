@@ -571,16 +571,36 @@ impl RemDb {
 
     /// 创建角色
     pub fn create_role(&mut self, role_name: &str) -> Result<()> {
-        self.rbac_manager.create_role(role_name.to_string()).map_err(|e| {
+        self.rbac_manager.create_role(role_name.to_string()).map_err(|_e| {
             RemDbError::ConfigError
-        })
+        })?;
+        
+        // 保存到系统表
+        unsafe {
+            use std::ptr;
+            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
+            let db = &mut *ptr::addr_of_mut!(*self);
+            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+        }
+        
+        Ok(())
     }
 
     /// 删除角色
     pub fn drop_role(&mut self, role_name: &str) -> Result<()> {
-        self.rbac_manager.drop_role(role_name).map_err(|e| {
+        self.rbac_manager.drop_role(role_name).map_err(|_e| {
             RemDbError::ConfigError
-        })
+        })?;
+        
+        // 保存到系统表
+        unsafe {
+            use std::ptr;
+            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
+            let db = &mut *ptr::addr_of_mut!(*self);
+            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+        }
+        
+        Ok(())
     }
 
     /// 授予权限给角色
@@ -591,9 +611,19 @@ impl RemDb {
         table_name: Option<String>, 
         column_name: Option<String>
     ) -> Result<()> {
-        self.rbac_manager.grant_permission(role_name, permission, table_name, column_name).map_err(|e| {
+        self.rbac_manager.grant_permission(role_name, permission, table_name, column_name).map_err(|_e| {
             RemDbError::ConfigError
-        })
+        })?;
+        
+        // 保存到系统表
+        unsafe {
+            use std::ptr;
+            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
+            let db = &mut *ptr::addr_of_mut!(*self);
+            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+        }
+        
+        Ok(())
     }
 
     /// 撤销角色的权限
@@ -604,37 +634,87 @@ impl RemDb {
         table_name: &Option<String>, 
         column_name: &Option<String>
     ) -> Result<()> {
-        self.rbac_manager.revoke_permission(role_name, permission, table_name, column_name).map_err(|e| {
+        self.rbac_manager.revoke_permission(role_name, permission, table_name, column_name).map_err(|_e| {
             RemDbError::ConfigError
-        })
+        })?;
+        
+        // 保存到系统表
+        unsafe {
+            use std::ptr;
+            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
+            let db = &mut *ptr::addr_of_mut!(*self);
+            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+        }
+        
+        Ok(())
     }
 
     /// 创建用户
     pub fn create_user(&mut self, user_name: &str) -> Result<()> {
-        self.rbac_manager.create_user(user_name.to_string()).map_err(|e| {
+        self.rbac_manager.create_user(user_name.to_string()).map_err(|_e| {
             RemDbError::ConfigError
-        })
+        })?;
+        
+        // 保存到系统表
+        unsafe {
+            use std::ptr;
+            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
+            let db = &mut *ptr::addr_of_mut!(*self);
+            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+        }
+        
+        Ok(())
     }
 
     /// 删除用户
     pub fn drop_user(&mut self, user_name: &str) -> Result<()> {
-        self.rbac_manager.drop_user(user_name).map_err(|e| {
+        self.rbac_manager.drop_user(user_name).map_err(|_e| {
             RemDbError::ConfigError
-        })
+        })?;
+        
+        // 保存到系统表
+        unsafe {
+            use std::ptr;
+            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
+            let db = &mut *ptr::addr_of_mut!(*self);
+            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+        }
+        
+        Ok(())
     }
 
     /// 授予角色给用户
     pub fn grant_role(&mut self, user_name: &str, role_name: &str) -> Result<()> {
         self.rbac_manager.grant_role(user_name, role_name).map_err(|_e| {
             RemDbError::ConfigError
-        })
+        })?;
+        
+        // 保存到系统表
+        unsafe {
+            use std::ptr;
+            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
+            let db = &mut *ptr::addr_of_mut!(*self);
+            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+        }
+        
+        Ok(())
     }
 
     /// 撤销用户的角色
     pub fn revoke_role(&mut self, user_name: &str, role_name: &str) -> Result<()> {
         self.rbac_manager.revoke_role(user_name, role_name).map_err(|_e| {
             RemDbError::ConfigError
-        })
+        })?;
+        
+        // 保存到系统表
+        unsafe {
+            use std::ptr;
+            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
+            let db = &mut *ptr::addr_of_mut!(*self);
+            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+        }
+        
+        Ok(())
     }
 
     /// 检查用户是否有特定权限
@@ -1076,8 +1156,19 @@ impl RemDb {
         }
 
         // 初始化系统表
-        unsafe {
-            crate::system_tables::init_system_tables(self)?;
+        let tables_created = unsafe {
+            crate::system_tables::init_system_tables(self)?
+        };
+
+        // 只有在创建了新表时才加载RBAC数据
+        if tables_created {
+            // 加载RBAC数据从系统表
+            unsafe {
+                use std::ptr;
+                let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
+                let db = &mut *ptr::addr_of_mut!(*self);
+                let _ = RbacManager::load_from_system_tables(rbac_manager, db);
+            }
         }
 
         // 初始化HA管理器
