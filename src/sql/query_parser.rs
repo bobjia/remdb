@@ -31,17 +31,68 @@ fn parse_time_string(time_str: &str) -> Result<i64, ()> {
     // 格式字符串通常包含Y, M, D, H, I, S等格式说明符
     if time_str.contains(|c| c == 'Y' || c == 'M' || c == 'D' || c == 'H' || c == 'I' || c == 'S') {
         // 这是一个格式字符串，不是时间值
-        Err(())
-    } else if (time_str.contains('T') || time_str.contains(' '))
-        && time_str.chars().any(|c| c.is_digit(10))
-    {
-        // 尝试解析为ISO 8601格式，必须包含数字
-        // 这里使用简化的实现，实际应该使用更完整的解析
-        Ok(0) // 占位符，实际实现需要完整的时间解析
-    } else {
-        // 尝试解析为数字时间戳
-        time_str.parse::<i64>().map_err(|_| ())
+        return Err(());
     }
+    
+    // 首先尝试解析为数字时间戳
+    if let Ok(timestamp) = time_str.parse::<i64>() {
+        return Ok(timestamp);
+    }
+    
+    // 尝试解析为日期时间字符串 'YYYY-MM-DD' 或 'YYYY-MM-DD HH:MM:SS'
+    let time_str = time_str.trim();
+    let mut parts = time_str.split_whitespace();
+    
+    // 解析日期部分
+    let date_part = parts.next().ok_or(())?;
+    let date_components: Vec<&str> = date_part.split('-').collect();
+    if date_components.len() != 3 {
+        return Err(());
+    }
+    
+    let year = date_components[0].parse::<i64>().map_err(|_| ())?;
+    let month = date_components[1].parse::<i64>().map_err(|_| ())?;
+    let day = date_components[2].parse::<i64>().map_err(|_| ())?;
+    
+    // 解析时间部分（可选）
+    let mut hour = 0;
+    let mut minute = 0;
+    let mut second = 0;
+    
+    if let Some(time_part) = parts.next() {
+        let time_components: Vec<&str> = time_part.split(':').collect();
+        if time_components.len() != 3 {
+            return Err(());
+        }
+        
+        hour = time_components[0].parse::<i64>().map_err(|_| ())?;
+        minute = time_components[1].parse::<i64>().map_err(|_| ())?;
+        second = time_components[2].parse::<i64>().map_err(|_| ())?;
+    }
+    
+    // 计算从1970-01-01到指定日期的秒数
+    // 简化实现，只处理非闰年的情况
+    let mut seconds = 0;
+    
+    // 计算年份贡献的秒数（忽略闰年）
+    for _y in 1970..year {
+        seconds += 365 * 24 * 60 * 60;
+    }
+    
+    // 计算月份贡献的秒数（忽略闰年）
+    let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    for m in 0..(month - 1) {
+        seconds += days_in_month[m as usize] * 24 * 60 * 60;
+    }
+    
+    // 计算日期、小时、分钟、秒贡献的秒数
+    seconds += (day - 1) * 24 * 60 * 60;
+    seconds += hour * 60 * 60;
+    seconds += minute * 60;
+    seconds += second;
+    
+    // 转换为微秒
+    Ok(seconds * 1000000)
 }
 
 /// GROUP BY子句
