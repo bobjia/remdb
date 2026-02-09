@@ -1,43 +1,28 @@
-use core::ptr::NonNull;
-use remdb::config::{DbConfig, WALConfig};
+use remdb::config::{DbConfig, WALConfig, DefaultMemoryAllocator};
 use remdb::memory::allocator;
 use remdb::time_series::table::TimeSeriesConfig;
 use remdb::{RemDb, Result};
 
-// 简单的内存分配器实现
-struct SimpleAllocator;
-
-impl remdb::config::MemoryAllocator for SimpleAllocator {
-    fn allocate(&self, _size: usize) -> Option<NonNull<u8>> {
-        static mut BUFFER: [u8; 4 * 1024 * 1024] = [0u8; 4 * 1024 * 1024];
-        unsafe { Some(NonNull::new(core::ptr::addr_of_mut!(BUFFER) as *mut u8).unwrap()) }
-    }
-
-    fn deallocate(&self, _ptr: NonNull<u8>, _size: usize) {
-        // 简化实现，不实际释放内存
-    }
-}
-
-// 显式实现Sync trait
-unsafe impl Sync for SimpleAllocator {}
+// 定义数据库内存区域
+static mut DB_MEMORY: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024];
 
 // 静态内存分配器实例
-static ALLOCATOR: SimpleAllocator = SimpleAllocator;
+static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
 
 fn main() -> Result<()> {
-    // 初始化全局内存分配器 - 增加内存大小到16MB
-    let mut mem_buffer = Box::new([0u8; 16 * 1024 * 1024]); // 16MB
-    let ptr = mem_buffer.as_mut_ptr();
-    allocator::init_global_allocator(ptr, mem_buffer.len())?;
+    // 初始化全局内存分配器
+    unsafe {
+        allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())?;
+    }
 
     // 定义数据库配置
     let config = Box::leak(Box::new(DbConfig {
         tables: vec![],                    // 空的数据库配置
-        total_memory: 16 * 1024 * 1024, // 16MB，与全局缓冲区大小一致
+        total_memory: 32 * 1024 * 1024, // 32MB，与全局缓冲区大小一致
         low_power_mode_supported: false,
         low_power_max_records: None,
         default_max_records: 10000,
-        memory_allocator: &ALLOCATOR, // 使用我们的静态内存分配器
+        memory_allocator: &ALLOCATOR, // 使用默认内存分配器
         wal_config: WALConfig {
             log_path: "./wal",
             log_mode: remdb::config::LogMode::Async,

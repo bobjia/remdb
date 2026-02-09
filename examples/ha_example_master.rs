@@ -98,13 +98,9 @@ fn master_example() {
         core::ptr::write(record_data.as_mut_ptr().add(37) as *mut bool, active);
 
         // 开始事务
-        let mut tx_buffer: transaction::Transaction =
-            core::mem::MaybeUninit::uninit().assume_init();
+        let mut tx_buffer = transaction::Transaction::default();
 
-        let mut log_buffer: [transaction::VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut log_buffer {
-            *item = transaction::VariableSizeLogItem::default();
-        }
+        let mut log_buffer = vec![transaction::VariableSizeLogItem::default(); 10];
 
         let _tx = transaction::begin(
             transaction::TransactionType::ReadWrite,

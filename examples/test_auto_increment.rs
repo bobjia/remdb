@@ -4,7 +4,7 @@ use remdb::config::WALConfig;
 use remdb::*;
 
 // 定义数据库内存区域
-static mut DB_MEMORY: [u8; 1024 * 1024] = [0; 1024 * 1024];
+static mut DB_MEMORY: [u8; 2 * 1024 * 1024] = [0; 2 * 1024 * 1024];
 
 fn main() {
     unsafe {
@@ -16,7 +16,7 @@ fn main() {
         static ALLOCATOR: config::DefaultMemoryAllocator = config::DefaultMemoryAllocator;
         static CONFIG: config::DbConfig = config::DbConfig {
             tables: vec![],
-            total_memory: 1024 * 1024,
+            total_memory: 2 * 1024 * 1024,
             low_power_mode_supported: false,
             low_power_max_records: None,
             default_max_records: 1000,
@@ -61,6 +61,9 @@ fn main() {
         match sql::parse_sql_query(create_table_sql1) {
             Ok(query) => {
                 println!("✅ SQL解析成功: AUTOINCREMENT");
+                println!("  表名: {}", query.table_name);
+                println!("  字段数: {}", query.table_def.len());
+                println!("  主键: {:?}", query.primary_key);
                 if let Err(e) = sql::execute_query(&mut db, &query) {
                     println!("❌ 执行失败: {}", e);
                 } else {
@@ -69,6 +72,58 @@ fn main() {
             }
             Err(e) => {
                 println!("❌ 解析失败: {}", e);
+            }
+        }
+
+        // 测试：尝试直接使用API创建表
+        println!("\n=== 测试：尝试直接使用API创建表===");
+        use remdb::DataType;
+        use remdb::FieldConstraint;
+        let fields = &[
+            ("id", DataType::Int64, 0, None, None),
+            ("name", DataType::VarChar, 50, None, None),
+        ];
+        let constraints = &[
+            FieldConstraint { primary_key: true, not_null: true, unique: true, auto_increment: true },
+            FieldConstraint { primary_key: false, not_null: false, unique: false, auto_increment: false },
+        ];
+        match db.create_table_with_constraints("api_test", fields, Some(constraints), Some(vec![0]), None) {
+            Ok(_) => {
+                println!("✅ API创建表成功: api_test");
+            }
+            Err(e) => {
+                println!("❌ API创建表失败: {}", e);
+            }
+        }
+
+        // 测试：尝试向API创建的表插入数据
+        println!("\n=== 测试：尝试向API创建的表插入数据===");
+        let insert_sql = "INSERT INTO api_test (name) VALUES ('API Test')";
+        match sql::parse_sql_query(insert_sql) {
+            Ok(query) => {
+                println!("✅ SQL解析成功");
+                if let Err(e) = sql::execute_query(&mut db, &query) {
+                    println!("❌ 执行失败: {}", e);
+                } else {
+                    println!("✅ 执行成功");
+                }
+            }
+            Err(e) => {
+                println!("❌ 解析失败: {}", e);
+            }
+        }
+
+        // 打印当前表信息
+        println!("\n=== 表信息 ===");
+        // 使用SQL查询来获取表信息，避免访问私有字段
+        let show_tables_sql = "SHOW TABLES";
+        match db.sql_query(show_tables_sql) {
+            Ok(result) => {
+                println!("当前表列表:");
+                println!("{}", result.to_string());
+            }
+            Err(e) => {
+                println!("获取表列表失败: {}", e);
             }
         }
 

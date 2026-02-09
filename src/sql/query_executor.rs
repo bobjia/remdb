@@ -8075,6 +8075,17 @@ fn execute_insert_query(
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
     // 1. 查找要插入的表的ID
+    println!("🔍 查找表: {}", query.table_name);
+    println!("  当前表数量: {}", db.tables.len());
+    for (i, table_opt) in db.tables.iter().enumerate() {
+        if let Some(table) = table_opt {
+            println!("  表{}: {} (ID: {})
+", i, table.def.name, table.def.id);
+        } else {
+            println!("  表{}: 空
+", i);
+        }
+    }
     let table_id = db
         .tables
         .iter()

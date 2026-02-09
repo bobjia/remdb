@@ -142,8 +142,18 @@ fn main() -> Result<()> {
     println!("成功创建带有复合主键的表: metrics (device_id, metric_id, timestamp)");
     
     // 获取表
-    let table_id = 1; // 系统表占用0，新表ID为1
-    let table = db.get_table(table_id)?;
+    let tables = db.get_all_tables();
+    let table = tables.iter()
+        .find(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == "metrics"
+            } else {
+                false
+            }
+        })
+        .ok_or(remdb::RemDbError::RecordNotFound)?
+        .as_ref()
+        .ok_or(remdb::RemDbError::RecordNotFound)?;
     
     println!("表结构:");
     println!("  字段数: {}", table.def.fields.len());

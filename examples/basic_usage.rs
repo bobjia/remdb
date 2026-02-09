@@ -172,10 +172,7 @@ fn main() {
         // 创建事务缓冲区（使用默认初始化）
         let mut tx_buffer = transaction::Transaction::default();
 
-        let mut log_buffer: [transaction::VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut log_buffer {
-            *item = transaction::VariableSizeLogItem::default();
-        }
+        let mut log_buffer = vec![transaction::VariableSizeLogItem::default(); 10];
 
         let tx = transaction::begin(
             transaction::TransactionType::ReadWrite,

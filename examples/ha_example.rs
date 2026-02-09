@@ -10,7 +10,7 @@ use remdb::ha::{HAConfig, HARole, ReplicationMode};
 use remdb::*;
 
 // 定义内存缓冲区
-static mut DB_MEMORY: [u8; 65536] = [0u8; 65536];
+static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152]; // 2MB
 
 // 定义表结构
 remdb::table!(
@@ -55,13 +55,9 @@ fn master_example() {
         let db = init_global_db(&MASTER_DB_CONFIG).expect("Failed to initialize database");
 
         // 开始事务
-        let mut tx_buffer: transaction::Transaction =
-            core::mem::MaybeUninit::uninit().assume_init();
+        let mut tx_buffer = transaction::Transaction::default();
 
-        let mut log_buffer: [transaction::VariableSizeLogItem; 10] = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-        for item in &mut log_buffer {
-            *item = transaction::VariableSizeLogItem::default();
-        }
+        let mut log_buffer = vec![transaction::VariableSizeLogItem::default(); 10];
 
         let tx = transaction::begin(
             transaction::TransactionType::ReadWrite,
