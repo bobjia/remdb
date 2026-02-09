@@ -40,6 +40,10 @@ fn test_variable_size_log_item_write_and_read() {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -185,6 +189,10 @@ fn test_variable_size_log_item_large_record() {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]

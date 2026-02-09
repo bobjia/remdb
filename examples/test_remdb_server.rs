@@ -149,6 +149,10 @@ fn main() {
             log_prealloc_size: 4 * 1024 * 1024,    // 4MB
             log_segment_size: 16 * 1024 * 1024,    // 16MB
             retained_checkpoints: 2,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         #[cfg(feature = "pubsub")]
         pubsub_config: None,

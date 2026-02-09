@@ -42,6 +42,10 @@ static SLAVE_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new
         log_prealloc_size: 0,
         log_segment_size: 1 * 1024 * 1024,
         retained_checkpoints: 1,
+        max_consecutive_invalid: 100,
+        skip_threshold: 1000,
+        skip_block_size: 1024 * 1024,
+        max_skip_attempts: 3,
     },
     time_series_defaults: TimeSeriesConfig::DEFAULT,
     #[cfg(feature = "pubsub")]

@@ -3,6 +3,7 @@
 use remdb::rbac::{RbacManager, Permission};
 use remdb::RemDb;
 use remdb::config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode};
+use remdb::platform;
 
 #[test]
 fn test_rbac_default_root_user() {
@@ -184,7 +185,11 @@ static TEST_CONFIG: DbConfig = DbConfig {
         log_file_size_limit: 16 * 1024 * 1024,
         log_prealloc_size: 1 * 1024 * 1024,
         log_segment_size: 16 * 1024 * 1024,
+        max_consecutive_invalid: 100,
         retained_checkpoints: 2,
+        skip_threshold: 1000,
+        skip_block_size: 1024 * 1024,
+        max_skip_attempts: 3,
     },
     tables: Vec::new(),
     memory_allocator: &TEST_MEMORY_ALLOCATOR,
@@ -203,6 +208,9 @@ static TEST_CONFIG: DbConfig = DbConfig {
 #[test]
 fn test_rbac_with_remdb() {
     println!("\n=== Testing RBAC with RemDb ===");
+    
+    // Initialize platform (required for RemDb operations)
+    platform::init_platform(platform::posix::get_posix_platform());
     
     // Create a new RemDb instance
     let mut db = RemDb::new_with_name("test_rbac", &TEST_CONFIG);

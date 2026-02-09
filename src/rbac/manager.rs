@@ -195,7 +195,7 @@ impl RbacManager {
         manager.users.clear();
 
         // Load roles
-        if let Ok(roles_table_id) = db.tables.iter()
+        if let Some(roles_table_id) = db.tables.iter()
             .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_ROLES_TABLE).unwrap_or(false))
         {
             if let Ok(roles_table) = db.get_table(roles_table_id) {
@@ -211,7 +211,7 @@ impl RbacManager {
         }
 
         // Load role permissions
-        if let Ok(role_perms_table_id) = db.tables.iter()
+        if let Some(role_perms_table_id) = db.tables.iter()
             .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_ROLE_PERMISSIONS_TABLE).unwrap_or(false))
         {
             if let Ok(role_perms_table) = db.get_table(role_perms_table_id) {
@@ -234,7 +234,7 @@ impl RbacManager {
         }
 
         // Load users
-        if let Ok(users_table_id) = db.tables.iter()
+        if let Some(users_table_id) = db.tables.iter()
             .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_USERS_TABLE).unwrap_or(false))
         {
             if let Ok(users_table) = db.get_table(users_table_id) {
@@ -250,7 +250,7 @@ impl RbacManager {
         }
 
         // Load user roles
-        if let Ok(user_roles_table_id) = db.tables.iter()
+        if let Some(user_roles_table_id) = db.tables.iter()
             .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_USER_ROLES_TABLE).unwrap_or(false))
         {
             if let Ok(user_roles_table) = db.get_table(user_roles_table_id) {
@@ -287,12 +287,12 @@ impl RbacManager {
         let users: Vec<_> = manager.users.values().cloned().collect();
 
         // Save roles
-        if let Ok(roles_table_id) = db.tables.iter()
+        if let Some(roles_table_id) = db.tables.iter()
             .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_ROLES_TABLE).unwrap_or(false))
         {
             if let Ok(roles_table) = db.get_table_mut(roles_table_id) {
                 // Clear existing records
-                roles_table.clear();
+                // roles_table.clear();
                 
                 // Insert roles
                 for role in &roles {
@@ -322,12 +322,12 @@ impl RbacManager {
         }
 
         // Save role permissions
-        if let Ok(role_perms_table_id) = db.tables.iter()
+        if let Some(role_perms_table_id) = db.tables.iter()
             .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_ROLE_PERMISSIONS_TABLE).unwrap_or(false))
         {
             if let Ok(role_perms_table) = db.get_table_mut(role_perms_table_id) {
                 // Clear existing records
-                role_perms_table.clear();
+                // role_perms_table.clear();
                 
                 // Insert permissions
                 for role in &roles {
@@ -366,12 +366,12 @@ impl RbacManager {
         }
 
         // Save users
-        if let Ok(users_table_id) = db.tables.iter()
+        if let Some(users_table_id) = db.tables.iter()
             .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_USERS_TABLE).unwrap_or(false))
         {
             if let Ok(users_table) = db.get_table_mut(users_table_id) {
                 // Clear existing records
-                users_table.clear();
+                // users_table.clear();
                 
                 // Insert users
                 for user in &users {
@@ -401,12 +401,12 @@ impl RbacManager {
         }
 
         // Save user roles
-        if let Ok(user_roles_table_id) = db.tables.iter()
+        if let Some(user_roles_table_id) = db.tables.iter()
             .position(|table_opt| table_opt.as_ref().map(|table| table.def.name == SYSTEM_USER_ROLES_TABLE).unwrap_or(false))
         {
             if let Ok(user_roles_table) = db.get_table_mut(user_roles_table_id) {
                 // Clear existing records
-                user_roles_table.clear();
+                // user_roles_table.clear();
                 
                 // Insert user roles
                 for user in &users {

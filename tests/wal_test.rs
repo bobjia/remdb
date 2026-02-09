@@ -47,6 +47,10 @@ fn test_wal_log_manager_creation() {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -97,6 +101,10 @@ fn test_wal_log_write_sync_mode() {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -166,6 +174,10 @@ fn test_wal_log_write_async_mode() {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -238,6 +250,10 @@ fn test_wal_checkpoint_mechanism() {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -310,6 +326,10 @@ fn test_wal_log_preallocation() {
             log_prealloc_size: 32 * 1024 * 1024, // 32MB 预分配大小
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -372,6 +392,10 @@ fn test_wal_different_log_modes() {
                 log_prealloc_size: 1 * 1024 * 1024,
                 log_segment_size: 16 * 1024 * 1024,
                 retained_checkpoints: 3,
+                max_consecutive_invalid: 100,
+                skip_threshold: 1000,
+                skip_block_size: 1024 * 1024,
+                max_skip_attempts: 3,
             },
             time_series_defaults: TimeSeriesConfig::DEFAULT,
             #[cfg(feature = "pubsub")]
@@ -446,6 +470,10 @@ fn test_wal_checkpoint_comprehensive() {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 2, // 只保留2个检查点
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -603,6 +631,10 @@ fn test_wal_checkpoint_comprehensive() {
                 log_prealloc_size: 1 * 1024 * 1024,
                 log_segment_size: 16 * 1024 * 1024,
                 retained_checkpoints: 2,
+                max_consecutive_invalid: 100,
+                skip_threshold: 1000,
+                skip_block_size: 1024 * 1024,
+                max_skip_attempts: 3,
             },
             time_series_defaults: TimeSeriesConfig::DEFAULT,
             #[cfg(feature = "pubsub")]
@@ -675,6 +707,10 @@ fn test_wal_recovery_flow() {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -875,6 +911,10 @@ fn test_wal_checkpoint_with_recovery() {
             log_prealloc_size: 1 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 2, // 只保留2个检查点
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]

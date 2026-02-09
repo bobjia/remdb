@@ -22,7 +22,7 @@ impl MemoryAllocator for SimpleAllocator {
         // 分配一个固定的内存地址，对于示例来说已经足够
         // 注意：这不是一个安全的实现，仅用于示例
         static mut BUFFER: [u8; 4 * 1024 * 1024] = [0u8; 4 * 1024 * 1024];
-        unsafe { Some(NonNull::new(BUFFER.as_mut_ptr()).unwrap()) }
+        unsafe { Some(NonNull::new(core::ptr::addr_of_mut!(BUFFER).cast::<u8>()).unwrap()) }
     }
 
     fn deallocate(&self, _ptr: NonNull<u8>, _size: usize) {
@@ -69,6 +69,10 @@ fn main() {
             log_prealloc_size: 4 * 1024 * 1024,    // 4MB
             log_segment_size: 16 * 1024 * 1024,    // 16MB
             retained_checkpoints: 2,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
         },
         time_series_defaults: TimeSeriesConfig {
             partition_duration_secs: 3600,        // 1小时

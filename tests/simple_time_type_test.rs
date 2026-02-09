@@ -126,6 +126,10 @@ static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLo
         log_segment_size: 1048576,
         checkpoint_interval_ms: 30000,
         retained_checkpoints: 2,
+        max_consecutive_invalid: 100,
+        skip_threshold: 1000,
+        skip_block_size: 1024 * 1024,
+        max_skip_attempts: 3,
     },
     time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
     #[cfg(feature = "pubsub")]
