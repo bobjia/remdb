@@ -60,6 +60,17 @@ pub enum LogMode {
     Async,
 }
 
+/// WAL压缩类型
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum WALCompressionType {
+    /// 不压缩
+    None,
+    /// LZ4压缩
+    LZ4,
+    /// ZSTD压缩
+    ZSTD,
+}
+
 /// WAL日志配置
 pub struct WALConfig {
     /// 日志文件路径
@@ -84,6 +95,10 @@ pub struct WALConfig {
     pub skip_block_size: usize,
     /// 恢复时最大跳过尝试次数
     pub max_skip_attempts: u32,
+    /// WAL压缩类型
+    pub compression_type: WALCompressionType,
+    /// 压缩级别（1-9）
+    pub compression_level: u8,
 }
 
 /// 数据库全局配置
@@ -155,6 +170,24 @@ pub fn validate_config(config: &DbConfig) -> bool {
 
     if config.wal_config.retained_checkpoints > 10 {
         return false;
+    }
+
+    if config.wal_config.compression_level < 1 || config.wal_config.compression_level > 9 {
+        return false;
+    }
+
+    #[cfg(not(feature = "wal-compression-lz4"))]
+    {
+        if matches!(config.wal_config.compression_type, WALCompressionType::LZ4) {
+            return false;
+        }
+    }
+
+    #[cfg(not(feature = "wal-compression-zstd"))]
+    {
+        if matches!(config.wal_config.compression_type, WALCompressionType::ZSTD) {
+            return false;
+        }
     }
 
     // 检查HA配置

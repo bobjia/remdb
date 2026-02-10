@@ -76,6 +76,8 @@ static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> =
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: time_series::TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]

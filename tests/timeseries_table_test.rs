@@ -45,6 +45,8 @@ static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLo
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -86,6 +88,8 @@ static PERFORMANCE_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -127,6 +131,8 @@ static ROLLBACK_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::syn
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]

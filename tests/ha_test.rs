@@ -284,6 +284,8 @@ fn test_ha_manager_failover() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         // PubSub配置（可选）
@@ -403,6 +405,8 @@ fn test_ha_manager() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         // PubSub配置（可选）
@@ -470,6 +474,8 @@ fn test_ha_manager_role_switch() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         // PubSub配置（可选）
@@ -573,6 +579,8 @@ fn test_ha_config_validation() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         // 无效HA配置
@@ -615,6 +623,8 @@ fn test_ha_config_validation() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: config::TimeSeriesConfig::DEFAULT,
         // 有效HA配置

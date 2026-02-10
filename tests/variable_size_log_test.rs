@@ -1,4 +1,4 @@
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig, WALCompressionType};
 use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
 use remdb::transaction::{LogItem, LogManager, LogOperation, VariableSizeLogItem};
 
@@ -44,6 +44,8 @@ fn test_variable_size_log_item_write_and_read() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -193,6 +195,8 @@ fn test_variable_size_log_item_large_record() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]

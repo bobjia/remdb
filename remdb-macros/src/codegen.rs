@@ -164,6 +164,8 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
                     skip_threshold: 1000,
                     skip_block_size: 1024 * 1024,
                     max_skip_attempts: 3,
+                    compression_type: remdb::config::WALCompressionType::None,
+                    compression_level: 3,
                 },
                 // PubSub配置（可选）
                 #[cfg(feature = "pubsub")]

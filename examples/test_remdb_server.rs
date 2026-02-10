@@ -144,15 +144,17 @@ fn main() {
         wal_config: WALConfig {
             log_path: "./wal",
             log_mode: remdb::config::LogMode::Async,
-            checkpoint_interval_ms: 60000,         // 60秒
-            log_file_size_limit: 16 * 1024 * 1024, // 16MB
-            log_prealloc_size: 4 * 1024 * 1024,    // 4MB
-            log_segment_size: 16 * 1024 * 1024,    // 16MB
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 4 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 2,
             max_consecutive_invalid: 100,
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
         },
         #[cfg(feature = "pubsub")]
         pubsub_config: None,

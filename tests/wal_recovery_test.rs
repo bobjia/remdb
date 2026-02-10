@@ -1,4 +1,4 @@
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig, WALCompressionType};
 use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
 use remdb::transaction::set_low_power_mode;
 use remdb::{init_global_db, reset_global_db, RemDb};
@@ -321,6 +321,8 @@ static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(
         skip_threshold: 1000,
         skip_block_size: 1024 * 1024,
         max_skip_attempts: 3,
+        compression_type: WALCompressionType::None,
+        compression_level: 3,
     },
     #[cfg(feature = "pubsub")]
     pubsub_config: None,

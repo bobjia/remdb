@@ -1,6 +1,6 @@
 #[cfg(feature = "ha")]
 use remdb::config::HAConfig;
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig, WALCompressionType};
 #[cfg(feature = "ha")]
 use remdb::ha::{HARole, ReplicationMode};
 use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
@@ -51,6 +51,8 @@ fn test_wal_log_manager_creation() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -105,6 +107,8 @@ fn test_wal_log_write_sync_mode() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -178,6 +182,8 @@ fn test_wal_log_write_async_mode() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -254,6 +260,8 @@ fn test_wal_checkpoint_mechanism() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -330,6 +338,8 @@ fn test_wal_log_preallocation() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -396,6 +406,8 @@ fn test_wal_different_log_modes() {
                 skip_threshold: 1000,
                 skip_block_size: 1024 * 1024,
                 max_skip_attempts: 3,
+                compression_type: WALCompressionType::None,
+                compression_level: 3,
             },
             time_series_defaults: TimeSeriesConfig::DEFAULT,
             #[cfg(feature = "pubsub")]
@@ -474,6 +486,8 @@ fn test_wal_checkpoint_comprehensive() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -635,6 +649,8 @@ fn test_wal_checkpoint_comprehensive() {
                 skip_threshold: 1000,
                 skip_block_size: 1024 * 1024,
                 max_skip_attempts: 3,
+                compression_type: WALCompressionType::None,
+                compression_level: 3,
             },
             time_series_defaults: TimeSeriesConfig::DEFAULT,
             #[cfg(feature = "pubsub")]
@@ -711,6 +727,8 @@ fn test_wal_recovery_flow() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -915,6 +933,8 @@ fn test_wal_checkpoint_with_recovery() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]

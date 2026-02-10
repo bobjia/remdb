@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use remdb::config::WALCompressionType;
 use remdb::time_series::compression::*;
 use remdb::time_series::*;
 use remdb::*;
@@ -316,6 +317,8 @@ fn test_time_series_batch_performance() {
                 skip_threshold: 1000,
                 skip_block_size: 1024 * 1024,
                 max_skip_attempts: 3,
+                compression_type: WALCompressionType::None,
+                compression_level: 3,
             },
             time_series_defaults: TimeSeriesConfig::DEFAULT,
             #[cfg(feature = "pubsub")]

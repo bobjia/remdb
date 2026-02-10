@@ -27,6 +27,7 @@ pub mod transaction;
 pub mod types;
 pub mod system_tables;
 pub mod utf8;
+pub mod wal_compression;
 
 // 导出核心类型
 pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};
@@ -304,6 +305,8 @@ impl DatabaseManager {
                 skip_threshold: 20,
                 skip_block_size: 4096,
                 max_skip_attempts: 10,
+                compression_type: crate::config::WALCompressionType::None,
+                compression_level: 3,
             },
             time_series_defaults: crate::time_series::TimeSeriesConfig {
                 max_partitions: 100,

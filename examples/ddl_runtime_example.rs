@@ -1,7 +1,7 @@
 // 运行时DDL配置示例
 
 // 运行时DDL配置示例
-use remdb::config::{DbConfig, LogMode, WALConfig};
+use remdb::config::{DbConfig, LogMode, WALConfig, WALCompressionType};
 #[cfg(feature = "ha")]
 use remdb::ha::{HAConfig, HARole, ReplicationMode};
 use remdb::memory::allocator::init_global_allocator;
@@ -123,6 +123,8 @@ fn main() {
             skip_threshold: 1000,
             skip_block_size: 1024 * 1024,
             max_skip_attempts: 3,
+            compression_type: WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]

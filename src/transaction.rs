@@ -97,6 +97,8 @@ pub struct LogHeader {
     pub record_count: u32,
     /// 校验和
     pub checksum: u32,
+    /// 压缩类型 (0=None, 1=LZ4, 2=ZSTD)
+    pub compression_type: u8,
 }
 
 /// 事务日志数据块大小（已废弃，保留用于向后兼容）
@@ -264,6 +266,10 @@ pub struct LogManager {
     skip_block_size: usize,
     /// 恢复时最大跳过尝试次数
     max_skip_attempts: u32,
+    /// WAL压缩类型
+    compression_type: crate::config::WALCompressionType,
+    /// 压缩级别
+    compression_level: u8,
 }
 
 impl Transaction {
@@ -348,6 +354,11 @@ impl LogManager {
                 created_at: now,
                 record_count: 0,
                 checksum: 0,
+                compression_type: match config.wal_config.compression_type {
+                    crate::config::WALCompressionType::None => 0,
+                    crate::config::WALCompressionType::LZ4 => 1,
+                    crate::config::WALCompressionType::ZSTD => 2,
+                },
             },
             checkpoint: LogCheckpoint {
                 timestamp: 0,
@@ -371,6 +382,8 @@ impl LogManager {
             skip_threshold: config.wal_config.skip_threshold,
             skip_block_size: config.wal_config.skip_block_size,
             max_skip_attempts: config.wal_config.max_skip_attempts,
+            compression_type: config.wal_config.compression_type,
+            compression_level: config.wal_config.compression_level,
         };
 
         // 预分配缓冲区空间
@@ -659,31 +672,75 @@ impl LogManager {
                     return Err(RemDbError::FileIoError);
                 }
 
-                // 写入旧数据
+                // 写入旧数据（压缩）
                 if var_log_item.header.old_data_size > 0 {
-                    let old_data_written = crate::platform::file_write(
+                    let compressed_old_data = crate::wal_compression::compress_wal_data(
+                        &var_log_item.old_data,
+                        self.compression_type,
+                        self.compression_level,
+                    )?;
+                    
+                    // 写入压缩后的大小
+                    let compressed_size = compressed_old_data.len() as u32;
+                    let size_bytes = compressed_size.to_le_bytes();
+                    let size_written = crate::platform::file_write(
                         self.log_handle,
-                        var_log_item.old_data.as_ptr(),
-                        var_log_item.old_data.len(),
+                        size_bytes.as_ptr(),
+                        size_bytes.len(),
                     )
                     .map_err(|_| RemDbError::FileIoError)?;
 
-                    if old_data_written != var_log_item.old_data.len() {
+                    if size_written != size_bytes.len() {
+                        crate::platform::spin_unlock(&mut self.lock);
+                        return Err(RemDbError::FileIoError);
+                    }
+
+                    // 写入压缩后的数据
+                    let old_data_written = crate::platform::file_write(
+                        self.log_handle,
+                        compressed_old_data.as_ptr(),
+                        compressed_old_data.len(),
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+
+                    if old_data_written != compressed_old_data.len() {
                         crate::platform::spin_unlock(&mut self.lock);
                         return Err(RemDbError::FileIoError);
                     }
                 }
 
-                // 写入新数据
+                // 写入新数据（压缩）
                 if var_log_item.header.new_data_size > 0 {
-                    let new_data_written = crate::platform::file_write(
+                    let compressed_new_data = crate::wal_compression::compress_wal_data(
+                        &var_log_item.new_data,
+                        self.compression_type,
+                        self.compression_level,
+                    )?;
+                    
+                    // 写入压缩后的大小
+                    let compressed_size = compressed_new_data.len() as u32;
+                    let size_bytes = compressed_size.to_le_bytes();
+                    let size_written = crate::platform::file_write(
                         self.log_handle,
-                        var_log_item.new_data.as_ptr(),
-                        var_log_item.new_data.len(),
+                        size_bytes.as_ptr(),
+                        size_bytes.len(),
                     )
                     .map_err(|_| RemDbError::FileIoError)?;
 
-                    if new_data_written != var_log_item.new_data.len() {
+                    if size_written != size_bytes.len() {
+                        crate::platform::spin_unlock(&mut self.lock);
+                        return Err(RemDbError::FileIoError);
+                    }
+
+                    // 写入压缩后的数据
+                    let new_data_written = crate::platform::file_write(
+                        self.log_handle,
+                        compressed_new_data.as_ptr(),
+                        compressed_new_data.len(),
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+
+                    if new_data_written != compressed_new_data.len() {
                         crate::platform::spin_unlock(&mut self.lock);
                         return Err(RemDbError::FileIoError);
                     }
@@ -694,9 +751,24 @@ impl LogManager {
                 self.header.checksum = 0;
 
                 // 更新当前日志偏移量
-                self.current_log_offset += core::mem::size_of::<LogItem>()
-                    + var_log_item.header.old_data_size as usize
-                    + var_log_item.header.new_data_size as usize;
+                let mut data_size = core::mem::size_of::<LogItem>();
+                if var_log_item.header.old_data_size > 0 {
+                    let compressed_old_data = crate::wal_compression::compress_wal_data(
+                        &var_log_item.old_data,
+                        self.compression_type,
+                        self.compression_level,
+                    )?;
+                    data_size += 4 + compressed_old_data.len();
+                }
+                if var_log_item.header.new_data_size > 0 {
+                    let compressed_new_data = crate::wal_compression::compress_wal_data(
+                        &var_log_item.new_data,
+                        self.compression_type,
+                        self.compression_level,
+                    )?;
+                    data_size += 4 + compressed_new_data.len();
+                }
+                self.current_log_offset += data_size;
 
                 // 释放锁，避免在write_header中再次借用冲突
                 crate::platform::spin_unlock(&mut self.lock);
@@ -742,31 +814,75 @@ impl LogManager {
                     return Err(RemDbError::FileIoError);
                 }
 
-                // 写入旧数据
+                // 写入旧数据（压缩）
                 if var_log_item.header.old_data_size > 0 {
-                    let old_data_written = crate::platform::file_write(
+                    let compressed_old_data = crate::wal_compression::compress_wal_data(
+                        &var_log_item.old_data,
+                        self.compression_type,
+                        self.compression_level,
+                    )?;
+                    
+                    // 写入压缩后的大小
+                    let compressed_size = compressed_old_data.len() as u32;
+                    let size_bytes = compressed_size.to_le_bytes();
+                    let size_written = crate::platform::file_write(
                         self.log_handle,
-                        var_log_item.old_data.as_ptr(),
-                        var_log_item.old_data.len(),
+                        size_bytes.as_ptr(),
+                        size_bytes.len(),
                     )
                     .map_err(|_| RemDbError::FileIoError)?;
 
-                    if old_data_written != var_log_item.old_data.len() {
+                    if size_written != size_bytes.len() {
+                        crate::platform::spin_unlock(&mut self.lock);
+                        return Err(RemDbError::FileIoError);
+                    }
+
+                    // 写入压缩后的数据
+                    let old_data_written = crate::platform::file_write(
+                        self.log_handle,
+                        compressed_old_data.as_ptr(),
+                        compressed_old_data.len(),
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+
+                    if old_data_written != compressed_old_data.len() {
                         crate::platform::spin_unlock(&mut self.lock);
                         return Err(RemDbError::FileIoError);
                     }
                 }
 
-                // 写入新数据
+                // 写入新数据（压缩）
                 if var_log_item.header.new_data_size > 0 {
-                    let new_data_written = crate::platform::file_write(
+                    let compressed_new_data = crate::wal_compression::compress_wal_data(
+                        &var_log_item.new_data,
+                        self.compression_type,
+                        self.compression_level,
+                    )?;
+                    
+                    // 写入压缩后的大小
+                    let compressed_size = compressed_new_data.len() as u32;
+                    let size_bytes = compressed_size.to_le_bytes();
+                    let size_written = crate::platform::file_write(
                         self.log_handle,
-                        var_log_item.new_data.as_ptr(),
-                        var_log_item.new_data.len(),
+                        size_bytes.as_ptr(),
+                        size_bytes.len(),
                     )
                     .map_err(|_| RemDbError::FileIoError)?;
 
-                    if new_data_written != var_log_item.new_data.len() {
+                    if size_written != size_bytes.len() {
+                        crate::platform::spin_unlock(&mut self.lock);
+                        return Err(RemDbError::FileIoError);
+                    }
+
+                    // 写入压缩后的数据
+                    let new_data_written = crate::platform::file_write(
+                        self.log_handle,
+                        compressed_new_data.as_ptr(),
+                        compressed_new_data.len(),
+                    )
+                    .map_err(|_| RemDbError::FileIoError)?;
+
+                    if new_data_written != compressed_new_data.len() {
                         crate::platform::spin_unlock(&mut self.lock);
                         return Err(RemDbError::FileIoError);
                     }
@@ -777,9 +893,24 @@ impl LogManager {
                 self.header.checksum = 0;
 
                 // 更新当前日志偏移量
-                self.current_log_offset += core::mem::size_of::<LogItem>()
-                    + var_log_item.header.old_data_size as usize
-                    + var_log_item.header.new_data_size as usize;
+                let mut data_size = core::mem::size_of::<LogItem>();
+                if var_log_item.header.old_data_size > 0 {
+                    let compressed_old_data = crate::wal_compression::compress_wal_data(
+                        &var_log_item.old_data,
+                        self.compression_type,
+                        self.compression_level,
+                    )?;
+                    data_size += 4 + compressed_old_data.len();
+                }
+                if var_log_item.header.new_data_size > 0 {
+                    let compressed_new_data = crate::wal_compression::compress_wal_data(
+                        &var_log_item.new_data,
+                        self.compression_type,
+                        self.compression_level,
+                    )?;
+                    data_size += 4 + compressed_new_data.len();
+                }
+                self.current_log_offset += data_size;
 
                 // 释放锁，避免在write_header中再次借用冲突
                 crate::platform::spin_unlock(&mut self.lock);
@@ -961,10 +1092,46 @@ impl LogManager {
 
             let header = core::ptr::read_unaligned(log_bytes.as_ptr() as *const LogItem);
 
-            // 更新偏移量：头部大小 + 旧数据大小 + 新数据大小
-            log_offset += core::mem::size_of::<LogItem>()
-                + header.old_data_size as usize
-                + header.new_data_size as usize;
+            // 更新偏移量：头部大小
+            log_offset += core::mem::size_of::<LogItem>();
+
+            // 计算旧数据大小（包括大小前缀）
+            if header.old_data_size > 0 {
+                // 读取压缩大小
+                let mut compressed_size_bytes = [0u8; 4];
+                let size_read = crate::platform::file_read(
+                    handle,
+                    compressed_size_bytes.as_mut_ptr(),
+                    4,
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+
+                if size_read != 4 {
+                    return Err(RemDbError::FileIoError);
+                }
+
+                let compressed_size = u32::from_le_bytes(compressed_size_bytes) as usize;
+                log_offset += 4 + compressed_size;
+            }
+
+            // 计算新数据大小（包括大小前缀）
+            if header.new_data_size > 0 {
+                // 读取压缩大小
+                let mut compressed_size_bytes = [0u8; 4];
+                let size_read = crate::platform::file_read(
+                    handle,
+                    compressed_size_bytes.as_mut_ptr(),
+                    4,
+                )
+                .map_err(|_| RemDbError::FileIoError)?;
+
+                if size_read != 4 {
+                    return Err(RemDbError::FileIoError);
+                }
+
+                let compressed_size = u32::from_le_bytes(compressed_size_bytes) as usize;
+                log_offset += 4 + compressed_size;
+            }
         }
 
         // 定位到目标日志项头部位置
@@ -1005,20 +1172,37 @@ impl LogManager {
             )
             .map_err(|_| RemDbError::FileIoError)?;
 
-            var_log_item.old_data.resize(header.old_data_size as usize, 0);
-            let old_data_read = crate::platform::file_read(
+            // 读取压缩大小
+            let mut compressed_size_bytes = [0u8; 4];
+            let size_read = crate::platform::file_read(
                 handle,
-                var_log_item.old_data.as_mut_ptr(),
-                header.old_data_size as usize,
+                compressed_size_bytes.as_mut_ptr(),
+                4,
             )
             .map_err(|_| RemDbError::FileIoError)?;
 
-            if old_data_read != header.old_data_size as usize {
+            if size_read != 4 {
                 return Err(RemDbError::FileIoError);
             }
 
+            let compressed_size = u32::from_le_bytes(compressed_size_bytes) as usize;
+            var_log_item.old_data.resize(compressed_size, 0);
+            let old_data_read = crate::platform::file_read(
+                handle,
+                var_log_item.old_data.as_mut_ptr(),
+                compressed_size,
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+
+            if old_data_read != compressed_size {
+                return Err(RemDbError::FileIoError);
+            }
+
+            // 解压缩数据
+            var_log_item.old_data = crate::wal_compression::decompress_wal_data(&var_log_item.old_data, self.compression_type)?;
+
             // 更新偏移量：指向新数据的起始位置
-            log_offset += header.old_data_size as usize;
+            log_offset += 4 + compressed_size;
         }
 
         // 读取新数据
@@ -1030,17 +1214,34 @@ impl LogManager {
             )
             .map_err(|_| RemDbError::FileIoError)?;
 
-            var_log_item.new_data.resize(header.new_data_size as usize, 0);
-            let new_data_read = crate::platform::file_read(
+            // 读取压缩大小
+            let mut compressed_size_bytes = [0u8; 4];
+            let size_read = crate::platform::file_read(
                 handle,
-                var_log_item.new_data.as_mut_ptr(),
-                header.new_data_size as usize,
+                compressed_size_bytes.as_mut_ptr(),
+                4,
             )
             .map_err(|_| RemDbError::FileIoError)?;
 
-            if new_data_read != header.new_data_size as usize {
+            if size_read != 4 {
                 return Err(RemDbError::FileIoError);
             }
+
+            let compressed_size = u32::from_le_bytes(compressed_size_bytes) as usize;
+            var_log_item.new_data.resize(compressed_size, 0);
+            let new_data_read = crate::platform::file_read(
+                handle,
+                var_log_item.new_data.as_mut_ptr(),
+                compressed_size,
+            )
+            .map_err(|_| RemDbError::FileIoError)?;
+
+            if new_data_read != compressed_size {
+                return Err(RemDbError::FileIoError);
+            }
+
+            // 解压缩数据
+            var_log_item.new_data = crate::wal_compression::decompress_wal_data(&var_log_item.new_data, self.compression_type)?;
         }
 
         // 验证校验和
@@ -1226,6 +1427,14 @@ impl LogManager {
             let mut data_offset = current_offset + header_size_bytes;
             let mut read_success = true;
 
+            // Determine compression type from log header
+            let compression_type = match self.header.compression_type {
+                0 => crate::config::WALCompressionType::None,
+                1 => crate::config::WALCompressionType::LZ4,
+                2 => crate::config::WALCompressionType::ZSTD,
+                _ => crate::config::WALCompressionType::None,
+            };
+
             if header.old_data_size > 0 {
                 if let Err(_) = crate::platform::file_seek(
                     handle,
@@ -1234,17 +1443,54 @@ impl LogManager {
                 ) {
                     read_success = false;
                 } else {
-                    var_log_item.old_data.resize(header.old_data_size as usize, 0);
-                    let old_data_read = crate::platform::file_read(
-                        handle,
-                        var_log_item.old_data.as_mut_ptr(),
-                        header.old_data_size as usize,
-                    );
+                    // Read compressed size (4 bytes) if compression is enabled
+                    if matches!(compression_type, crate::config::WALCompressionType::None) {
+                        var_log_item.old_data.resize(header.old_data_size as usize, 0);
+                        let old_data_read = crate::platform::file_read(
+                            handle,
+                            var_log_item.old_data.as_mut_ptr(),
+                            header.old_data_size as usize,
+                        );
 
-                    if old_data_read.is_err() || old_data_read.unwrap() != header.old_data_size as usize {
-                        read_success = false;
+                        if old_data_read.is_err() || old_data_read.unwrap() != header.old_data_size as usize {
+                            read_success = false;
+                        } else {
+                            data_offset += header.old_data_size as usize;
+                        }
                     } else {
-                        data_offset += header.old_data_size as usize;
+                        let mut compressed_size_bytes = [0u8; 4];
+                        let size_read = crate::platform::file_read(
+                            handle,
+                            compressed_size_bytes.as_mut_ptr(),
+                            4,
+                        );
+                        
+                        if size_read.is_err() || size_read.unwrap() != 4 {
+                            read_success = false;
+                        } else {
+                            let compressed_size = u32::from_le_bytes(compressed_size_bytes) as usize;
+                            var_log_item.old_data.resize(compressed_size, 0);
+                            let old_data_read = crate::platform::file_read(
+                                handle,
+                                var_log_item.old_data.as_mut_ptr(),
+                                compressed_size,
+                            );
+
+                            if old_data_read.is_err() || old_data_read.unwrap() != compressed_size {
+                                read_success = false;
+                            } else {
+                                // Decompress the data
+                                match crate::wal_compression::decompress_wal_data(&var_log_item.old_data, compression_type) {
+                                    Ok(decompressed) => {
+                                        var_log_item.old_data = decompressed;
+                                        data_offset += 4 + compressed_size;
+                                    }
+                                    Err(_) => {
+                                        read_success = false;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1257,15 +1503,54 @@ impl LogManager {
                 ) {
                     read_success = false;
                 } else {
-                    var_log_item.new_data.resize(header.new_data_size as usize, 0);
-                    let new_data_read = crate::platform::file_read(
-                        handle,
-                        var_log_item.new_data.as_mut_ptr(),
-                        header.new_data_size as usize,
-                    );
+                    // Read compressed size (4 bytes) if compression is enabled
+                    if matches!(compression_type, crate::config::WALCompressionType::None) {
+                        var_log_item.new_data.resize(header.new_data_size as usize, 0);
+                        let new_data_read = crate::platform::file_read(
+                            handle,
+                            var_log_item.new_data.as_mut_ptr(),
+                            header.new_data_size as usize,
+                        );
 
-                    if new_data_read.is_err() || new_data_read.unwrap() != header.new_data_size as usize {
-                        read_success = false;
+                        if new_data_read.is_err() || new_data_read.unwrap() != header.new_data_size as usize {
+                            read_success = false;
+                        } else {
+                            data_offset += header.new_data_size as usize;
+                        }
+                    } else {
+                        let mut compressed_size_bytes = [0u8; 4];
+                        let size_read = crate::platform::file_read(
+                            handle,
+                            compressed_size_bytes.as_mut_ptr(),
+                            4,
+                        );
+                        
+                        if size_read.is_err() || size_read.unwrap() != 4 {
+                            read_success = false;
+                        } else {
+                            let compressed_size = u32::from_le_bytes(compressed_size_bytes) as usize;
+                            var_log_item.new_data.resize(compressed_size, 0);
+                            let new_data_read = crate::platform::file_read(
+                                handle,
+                                var_log_item.new_data.as_mut_ptr(),
+                                compressed_size,
+                            );
+
+                            if new_data_read.is_err() || new_data_read.unwrap() != compressed_size {
+                                read_success = false;
+                            } else {
+                                // Decompress the data
+                                match crate::wal_compression::decompress_wal_data(&var_log_item.new_data, compression_type) {
+                                    Ok(decompressed) => {
+                                        var_log_item.new_data = decompressed;
+                                        data_offset += 4 + compressed_size;
+                                    }
+                                    Err(_) => {
+                                        read_success = false;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

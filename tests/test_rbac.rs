@@ -2,7 +2,7 @@
 
 use remdb::rbac::{RbacManager, Permission};
 use remdb::RemDb;
-use remdb::config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode};
+use remdb::config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode, WALCompressionType};
 use remdb::platform;
 
 #[test]
@@ -190,6 +190,8 @@ static TEST_CONFIG: DbConfig = DbConfig {
         skip_threshold: 1000,
         skip_block_size: 1024 * 1024,
         max_skip_attempts: 3,
+        compression_type: WALCompressionType::None,
+        compression_level: 3,
     },
     tables: Vec::new(),
     memory_allocator: &TEST_MEMORY_ALLOCATOR,

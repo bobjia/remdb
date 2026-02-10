@@ -694,6 +694,8 @@ impl From<crate::RemDbError> for RemDbError {
             crate::RemDbError::DatabaseExists => RemDbError::DuplicateKey, // 映射为DuplicateKey
             crate::RemDbError::DatabaseClosed => RemDbError::ConfigError, // 映射为ConfigError
             crate::RemDbError::MaxDatabasesReached => RemDbError::ConfigError, // 映射为ConfigError
+            crate::RemDbError::InvalidConfig(_) => RemDbError::ConfigError,
+            crate::RemDbError::CompressionError => RemDbError::ConfigError,
         }
     }
 }
@@ -902,17 +904,19 @@ pub unsafe extern "C" fn remdb_init_global(
         default_max_records: 1000, // 默认值
         memory_allocator: &crate::config::DefaultMemoryAllocator,
         wal_config: crate::config::WALConfig {
-            log_path: "remdb.wal", // 默认日志文件路径
+            log_path: "remdb.wal",
             log_mode: crate::config::LogMode::Sync,
-            checkpoint_interval_ms: 60000,         // 默认60秒
-            log_file_size_limit: 16 * 1024 * 1024, // 默认16MB
-            log_prealloc_size: 16 * 1024 * 1024,   // 默认16MB
-            log_segment_size: 16 * 1024 * 1024,    // 默认16MB
-            retained_checkpoints: 2,               // 默认保留2个检查点
+            checkpoint_interval_ms: 60000,
+            log_file_size_limit: 16 * 1024 * 1024,
+            log_prealloc_size: 16 * 1024 * 1024,
+            log_segment_size: 16 * 1024 * 1024,
+            retained_checkpoints: 2,
             max_consecutive_invalid: 100,
             skip_threshold: 20,
             skip_block_size: 4096,
             max_skip_attempts: 10,
+            compression_type: crate::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: crate::time_series::TimeSeriesConfig::DEFAULT,
         #[cfg(feature = "pubsub")]
@@ -1072,17 +1076,19 @@ pub unsafe extern "C" fn remdb_get_global(handle: *mut RemDbHandle) -> RemDbErro
         low_power_max_records: Some(10000),
         memory_allocator: &crate::config::DefaultMemoryAllocator,
         wal_config: crate::config::WALConfig {
-            log_path: Box::leak(format!("./data/default").into_boxed_str()),
-            log_mode: crate::config::LogMode::Async,
+            log_path: "remdb.wal",
+            log_mode: crate::config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 0,
+            log_prealloc_size: 16 * 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 2,
             max_consecutive_invalid: 100,
             skip_threshold: 20,
             skip_block_size: 4096,
             max_skip_attempts: 10,
+            compression_type: crate::config::WALCompressionType::None,
+            compression_level: 3,
         },
         time_series_defaults: crate::time_series::TimeSeriesConfig {
             max_partitions: 100,
