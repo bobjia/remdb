@@ -2367,6 +2367,7 @@ impl DdlExecutor for RemDb {
 
         // 4. 计算有效的max_records
         // 如果低功耗模式开启，实际的最大记录数以max_records与低功耗模式下的最大记录数的较小值为准
+        // 如果低功耗模式关闭，实际的最大记录数以max_records与默认最大记录数的较大值为准
         let effective_max_records = if self.config.low_power_mode_supported {
             let low_power_max = self.config.low_power_max_records.unwrap_or(usize::MAX);
             match max_records {
@@ -2374,7 +2375,10 @@ impl DdlExecutor for RemDb {
                 None => self.config.default_max_records.min(low_power_max),
             }
         } else {
-            max_records.unwrap_or(self.config.default_max_records)
+            match max_records {
+                Some(table_max) => table_max.max(self.config.default_max_records),
+                None => self.config.default_max_records,
+            }
         };
 
         // 5. 创建表定义
