@@ -2120,6 +2120,11 @@ impl RemDb {
         #[cfg(feature = "log")]
         info!("Starting DROP TABLE operation on {}", table_name);
 
+        // 输入验证
+        if table_name.is_empty() {
+            return Err(RemDbError::InvalidArgument);
+        }
+
         // 检查是否为系统表，系统表不允许DROP操作
         if crate::system_tables::is_system_table(table_name) {
             return Err(RemDbError::NotAllowed);
@@ -2144,6 +2149,14 @@ impl RemDb {
         }
 
         let table_index = table_index.unwrap();
+
+        // 防御性检查：确保索引在有效范围内
+        if table_index >= self.tables.len() {
+            return Err(RemDbError::InvalidState);
+        }
+
+        // 增加删除操作计数
+        self.metrics.inc_delete_ops();
 
         // 3. 检查是否有活跃的查询或事务正在使用该表
         // 这里简化处理，实际实现需要更复杂的并发控制
@@ -2224,9 +2237,17 @@ impl RemDb {
                 final_log_item.checksum = calculated_checksum;
 
                 // 写入日志
-                let _ = log_manager.write_log_item(&final_log_item);
+                if let Err(e) = log_manager.write_log_item(&final_log_item) {
+                    #[cfg(feature = "log")]
+                    warn!("Failed to write WAL log for DROP TABLE {}: {:?}", table_name, e);
+                    // 继续执行，因为表删除操作已经完成
+                }
                 // 立即刷新缓冲区，确保日志被持久化
-                let _ = log_manager.flush_buffer();
+                if let Err(e) = log_manager.flush_buffer() {
+                    #[cfg(feature = "log")]
+                    warn!("Failed to flush WAL buffer for DROP TABLE {}: {:?}", table_name, e);
+                    // 继续执行，因为表删除操作已经完成
+                }
             }
         }
 

@@ -449,8 +449,8 @@ impl LogManager {
         let mut header_bytes = [0u8; core::mem::size_of::<LogHeader>()];
         core::ptr::write_unaligned(header_bytes.as_mut_ptr() as *mut LogHeader, self.header);
 
-        // 清除旧的校验和
-        let checksum_ptr = header_bytes.as_mut_ptr().add(16) as *mut u32;
+        // 清除旧的校验和 (checksum offset = 4 + 4 + 8 + 4 = 20)
+        let checksum_ptr = header_bytes.as_mut_ptr().add(20) as *mut u32;
         *checksum_ptr = 0;
 
         // 计算新的校验和

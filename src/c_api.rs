@@ -650,17 +650,19 @@ pub enum RemDbError {
     LockTimeout = 16,
     TableNotFound = 17,
     InvalidRecordSize = 18,
+    /// 参数错误
+    InvalidParameter = 19,
     // PubSub相关错误
-    PubSubInitFailed = 19,
-    PubSubNetworkError = 20,
-    PubSubInvalidParameter = 21,
-    PubSubResourceExhausted = 22,
-    PubSubInvalidFrameFormat = 23,
-    PubSubCrcCheckFailed = 24,
-    PubSubTopicNotFound = 25,
-    PubSubSubscriptionNotFound = 26,
+    PubSubInitFailed = 20,
+    PubSubNetworkError = 21,
+    PubSubInvalidParameter = 22,
+    PubSubResourceExhausted = 23,
+    PubSubInvalidFrameFormat = 24,
+    PubSubCrcCheckFailed = 25,
+    PubSubTopicNotFound = 26,
+    PubSubSubscriptionNotFound = 27,
     /// 操作不允许
-    NotAllowed = 27,
+    NotAllowed = 28,
 }
 
 impl From<crate::RemDbError> for RemDbError {
@@ -696,6 +698,8 @@ impl From<crate::RemDbError> for RemDbError {
             crate::RemDbError::MaxDatabasesReached => RemDbError::ConfigError, // 映射为ConfigError
             crate::RemDbError::InvalidConfig(_) => RemDbError::ConfigError,
             crate::RemDbError::CompressionError => RemDbError::ConfigError,
+            crate::RemDbError::InvalidArgument => RemDbError::InvalidParameter,
+            crate::RemDbError::InvalidState => RemDbError::InvalidParameter,
         }
     }
 }
