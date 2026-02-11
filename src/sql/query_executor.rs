@@ -9129,14 +9129,14 @@ fn set_field_value_with_depth(
                         }
                         
                         // 解析向量值并写入记录
-                        let vec_ptr = record_data.as_mut_ptr().add(offset) as *mut f32;
-                        for (i, val_str) in vec_values.iter().enumerate() {
-                            if let Ok(val) = val_str.parse::<f32>() {
-                                *vec_ptr.add(i) = val;
-                            } else {
-                                return Err(QueryExecutionError::TypeMismatch);
+                            let vec_ptr = record_data.as_mut_ptr().add(offset) as *mut f32;
+                            for (i, val_str) in vec_values.iter().enumerate() {
+                                if let Ok(val) = val_str.parse::<f32>() {
+                                    core::ptr::write_unaligned(vec_ptr.add(i), val);
+                                } else {
+                                    return Err(QueryExecutionError::TypeMismatch);
+                                }
                             }
-                        }
                         return Ok(());
                     }
                 } else if matches!(evaluated_value.value_type, DataType::Json) {
@@ -9161,7 +9161,7 @@ fn set_field_value_with_depth(
                             let vec_ptr = record_data.as_mut_ptr().add(offset) as *mut f32;
                             for (i, val_str) in vec_values.iter().enumerate() {
                                 if let Ok(val) = val_str.parse::<f32>() {
-                                    *vec_ptr.add(i) = val;
+                                    core::ptr::write_unaligned(vec_ptr.add(i), val);
                                 } else {
                                     return Err(QueryExecutionError::TypeMismatch);
                                 }
