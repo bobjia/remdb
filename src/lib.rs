@@ -3257,6 +3257,104 @@ impl DdlExecutor for RemDb {
                                     );
                                 }
                             }
+                            
+                            // 为新添加的字段设置默认值
+                            for new_field in new_table_def_arc.fields.iter() {
+                                // 检查是否为新字段（旧表中不存在）
+                                if !old_table.def.fields.iter().any(|f| f.name == new_field.name) {
+                                    // 如果有默认值，设置默认值
+                                    if let Some(default_value) = &new_field.default_value {
+                                        unsafe {
+                                            match new_field.data_type {
+                                                DataType::UInt8 => {
+                                                    new_record_data[new_field.offset] = default_value.u8;
+                                                }
+                                                DataType::UInt16 => {
+                                                    core::ptr::write_unaligned(
+                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut u16,
+                                                        default_value.u16,
+                                                    );
+                                                }
+                                                DataType::UInt32 => {
+                                                    core::ptr::write_unaligned(
+                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut u32,
+                                                        default_value.u32,
+                                                    );
+                                                }
+                                                DataType::UInt64 => {
+                                                    core::ptr::write_unaligned(
+                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut u64,
+                                                        default_value.u64,
+                                                    );
+                                                }
+                                                DataType::Int8 => {
+                                                    new_record_data[new_field.offset] = default_value.i8 as u8;
+                                                }
+                                                DataType::Int16 => {
+                                                    core::ptr::write_unaligned(
+                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut i16,
+                                                        default_value.i16,
+                                                    );
+                                                }
+                                                DataType::Int32 => {
+                                                    core::ptr::write_unaligned(
+                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut i32,
+                                                        default_value.i32,
+                                                    );
+                                                }
+                                                DataType::Int64 => {
+                                                    core::ptr::write_unaligned(
+                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut i64,
+                                                        default_value.i64,
+                                                    );
+                                                }
+                                                DataType::Float32 => {
+                                                    core::ptr::write_unaligned(
+                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut f32,
+                                                        default_value.float32,
+                                                    );
+                                                }
+                                                DataType::Float64 => {
+                                                    core::ptr::write_unaligned(
+                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut f64,
+                                                        default_value.float64,
+                                                    );
+                                                }
+                                                DataType::Bool => {
+                                                    new_record_data[new_field.offset] = if default_value.bool { 1u8 } else { 0u8 };
+                                                }
+                                                DataType::Timestamp => {
+                                                    core::ptr::write_unaligned(
+                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut crate::types::db_timestamp,
+                                                        default_value.time,
+                                                    );
+                                                }
+                                                DataType::TimestampTZ => {
+                                                    core::ptr::write_unaligned(
+                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut crate::types::db_timestamp,
+                                                        default_value.time,
+                                                    );
+                                                }
+                                                DataType::VarChar | DataType::Char | DataType::Text | DataType::Json => {
+                                                    // 字符串类型：直接写入字符串数据
+                                                    let bytes = &default_value.string;
+                                                    let len = core::cmp::min(MAX_STRING_LEN, new_field.size);
+                                                    unsafe {
+                                                        core::ptr::copy_nonoverlapping(
+                                                            bytes.as_ptr(),
+                                                            new_record_data.as_mut_ptr().add(new_field.offset),
+                                                            len,
+                                                        );
+                                                    }
+                                                }
+                                                _ => {
+                                                    // 其他类型暂不处理
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     

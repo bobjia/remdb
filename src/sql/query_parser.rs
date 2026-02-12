@@ -1155,12 +1155,8 @@ impl SqlParser {
                 
                 primary_key = Some(primary_key_fields.clone());
                 
-                // 更新字段定义中的主键标志
-                for (field_name, _, ref mut is_pk, _, _, _, _) in &mut table_def {
-                    if primary_key_fields.contains(field_name) {
-                        *is_pk = true;
-                    }
-                }
+                // 不在这里更新字段定义中的主键标志，因为字段可能还未定义
+                // 将在所有字段定义完成后统一处理
             } else {
                 // 解析普通字段定义
                 let field_name = self.parse_identifier()?;
@@ -1235,6 +1231,15 @@ impl SqlParser {
         // 如果没有显式的主键定义，检查是否有字段标记为主键
         if primary_key.is_none() {
             primary_key = primary_key_fields.into_iter().collect::<Vec<_>>().into();
+        }
+
+        // 统一处理主键标志的更新
+        if let Some(pk_fields) = &primary_key {
+            for (field_name, _, ref mut is_pk, _, _, _, _) in &mut table_def {
+                if pk_fields.contains(field_name) {
+                    *is_pk = true;
+                }
+            }
         }
 
         // 解析WITH CONFIGURATION子句

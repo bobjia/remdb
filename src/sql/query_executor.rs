@@ -1770,6 +1770,9 @@ fn execute_select_query(
     // 2. 确定要返回的列表达式
     let columns = if query.select_all {
         // 返回所有列（作为Field表达式）
+        #[cfg(feature = "log")]
+        info!("DEBUG: SELECT * query, table fields: {:?}", table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
+        eprintln!("DEBUG execute_select_query: SELECT * query, table fields: {:?}", table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
         table
             .def
             .fields
@@ -7775,10 +7778,24 @@ fn find_table_by_name<'a>(
     db: &'a RemDb,
     table_name: &str,
 ) -> Result<&'a MemoryTable, QueryExecutionError> {
+    // 先查找普通表
     for table in db.tables.iter() {
         if let Some(table) = table {
             if table.def.name == table_name {
                 return Ok(table);
+            }
+        }
+    }
+
+    // 再查找时序表
+    for ts_table_opt in db.time_series_tables.iter() {
+        if let Some(ts_table) = ts_table_opt {
+            if ts_table.def.base.name == table_name {
+                // 时序表也有MemoryTable接口，但需要转换
+                // 这里我们返回时序表的内部MemoryTable
+                // 注意：这可能需要调整，因为时序表和普通表的结构可能不同
+                // 暂时返回TableNotFound，需要进一步处理
+                return Err(QueryExecutionError::TableNotFound);
             }
         }
     }
@@ -8074,18 +8091,22 @@ fn execute_insert_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
-    // 1. 查找要插入的表的ID
-    println!("🔍 查找表: {}", query.table_name);
-    println!("  当前表数量: {}", db.tables.len());
-    for (i, table_opt) in db.tables.iter().enumerate() {
+    // 1. 检查是否是时序表
+    let is_timeseries = db.time_series_tables.iter().any(|table_opt| {
         if let Some(table) = table_opt {
-            println!("  表{}: {} (ID: {})
-", i, table.def.name, table.def.id);
+            table.def.base.name == query.table_name
         } else {
-            println!("  表{}: 空
-", i);
+            false
         }
+    });
+
+    if is_timeseries {
+        return execute_insert_timeseries_query(db, query);
     }
+
+    // 2. 查找要插入的表的ID
+    #[cfg(feature = "log")]
+    debug!("查找表: {}", query.table_name);
     let table_id = db
         .tables
         .iter()
@@ -8184,6 +8205,10 @@ fn execute_insert_query(
 
             // 检查是否为主键且自动递增
             let is_pk_auto_incr = field.primary_key && field.auto_increment;
+
+            #[cfg(feature = "log")]
+            debug!("Field: {}, PK={}, AutoIncr={}, HasValue={}", 
+                field.name, field.primary_key, field.auto_increment, field_value.is_some());
 
             // 如果是自动递增主键且未提供值，则生成唯一值
             if is_pk_auto_incr && field_value.is_none() {
@@ -9079,7 +9104,9 @@ fn set_field_value_with_depth(
             DataType::VarChar | DataType::Char | DataType::Text => {
                 let str_value = match evaluated_value.value_type {
                     DataType::VarChar | DataType::Char | DataType::Text => {
-                        core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default()
+                        let s = core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default();
+                        eprintln!("DEBUG set_field_value: string value from evaluated_value: '{}', len={}", s, s.len());
+                        s
                     }
                     DataType::Int64 => &evaluated_value.value.i64.to_string(),
                     DataType::Float64 => &evaluated_value.value.float64.to_string(),
@@ -9090,6 +9117,7 @@ fn set_field_value_with_depth(
                 let ptr = record_data.as_mut_ptr().add(offset);
                 // 复制字符串到缓冲区，确保不超过字段大小
                 let max_len = field_size;
+                eprintln!("DEBUG set_field_value: copying string '{}' to offset={}, max_len={}", str_value, offset, max_len);
                 for (i, c) in str_value.as_bytes().iter().enumerate() {
                     if i < max_len {
                         *ptr.add(i) = *c;
@@ -9371,6 +9399,148 @@ fn execute_create_time_series_table_query(
     result_set.add_row(alloc::vec![TypedValue {
         value_type: crate::DataType::VarChar,
         value: crate::Value { string: [b'0'; 64] },
+    }]);
+
+    Ok(result_set)
+}
+
+/// 执行时序表INSERT查询
+fn execute_insert_timeseries_query(
+    db: &mut RemDb,
+    query: &SqlQuery,
+) -> Result<ResultSet, QueryExecutionError> {
+    use crate::time_series::TimeSeriesRecord;
+
+    // 1. 查找时序表
+    let ts_table_id = db.time_series_tables.iter().position(|table_opt| {
+        if let Some(table) = table_opt {
+            table.def.base.name == query.table_name
+        } else {
+            false
+        }
+    }).ok_or(QueryExecutionError::TableNotFound)?;
+
+    // 2. 获取时序表的可变引用
+    let ts_table = db.time_series_tables[ts_table_id].as_mut().ok_or(QueryExecutionError::TableNotFound)?;
+
+    // 3. 解析字段索引
+    let time_field_idx = ts_table.def.time_field;
+    let value_field_idx = ts_table.def.value_field;
+    let tag_field_indices = &ts_table.def.tag_fields;
+
+    // 4. 开始事务（如果需要）
+    let mut tx_buffer = crate::transaction::Transaction::default();
+    let mut log_buffer = alloc::vec![crate::transaction::VariableSizeLogItem::default(); 10];
+    let has_active_tx = crate::transaction::has_active_tx();
+
+    if !has_active_tx {
+        unsafe {
+            crate::transaction::begin(
+                crate::transaction::TransactionType::ReadWrite,
+                crate::transaction::IsolationLevel::ReadCommitted,
+                &mut tx_buffer,
+                log_buffer.as_mut_ptr(),
+                10,
+            )
+            .map_err(|_| QueryExecutionError::InternalError)?;
+        }
+    }
+
+    // 5. 执行插入操作
+    let mut affected_rows = 0;
+
+    for values in &query.values {
+        let mut timestamp: u64 = 0;
+        let mut value: f64 = 0.0;
+        let mut tags = [0u64; 8];
+        let mut tag_count = 0;
+
+        // 解析每个字段的值
+        for (i, field) in ts_table.def.base.fields.iter().enumerate() {
+            let field_value = if !query.insert_columns.is_empty() {
+                if let Some(col_index) = query.insert_columns.iter().position(|col| *col == field.name) {
+                    if col_index < values.len() {
+                        Some(&values[col_index])
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                if i < values.len() {
+                    Some(&values[i])
+                } else {
+                    None
+                }
+            };
+
+            if let Some(val) = field_value {
+                if i == time_field_idx {
+                    // 时间字段
+                    timestamp = match val {
+                        crate::sql::query_parser::Value::Integer(v) => *v as u64,
+                        crate::sql::query_parser::Value::Float(v) => *v as u64,
+                        _ => return Err(QueryExecutionError::TypeMismatch),
+                    };
+                } else if i == value_field_idx {
+                    // 值字段
+                    value = match val {
+                        crate::sql::query_parser::Value::Integer(v) => *v as f64,
+                        crate::sql::query_parser::Value::Float(v) => *v,
+                        _ => return Err(QueryExecutionError::TypeMismatch),
+                    };
+                } else if tag_field_indices.contains(&i) {
+                    // 标签字段
+                    if tag_count < 8 {
+                        match val {
+                            crate::sql::query_parser::Value::String(s) => {
+                                let mut hash: u64 = 0;
+                                for c in s.chars() {
+                                    hash = hash.wrapping_mul(31).wrapping_add(c as u64);
+                                }
+                                tags[tag_count as usize] = hash;
+                            }
+                            crate::sql::query_parser::Value::Integer(v) => {
+                                tags[tag_count as usize] = *v as u64;
+                            }
+                            _ => {}
+                        }
+                        tag_count += 1;
+                    }
+                }
+            }
+        }
+
+        // 创建时序记录
+        let record = TimeSeriesRecord {
+            timestamp,
+            value,
+            tag_count,
+            tags,
+        };
+
+        // 获取或创建分区
+        let mut partitions_guard = ts_table.partitions.lock().unwrap();
+        let partition = partitions_guard.get_or_create_partition(record.timestamp);
+
+        // 写入记录到分区
+        let mut partition_guard = partition.lock().unwrap();
+        partition_guard.records.push(record);
+        partition_guard.stats.record_count = partition_guard.records.len();
+
+        // 更新索引
+        ts_table.index.insert(record.timestamp, affected_rows as usize);
+
+        affected_rows += 1;
+    }
+
+    // 6. 创建结果集
+    let columns = alloc::vec!["affected_rows".to_string()];
+    let mut result_set = ResultSet::new(columns);
+    result_set.add_row(alloc::vec![TypedValue {
+        value_type: DataType::Int64,
+        value: Value { i64: affected_rows as i64 },
     }]);
 
     Ok(result_set)
@@ -10749,12 +10919,20 @@ fn sort_rows_with_alias(
 
     // 没有使用别名，使用原始的排序逻辑
     // 查找排序字段在表中的索引
+    #[cfg(feature = "log")]
+    debug!("DEBUG get_field_value: looking for field '{}' in table '{}'", actual_field_name, table.def.name);
+    eprintln!("DEBUG get_field_value: looking for field '{}' in table '{}'", actual_field_name, table.def.name);
     let field_index = table
         .def
         .fields
         .iter()
         .position(|field| field.name == *actual_field_name)
-        .ok_or(QueryExecutionError::FieldNotFound)?;
+        .ok_or_else(|| {
+            #[cfg(feature = "log")]
+            error!("DEBUG get_field_value: field '{}' not found in table '{}'. Available fields: {:?}", actual_field_name, table.def.name, table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
+            eprintln!("DEBUG get_field_value: field '{}' not found in table '{}'. Available fields: {:?}", actual_field_name, table.def.name, table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
+            QueryExecutionError::FieldNotFound
+        })?;
 
     let field_type = table.def.fields[field_index].data_type;
 
@@ -11020,12 +11198,20 @@ fn sort_rows(
     };
 
     // 查找排序字段在表中的索引
+    #[cfg(feature = "log")]
+    debug!("DEBUG get_field_value (unsafe): looking for field '{}' in table '{}'", actual_field_name, table.def.name);
+    eprintln!("DEBUG get_field_value (unsafe): looking for field '{}' in table '{}'", actual_field_name, table.def.name);
     let field_index = table
         .def
         .fields
         .iter()
         .position(|field| field.name == *actual_field_name)
-        .ok_or(QueryExecutionError::FieldNotFound)?;
+        .ok_or_else(|| {
+            #[cfg(feature = "log")]
+            error!("DEBUG get_field_value (unsafe): field '{}' not found in table '{}'. Available fields: {:?}", actual_field_name, table.def.name, table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
+            eprintln!("DEBUG get_field_value (unsafe): field '{}' not found in table '{}'. Available fields: {:?}", actual_field_name, table.def.name, table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
+            QueryExecutionError::FieldNotFound
+        })?;
 
     let field_type = table.def.fields[field_index].data_type;
 
