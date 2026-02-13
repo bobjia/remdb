@@ -15,7 +15,7 @@ use crate::sql::query_parser::{
 use crate::sql::{
     ComparisonCondition, ComparisonOperator, Condition, OrderByClause, ResultSet, SqlQuery,
 };
-use crate::types::{DataType, TypedValue, JsonStorage};
+use crate::types::{DataType, TypedValue, JsonStorage, DEFAULT_TEXT_SIZE, DEFAULT_JSON_SIZE};
 use crate::{
     DdlExecutor, IndexType, MemoryTable, RemDb, RemDbError, TableDef, TimeSeriesTable, Value,
     MAX_STRING_LEN,
@@ -87,14 +87,16 @@ fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16, Option
         // 没有参数，使用默认值
         let base_type = type_str.trim();
         
-        // 验证基本类型是否有效
+        // 验证基本类型是否有效，并为不同类型设置合适的默认大小
         match base_type {
             "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64" |
             "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32" | "UINT64" |
             "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" |
-            "VARCHAR" | "CHAR" | "TEXT" |
-            "BOOL" | "BOOLEAN" |
-            "TIMESTAMP" | "TIMESTAMPTZ" | "JSON" => Ok((base_type.to_string(), 6, None)), // 默认精度6（微秒）
+            "BOOL" | "BOOLEAN" => Ok((base_type.to_string(), 8, None)),
+            "VARCHAR" | "CHAR" => Ok((base_type.to_string(), 64, None)),
+            "TEXT" => Ok((base_type.to_string(), DEFAULT_TEXT_SIZE as u16, None)),
+            "JSON" => Ok((base_type.to_string(), DEFAULT_JSON_SIZE as u16, None)),
+            "TIMESTAMP" | "TIMESTAMPTZ" => Ok((base_type.to_string(), 6, None)),
             _ => Err(QueryExecutionError::TypeMismatch),
         }
     }

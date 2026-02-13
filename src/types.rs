@@ -1188,6 +1188,12 @@ pub const MAX_STRING_LEN: usize = 64;
 /// TEXT数据最大长度（10KB）
 pub const MAX_TEXT_LEN: usize = 10240;
 
+/// TEXT类型默认大小（512字节）
+pub const DEFAULT_TEXT_SIZE: usize = 512;
+
+/// JSON类型默认大小（512字节）
+pub const DEFAULT_JSON_SIZE: usize = 512;
+
 /// 字段定义
 #[derive(Clone, Debug)]
 pub struct FieldDef {

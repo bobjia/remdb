@@ -32,7 +32,7 @@ pub mod wal_compression;
 // 导出核心类型
 pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};
 pub use types::{    DataType, DistanceType, FieldDef, IndexType, RecordStatus, RemDbError, Result, TableDef, Value,
-    VectorIndexType, VectorMetadata, MAX_STRING_LEN, MAX_TEXT_LEN,
+    VectorIndexType, VectorMetadata, MAX_STRING_LEN, MAX_TEXT_LEN, DEFAULT_TEXT_SIZE, DEFAULT_JSON_SIZE,
 };
 pub use compression::CompressionScheme;
 pub use system_tables::{init_system_tables, get_vector_compression_config, get_query_resource_config};
@@ -2305,8 +2305,27 @@ impl DdlExecutor for RemDb {
             debug!("field: name={}, type={:?}, dimension={}, distance_type={:?}", field_name, data_type, dimension, distance_type);
             // 计算字段大小
             let field_size = match data_type {
-                DataType::VarChar | DataType::Char => MAX_STRING_LEN,
-                DataType::Text | DataType::Json => MAX_TEXT_LEN,
+                DataType::VarChar | DataType::Char => {
+                    if *dimension > 0 {
+                        *dimension as usize
+                    } else {
+                        MAX_STRING_LEN
+                    }
+                }
+                DataType::Text => {
+                    if *dimension > 0 {
+                        *dimension as usize
+                    } else {
+                        DEFAULT_TEXT_SIZE
+                    }
+                }
+                DataType::Json => {
+                    if *dimension > 0 {
+                        *dimension as usize
+                    } else {
+                        DEFAULT_JSON_SIZE
+                    }
+                }
                 DataType::Vector => {
                     // 向量类型：根据压缩配置计算大小
                     crate::system_tables::get_vector_field_size(*dimension)

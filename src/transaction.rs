@@ -1,5 +1,5 @@
 use crate::defer;
-use crate::types::{RemDbError, Result};
+use crate::types::{RemDbError, Result, DEFAULT_TEXT_SIZE, DEFAULT_JSON_SIZE};
 use core::default::Default;
 use core::ptr::NonNull;
 use crate::DdlExecutor;
@@ -2090,7 +2090,8 @@ impl LogManager {
                                 | crate::types::DataType::Timestamp
                                 | crate::types::DataType::TimestampTZ => 8,
                                 crate::types::DataType::VarChar | crate::types::DataType::Char => 64, // 默认64字节字符串
-                                crate::types::DataType::Text => 10240, // TEXT类型默认10KB
+                                crate::types::DataType::Text => DEFAULT_TEXT_SIZE, // TEXT类型默认512字节
+                                crate::types::DataType::Json => DEFAULT_JSON_SIZE, // JSON类型默认512字节
                                 crate::types::DataType::Vector => {
                                     // 向量大小 = 维度 * 4字节（float32）
                                     if vector_dimension > 0 {

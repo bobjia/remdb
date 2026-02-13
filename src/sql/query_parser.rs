@@ -1131,7 +1131,10 @@ impl SqlParser {
             self.skip_whitespace();
             
             // 检查是否是PRIMARY KEY约束
-            if self.match_keyword("PRIMARY") {
+            log::debug!("parse_create_table_query: position={}, remaining='{}'", self.position, &self.input[self.position..].chars().take(50).collect::<String>());
+            let is_primary = self.match_keyword("PRIMARY");
+            log::debug!("parse_create_table_query: match_keyword('PRIMARY')={}", is_primary);
+            if is_primary {
                 self.skip_whitespace();
                 self.expect_keyword("KEY")?;
                 self.skip_whitespace();
