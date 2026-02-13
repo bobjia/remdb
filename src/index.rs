@@ -1,4 +1,6 @@
-pub mod builder; mod hnsw; mod ivf; use crate::platform::{memcpy, memset}; use crate::types::{DataType, DistanceType, IndexType, RemDbError, Result, TableDef, VectorIndexType}; use core::ptr::NonNull;
+pub mod builder; mod hnsw; mod ivf; use crate::platform::{memcpy, memset}; use crate::types::{DataType, DistanceType, IndexType, RemDbError, Result, TableDef, VectorIndexType, VectorMetadata}; use core::ptr::NonNull;
+
+pub use builder::init_index_build_thread_pool;
 
 #[cfg(feature = "log")]
 use crate::log::{debug, error, info, warn};
@@ -713,7 +715,60 @@ impl VectorIndex {
         let vectors_size = max_items * dimension as usize * core::mem::size_of::<f32>();
 
         // 确保返回的内存大小至少为1，避免alloc分配0内存
-        core::cmp::max(items_size + vectors_size, 1)
+        let base_size = items_size + vectors_size;
+        
+        let index_impl_size = if let Some(secondary_index) = def.secondary_index.as_ref() {
+            if !secondary_index.is_empty() {
+                let secondary_index = secondary_index[0];
+                if secondary_index < def.fields.len() {
+                    let field = &def.fields[secondary_index];
+                    if field.data_type == DataType::Vector {
+                        if let Some(vector_meta) = &field.vector_metadata {
+                            Self::calculate_index_impl_memory_size(vector_meta, max_items)
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+        
+        core::cmp::max(base_size + index_impl_size, 1)
+    }
+    
+    fn calculate_index_impl_memory_size(meta: &VectorMetadata, max_items: usize) -> usize {
+        match meta.index_type {
+            VectorIndexType::HNSW | VectorIndexType::HNSW_SQ | VectorIndexType::HNSW_BQ => {
+                let max_level = (max_items as f64).ln() as usize;
+                let max_level = core::cmp::max(max_level, 1);
+                
+                let base_node_size = core::mem::size_of::<usize>() + core::mem::size_of::<u16>();
+                let neighbor_counts_capacity = max_level + 1;
+                let neighbors_capacity = (max_level + 1) * 32;
+                
+                let vec_overhead = 3 * core::mem::size_of::<usize>();
+                let neighbor_counts_size = vec_overhead + neighbor_counts_capacity;
+                let neighbors_size = vec_overhead + neighbors_capacity * core::mem::size_of::<NonNull<()>>();
+                
+                let node_total_size = base_node_size + neighbor_counts_size + neighbors_size;
+                max_items * node_total_size
+            },
+            VectorIndexType::IVF | VectorIndexType::IVF_PQ => {
+                let nlist = meta.ivf_nlist as usize;
+                let nlist = core::cmp::max(nlist, 1);
+                let centroid_size = meta.dimension as usize * core::mem::size_of::<f32>();
+                nlist * centroid_size + nlist * core::mem::size_of::<usize>()
+            },
+            _ => 0,
+        }
     }
 
     /// 计算两个向量之间的距�?

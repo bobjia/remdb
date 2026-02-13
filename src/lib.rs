@@ -40,7 +40,7 @@ pub use rbac::{RbacManager, Permission, Role, User};
 
 pub use index::{
     AnySecondaryIndex, BTreeIndex, IndexStats, PrimaryIndex, PrimaryIndexItem, SecondaryIndex,
-    TTreeIndex,
+    TTreeIndex, init_index_build_thread_pool,
 };
 pub use monitor::{DbMetrics, DbMetricsSnapshot, HealthCheckResult, HealthStatus};
 pub use time_series::{

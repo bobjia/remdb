@@ -17,7 +17,7 @@ use crate::log::{debug, error, info, warn};
 /// - '2024-01-15T10:30:45.123Z'
 /// - '2024-01-15 10:30:45.123+08'
 /// - 1673778645123456 (微秒时间戳)
-fn parse_time_string(time_str: &str) -> Result<i64, ()> {
+pub fn parse_time_string(time_str: &str) -> Result<i64, ()> {
     // 简单的实现，实际应该支持更多格式
     // 这里只做一个示例，解析ISO 8601格式
     // 检查是否是实际的时间格式，而不是格式字符串
@@ -343,6 +343,8 @@ impl std::fmt::Display for IndexType {
         Rollback,
         /// SHOW INDEX BUILD STATUS查询
         ShowIndexBuildStatus,
+        /// SHOW TABLES查询
+        ShowTables,
         /// 其他查询类型（暂不支持）
         Other,
     }
@@ -783,6 +785,38 @@ impl SqlParser {
             }),
             QueryType::ShowIndexBuildStatus => Ok(SqlQuery {
                 query_type: QueryType::ShowIndexBuildStatus,
+                table_name: String::new(),
+                table_alias: None,
+                joins: Vec::new(),
+                columns: Vec::new(),
+                select_all: false,
+                distinct: false,
+                where_clause: None,
+                having_clause: None,
+                group_by: None,
+                order_by: None,
+                limit: None,
+                sample_by: None,
+                fill_clause: None,
+                window_functions: Vec::new(),
+                insert_columns: Vec::new(),
+                values: Vec::new(),
+                table_def: Vec::new(),
+                primary_key: None,
+                index_column: None,
+                index_type: None,
+                index_params: HashMap::new(),
+                index_online: true,
+                update_pairs: Vec::new(),
+                ignore_duplicates: false,
+                if_not_exists: false,
+                model_path: String::new(),
+                model_inputs: Vec::new(),
+                model_output: (String::new(), String::new()),
+                table_config: HashMap::new(),
+            }),
+            QueryType::ShowTables => Ok(SqlQuery {
+                query_type: QueryType::ShowTables,
                 table_name: String::new(),
                 table_alias: None,
                 joins: Vec::new(),
@@ -2118,6 +2152,8 @@ impl SqlParser {
                 } else {
                     Ok(QueryType::Other)
                 }
+            } else if self.match_keyword("TABLES") {
+                Ok(QueryType::ShowTables)
             } else {
                 Ok(QueryType::Other)
             }

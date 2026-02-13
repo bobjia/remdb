@@ -26,17 +26,17 @@ static ALLOCATOR: SimpleAllocator = SimpleAllocator;
 
 fn main() -> Result<()> {
     // 初始化全局内存分配器
-    let mut mem_buffer = Box::new([0u8; 16 * 1024 * 1024]); // 16MB
+    let mut mem_buffer = Box::new([0u8; 64 * 1024 * 1024]); // 64MB
     let ptr = mem_buffer.as_mut_ptr();
     allocator::init_global_allocator(ptr, mem_buffer.len())?;
 
     // 定义数据库配置
     let config = Box::leak(Box::new(DbConfig {
         tables: vec![],                    // 空的数据库配置
-        total_memory: 16 * 1024 * 1024, // 16MB，与全局缓冲区大小一致
+        total_memory: 64 * 1024 * 1024, // 64MB，与全局缓冲区大小一致
         low_power_mode_supported: false,
         low_power_max_records: None,
-        default_max_records: 10000,
+        default_max_records: 1000,
         memory_allocator: &ALLOCATOR, // 使用我们的静态内存分配器
         wal_config: WALConfig {
             log_path: "./wal",

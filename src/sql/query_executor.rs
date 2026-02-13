@@ -231,6 +231,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         }
         crate::sql::QueryType::CreateIndex => execute_create_index_query(db, query),
         crate::sql::QueryType::ShowIndexBuildStatus => execute_show_index_build_status_query(db, query),
+        crate::sql::QueryType::ShowTables => execute_show_tables_query(db),
         crate::sql::QueryType::AlterTable => {
             // 处理ALTER TABLE语句
             for (field1, field2, pk, not_null, unique, auto_inc, default_val) in &query.table_def {
@@ -7122,6 +7123,59 @@ fn execute_show_index_build_status_query(
     Ok(result_set)
 }
 
+/// 执行SHOW TABLES查询
+fn execute_show_tables_query(
+    db: &mut RemDb,
+) -> Result<ResultSet, QueryExecutionError> {
+    let columns = alloc::vec![
+        "Tables".to_string(),
+    ];
+    
+    let mut result_set = ResultSet::new(columns);
+    
+    for table_opt in db.tables.iter() {
+        if let Some(table) = table_opt {
+            let row = alloc::vec![
+                TypedValue {
+                    value_type: DataType::VarChar,
+                    value: Value {
+                        string: {
+                            let mut s = [0u8; 64];
+                            let bytes = table.def.name.as_bytes();
+                            let len = core::cmp::min(bytes.len(), 64);
+                            s[..len].copy_from_slice(&bytes[..len]);
+                            s
+                        }
+                    },
+                },
+            ];
+            result_set.add_row(row);
+        }
+    }
+    
+    for ts_table_opt in db.time_series_tables.iter() {
+        if let Some(ts_table) = ts_table_opt {
+            let row = alloc::vec![
+                TypedValue {
+                    value_type: DataType::VarChar,
+                    value: Value {
+                        string: {
+                            let mut s = [0u8; 64];
+                            let bytes = ts_table.def.base.name.as_bytes();
+                            let len = core::cmp::min(bytes.len(), 64);
+                            s[..len].copy_from_slice(&bytes[..len]);
+                            s
+                        }
+                    },
+                },
+            ];
+            result_set.add_row(row);
+        }
+    }
+    
+    Ok(result_set)
+}
+
 /// 执行CREATE INDEX查询
 fn execute_create_index_query(
     _db: &mut RemDb,
@@ -9057,7 +9111,7 @@ fn set_field_value_with_depth(
 
             // 时间戳类型
             DataType::Timestamp => {
-                // 支持从数值类型转换为时间戳
+                // 支持从数值类型或字符串转换为时间戳
                 let timestamp_value = match evaluated_value.value_type {
                     DataType::Int64 => evaluated_value.value.i64,
                     DataType::UInt64 => evaluated_value.value.u64 as i64,
@@ -9068,6 +9122,13 @@ fn set_field_value_with_depth(
                     DataType::Int8 => evaluated_value.value.i8 as i64,
                     DataType::UInt8 => evaluated_value.value.u8 as i64,
                     DataType::Float64 => evaluated_value.value.float64 as i64,
+                    DataType::VarChar | DataType::Char | DataType::Text => {
+                        let s = core::str::from_utf8(&evaluated_value.value.string)
+                            .unwrap_or_default()
+                            .trim_end_matches(char::from(0));
+                        crate::sql::query_parser::parse_time_string(s)
+                            .map_err(|_| QueryExecutionError::TypeMismatch)?
+                    }
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
 
@@ -9080,7 +9141,7 @@ fn set_field_value_with_depth(
             }
             // 时间戳TZ类型
             DataType::TimestampTZ => {
-                // 支持从数值类型转换为时间戳TZ
+                // 支持从数值类型或字符串转换为时间戳TZ
                 let timestamp_value = match evaluated_value.value_type {
                     DataType::Int64 => evaluated_value.value.i64,
                     DataType::UInt64 => evaluated_value.value.u64 as i64,
@@ -9091,6 +9152,13 @@ fn set_field_value_with_depth(
                     DataType::Int8 => evaluated_value.value.i8 as i64,
                     DataType::UInt8 => evaluated_value.value.u8 as i64,
                     DataType::Float64 => evaluated_value.value.float64 as i64,
+                    DataType::VarChar | DataType::Char | DataType::Text => {
+                        let s = core::str::from_utf8(&evaluated_value.value.string)
+                            .unwrap_or_default()
+                            .trim_end_matches(char::from(0));
+                        crate::sql::query_parser::parse_time_string(s)
+                            .map_err(|_| QueryExecutionError::TypeMismatch)?
+                    }
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
 
