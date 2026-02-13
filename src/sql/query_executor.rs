@@ -4517,13 +4517,9 @@ fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecution
 
 /// 解析时间字符串为微秒时间戳
 fn parse_time_string(time_str: &str) -> Result<i64, QueryExecutionError> {
-    // 这里实现一个简单的时间字符串解析
-    // 支持的格式：'YYYY-MM-DD' 或 'YYYY-MM-DD HH:MM:SS'
-
     let time_str = time_str.trim();
     let mut parts = time_str.split_whitespace();
 
-    // 解析日期部分
     let date_part = parts.next().ok_or(QueryExecutionError::TypeMismatch)?;
     let date_components: Vec<&str> = date_part.split('-').collect();
     if date_components.len() != 3 {
@@ -4540,13 +4536,13 @@ fn parse_time_string(time_str: &str) -> Result<i64, QueryExecutionError> {
         .parse::<i64>()
         .map_err(|_| QueryExecutionError::TypeMismatch)?;
 
-    // 解析时间部分（可选）
     let mut hour = 0;
     let mut minute = 0;
     let mut second = 0;
 
     if let Some(time_part) = parts.next() {
-        let time_components: Vec<&str> = time_part.split(':').collect();
+        let (time_only, _tz_offset_seconds) = split_timezone_from_time(time_part);
+        let time_components: Vec<&str> = time_only.split(':').collect();
         if time_components.len() != 3 {
             return Err(QueryExecutionError::TypeMismatch);
         }
@@ -4562,29 +4558,58 @@ fn parse_time_string(time_str: &str) -> Result<i64, QueryExecutionError> {
             .map_err(|_| QueryExecutionError::TypeMismatch)?;
     }
 
-    // 计算从1970-01-01到指定日期的秒数
-    // 简化实现，只处理非闰年的情况
     let mut seconds = 0;
 
-    // 计算年份贡献的秒数（忽略闰年）
     for _y in 1970..year {
         seconds += 365 * 24 * 60 * 60;
     }
 
-    // 计算月份贡献的秒数（忽略闰年）
     let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     for m in 0..(month - 1) {
         seconds += days_in_month[m as usize] * 24 * 60 * 60;
     }
 
-    // 计算日期、小时、分钟、秒贡献的秒数
     seconds += (day - 1) * 24 * 60 * 60;
     seconds += hour * 60 * 60;
     seconds += minute * 60;
     seconds += second;
 
-    // 转换为微秒
     Ok(seconds * 1000000)
+}
+
+fn split_timezone_from_time(time_part: &str) -> (&str, i32) {
+    if let Some(pos) = time_part.find(|c| c == '+' || c == '-') {
+        if pos > 0 {
+            let before = &time_part[..pos];
+            let after = &time_part[pos..];
+            if after.len() > 1 && after.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+                let tz_seconds = parse_timezone_offset(after).unwrap_or(0);
+                return (before, tz_seconds);
+            }
+        }
+    }
+    (time_part, 0)
+}
+
+fn parse_timezone_offset(tz_str: &str) -> Option<i32> {
+    let sign = if tz_str.starts_with('+') { 1 } else if tz_str.starts_with('-') { -1 } else { return None };
+    let offset_str = &tz_str[1..];
+    
+    let parts: Vec<&str> = offset_str.split(':').collect();
+    if parts.len() == 2 {
+        let hours = parts[0].parse::<i32>().ok()?;
+        let minutes = parts[1].parse::<i32>().ok()?;
+        Some(sign * (hours * 3600 + minutes * 60))
+    } else if offset_str.len() == 2 {
+        let hours = offset_str.parse::<i32>().ok()?;
+        Some(sign * hours * 3600)
+    } else if offset_str.len() == 4 {
+        let hours = offset_str[0..2].parse::<i32>().ok()?;
+        let minutes = offset_str[2..4].parse::<i32>().ok()?;
+        Some(sign * (hours * 3600 + minutes * 60))
+    } else {
+        None
+    }
 }
 
 /// 解析origin时间戳参数
