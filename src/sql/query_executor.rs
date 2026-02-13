@@ -3617,7 +3617,7 @@ fn evaluate_vector_binary_op(
                 let mut sum = 0.0f64;
                 let vector_dim_usize = vector_dim as usize;
                 for i in 0..vector_dim_usize {
-                    let v1 = *vec1_ptr.add(i);
+                    let v1 = core::ptr::read_unaligned(vec1_ptr.add(i));
                     let v2 = vec2_values[i];
                     let diff = v1 - v2;
                     sum += (diff as f64) * (diff as f64);
@@ -3629,7 +3629,7 @@ fn evaluate_vector_binary_op(
                 let mut sum = 0.0f64;
                 let vector_dim_usize = vector_dim as usize;
                 for i in 0..vector_dim_usize {
-                    let v1 = *vec1_ptr.add(i);
+                    let v1 = core::ptr::read_unaligned(vec1_ptr.add(i));
                     let v2 = vec2_values[i];
                     sum += (v1 as f64) * (v2 as f64);
                 }
@@ -3643,7 +3643,7 @@ fn evaluate_vector_binary_op(
 
                 let vector_dim_usize = vector_dim as usize;
                 for i in 0..vector_dim_usize {
-                    let v1 = *vec1_ptr.add(i) as f64;
+                    let v1 = core::ptr::read_unaligned(vec1_ptr.add(i)) as f64;
                     let v2 = vec2_values[i] as f64;
                     dot += v1 * v2;
                     norm1 += v1 * v1;

@@ -160,7 +160,7 @@ static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存
 
 #[test]
 fn test_create_table() {
-    let _guard = TEST_MUTEX.lock().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     // 初始化平台
     platform::init_platform(&TEST_PLATFORM);
@@ -196,7 +196,7 @@ fn test_create_table() {
 
 #[test]
 fn test_create_table_invalid() {
-    let _guard = TEST_MUTEX.lock().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     // 无需平台初始化，直接测试参数验证逻辑
     let mut db = RemDb::new(&*TEST_CONFIG);
@@ -222,7 +222,7 @@ fn test_create_table_invalid() {
 
 #[test]
 fn test_create_index() {
-    let _guard = TEST_MUTEX.lock().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     // 初始化平台
     platform::init_platform(&TEST_PLATFORM);
@@ -316,7 +316,7 @@ fn test_create_index() {
 
 #[test]
 fn test_describe_table() {
-    let _guard = TEST_MUTEX.lock().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     // 初始化平台
     platform::init_platform(&TEST_PLATFORM);
@@ -341,7 +341,7 @@ fn test_describe_table() {
         &[
             ("id", DataType::UInt32, 4, None, None),
             ("name", DataType::VarChar, 32, None, None),
-            ("department", DataType::VarChar, 32, None, None),
+            ("department", DataType::VarChar, 64, None, None),
             ("salary", DataType::Float64, 8, None, None),
             ("active", DataType::Bool, 1, None, None),
         ],
@@ -430,8 +430,8 @@ fn test_describe_table() {
     if let Some(row) = find_row_by_field_name(&result_set, "name") {
         assert_eq!(
             unsafe { value_to_str(&row.values[1].value) },
-            "varchar(64)",
-            "Expected name type to be varchar(64)"
+            "varchar(32)",
+            "Expected name type to be varchar(32)"
         );
         assert_eq!(
             unsafe { value_to_str(&row.values[2].value) },
@@ -561,7 +561,7 @@ fn test_describe_table() {
 
 #[test]
 fn test_create_time_series_table() {
-    let _guard = TEST_MUTEX.lock().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     // 初始化平台
     platform::init_platform(&TEST_PLATFORM);
@@ -653,7 +653,7 @@ fn test_create_time_series_table() {
 
 #[test]
 fn test_ddl_export_with_time_series() {
-    let _guard = TEST_MUTEX.lock().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     // 初始化平台
     platform::init_platform(&TEST_PLATFORM);
@@ -711,7 +711,7 @@ fn test_ddl_export_with_time_series() {
 
 #[test]
 fn test_describe_time_series_table() {
-    let _guard = TEST_MUTEX.lock().unwrap();
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     // 初始化平台
     platform::init_platform(&TEST_PLATFORM);

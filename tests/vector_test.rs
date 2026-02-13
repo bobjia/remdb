@@ -115,15 +115,16 @@ fn test_vector_basic_support() {
 #[test]
 #[serial]
 fn test_vector_table_creation() {
-    println!("=== 测试创建包含向量字段的表 ===");
+    println!("=== 测试创建包含向量字段的表 ====");
 
+    println!("Step 1: 分配测试内存");
     let _db_memory = setup_test_db();
-
+    println!("Step 2: 获取数据库配置");
     let config = &VECTOR_DB;
+    println!("Step 3: 初始化全局数据库");
     let _db = unsafe { init_global_db(config).unwrap() };
-
-    println!("数据库初始化成功");
-    println!("=== 测试创建包含向量字段的表完成 ===");
+    println!("Step 4: 数据库初始化成功");
+    println!("=== 测试创建包含向量字段的表完成 ====");
 }
 
 #[test]

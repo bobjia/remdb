@@ -498,6 +498,26 @@ impl PrimaryIndex {
     }
 }
 
+impl Drop for TTreeIndex {
+    fn drop(&mut self) {
+        unsafe {
+            crate::memory::allocator::free(self.nodes.cast::<u8>());
+        }
+    }
+}
+
+impl Drop for VectorIndex {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.items.is_null() {
+                if let Some(ptr) = NonNull::new(self.items as *mut u8) {
+                    crate::memory::allocator::free(ptr);
+                }
+            }
+        }
+    }
+}
+
 /// 辅助索引枚举（用于封装不同类型的辅助索引�?
 /// 向量索引�?
 #[derive(Copy, Clone)]
@@ -2279,6 +2299,14 @@ impl SecondaryIndex {
     }
 }
 
+impl Drop for SecondaryIndex {
+    fn drop(&mut self) {
+        unsafe {
+            crate::memory::allocator::free(self.items.cast::<u8>());
+        }
+    }
+}
+
 impl BTreeIndex {
     /// 创建新的B-Tree索引
     pub unsafe fn new(
@@ -2924,6 +2952,14 @@ impl BTreeIndex {
     pub fn reset_stats(&mut self) {
         self.stats.access_count = 0;
         self.stats.hit_count = 0;
+    }
+}
+
+impl Drop for BTreeIndex {
+    fn drop(&mut self) {
+        unsafe {
+            crate::memory::allocator::free(self.nodes.cast::<u8>());
+        }
     }
 }
 

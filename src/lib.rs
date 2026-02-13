@@ -2195,13 +2195,12 @@ impl RemDb {
         self.tables[table_index] = None;
 
         // 6. 释放对应的索引
-        // 暂时注释掉索引访问，避免可能的越界访问
-        // if table_index < self.primary_indices.len() {
-        //     self.primary_indices[table_index] = None;
-        // }
-        // if table_index < self.secondary_indices.len() {
-        //     self.secondary_indices[table_index] = None;
-        // }
+        if table_index < self.primary_indices.len() {
+            self.primary_indices[table_index] = None;
+        }
+        if table_index < self.secondary_indices.len() {
+            self.secondary_indices[table_index] = None;
+        }
 
         // 7. 从系统表中移除表的条目
         // 这里简化处理，实际实现需要更新系统表
