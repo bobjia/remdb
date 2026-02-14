@@ -1080,6 +1080,7 @@ fn process_aggregate_query(
     columns: &[Expression],
     rows_to_process: &[Vec<TypedValue>],
     result_set: &mut ResultSet,
+    field_index_map: &std::collections::HashMap<String, usize>,
 ) -> Result<(), QueryExecutionError> {
     // 为每个聚合函数准备初始值
     let mut aggregate_values = Vec::with_capacity(columns.len());
@@ -1173,7 +1174,7 @@ fn process_aggregate_query(
                 let name = name.to_uppercase();
 
                 // 计算当前行的函数值
-                let current_value = evaluate_expression_for_aggregate(args, record_values)?;
+                let current_value = evaluate_expression_for_aggregate(args, record_values, field_index_map)?;
 
                 // 更新聚合值
                 match name.as_str() {
@@ -1540,7 +1541,8 @@ fn process_aggregate_query(
 /// 为聚合函数计算表达式值
 fn evaluate_expression_for_aggregate(
     args: &[Expression],
-    _record_values: &[TypedValue],
+    record_values: &[TypedValue],
+    field_index_map: &std::collections::HashMap<String, usize>,
 ) -> Result<TypedValue, QueryExecutionError> {
     if args.is_empty() {
         // 对于COUNT(*), COUNT(1)等无参数情况
@@ -1590,6 +1592,28 @@ fn evaluate_expression_for_aggregate(
             };
 
             Ok(TypedValue { value_type, value })
+        }
+        Expression::Field { name, .. } => {
+            // 字段引用：从 record_values 中获取字段值
+            // 处理带表名/别名的字段 (如 "table.field" 或 "t.field")
+            let field_name = if name.contains('.') {
+                let parts: Vec<&str> = name.split('.').collect();
+                parts[1]
+            } else {
+                name.as_str()
+            };
+            
+            // 查找字段索引
+            if let Some(&index) = field_index_map.get(field_name) {
+                if index < record_values.len() {
+                    Ok(record_values[index].clone())
+                } else {
+                    Err(QueryExecutionError::InternalError)
+                }
+            } else {
+                // 字段未找到，返回错误
+                Err(QueryExecutionError::FieldNotFound)
+            }
         }
         _ => {
             // 对于其他表达式，这里简化处理，返回默认值
@@ -1996,6 +2020,15 @@ fn execute_select_query(
             records_for_aggregation.push(record_values.clone());
         }
 
+        // 构建字段名到索引的映射
+        let field_index_map: std::collections::HashMap<String, usize> = table
+            .def
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.name.clone(), i))
+            .collect();
+
         if has_group_by {
             // 处理GROUP BY查询
             process_group_by_query(
@@ -2007,7 +2040,7 @@ fn execute_select_query(
             )?;
         } else {
             // 处理普通聚合查询
-            process_aggregate_query(&columns, &records_for_aggregation, &mut result_set)?;
+            process_aggregate_query(&columns, &records_for_aggregation, &mut result_set, &field_index_map)?;
         }
     } else {
         // 处理普通查询
