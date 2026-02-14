@@ -82,6 +82,57 @@ remdb = { path = "./remdb", default-features = false }
 | posix | - | Enable POSIX platform support |
 | pubsub | std | Enable UDP-based reliable data publish/subscribe functionality |
 | ha | pubsub | Enable high availability support (master-slave replication mechanism) |
+| log | - | Enable logging functionality |
+| debug | - | Enable debug level logging (only effective in debug builds) |
+
+### Logging Configuration
+
+remdb provides flexible logging configuration options supporting log output in different environments:
+
+#### Standard Library Environment Logging Configuration
+
+```rust
+use remdb::log::{init_logger, init_logger_with_file};
+
+// Basic initialization (output to console, debug level)
+init_logger();
+
+// Initialization with file output
+// debug_mode: true - Output DEBUG and above level logs
+// debug_mode: false - Output INFO and above level logs only
+init_logger_with_file("/var/log/remdb.log", true).unwrap();
+```
+
+#### no_std Environment Logging Configuration
+
+In no_std environment, log level is automatically controlled by build mode:
+
+- **Debug build**: Output DEBUG and above level logs
+- **Release build**: Output WARN and above level logs only
+
+```rust
+use remdb::log::init_logger;
+
+// Initialize no_std logging
+init_logger();
+
+// Use logging macros
+use remdb::log::{debug, info, warn, error};
+debug!("Debug message");  // Only output in debug builds
+info!("Info message");
+warn!("Warning message");
+error!("Error message");
+```
+
+#### Log Level Description
+
+| Level | Description | Debug Build | Release Build |
+|-------|-------------|-------------|---------------|
+| TRACE | Most detailed trace information | ✓ | ✗ |
+| DEBUG | Debug information | ✓ | ✗ |
+| INFO | Normal information | ✓ | ✓ |
+| WARN | Warning information | ✓ | ✓ |
+| ERROR | Error information | ✓ | ✓ |
 
 ## Three Ways to Use remdb with Rust
 

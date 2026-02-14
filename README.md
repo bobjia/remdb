@@ -82,6 +82,57 @@ remdb = { path = "./remdb", default-features = false }
 | posix | - | 启用POSIX平台支持 |
 | pubsub | std | 启用基于UDP的高可靠数据订阅与发布功能 |
 | ha | pubsub | 启用高可用支持（主从复制机制） |
+| log | - | 启用日志功能 |
+| debug | - | 启用debug级别日志（仅在debug构建时生效） |
+
+### 日志配置
+
+remdb提供了灵活的日志配置选项，支持不同环境下的日志输出：
+
+#### 标准库环境日志配置
+
+```rust
+use remdb::log::{init_logger, init_logger_with_file};
+
+// 基础初始化（输出到控制台，debug级别）
+init_logger();
+
+// 带文件输出的初始化
+// debug_mode: true - 输出DEBUG及以上级别日志
+// debug_mode: false - 仅输出INFO及以上级别日志
+init_logger_with_file("/var/log/remdb.log", true).unwrap();
+```
+
+#### no_std环境日志配置
+
+在no_std环境下，日志级别由编译模式自动控制：
+
+- **Debug构建**：输出DEBUG及以上级别日志
+- **Release构建**：仅输出WARN及以上级别日志
+
+```rust
+use remdb::log::init_logger;
+
+// 初始化no_std日志
+init_logger();
+
+// 使用日志宏
+use remdb::log::{debug, info, warn, error};
+debug!("调试信息");  // 仅在debug构建中输出
+info!("普通信息");
+warn!("警告信息");
+error!("错误信息");
+```
+
+#### 日志级别说明
+
+| 级别 | 描述 | Debug构建 | Release构建 |
+|-----|------|----------|-------------|
+| TRACE | 最详细的跟踪信息 | ✓ | ✗ |
+| DEBUG | 调试信息 | ✓ | ✗ |
+| INFO | 普通信息 | ✓ | ✓ |
+| WARN | 警告信息 | ✓ | ✓ |
+| ERROR | 错误信息 | ✓ | ✓ |
 
 ## Rust语言的三种使用方式
 
