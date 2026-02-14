@@ -12,40 +12,114 @@ use crate::{MemoryTable, Value};
 #[cfg(feature = "log")]
 use crate::log::debug;
 
-pub fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
-    if left.value_type != right.value_type {
-        return false;
-    }
-
+/// Helper function to convert a TypedValue to i64 for numeric comparison
+fn to_i64_for_comparison(val: &TypedValue) -> Option<i64> {
     unsafe {
-        match left.value_type {
-            DataType::Int8 => left.value.i8 == right.value.i8,
-            DataType::Int16 => left.value.i16 == right.value.i16,
-            DataType::Int32 => left.value.i32 == right.value.i32,
-            DataType::Int64 => left.value.i64 == right.value.i64,
-            DataType::UInt8 => left.value.u8 == right.value.u8,
-            DataType::UInt16 => left.value.u16 == right.value.u16,
-            DataType::UInt32 => left.value.u32 == right.value.u32,
-            DataType::UInt64 => left.value.u64 == right.value.u64,
-            DataType::Float32 => (left.value.float32 - right.value.float32).abs() < f32::EPSILON,
-            DataType::Float64 => (left.value.float64 - right.value.float64).abs() < f64::EPSILON,
-            DataType::Bool => left.value.bool == right.value.bool,
-            DataType::VarChar | DataType::Char | DataType::Text => {
-                let left_str = core::str::from_utf8(&left.value.string)
-                    .unwrap()
-                    .trim_end_matches(char::from(0));
-                let right_str = core::str::from_utf8(&right.value.string)
-                    .unwrap()
-                    .trim_end_matches(char::from(0));
-                left_str == right_str
+        match val.value_type {
+            DataType::Int8 => Some(val.value.i8 as i64),
+            DataType::Int16 => Some(val.value.i16 as i64),
+            DataType::Int32 => Some(val.value.i32 as i64),
+            DataType::Int64 => Some(val.value.i64),
+            DataType::UInt8 => Some(val.value.u8 as i64),
+            DataType::UInt16 => Some(val.value.u16 as i64),
+            DataType::UInt32 => Some(val.value.u32 as i64),
+            DataType::UInt64 => {
+                // Handle potential overflow for large u64 values
+                if val.value.u64 <= i64::MAX as u64 {
+                    Some(val.value.u64 as i64)
+                } else {
+                    None
+                }
             }
-            DataType::Timestamp => left.value.time == right.value.time,
-            DataType::TimestampTZ => left.value.time == right.value.time,
-            DataType::Interval => left.value.interval == right.value.interval,
-            DataType::Vector => false,
-            DataType::Json => false,
+            _ => None,
         }
     }
+}
+
+/// Helper function to convert a TypedValue to f64 for numeric comparison
+fn to_f64_for_comparison(val: &TypedValue) -> Option<f64> {
+    unsafe {
+        match val.value_type {
+            DataType::Float32 => Some(val.value.float32 as f64),
+            DataType::Float64 => Some(val.value.float64),
+            _ => None,
+        }
+    }
+}
+
+/// Check if both types are numeric (integer or float)
+fn is_numeric_type(dt: DataType) -> bool {
+    matches!(
+        dt,
+        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
+        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
+        DataType::Float32 | DataType::Float64
+    )
+}
+
+pub fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
+    // If types match exactly, use direct comparison
+    if left.value_type == right.value_type {
+        unsafe {
+            return match left.value_type {
+                DataType::Int8 => left.value.i8 == right.value.i8,
+                DataType::Int16 => left.value.i16 == right.value.i16,
+                DataType::Int32 => left.value.i32 == right.value.i32,
+                DataType::Int64 => left.value.i64 == right.value.i64,
+                DataType::UInt8 => left.value.u8 == right.value.u8,
+                DataType::UInt16 => left.value.u16 == right.value.u16,
+                DataType::UInt32 => left.value.u32 == right.value.u32,
+                DataType::UInt64 => left.value.u64 == right.value.u64,
+                DataType::Float32 => (left.value.float32 - right.value.float32).abs() < f32::EPSILON,
+                DataType::Float64 => (left.value.float64 - right.value.float64).abs() < f64::EPSILON,
+                DataType::Bool => left.value.bool == right.value.bool,
+                DataType::VarChar | DataType::Char | DataType::Text => {
+                    let left_str = core::str::from_utf8(&left.value.string)
+                        .unwrap()
+                        .trim_end_matches(char::from(0));
+                    let right_str = core::str::from_utf8(&right.value.string)
+                        .unwrap()
+                        .trim_end_matches(char::from(0));
+                    left_str == right_str
+                }
+                DataType::Timestamp => left.value.time == right.value.time,
+                DataType::TimestampTZ => left.value.time == right.value.time,
+                DataType::Interval => left.value.interval == right.value.interval,
+                DataType::Vector => false,
+                DataType::Json => false,
+            };
+        }
+    }
+
+    // Handle numeric type coercion - compare different numeric types
+    if is_numeric_type(left.value_type) && is_numeric_type(right.value_type) {
+        // If either is a float, compare as floats
+        let left_f64 = to_f64_for_comparison(left);
+        let right_f64 = to_f64_for_comparison(right);
+
+        if let (Some(l), Some(r)) = (left_f64, right_f64) {
+            return (l - r).abs() < f64::EPSILON;
+        }
+
+        // If one is float and one is integer, convert integer to float
+        if let (Some(l), None) = (left_f64, right_f64) {
+            if let Some(r) = to_i64_for_comparison(right) {
+                return (l - r as f64).abs() < f64::EPSILON;
+            }
+        }
+        if let (None, Some(r)) = (left_f64, right_f64) {
+            if let Some(l) = to_i64_for_comparison(left) {
+                return (l as f64 - r).abs() < f64::EPSILON;
+            }
+        }
+
+        // Both are integers, compare as i64
+        if let (Some(l), Some(r)) = (to_i64_for_comparison(left), to_i64_for_comparison(right)) {
+            return l == r;
+        }
+    }
+
+    false
 }
 
 pub fn compare_field_with_condition(

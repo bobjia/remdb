@@ -1,7 +1,7 @@
 use remdb::config::WALConfig;
 use remdb::platform::{FileHandle, FileMode, FileResult, Platform, SeekWhence};
 use remdb::*;
-use std::sync::Mutex;
+use serial_test::serial;
 
 // 定义测试平台
 struct TestPlatform;
@@ -152,30 +152,34 @@ static TEST_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock:
     }
 });
 
-// 互斥锁，确保测试串行执行
-static TEST_MUTEX: Mutex<()> = Mutex::new(());
-
 // 定义测试用的内存缓冲区
 static mut DB_MEMORY: [u8; 4 * 1024 * 1024] = [0u8; 4 * 1024 * 1024]; // 4MB内存
 
-#[test]
-fn test_alter_table_add_column() {
-    let _guard = TEST_MUTEX.lock().unwrap();
+/// Helper function to setup test environment
+fn setup_test_env() {
+    // Initialize platform first (must be done before any platform operations)
+    platform::init_platform(&TEST_PLATFORM);
 
-    // 重置内存缓冲区
+    // Reset memory buffer
     unsafe {
         core::ptr::write_bytes(DB_MEMORY.as_mut_ptr(), 0, DB_MEMORY.len());
     }
 
-    // 初始化平台
-    platform::init_platform(&TEST_PLATFORM);
-
-    // 使用共享内存缓冲区初始化全局内存分配器
+    // Initialize global allocator
     let result = memory::allocator::init_global_allocator(
         unsafe { DB_MEMORY.as_mut_ptr() },
         unsafe { DB_MEMORY.len() }
     );
     assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
+
+    // Reset global database state (requires platform to be initialized)
+    reset_global_db();
+}
+
+#[test]
+#[serial]
+fn test_alter_table_add_column() {
+    setup_test_env();
 
     // 创建数据库实例
     let mut db = RemDb::new(&*TEST_CONFIG);
@@ -198,18 +202,9 @@ fn test_alter_table_add_column() {
 }
 
 #[test]
+#[serial]
 fn test_alter_table_drop_column() {
-    let _guard = TEST_MUTEX.lock().unwrap();
-
-    // 初始化平台
-    platform::init_platform(&TEST_PLATFORM);
-
-    // 使用共享内存缓冲区初始化全局内存分配器
-    let result = memory::allocator::init_global_allocator(
-        unsafe { DB_MEMORY.as_mut_ptr() },
-        unsafe { DB_MEMORY.len() }
-    );
-    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
+    setup_test_env();
 
     // 创建数据库实例
     let mut db = RemDb::new(&*TEST_CONFIG);
@@ -233,18 +228,9 @@ fn test_alter_table_drop_column() {
 }
 
 #[test]
+#[serial]
 fn test_alter_table_modify_column() {
-    let _guard = TEST_MUTEX.lock().unwrap();
-
-    // 初始化平台
-    platform::init_platform(&TEST_PLATFORM);
-
-    // 使用共享内存缓冲区初始化全局内存分配器
-    let result = memory::allocator::init_global_allocator(
-        unsafe { DB_MEMORY.as_mut_ptr() },
-        unsafe { DB_MEMORY.len() }
-    );
-    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
+    setup_test_env();
 
     // 创建数据库实例
     let mut db = RemDb::new(&*TEST_CONFIG);
@@ -267,18 +253,9 @@ fn test_alter_table_modify_column() {
 }
 
 #[test]
+#[serial]
 fn test_alter_table_rename_column() {
-    let _guard = TEST_MUTEX.lock().unwrap();
-
-    // 初始化平台
-    platform::init_platform(&TEST_PLATFORM);
-
-    // 使用共享内存缓冲区初始化全局内存分配器
-    let result = memory::allocator::init_global_allocator(
-        unsafe { DB_MEMORY.as_mut_ptr() },
-        unsafe { DB_MEMORY.len() }
-    );
-    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
+    setup_test_env();
 
     // 创建数据库实例
     let mut db = RemDb::new(&*TEST_CONFIG);
@@ -301,23 +278,9 @@ fn test_alter_table_rename_column() {
 }
 
 #[test]
+#[serial]
 fn test_alter_table_data_migration() {
-    let _guard = TEST_MUTEX.lock().unwrap();
-
-    // 重置内存缓冲区
-    unsafe {
-        core::ptr::write_bytes(DB_MEMORY.as_mut_ptr(), 0, DB_MEMORY.len());
-    }
-
-    // 初始化平台
-    platform::init_platform(&TEST_PLATFORM);
-
-    // 使用共享内存缓冲区初始化全局内存分配器
-    let result = memory::allocator::init_global_allocator(
-        unsafe { DB_MEMORY.as_mut_ptr() },
-        unsafe { DB_MEMORY.len() }
-    );
-    assert!(result.is_ok(), "Failed to initialize global allocator: {:?}", result.err());
+    setup_test_env();
 
     // 创建数据库实例
     let mut db = RemDb::new(&*TEST_CONFIG);
@@ -353,12 +316,12 @@ fn test_alter_table_data_migration() {
     assert!(result.is_ok(), "Failed to select record 1: {:?}", result.err());
     let result_set = result.unwrap();
     assert_eq!(result_set.rows.len(), 1, "Expected 1 row for id=1, got {}", result_set.rows.len());
-    
+
     let result = db.sql_query("SELECT id FROM test_table WHERE id = 2");
     assert!(result.is_ok(), "Failed to select record 2: {:?}", result.err());
     let result_set = result.unwrap();
     assert_eq!(result_set.rows.len(), 1, "Expected 1 row for id=2, got {}", result_set.rows.len());
-    
+
     // 验证可以查询所有记录
     let result = db.sql_query("SELECT COUNT(*) FROM test_table");
     assert!(result.is_ok(), "Failed to count records: {:?}", result.err());

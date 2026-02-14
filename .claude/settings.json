@@ -1,0 +1,20 @@
+{
+    "env": {
+        "ANTHROPIC_AUTH_TOKEN": "bce-v3/ALTAK-y1vL0vEqA4f2AuHqkpGGm/e440a171ac26252272b53df2fe389c1391634a85",
+        "ANTHROPIC_BASE_URL": "https://qianfan.baidubce.com/anthropic",
+        "ANTHROPIC_CUSTOM_HEADERS": "appid:",
+        "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "16000",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1,
+        "API_TIMEOUT_MS": 600000,
+        "ANTHROPIC_MODEL": "glm-5",
+        "ANTHROPIC_SMALL_FAST_MODEL": "glm-5"
+    },
+    "permissions": {
+        "allow": [
+
+        ],
+        "deny": [
+
+        ]
+    }
+}

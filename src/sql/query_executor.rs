@@ -1427,6 +1427,13 @@ fn evaluate_expression_for_aggregate(
     // TODO: 支持更复杂的表达式
     let arg = &args[0];
     match arg {
+        Expression::Field { name, .. } if name == "*" => {
+            // 对于COUNT(*)，返回1用于计数
+            Ok(TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: 1 },
+            })
+        }
         Expression::Constant { value, .. } => {
             // 常量值，直接转换
             use crate::sql::Value as SqlValue;
