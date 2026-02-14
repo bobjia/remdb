@@ -5525,6 +5525,16 @@ fn process_group_by_query(
                         }
                     }
 
+                    // 对于AVG函数，需要除以计数
+                    if name.to_uppercase() == "AVG" {
+                        let count = group_rows.len() as f64;
+                        if count > 0.0 {
+                            unsafe {
+                                agg_result.value.float64 /= count;
+                            }
+                        }
+                    }
+
                     row_data.push(agg_result);
                 }
                 _ => {
