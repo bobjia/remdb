@@ -36,6 +36,11 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Slave node acknowledgment mechanism: Slaves send acknowledgment to master after receiving WAL logs
   - Replication status checking: Regularly checks replication status including slave count and latency
   - Support for full and incremental synchronization: Slaves can request full sync or incremental sync from specific log index
+  - **Startup Sync Protocol**: Complete startup synchronization mechanism ensuring data consistency between slave and master nodes
+    - Protocol flow: SYNC_REQUEST → SYNC_DATA_BEGIN → SYNC_DATA_CHUNK* → SYNC_DATA_END → SYNC_ACK
+    - Full sync: Sends complete database snapshot with support for chunked transfer of large data
+    - Incremental sync: Sends WAL logs after specified log index to reduce network transfer
+    - Data integrity: Supports CRC32 checksum verification
 - **Vector Database Support**:
   - Native vector data type: `VECTOR(dimension)`
   - Support for multiple distance metrics: L2 (Euclidean), IP (Inner Product), COSINE (Cosine Similarity)
@@ -444,13 +449,18 @@ remdb provides a UDP-based reliable data publish/subscribe mechanism, supporting
 
 #### Predefined Topics
 
-| Topic Name | Description | Message Format |
-|-----------|-------------|---------------|
-| wal | All WAL operations | WAL_LOG_<id>: Operation=<operation_type>, Table=<table_name>, ID=<record_id>, Data=<data> |
-| tables | Table creation/deletion events | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> or DELETE:table=<table_name>,id=<table_id> |
-| metrics | Database metrics | JSON-formatted database metrics data |
-| healthstatus | Health status | JSON-formatted health status data |
-| table.<table_name> | Table content changes | INSERT:table=<table_name>,id=<record_id>,data=<hex_data> or UPDATE:table=<table_name>,id=<record_id>,data=<hex_data> |
+| Topic Name | Topic ID | Description | Message Format |
+|-----------|----------|-------------|---------------|
+| wal | - | All WAL operations | WAL_LOG_<id>: Operation=<operation_type>, Table=<table_name>, ID=<record_id>, Data=<data> |
+| tables | - | Table creation/deletion events | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> or DELETE:table=<table_name>,id=<table_id> |
+| metrics | - | Database metrics | JSON-formatted database metrics data |
+| healthstatus | - | Health status | JSON-formatted health status data |
+| table.<table_name> | - | Table content changes | INSERT:table=<table_name>,id=<record_id>,data=<hex_data> or UPDATE:table=<table_name>,id=<record_id>,data=<hex_data> |
+| SYNC_REQUEST | 2 | Sync request topic | Slave sends sync request to master |
+| SYNC_DATA_BEGIN | 5 | Sync data begin | Master sends sync metadata to slave |
+| SYNC_DATA_CHUNK | 6 | Sync data chunk | Master sends sync data chunks to slave |
+| SYNC_DATA_END | 7 | Sync data end | Master signals end of sync data transmission |
+| SYNC_ACK | 8 | Sync acknowledgment | Slave sends acknowledgment to master |
 
 #### Usage Example
 
@@ -917,7 +927,10 @@ remdb/
 │   │   ├── manager.rs      # HA Manager implementation
 │   │   ├── replication.rs  # Replication functionality implementation
 │   │   ├── heartbeat.rs    # Heartbeat monitoring implementation
-│   │   └── role.rs         # Role management implementation
+│   │   ├── role.rs         # Role management implementation
+│   │   ├── protocol.rs     # Sync protocol definitions
+│   │   ├── sync_handler.rs # Master sync handler
+│   │   └── sync_receiver.rs # Slave sync receiver
 │   ├── pubsub/
 │   │   ├── mod.rs          # Pub/Sub module entry
 │   │   ├── protocol.rs     # Protocol frame definition and parsing

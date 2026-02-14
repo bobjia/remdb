@@ -36,6 +36,11 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 从节点确认机制：从节点接收到WAL日志后发送确认给主节点
   - 复制状态检查：定期检查复制状态，包括从节点数量、延迟等
   - 支持全量和增量同步：从节点可以请求全量同步或从特定日志索引开始的增量同步
+  - **启动同步协议**：完整的启动同步机制，确保从节点启动时与主节点数据一致
+    - 协议流程：SYNC_REQUEST → SYNC_DATA_BEGIN → SYNC_DATA_CHUNK* → SYNC_DATA_END → SYNC_ACK
+    - 全量同步：发送完整数据库快照，支持大容量数据分块传输
+    - 增量同步：发送指定日志索引后的WAL日志，减少网络传输
+    - 数据完整性：支持CRC32校验和验证
 - **向量数据库支持**：
   - 原生向量数据类型：`VECTOR(dimension)`
   - 支持多种距离度量：L2（欧几里得距离）、IP（内积）、COSINE（余弦相似度）
@@ -444,13 +449,18 @@ remdb提供了基于UDP的高可靠数据订阅与发布机制，支持单播、
 
 #### 预定义主题
 
-| 主题名称 | 描述 | 消息格式 |
-|---------|------|---------|
-| wal | 所有WAL操作 | WAL_LOG_<id>: Operation=<operation_type>, Table=<table_name>, ID=<record_id>, Data=<data> |
-| tables | 表创建/删除事件 | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> 或 DELETE:table=<table_name>,id=<table_id> |
-| metrics | 数据库指标 | JSON格式的数据库指标数据 |
-| healthstatus | 健康状态 | JSON格式的健康状态数据 |
-| table.<table_name> | 表内容变更 | INSERT:table=<table_name>,id=<record_id>,data=<hex_data> 或 UPDATE:table=<table_name>,id=<record_id>,data=<hex_data> |
+| 主题名称 | 主题ID | 描述 | 消息格式 |
+|---------|--------|------|---------|
+| wal | - | 所有WAL操作 | WAL_LOG_<id>: Operation=<operation_type>, Table=<table_name>, ID=<record_id>, Data=<data> |
+| tables | - | 表创建/删除事件 | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> 或 DELETE:table=<table_name>,id=<table_id> |
+| metrics | - | 数据库指标 | JSON格式的数据库指标数据 |
+| healthstatus | - | 健康状态 | JSON格式的健康状态数据 |
+| table.<table_name> | - | 表内容变更 | INSERT:table=<table_name>,id=<record_id>,data=<hex_data> 或 UPDATE:table=<table_name>,id=<record_id>,data=<hex_data> |
+| SYNC_REQUEST | 2 | 同步请求主题 | 从节点发送同步请求给主节点 |
+| SYNC_DATA_BEGIN | 5 | 同步数据开始 | 主节点发送同步元数据给从节点 |
+| SYNC_DATA_CHUNK | 6 | 同步数据块 | 主节点发送同步数据块给从节点 |
+| SYNC_DATA_END | 7 | 同步数据结束 | 主节点标记同步数据传输结束 |
+| SYNC_ACK | 8 | 同步确认 | 从节点发送确认给主节点 |
 
 #### 使用示例
 
@@ -917,7 +927,10 @@ remdb/
 │   │   ├── manager.rs      # HA管理器实现
 │   │   ├── replication.rs  # 复制功能实现
 │   │   ├── heartbeat.rs    # 心跳检测实现
-│   │   └── role.rs         # 角色管理实现
+│   │   ├── role.rs         # 角色管理实现
+│   │   ├── protocol.rs     # 同步协议定义
+│   │   ├── sync_handler.rs # 主节点同步处理器
+│   │   └── sync_receiver.rs # 从节点同步接收器
 │   ├── pubsub/
 │   │   ├── mod.rs          # 发布/订阅模块入口
 │   │   ├── protocol.rs     # 协议帧定义与解析

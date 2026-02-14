@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check --features \"std posix ha pubsub log\")",
+      "Bash(cargo clippy --features \"std posix ha pubsub log\" -- -D warnings)",
+      "Bash(cargo test --lib --features \"std posix ha pubsub log\" ha::protocol)"
+    ]
+  }
+}

@@ -2,13 +2,21 @@
 //!
 //! 该模块提供SQL查询支持，允许用户使用标准SQL语法查询数据库中的数据。
 
+mod error;
 mod query_executor;
 pub mod query_parser;
 mod result_set;
 pub mod functions;
 mod operations;
+mod utils;
 
-pub use query_executor::{execute_query, QueryExecutionError};
+pub use error::QueryExecutionError;
+pub use query_executor::execute_query;
+pub use utils::{
+    parse_data_type_with_precision, check_memory_limit,
+    process_at_time_zone, process_timezone_function, process_to_char,
+    process_to_iso8601, process_to_epoch,
+};
 pub use query_parser::{
     parse_sql_query, ComparisonCondition, ComparisonOperator, Condition, JoinClause, JoinType,
     OrderByClause, OrderDirection, QueryParseError, QueryType, SqlQuery, Value, WhereClause,

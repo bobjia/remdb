@@ -976,34 +976,63 @@ impl ReplicationManager {
         self.replication_mode
     }
 
+    /// 获取从节点ID
+    pub fn get_slave_id(&self) -> u8 {
+        self.slave_id
+    }
+
     /// 请求全量同步
     pub fn request_full_sync(&self) -> Result<()> {
+        use crate::ha::protocol::SyncRequest;
+
         // 从节点：向主节点发送全量同步请求
-        // 构建同步请求数据：[slave_id, sync_type(0表示全量)]
-        let mut sync_data = [0u8; 2];
-        sync_data[0] = self.slave_id;
-        sync_data[1] = 0; // 0表示全量同步
+        let request = SyncRequest::new_full(self.slave_id);
+        let sync_data = request.encode();
+
+        #[cfg(feature = "log")]
+        debug!("Requesting full sync from master, slave_id: {}", self.slave_id);
 
         // 发送同步请求
         match pubsub::publish(SYNC_REQUEST_TOPIC, &sync_data) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(HAError::SyncFailed),
+            Ok(_) => {
+                #[cfg(feature = "log")]
+                info!("Full sync request sent successfully");
+                Ok(())
+            }
+            Err(_) => {
+                #[cfg(feature = "log")]
+                error!("Failed to send full sync request");
+                Err(HAError::SyncFailed)
+            }
         }
     }
 
     /// 请求增量同步
     pub fn request_incremental_sync(&self, last_log_index: u32) -> Result<()> {
+        use crate::ha::protocol::SyncRequest;
+
         // 从节点：向主节点发送增量同步请求
-        // 构建同步请求数据：[slave_id, sync_type(1表示增量), last_log_index(4字节)]
-        let mut sync_data = [0u8; 6];
-        sync_data[0] = self.slave_id;
-        sync_data[1] = 1; // 1表示增量同步
-        sync_data[2..6].copy_from_slice(&last_log_index.to_le_bytes());
+        let request = SyncRequest::new_incremental(self.slave_id, last_log_index);
+        let sync_data = request.encode();
+
+        #[cfg(feature = "log")]
+        debug!(
+            "Requesting incremental sync from master, slave_id: {}, last_log_index: {}",
+            self.slave_id, last_log_index
+        );
 
         // 发送同步请求
         match pubsub::publish(SYNC_REQUEST_TOPIC, &sync_data) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(HAError::SyncFailed),
+            Ok(_) => {
+                #[cfg(feature = "log")]
+                info!("Incremental sync request sent successfully");
+                Ok(())
+            }
+            Err(_) => {
+                #[cfg(feature = "log")]
+                error!("Failed to send incremental sync request");
+                Err(HAError::SyncFailed)
+            }
         }
     }
 }

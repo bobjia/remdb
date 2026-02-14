@@ -2,8 +2,11 @@
 
 pub mod heartbeat;
 pub mod manager;
+pub mod protocol;
 pub mod replication;
 pub mod role;
+pub mod sync_handler;
+pub mod sync_receiver;
 
 use core::fmt;
 
@@ -28,6 +31,32 @@ pub enum ReplicationMode {
     Sync,
     /// 异步模式：立即返回，异步复制
     Async,
+}
+
+/// Sync state enumeration
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum SyncState {
+    /// Idle, no sync in progress
+    Idle = 0,
+    /// Sync in progress
+    Syncing = 1,
+    /// Sync completed successfully
+    Synced = 2,
+    /// Sync failed
+    Failed = 3,
+}
+
+impl From<u32> for SyncState {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => SyncState::Idle,
+            1 => SyncState::Syncing,
+            2 => SyncState::Synced,
+            3 => SyncState::Failed,
+            _ => SyncState::Idle,
+        }
+    }
 }
 
 /// HA配置结构体

@@ -4,7 +4,9 @@ use crate::config::DbConfig;
 use crate::ha::heartbeat::HeartbeatMonitor;
 use crate::ha::replication::ReplicationManager;
 use crate::ha::role::RoleManager;
-use crate::ha::{HAError, HARole, ReplicationMode, Result};
+use crate::ha::sync_handler::SyncHandler;
+use crate::ha::sync_receiver::SyncReceiver;
+use crate::ha::{HAError, HARole, ReplicationMode, Result, SyncState};
 use crate::pubsub;
 use crate::pubsub::{init as pubsub_init, PubSubConfig, UdpMode};
 use crate::transaction::LogItem;
@@ -22,6 +24,10 @@ pub struct HAManager {
     replication_manager: ReplicationManager,
     /// 心跳监视器
     heartbeat_monitor: HeartbeatMonitor,
+    /// 同步处理器（主节点使用）
+    sync_handler: Option<SyncHandler>,
+    /// 同步接收器（从节点使用）
+    sync_receiver: Option<SyncReceiver>,
     /// 是否初始化
     is_initialized: bool,
 }
@@ -52,6 +58,8 @@ impl HAManager {
             role_manager,
             replication_manager,
             heartbeat_monitor,
+            sync_handler: None,
+            sync_receiver: None,
             is_initialized: false,
         })
     }
@@ -232,19 +240,40 @@ impl HAManager {
     }
 
     /// 主节点初始化
-    fn init_master(&self) -> Result<()> {
+    fn init_master(&mut self) -> Result<()> {
         // 初始化主节点相关组件
         self.replication_manager.init_master()?;
         self.heartbeat_monitor.init_master()?;
+
+        // Initialize sync handler for master
+        let mut sync_handler = SyncHandler::new();
+        sync_handler.init()?;
+        self.sync_handler = Some(sync_handler);
+
+        #[cfg(feature = "log")]
+        info!("Master sync handler initialized");
 
         Ok(())
     }
 
     /// 从节点初始化
-    fn init_slave(&self) -> Result<()> {
+    fn init_slave(&mut self) -> Result<()> {
         // 初始化从节点相关组件
         self.replication_manager.init_slave()?;
         self.heartbeat_monitor.init_slave()?;
+
+        // Initialize sync receiver for slave
+        let ha_config = self
+            .config
+            .ha_config
+            .as_ref()
+            .ok_or(HAError::InvalidParameter)?;
+        let mut sync_receiver = SyncReceiver::new(ha_config.node_id as u8);
+        sync_receiver.init()?;
+        self.sync_receiver = Some(sync_receiver);
+
+        #[cfg(feature = "log")]
+        info!("Slave sync receiver initialized");
 
         // 连接到主节点并同步数据
         self.connect_to_master()?;
@@ -253,7 +282,7 @@ impl HAManager {
     }
 
     /// 自动模式初始化
-    fn init_auto(&self) -> Result<()> {
+    fn init_auto(&mut self) -> Result<()> {
         #[cfg(feature = "log")]
         debug!("init_auto: Starting auto mode initialization");
 
@@ -263,7 +292,7 @@ impl HAManager {
         if cluster_available {
             #[cfg(feature = "log")]
             debug!("init_auto: Existing cluster detected, initializing as slave");
-            
+
             // 2. 现有集群存在，成为从节点
             self.role_manager.set_role(HARole::Slave)?;
             self.init_slave()?;
@@ -406,7 +435,17 @@ impl HAManager {
     }
 
     /// 关闭HA管理器
-    pub fn shutdown(&self) -> Result<()> {
+    pub fn shutdown(&mut self) -> Result<()> {
+        // 关闭同步处理器
+        if let Some(ref mut handler) = self.sync_handler {
+            handler.shutdown()?;
+        }
+
+        // 关闭同步接收器
+        if let Some(ref mut receiver) = self.sync_receiver {
+            receiver.shutdown()?;
+        }
+
         // 关闭心跳监视器
         self.heartbeat_monitor.shutdown()?;
 
@@ -440,6 +479,27 @@ impl HAManager {
     /// 获取复制模式
     pub fn get_replication_mode(&self) -> ReplicationMode {
         self.replication_manager.get_replication_mode()
+    }
+
+    /// 获取同步状态
+    pub fn get_sync_state(&self) -> SyncState {
+        if let Some(ref handler) = self.sync_handler {
+            handler.get_state().into()
+        } else if let Some(ref receiver) = self.sync_receiver {
+            receiver.get_state()
+        } else {
+            SyncState::Idle
+        }
+    }
+
+    /// 获取复制管理器引用
+    pub fn get_replication_manager(&self) -> &ReplicationManager {
+        &self.replication_manager
+    }
+
+    /// 获取复制管理器可变引用
+    pub fn get_replication_manager_mut(&mut self) -> &mut ReplicationManager {
+        &mut self.replication_manager
     }
 
     /// 提升为父节点
