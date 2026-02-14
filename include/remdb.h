@@ -24,20 +24,21 @@ extern "C" {
 
 /**
  * @brief Data types supported by RemDB
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbDataType {
-    REMDB_TYPE_UINT8 = 0,
-    REMDB_TYPE_UINT16 = 1,
-    REMDB_TYPE_UINT32 = 2,
-    REMDB_TYPE_UINT64 = 3,
-    REMDB_TYPE_FLOAT32 = 4,
-    REMDB_TYPE_FLOAT64 = 5,
-    REMDB_TYPE_BOOL = 6,
-    REMDB_TYPE_TIMESTAMP = 7,
-    REMDB_TYPE_STRING = 8,
-    REMDB_TYPE_JSON = 9,
-    REMDB_TYPE_VECTOR = 10,
-};
+typedef uint8_t RemDbDataType;
+
+#define REMDB_TYPE_UINT8     ((RemDbDataType)0)
+#define REMDB_TYPE_UINT16    ((RemDbDataType)1)
+#define REMDB_TYPE_UINT32    ((RemDbDataType)2)
+#define REMDB_TYPE_UINT64    ((RemDbDataType)3)
+#define REMDB_TYPE_FLOAT32   ((RemDbDataType)4)
+#define REMDB_TYPE_FLOAT64   ((RemDbDataType)5)
+#define REMDB_TYPE_BOOL      ((RemDbDataType)6)
+#define REMDB_TYPE_TIMESTAMP ((RemDbDataType)7)
+#define REMDB_TYPE_STRING    ((RemDbDataType)8)
+#define REMDB_TYPE_JSON      ((RemDbDataType)9)
+#define REMDB_TYPE_VECTOR    ((RemDbDataType)10)
 
 /**
  * @brief Compression types for time series data
@@ -104,10 +105,13 @@ typedef struct RemDbTableDef {
 
 /**
  * @brief Typed value for SQL result set
+ * Note: data_type is uint8_t (1 byte) with 7 bytes padding before value
+ * to match Rust's #[repr(C)] layout with #[repr(u8)] enum
  */
 typedef struct RemDbTypedValue {
-    enum RemDbDataType data_type;
-    RemDbValue value;
+    RemDbDataType data_type;  /* 1 byte */
+    /* 7 bytes implicit padding to align value to 8 bytes */
+    RemDbValue value;         /* 64 bytes */
 } RemDbTypedValue;
 
 /**
