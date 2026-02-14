@@ -21,6 +21,8 @@ use crate::{
     MAX_STRING_LEN,
 };
 use crate::model::model_manager::get_global_model_manager;
+use crate::sql::functions as sql_functions;
+use crate::sql::operations::ddl;
 #[cfg(feature = "log")]
 use crate::log::{debug, error, info, warn};
 
@@ -360,7 +362,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             }
             Ok(ResultSet::new(Vec::new()))
         },
-        crate::sql::QueryType::DropTable => execute_drop_table_query(db, query),
+        crate::sql::QueryType::DropTable => ddl::execute_drop_table_query(db, query),
         crate::sql::QueryType::BeginTransaction => {
             // 开始事务
             unsafe {
@@ -382,10 +384,10 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             }
             Ok(ResultSet::new(Vec::new()))
         },
-        crate::sql::QueryType::CreateDatabase => execute_create_database_query(db, query),
-        crate::sql::QueryType::UseDatabase => execute_use_database_query(db, query),
-        crate::sql::QueryType::CloseDatabase => execute_close_database_query(db, query),
-        crate::sql::QueryType::DropDatabase => execute_drop_database_query(db, query),
+        crate::sql::QueryType::CreateDatabase => ddl::execute_create_database_query(db, query),
+        crate::sql::QueryType::UseDatabase => ddl::execute_use_database_query(db, query),
+        crate::sql::QueryType::CloseDatabase => ddl::execute_close_database_query(db, query),
+        crate::sql::QueryType::DropDatabase => ddl::execute_drop_database_query(db, query),
         crate::sql::QueryType::CreateModel => {
             // Register the model using the global model manager
             match get_global_model_manager() {
@@ -1071,81 +1073,6 @@ fn evaluate_timeseries_expression(
             Err(QueryExecutionError::UnsupportedFunction("Complex expression in timeseries query".to_string()))
         }
     }
-}
-
-/// 执行DROP TABLE查询
-fn execute_drop_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
-    // 提取IF EXISTS和DEFERRED选项
-    let mut if_exists = false;
-    let mut is_deferred = false;
-    
-    if let Some((if_exists_str, is_deferred_str, _, _, _, _, _)) = query.table_def.first() {
-        if_exists = if_exists_str == "true";
-        is_deferred = is_deferred_str == "true";
-    }
-
-    // 调用RemDb的drop_table方法
-    db.drop_table(&query.table_name, if_exists, is_deferred)
-        .map_err(|err| match err {
-            crate::RemDbError::NotAllowed => QueryExecutionError::NotAllowed,
-            crate::RemDbError::TableNotFound => QueryExecutionError::TableNotFound,
-            _ => QueryExecutionError::InternalError,
-        })?;
-
-    // 返回空结果集
-    Ok(ResultSet::new(Vec::new()))
-}
-
-/// 执行CREATE DATABASE查询
-fn execute_create_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
-    // 提取数据库名称
-    let database_name = query.table_name.clone();
-    
-    // 调用RemDb的create_database方法
-    db.create_database(&database_name)
-        .map_err(|_| QueryExecutionError::InternalError)?;
-
-    // 返回空结果集
-    Ok(ResultSet::new(Vec::new()))
-}
-
-/// 执行USE DATABASE查询
-fn execute_use_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
-    // 提取数据库名称
-    let database_name = query.table_name.clone();
-    
-    // 调用RemDb的use_database方法
-    db.use_database(&database_name)
-        .map_err(|_| QueryExecutionError::InternalError)?;
-
-    // 返回空结果集
-    Ok(ResultSet::new(Vec::new()))
-}
-
-/// 执行CLOSE DATABASE查询
-fn execute_close_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
-    // 提取数据库名称
-    let database_name = query.table_name.clone();
-    
-    // 调用RemDb的close_database方法
-    db.close_database(&database_name)
-        .map_err(|_| QueryExecutionError::InternalError)?;
-
-    // 返回空结果集
-    Ok(ResultSet::new(Vec::new()))
-}
-
-/// 执行DROP DATABASE查询
-fn execute_drop_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
-    // 提取数据库名称
-    let database_name = query.table_name.clone();
-    
-    // 调用RemDb的drop_database方法
-    db.drop_database(&database_name)
-        .map_err(|_| QueryExecutionError::InternalError)?;
-
-    // 返回空结果集
-    Ok(ResultSet::new(Vec::new()))
 }
 
 /// 处理聚合查询
@@ -3981,7 +3908,7 @@ fn evaluate_binary_op(
             let interval_str = core::str::from_utf8(&right.value.string)
                 .map_err(|_| QueryExecutionError::TypeMismatch)?
                 .trim_end_matches(char::from(0));
-            parse_interval_string(interval_str)?
+            sql_functions::parse_interval_string(interval_str)?
         },
         _ => return Err(QueryExecutionError::TypeMismatch),
     };
@@ -4119,57 +4046,57 @@ fn execute_function_call(
     // First, check if it's a built-in function
     match name.to_uppercase().as_str() {
         // 基础统计聚合函数
-        "COUNT" => execute_count(args),
-        "SUM" => execute_sum(args),
-        "AVG" => execute_avg(args),
-        "MIN" => execute_min(args),
-        "MAX" => execute_max(args),
+        "COUNT" => sql_functions::execute_count(args),
+        "SUM" => sql_functions::execute_sum(args),
+        "AVG" => sql_functions::execute_avg(args),
+        "MIN" => sql_functions::execute_min(args),
+        "MAX" => sql_functions::execute_max(args),
         // 新增统计学函数
-        "STDDEV" => execute_stddev(args),
-        "VAR" => execute_var(args),
-        "STDDEV_SAMP" => execute_stddev_samp(args),
-        "VAR_SAMP" => execute_var_samp(args),
+        "STDDEV" => sql_functions::execute_stddev(args),
+        "VAR" => sql_functions::execute_var(args),
+        "STDDEV_SAMP" => sql_functions::execute_stddev_samp(args),
+        "VAR_SAMP" => sql_functions::execute_var_samp(args),
         // 新增滑动窗口函数
-        "MOVING_AVERAGE" => execute_moving_average(args),
-        "MOVING_SUM" => execute_moving_sum(args),
+        "MOVING_AVERAGE" => sql_functions::execute_moving_average(args),
+        "MOVING_SUM" => sql_functions::execute_moving_sum(args),
         // 时间函数
-        "TIME_BUCKET" => execute_time_bucket(args),
+        "TIME_BUCKET" => sql_functions::execute_time_bucket(args),
         // 时间格式化函数
-        "TO_ISO8601" => execute_to_iso8601(args),
-        "TO_CHAR" => execute_to_char(args),
-        "TO_EPOCH" => execute_to_epoch(args),
+        "TO_ISO8601" => sql_functions::execute_to_iso8601(args),
+        "TO_CHAR" => sql_functions::execute_to_char(args),
+        "TO_EPOCH" => sql_functions::execute_to_epoch(args),
         // 字符串函数
-        "CONCAT" => execute_concat(args),
-        "SUBSTRING" => execute_substring(args),
-        "UPPER" => execute_upper(args),
-        "LOWER" => execute_lower(args),
-        "LENGTH" => execute_length(args),
-        "CHAR_LENGTH" => execute_char_length(args),
+        "CONCAT" => sql_functions::execute_concat(args),
+        "SUBSTRING" => sql_functions::execute_substring(args),
+        "UPPER" => sql_functions::execute_upper(args),
+        "LOWER" => sql_functions::execute_lower(args),
+        "LENGTH" => sql_functions::execute_length(args),
+        "CHAR_LENGTH" => sql_functions::execute_char_length(args),
         // 数学函数
-        "ABS" => execute_abs(args),
-        "SQRT" => execute_sqrt(args),
-        "POWER" => execute_power(args),
-        "SIN" => execute_sin(args),
-        "COS" => execute_cos(args),
-        "LOG" => execute_log(args),
-        "EXP" => execute_exp(args),
-        "ROUND" => execute_round(args),
-        "CEIL" => execute_ceil(args),
-        "FLOOR" => execute_floor(args),
-        "MOD" => execute_mod(args),
+        "ABS" => sql_functions::execute_abs(args),
+        "SQRT" => sql_functions::execute_sqrt(args),
+        "POWER" => sql_functions::execute_power(args),
+        "SIN" => sql_functions::execute_sin(args),
+        "COS" => sql_functions::execute_cos(args),
+        "LOG" => sql_functions::execute_log(args),
+        "EXP" => sql_functions::execute_exp(args),
+        "ROUND" => sql_functions::execute_round(args),
+        "CEIL" => sql_functions::execute_ceil(args),
+        "FLOOR" => sql_functions::execute_floor(args),
+        "MOD" => sql_functions::execute_mod(args),
         // JSON函数
-        "JSON_EXTRACT" => execute_json_extract(args),
-        "JSON_VALUE" => execute_json_value(args),
-        "JSON_QUERY" => execute_json_query(args),
-        "JSON_HAS" => execute_json_has(args),
-        "JSON_TYPE" => execute_json_type(args),
-        "JSON_SET" => execute_json_set(args),
-        "JSON_REMOVE" => execute_json_remove(args),
-        "JSON_MERGE_PATCH" => execute_json_merge_patch(args),
-        "JSON_ARRAY_APPEND" => execute_json_array_append(args),
-        "JSON_ARRAY_LENGTH" => execute_json_array_length(args),
-        "JSON_ARRAY" => execute_json_array(args),
-        "JSON_OBJECT" => execute_json_object(args),
+        "JSON_EXTRACT" => sql_functions::execute_json_extract(args),
+        "JSON_VALUE" => sql_functions::execute_json_value(args),
+        "JSON_QUERY" => sql_functions::execute_json_query(args),
+        "JSON_HAS" => sql_functions::execute_json_has(args),
+        "JSON_TYPE" => sql_functions::execute_json_type(args),
+        "JSON_SET" => sql_functions::execute_json_set(args),
+        "JSON_REMOVE" => sql_functions::execute_json_remove(args),
+        "JSON_MERGE_PATCH" => sql_functions::execute_json_merge_patch(args),
+        "JSON_ARRAY_APPEND" => sql_functions::execute_json_array_append(args),
+        "JSON_ARRAY_LENGTH" => sql_functions::execute_json_array_length(args),
+        "JSON_ARRAY" => sql_functions::execute_json_array(args),
+        "JSON_OBJECT" => sql_functions::execute_json_object(args),
         _ => {
             // If it's not a built-in function, try model UDF
             crate::model::model_udf::execute_model_udf(name, args)
@@ -4179,2247 +4106,6 @@ fn execute_function_call(
                 })
         }
     }
-}
-
-/// 执行COUNT函数
-fn execute_count(_args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    // COUNT函数返回记录数，这里简单返回1，实际聚合时会累加
-    Ok(TypedValue {
-        value_type: DataType::UInt64,
-        value: Value { u64: 1 },
-    })
-}
-
-/// 执行SUM函数
-fn execute_sum(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    // 根据参数类型返回对应的值
-    unsafe {
-        match arg.value_type {
-            DataType::UInt8 => Ok(TypedValue {
-                value_type: DataType::UInt64,
-                value: Value {
-                    u64: arg.value.u8 as u64,
-                },
-            }),
-            DataType::UInt16 => Ok(TypedValue {
-                value_type: DataType::UInt64,
-                value: Value {
-                    u64: arg.value.u16 as u64,
-                },
-            }),
-            DataType::UInt32 => Ok(TypedValue {
-                value_type: DataType::UInt64,
-                value: Value {
-                    u64: arg.value.u32 as u64,
-                },
-            }),
-            DataType::UInt64 => Ok(arg.clone()),
-            DataType::Int8 => Ok(TypedValue {
-                value_type: DataType::Int64,
-                value: Value {
-                    i64: arg.value.i8 as i64,
-                },
-            }),
-            DataType::Int16 => Ok(TypedValue {
-                value_type: DataType::Int64,
-                value: Value {
-                    i64: arg.value.i16 as i64,
-                },
-            }),
-            DataType::Int32 => Ok(TypedValue {
-                value_type: DataType::Int64,
-                value: Value {
-                    i64: arg.value.i32 as i64,
-                },
-            }),
-            DataType::Int64 => Ok(arg.clone()),
-            DataType::Float32 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.float32 as f64,
-                },
-            }),
-            DataType::Float64 => Ok(arg.clone()),
-            _ => Err(QueryExecutionError::TypeMismatch),
-        }
-    }
-}
-
-/// 执行AVG函数
-fn execute_avg(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    // 转换为浮点数类型
-    unsafe {
-        match arg.value_type {
-            DataType::UInt8 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.u8 as f64,
-                },
-            }),
-            DataType::UInt16 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.u16 as f64,
-                },
-            }),
-            DataType::UInt32 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.u32 as f64,
-                },
-            }),
-            DataType::UInt64 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.u64 as f64,
-                },
-            }),
-            DataType::Int8 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.i8 as f64,
-                },
-            }),
-            DataType::Int16 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.i16 as f64,
-                },
-            }),
-            DataType::Int32 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.i32 as f64,
-                },
-            }),
-            DataType::Int64 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.i64 as f64,
-                },
-            }),
-            DataType::Float32 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.float32 as f64,
-                },
-            }),
-            DataType::Float64 => Ok(arg.clone()),
-            _ => Err(QueryExecutionError::TypeMismatch),
-        }
-    }
-}
-
-/// 执行MIN函数
-fn execute_min(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    // MIN函数在聚合时会比较值，这里直接返回参数值
-    Ok(args[0].clone())
-}
-
-/// 执行MAX函数
-fn execute_max(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    // MAX函数在聚合时会比较值，这里直接返回参数值
-    Ok(args[0].clone())
-}
-
-/// 执行STDDEV函数
-fn execute_stddev(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    // STDDEV函数在聚合时计算标准差，这里直接返回参数值
-    Ok(args[0].clone())
-}
-
-/// 执行VAR函数
-fn execute_var(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    // VAR函数在聚合时计算方差，这里直接返回参数值
-    Ok(args[0].clone())
-}
-
-/// 执行STDDEV_SAMP函数
-fn execute_stddev_samp(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    // STDDEV_SAMP函数在聚合时计算样本标准差，这里直接返回参数值
-    Ok(args[0].clone())
-}
-
-/// 执行VAR_SAMP函数
-fn execute_var_samp(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    // VAR_SAMP函数在聚合时计算样本方差，这里直接返回参数值
-    Ok(args[0].clone())
-}
-
-/// 执行MOVING_AVERAGE函数
-fn execute_moving_average(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    // MOVING_AVERAGE函数：MOVING_AVERAGE(value, window_size)
-    // 目前返回输入值，后续需要实现完整的滑动窗口逻辑
-    Ok(args[0].clone())
-}
-
-/// 执行MOVING_SUM函数
-fn execute_moving_sum(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    // MOVING_SUM函数：MOVING_SUM(value, window_size)
-    // 目前返回输入值，后续需要实现完整的滑动窗口逻辑
-    Ok(args[0].clone())
-}
-
-/// 执行TIME_BUCKET函数
-fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    // 解析时间间隔参数
-    let interval_micros = parse_time_interval(&args[0])?;
-
-    // 获取时间戳参数
-    let timestamp_arg = &args[1];
-
-    // 解析可选的origin参数
-    let origin_micros = if args.len() > 2 {
-        parse_origin_timestamp(&args[2])?
-    } else {
-        0 // 默认从1970-01-01 00:00:00开始
-    };
-
-    unsafe {
-        // 从不同类型中提取时间戳值
-        let timestamp = match timestamp_arg.value_type {
-            DataType::Timestamp => timestamp_arg.value.time.value,
-            DataType::TimestampTZ => timestamp_arg.value.time.value,
-            DataType::UInt64 => timestamp_arg.value.u64 as i64,
-            DataType::Int64 => timestamp_arg.value.i64,
-            DataType::UInt32 => timestamp_arg.value.u32 as i64,
-            DataType::Int32 => timestamp_arg.value.i32 as i64,
-            DataType::UInt16 => timestamp_arg.value.u16 as i64,
-            DataType::Int16 => timestamp_arg.value.i16 as i64,
-            DataType::UInt8 => timestamp_arg.value.u8 as i64,
-            DataType::Int8 => timestamp_arg.value.i8 as i64,
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        // 将时间戳对齐到指定的时间窗口，考虑origin
-        let bucketed_timestamp =
-            origin_micros + ((timestamp - origin_micros) / interval_micros) * interval_micros;
-
-        // 根据输入类型返回相同类型的结果
-        match timestamp_arg.value_type {
-            DataType::Timestamp => Ok(TypedValue {
-                value_type: DataType::Timestamp,
-                value: Value {
-                    time: crate::types::db_timestamp::new(bucketed_timestamp, 0, 6, 0),
-                },
-            }),
-            DataType::TimestampTZ => Ok(TypedValue {
-                value_type: DataType::TimestampTZ,
-                value: Value {
-                    time: crate::types::db_timestamp::new(
-                        bucketed_timestamp,
-                        timestamp_arg.value.time.tz_offset,
-                        6,
-                        0,
-                    ),
-                },
-            }),
-            DataType::UInt64 => Ok(TypedValue {
-                value_type: DataType::UInt64,
-                value: Value {
-                    u64: bucketed_timestamp as u64,
-                },
-            }),
-            DataType::Int64 => Ok(TypedValue {
-                value_type: DataType::Int64,
-                value: Value {
-                    i64: bucketed_timestamp,
-                },
-            }),
-            DataType::UInt32 => Ok(TypedValue {
-                value_type: DataType::UInt32,
-                value: Value {
-                    u32: bucketed_timestamp as u32,
-                },
-            }),
-            DataType::Int32 => Ok(TypedValue {
-                value_type: DataType::Int32,
-                value: Value {
-                    i32: bucketed_timestamp as i32,
-                },
-            }),
-            DataType::UInt16 => Ok(TypedValue {
-                value_type: DataType::UInt16,
-                value: Value {
-                    u16: bucketed_timestamp as u16,
-                },
-            }),
-            DataType::Int16 => Ok(TypedValue {
-                value_type: DataType::Int16,
-                value: Value {
-                    i16: bucketed_timestamp as i16,
-                },
-            }),
-            DataType::UInt8 => Ok(TypedValue {
-                value_type: DataType::UInt8,
-                value: Value {
-                    u8: bucketed_timestamp as u8,
-                },
-            }),
-            DataType::Int8 => Ok(TypedValue {
-                value_type: DataType::Int8,
-                value: Value {
-                    i8: bucketed_timestamp as i8,
-                },
-            }),
-            _ => Err(QueryExecutionError::TypeMismatch),
-        }
-    }
-}
-
-/// 解析时间字符串为微秒时间戳
-fn parse_time_string(time_str: &str) -> Result<i64, QueryExecutionError> {
-    let time_str = time_str.trim();
-    let mut parts = time_str.split_whitespace();
-
-    let date_part = parts.next().ok_or(QueryExecutionError::TypeMismatch)?;
-    let date_components: Vec<&str> = date_part.split('-').collect();
-    if date_components.len() != 3 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let year = date_components[0]
-        .parse::<i64>()
-        .map_err(|_| QueryExecutionError::TypeMismatch)?;
-    let month = date_components[1]
-        .parse::<i64>()
-        .map_err(|_| QueryExecutionError::TypeMismatch)?;
-    let day = date_components[2]
-        .parse::<i64>()
-        .map_err(|_| QueryExecutionError::TypeMismatch)?;
-
-    let mut hour = 0;
-    let mut minute = 0;
-    let mut second = 0;
-
-    if let Some(time_part) = parts.next() {
-        let (time_only, _tz_offset_seconds) = split_timezone_from_time(time_part);
-        let time_components: Vec<&str> = time_only.split(':').collect();
-        if time_components.len() != 3 {
-            return Err(QueryExecutionError::TypeMismatch);
-        }
-
-        hour = time_components[0]
-            .parse::<i64>()
-            .map_err(|_| QueryExecutionError::TypeMismatch)?;
-        minute = time_components[1]
-            .parse::<i64>()
-            .map_err(|_| QueryExecutionError::TypeMismatch)?;
-        second = time_components[2]
-            .parse::<i64>()
-            .map_err(|_| QueryExecutionError::TypeMismatch)?;
-    }
-
-    let mut seconds = 0;
-
-    for _y in 1970..year {
-        seconds += 365 * 24 * 60 * 60;
-    }
-
-    let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    for m in 0..(month - 1) {
-        seconds += days_in_month[m as usize] * 24 * 60 * 60;
-    }
-
-    seconds += (day - 1) * 24 * 60 * 60;
-    seconds += hour * 60 * 60;
-    seconds += minute * 60;
-    seconds += second;
-
-    Ok(seconds * 1000000)
-}
-
-fn split_timezone_from_time(time_part: &str) -> (&str, i32) {
-    if let Some(pos) = time_part.find(|c| c == '+' || c == '-') {
-        if pos > 0 {
-            let before = &time_part[..pos];
-            let after = &time_part[pos..];
-            if after.len() > 1 && after.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
-                let tz_seconds = parse_timezone_offset(after).unwrap_or(0);
-                return (before, tz_seconds);
-            }
-        }
-    }
-    (time_part, 0)
-}
-
-fn parse_timezone_offset(tz_str: &str) -> Option<i32> {
-    let sign = if tz_str.starts_with('+') { 1 } else if tz_str.starts_with('-') { -1 } else { return None };
-    let offset_str = &tz_str[1..];
-    
-    let parts: Vec<&str> = offset_str.split(':').collect();
-    if parts.len() == 2 {
-        let hours = parts[0].parse::<i32>().ok()?;
-        let minutes = parts[1].parse::<i32>().ok()?;
-        Some(sign * (hours * 3600 + minutes * 60))
-    } else if offset_str.len() == 2 {
-        let hours = offset_str.parse::<i32>().ok()?;
-        Some(sign * hours * 3600)
-    } else if offset_str.len() == 4 {
-        let hours = offset_str[0..2].parse::<i32>().ok()?;
-        let minutes = offset_str[2..4].parse::<i32>().ok()?;
-        Some(sign * (hours * 3600 + minutes * 60))
-    } else {
-        None
-    }
-}
-
-/// 解析origin时间戳参数
-fn parse_origin_timestamp(origin_arg: &TypedValue) -> Result<i64, QueryExecutionError> {
-    unsafe {
-        match origin_arg.value_type {
-            // 数值形式的时间戳（微秒）
-            DataType::UInt8 => Ok(origin_arg.value.u8 as i64),
-            DataType::UInt16 => Ok(origin_arg.value.u16 as i64),
-            DataType::UInt32 => Ok(origin_arg.value.u32 as i64),
-            DataType::UInt64 => Ok(origin_arg.value.u64 as i64),
-            DataType::Int8 => Ok(origin_arg.value.i8 as i64),
-            DataType::Int16 => Ok(origin_arg.value.i16 as i64),
-            DataType::Int32 => Ok(origin_arg.value.i32 as i64),
-            DataType::Int64 => Ok(origin_arg.value.i64),
-            // 字符串形式的时间戳（如'2020-01-01'）
-            DataType::VarChar | DataType::Char | DataType::Text => {
-                let origin_str = core::str::from_utf8(&origin_arg.value.string)
-                    .map_err(|_| QueryExecutionError::TypeMismatch)?
-                    .trim_end_matches(char::from(0));
-
-                // 尝试解析为时间字符串
-                parse_time_string(origin_str)
-            }
-            // 时间类型
-            DataType::Timestamp => Ok(origin_arg.value.time.value),
-            DataType::TimestampTZ => Ok(origin_arg.value.time.value),
-            _ => Err(QueryExecutionError::TypeMismatch),
-        }
-    }
-}
-
-/// 执行TO_ISO8601函数
-fn execute_to_iso8601(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let timestamp_arg = &args[0];
-
-    unsafe {
-        match timestamp_arg.value_type {
-            DataType::Timestamp | DataType::TimestampTZ => {
-                let timestamp = &timestamp_arg.value.time;
-                let result = process_to_iso8601(timestamp)?;
-
-                // 将字符串转换为TypedValue
-                let mut string_value = [0; MAX_STRING_LEN];
-                let len = core::cmp::min(result.len(), MAX_STRING_LEN);
-                string_value[..len].copy_from_slice(&result.as_bytes()[..len]);
-
-                Ok(TypedValue {
-                    value_type: DataType::VarChar,
-                    value: Value {
-                        string: string_value,
-                    },
-                })
-            }
-            _ => Err(QueryExecutionError::TypeMismatch),
-        }
-    }
-}
-
-/// 执行TO_CHAR函数
-fn execute_to_char(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let timestamp_arg = &args[0];
-    let format_arg = &args[1];
-
-    unsafe {
-        match (timestamp_arg.value_type, format_arg.value_type) {
-            (DataType::Timestamp | DataType::TimestampTZ, DataType::VarChar | DataType::Char | DataType::Text) => {
-                let timestamp = &timestamp_arg.value.time;
-                // 提取字符串格式
-                let format_str = core::str::from_utf8(&format_arg.value.string)
-                    .map_err(|_| QueryExecutionError::TypeMismatch)?
-                    .trim_end_matches(char::from(0));
-
-                let result = process_to_char(timestamp, format_str)?;
-
-                // 将字符串转换为TypedValue
-                let mut string_value = [0; MAX_STRING_LEN];
-                let len = core::cmp::min(result.len(), MAX_STRING_LEN);
-                string_value[..len].copy_from_slice(&result.as_bytes()[..len]);
-
-                Ok(TypedValue {
-                    value_type: DataType::VarChar,
-                    value: Value {
-                        string: string_value,
-                    },
-                })
-            }
-            _ => Err(QueryExecutionError::TypeMismatch),
-        }
-    }
-}
-
-/// 执行TO_EPOCH函数
-fn execute_to_epoch(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let timestamp_arg = &args[0];
-
-    unsafe {
-        match timestamp_arg.value_type {
-            DataType::Timestamp | DataType::TimestampTZ => {
-                let timestamp = &timestamp_arg.value.time;
-                let result = process_to_epoch(timestamp)?;
-
-                Ok(TypedValue {
-                    value_type: DataType::Float64,
-                    value: Value { float64: result },
-                })
-            }
-            _ => Err(QueryExecutionError::TypeMismatch),
-        }
-    }
-}
-
-/// 解析时间间隔参数
-fn parse_time_interval(interval_arg: &TypedValue) -> Result<i64, QueryExecutionError> {
-    unsafe {
-        match interval_arg.value_type {
-            // 数值形式的时间间隔（微秒）
-            DataType::UInt8 => Ok(interval_arg.value.u8 as i64),
-            DataType::UInt16 => Ok(interval_arg.value.u16 as i64),
-            DataType::UInt32 => Ok(interval_arg.value.u32 as i64),
-            DataType::UInt64 => Ok(interval_arg.value.u64 as i64),
-            DataType::Int8 => Ok(interval_arg.value.i8 as i64),
-            DataType::Int16 => Ok(interval_arg.value.i16 as i64),
-            DataType::Int32 => Ok(interval_arg.value.i32 as i64),
-            DataType::Int64 => Ok(interval_arg.value.i64),
-            DataType::Float32 => Ok(interval_arg.value.float32 as i64),
-            DataType::Float64 => Ok(interval_arg.value.float64 as i64),
-            // 字符串形式的时间间隔，如'5 minutes'、'1 hour'等
-            DataType::VarChar | DataType::Char | DataType::Text => {
-                let interval_str = core::str::from_utf8(&interval_arg.value.string)
-                    .map_err(|_| QueryExecutionError::TypeMismatch)?
-                    .trim_end_matches(char::from(0));
-
-                parse_interval_string(interval_str)
-            }
-            _ => Err(QueryExecutionError::TypeMismatch),
-        }
-    }
-}
-
-// ------------------------ 字符串函数实现 ------------------------
-
-/// 执行CONCAT函数
-fn execute_concat(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    // 连接所有参数为字符串
-    let mut result = String::new();
-
-    for arg in args {
-        unsafe {
-            let arg_str = match arg.value_type {
-                DataType::VarChar | DataType::Char | DataType::Text => String::from(
-                    core::str::from_utf8(&arg.value.string)
-                        .map_err(|_| QueryExecutionError::TypeMismatch)?
-                        .trim_end_matches(char::from(0)),
-                ),
-                DataType::UInt8 => alloc::format!("{}", arg.value.u8),
-                DataType::UInt16 => alloc::format!("{}", arg.value.u16),
-                DataType::UInt32 => alloc::format!("{}", arg.value.u32),
-                DataType::UInt64 => alloc::format!("{}", arg.value.u64),
-                DataType::Int8 => alloc::format!("{}", arg.value.i8),
-                DataType::Int16 => alloc::format!("{}", arg.value.i16),
-                DataType::Int32 => alloc::format!("{}", arg.value.i32),
-                DataType::Int64 => alloc::format!("{}", arg.value.i64),
-                DataType::Float32 => alloc::format!("{}", arg.value.float32),
-                DataType::Float64 => alloc::format!("{}", arg.value.float64),
-                DataType::Bool => alloc::format!("{}", arg.value.bool),
-                _ => return Err(QueryExecutionError::TypeMismatch),
-            };
-            result.push_str(&arg_str);
-        }
-    }
-
-    // 将结果转换为TypedValue
-    let mut string_value = [0; MAX_STRING_LEN];
-    let len = core::cmp::min(result.len(), MAX_STRING_LEN);
-    string_value[..len].copy_from_slice(&result.as_bytes()[..len]);
-
-    Ok(TypedValue {
-        value_type: DataType::VarChar,
-        value: Value {
-            string: string_value,
-        },
-    })
-}
-
-/// 执行SUBSTRING函数
-fn execute_substring(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let string_arg = &args[0];
-    let start_arg = &args[1];
-    let length_arg = args.get(2);
-
-    unsafe {
-        // 提取源字符串
-        let source_str = match string_arg.value_type {
-            DataType::VarChar | DataType::Char | DataType::Text => core::str::from_utf8(&string_arg.value.string)
-                .map_err(|_| QueryExecutionError::TypeMismatch)?
-                .trim_end_matches(char::from(0)),
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        // 提取起始位置（从1开始）
-        let start = match start_arg.value_type {
-            DataType::Int8 => start_arg.value.i8 as usize,
-            DataType::Int16 => start_arg.value.i16 as usize,
-            DataType::Int32 => start_arg.value.i32 as usize,
-            DataType::Int64 => start_arg.value.i64 as usize,
-            DataType::UInt8 => start_arg.value.u8 as usize,
-            DataType::UInt16 => start_arg.value.u16 as usize,
-            DataType::UInt32 => start_arg.value.u32 as usize,
-            DataType::UInt64 => start_arg.value.u64 as usize,
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        // 计算实际起始位置（转换为0索引）
-        let actual_start = if start > 0 { start - 1 } else { 0 };
-
-        // 提取长度（如果提供）
-        let actual_end = if let Some(len_arg) = length_arg {
-            let len = match len_arg.value_type {
-                DataType::Int8 => len_arg.value.i8 as usize,
-                DataType::Int16 => len_arg.value.i16 as usize,
-                DataType::Int32 => len_arg.value.i32 as usize,
-                DataType::Int64 => len_arg.value.i64 as usize,
-                DataType::UInt8 => len_arg.value.u8 as usize,
-                DataType::UInt16 => len_arg.value.u16 as usize,
-                DataType::UInt32 => len_arg.value.u32 as usize,
-                DataType::UInt64 => len_arg.value.u64 as usize,
-                _ => return Err(QueryExecutionError::TypeMismatch),
-            };
-            core::cmp::min(actual_start + len, source_str.len())
-        } else {
-            source_str.len()
-        };
-
-        // 截取字符串
-        let substring = &source_str[actual_start..actual_end];
-
-        // 将结果转换为TypedValue
-        let mut string_value = [0; MAX_STRING_LEN];
-        let len = core::cmp::min(substring.len(), MAX_STRING_LEN);
-        string_value[..len].copy_from_slice(&substring.as_bytes()[..len]);
-
-        Ok(TypedValue {
-            value_type: DataType::VarChar,
-            value: Value {
-                string: string_value,
-            },
-        })
-    }
-}
-
-/// 执行UPPER函数
-fn execute_upper(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        let result_str = match arg.value_type {
-            DataType::VarChar | DataType::Char | DataType::Text => {
-                let source_str = core::str::from_utf8(&arg.value.string)
-                    .map_err(|_| QueryExecutionError::TypeMismatch)?
-                    .trim_end_matches(char::from(0));
-                source_str.to_uppercase()
-            }
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        // 将结果转换为TypedValue
-        let mut string_value = [0; MAX_STRING_LEN];
-        let len = core::cmp::min(result_str.len(), MAX_STRING_LEN);
-        string_value[..len].copy_from_slice(&result_str.as_bytes()[..len]);
-
-        Ok(TypedValue {
-            value_type: DataType::VarChar,
-            value: Value {
-                string: string_value,
-            },
-        })
-    }
-}
-
-/// 执行LOWER函数
-fn execute_lower(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        let result_str = match arg.value_type {
-            DataType::VarChar | DataType::Char | DataType::Text => {
-                let source_str = core::str::from_utf8(&arg.value.string)
-                    .map_err(|_| QueryExecutionError::TypeMismatch)?
-                    .trim_end_matches(char::from(0));
-                source_str.to_lowercase()
-            }
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        // 将结果转换为TypedValue
-        let mut string_value = [0; MAX_STRING_LEN];
-        let len = core::cmp::min(result_str.len(), MAX_STRING_LEN);
-        string_value[..len].copy_from_slice(&result_str.as_bytes()[..len]);
-
-        Ok(TypedValue {
-            value_type: DataType::VarChar,
-            value: Value {
-                string: string_value,
-            },
-        })
-    }
-}
-
-/// 执行LENGTH函数（字节长度）
-fn execute_length(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        let length = match arg.value_type {
-            DataType::VarChar | DataType::Char | DataType::Text => {
-                let source_str = core::str::from_utf8(&arg.value.string)
-                    .map_err(|_| QueryExecutionError::TypeMismatch)?
-                    .trim_end_matches(char::from(0));
-                source_str.len() as u64
-            }
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        Ok(TypedValue {
-            value_type: DataType::UInt64,
-            value: Value { u64: length },
-        })
-    }
-}
-
-/// 执行CHAR_LENGTH函数（字符长度，UTF-8感知）
-fn execute_char_length(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        let char_count = match arg.value_type {
-            DataType::VarChar | DataType::Char | DataType::Text => {
-                // 使用UTF-8处理器计算字符长度
-                let char_count = crate::utf8::get_global_utf8_processor().char_length(&arg.value.string);
-                char_count as u64
-            }
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        Ok(TypedValue {
-            value_type: DataType::UInt64,
-            value: Value { u64: char_count },
-        })
-    }
-}
-
-// ------------------------ 数学函数实现 ------------------------
-
-/// 执行ABS函数
-fn execute_abs(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        match arg.value_type {
-            DataType::Int8 => Ok(TypedValue {
-                value_type: DataType::Int8,
-                value: Value {
-                    i8: arg.value.i8.abs(),
-                },
-            }),
-            DataType::Int16 => Ok(TypedValue {
-                value_type: DataType::Int16,
-                value: Value {
-                    i16: arg.value.i16.abs(),
-                },
-            }),
-            DataType::Int32 => Ok(TypedValue {
-                value_type: DataType::Int32,
-                value: Value {
-                    i32: arg.value.i32.abs(),
-                },
-            }),
-            DataType::Int64 => Ok(TypedValue {
-                value_type: DataType::Int64,
-                value: Value {
-                    i64: arg.value.i64.abs(),
-                },
-            }),
-            DataType::Float32 => Ok(TypedValue {
-                value_type: DataType::Float32,
-                value: Value {
-                    float32: arg.value.float32.abs(),
-                },
-            }),
-            DataType::Float64 => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: arg.value.float64.abs(),
-                },
-            }),
-            _ => Err(QueryExecutionError::TypeMismatch),
-        }
-    }
-}
-
-/// 执行SQRT函数
-fn execute_sqrt(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        let value = match arg.value_type {
-            DataType::UInt8 => arg.value.u8 as f64,
-            DataType::UInt16 => arg.value.u16 as f64,
-            DataType::UInt32 => arg.value.u32 as f64,
-            DataType::UInt64 => arg.value.u64 as f64,
-            DataType::Int8 => arg.value.i8 as f64,
-            DataType::Int16 => arg.value.i16 as f64,
-            DataType::Int32 => arg.value.i32 as f64,
-            DataType::Int64 => arg.value.i64 as f64,
-            DataType::Float32 => arg.value.float32 as f64,
-            DataType::Float64 => arg.value.float64,
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        #[cfg(feature = "std")]
-        let result = value.sqrt();
-        #[cfg(not(feature = "std"))]
-        let result = 0.0;
-
-        Ok(TypedValue {
-            value_type: DataType::Float64,
-            value: Value { float64: result },
-        })
-    }
-}
-
-/// 执行POWER函数
-fn execute_power(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let base_arg = &args[0];
-    let exponent_arg = &args[1];
-
-    unsafe {
-        let base = match base_arg.value_type {
-            DataType::UInt8 => base_arg.value.u8 as f64,
-            DataType::UInt16 => base_arg.value.u16 as f64,
-            DataType::UInt32 => base_arg.value.u32 as f64,
-            DataType::UInt64 => base_arg.value.u64 as f64,
-            DataType::Int8 => base_arg.value.i8 as f64,
-            DataType::Int16 => base_arg.value.i16 as f64,
-            DataType::Int32 => base_arg.value.i32 as f64,
-            DataType::Int64 => base_arg.value.i64 as f64,
-            DataType::Float32 => base_arg.value.float32 as f64,
-            DataType::Float64 => base_arg.value.float64,
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        let exponent = match exponent_arg.value_type {
-            DataType::UInt8 => exponent_arg.value.u8 as f64,
-            DataType::UInt16 => exponent_arg.value.u16 as f64,
-            DataType::UInt32 => exponent_arg.value.u32 as f64,
-            DataType::UInt64 => exponent_arg.value.u64 as f64,
-            DataType::Int8 => exponent_arg.value.i8 as f64,
-            DataType::Int16 => exponent_arg.value.i16 as f64,
-            DataType::Int32 => exponent_arg.value.i32 as f64,
-            DataType::Int64 => exponent_arg.value.i64 as f64,
-            DataType::Float32 => exponent_arg.value.float32 as f64,
-            DataType::Float64 => exponent_arg.value.float64,
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        #[cfg(feature = "std")]
-        let result = base.powf(exponent);
-        #[cfg(not(feature = "std"))]
-        let result = 0.0;
-
-        Ok(TypedValue {
-            value_type: DataType::Float64,
-            value: Value { float64: result },
-        })
-    }
-}
-
-/// 执行SIN函数
-fn execute_sin(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        let value = match arg.value_type {
-            DataType::UInt8 => arg.value.u8 as f64,
-            DataType::UInt16 => arg.value.u16 as f64,
-            DataType::UInt32 => arg.value.u32 as f64,
-            DataType::UInt64 => arg.value.u64 as f64,
-            DataType::Int8 => arg.value.i8 as f64,
-            DataType::Int16 => arg.value.i16 as f64,
-            DataType::Int32 => arg.value.i32 as f64,
-            DataType::Int64 => arg.value.i64 as f64,
-            DataType::Float32 => arg.value.float32 as f64,
-            DataType::Float64 => arg.value.float64,
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        #[cfg(feature = "std")]
-        let result = value.sin();
-        #[cfg(not(feature = "std"))]
-        let result = 0.0;
-
-        Ok(TypedValue {
-            value_type: DataType::Float64,
-            value: Value { float64: result },
-        })
-    }
-}
-
-/// 执行COS函数
-fn execute_cos(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        let value = match arg.value_type {
-            DataType::UInt8 => arg.value.u8 as f64,
-            DataType::UInt16 => arg.value.u16 as f64,
-            DataType::UInt32 => arg.value.u32 as f64,
-            DataType::UInt64 => arg.value.u64 as f64,
-            DataType::Int8 => arg.value.i8 as f64,
-            DataType::Int16 => arg.value.i16 as f64,
-            DataType::Int32 => arg.value.i32 as f64,
-            DataType::Int64 => arg.value.i64 as f64,
-            DataType::Float32 => arg.value.float32 as f64,
-            DataType::Float64 => arg.value.float64,
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        #[cfg(feature = "std")]
-        let result = value.cos();
-        #[cfg(not(feature = "std"))]
-        let result = 0.0;
-
-        Ok(TypedValue {
-            value_type: DataType::Float64,
-            value: Value { float64: result },
-        })
-    }
-}
-
-/// 执行LOG函数
-fn execute_log(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        let value = match arg.value_type {
-            DataType::UInt8 => arg.value.u8 as f64,
-            DataType::UInt16 => arg.value.u16 as f64,
-            DataType::UInt32 => arg.value.u32 as f64,
-            DataType::UInt64 => arg.value.u64 as f64,
-            DataType::Int8 => arg.value.i8 as f64,
-            DataType::Int16 => arg.value.i16 as f64,
-            DataType::Int32 => arg.value.i32 as f64,
-            DataType::Int64 => arg.value.i64 as f64,
-            DataType::Float32 => arg.value.float32 as f64,
-            DataType::Float64 => arg.value.float64,
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        #[cfg(feature = "std")]
-        let result = value.ln(); // 自然对数
-        #[cfg(not(feature = "std"))]
-        let result = 0.0;
-
-        Ok(TypedValue {
-            value_type: DataType::Float64,
-            value: Value { float64: result },
-        })
-    }
-}
-
-/// 执行EXP函数
-fn execute_exp(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        let value = match arg.value_type {
-            DataType::UInt8 => arg.value.u8 as f64,
-            DataType::UInt16 => arg.value.u16 as f64,
-            DataType::UInt32 => arg.value.u32 as f64,
-            DataType::UInt64 => arg.value.u64 as f64,
-            DataType::Int8 => arg.value.i8 as f64,
-            DataType::Int16 => arg.value.i16 as f64,
-            DataType::Int32 => arg.value.i32 as f64,
-            DataType::Int64 => arg.value.i64 as f64,
-            DataType::Float32 => arg.value.float32 as f64,
-            DataType::Float64 => arg.value.float64,
-            _ => return Err(QueryExecutionError::TypeMismatch),
-        };
-
-        #[cfg(feature = "std")]
-        let result = value.exp();
-        #[cfg(not(feature = "std"))]
-        let result = 0.0;
-
-        Ok(TypedValue {
-            value_type: DataType::Float64,
-            value: Value { float64: result },
-        })
-    }
-}
-
-/// 执行ROUND函数
-fn execute_round(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-    let decimals = if args.len() > 1 {
-        unsafe {
-            match args[1].value_type {
-                DataType::Int8 => args[1].value.i8 as i32,
-                DataType::Int16 => args[1].value.i16 as i32,
-                DataType::Int32 => args[1].value.i32,
-                DataType::Int64 => args[1].value.i64 as i32,
-                DataType::UInt8 => args[1].value.u8 as i32,
-                DataType::UInt16 => args[1].value.u16 as i32,
-                DataType::UInt32 => args[1].value.u32 as i32,
-                DataType::UInt64 => args[1].value.u64 as i32,
-                _ => 0,
-            }
-        }
-    } else {
-        0
-    };
-
-    unsafe {
-        match arg.value_type {
-            DataType::Float32 => {
-                #[cfg(feature = "std")]
-                let factor = 10.0f32.powi(decimals);
-                #[cfg(feature = "std")]
-                let result = (arg.value.float32 * factor).round() / factor;
-                #[cfg(not(feature = "std"))]
-                let result = arg.value.float32;
-                Ok(TypedValue {
-                    value_type: DataType::Float32,
-                    value: Value { float32: result },
-                })
-            }
-            DataType::Float64 => {
-                #[cfg(feature = "std")]
-                let factor = 10.0f64.powi(decimals);
-                #[cfg(feature = "std")]
-                let result = (arg.value.float64 * factor).round() / factor;
-                #[cfg(not(feature = "std"))]
-                let result = arg.value.float64;
-                Ok(TypedValue {
-                    value_type: DataType::Float64,
-                    value: Value { float64: result },
-                })
-            }
-            _ => {
-                // 对于整数类型，直接返回原值
-                Ok(arg.clone())
-            }
-        }
-    }
-}
-
-/// 执行CEIL函数
-fn execute_ceil(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        match arg.value_type {
-            DataType::Float32 => {
-                let result = {
-                    #[cfg(feature = "std")]
-                    let val = arg.value.float32.ceil();
-                    #[cfg(not(feature = "std"))]
-                    let val = arg.value.float32;
-                    val
-                };
-                Ok(TypedValue {
-                    value_type: DataType::Float32,
-                    value: Value { float32: result },
-                })
-            }
-            DataType::Float64 => {
-                let result = {
-                    #[cfg(feature = "std")]
-                    let val = arg.value.float64.ceil();
-                    #[cfg(not(feature = "std"))]
-                    let val = arg.value.float64;
-                    val
-                };
-                Ok(TypedValue {
-                    value_type: DataType::Float64,
-                    value: Value { float64: result },
-                })
-            }
-            _ => {
-                // 对于整数类型，直接返回原值
-                Ok(arg.clone())
-            }
-        }
-    }
-}
-
-/// 执行FLOOR函数
-fn execute_floor(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let arg = &args[0];
-
-    unsafe {
-        match arg.value_type {
-            DataType::Float32 => {
-                let result = {
-                    #[cfg(feature = "std")]
-                    let val = arg.value.float32.floor();
-                    #[cfg(not(feature = "std"))]
-                    let val = arg.value.float32;
-                    val
-                };
-                Ok(TypedValue {
-                    value_type: DataType::Float32,
-                    value: Value { float32: result },
-                })
-            }
-            DataType::Float64 => {
-                let result = {
-                    #[cfg(feature = "std")]
-                    let val = arg.value.float64.floor();
-                    #[cfg(not(feature = "std"))]
-                    let val = arg.value.float64;
-                    val
-                };
-                Ok(TypedValue {
-                    value_type: DataType::Float64,
-                    value: Value { float64: result },
-                })
-            }
-            _ => {
-                // 对于整数类型，直接返回原值
-                Ok(arg.clone())
-            }
-        }
-    }
-}
-
-/// 执行MOD函数
-fn execute_mod(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let dividend_arg = &args[0];
-    let divisor_arg = &args[1];
-
-    unsafe {
-        match (dividend_arg.value_type, divisor_arg.value_type) {
-            // 整数类型
-            (DataType::UInt8, DataType::UInt8) => Ok(TypedValue {
-                value_type: DataType::UInt8,
-                value: Value {
-                    u8: dividend_arg.value.u8 % divisor_arg.value.u8,
-                },
-            }),
-            (DataType::UInt16, DataType::UInt16) => Ok(TypedValue {
-                value_type: DataType::UInt16,
-                value: Value {
-                    u16: dividend_arg.value.u16 % divisor_arg.value.u16,
-                },
-            }),
-            (DataType::UInt32, DataType::UInt32) => Ok(TypedValue {
-                value_type: DataType::UInt32,
-                value: Value {
-                    u32: dividend_arg.value.u32 % divisor_arg.value.u32,
-                },
-            }),
-            (DataType::UInt64, DataType::UInt64) => Ok(TypedValue {
-                value_type: DataType::UInt64,
-                value: Value {
-                    u64: dividend_arg.value.u64 % divisor_arg.value.u64,
-                },
-            }),
-            (DataType::Int8, DataType::Int8) => Ok(TypedValue {
-                value_type: DataType::Int8,
-                value: Value {
-                    i8: dividend_arg.value.i8 % divisor_arg.value.i8,
-                },
-            }),
-            (DataType::Int16, DataType::Int16) => Ok(TypedValue {
-                value_type: DataType::Int16,
-                value: Value {
-                    i16: dividend_arg.value.i16 % divisor_arg.value.i16,
-                },
-            }),
-            (DataType::Int32, DataType::Int32) => Ok(TypedValue {
-                value_type: DataType::Int32,
-                value: Value {
-                    i32: dividend_arg.value.i32 % divisor_arg.value.i32,
-                },
-            }),
-            (DataType::Int64, DataType::Int64) => Ok(TypedValue {
-                value_type: DataType::Int64,
-                value: Value {
-                    i64: dividend_arg.value.i64 % divisor_arg.value.i64,
-                },
-            }),
-            // 浮点数类型
-            (DataType::Float32, DataType::Float32) => Ok(TypedValue {
-                value_type: DataType::Float32,
-                value: Value {
-                    float32: dividend_arg.value.float32 % divisor_arg.value.float32,
-                },
-            }),
-            (DataType::Float64, DataType::Float64) => Ok(TypedValue {
-                value_type: DataType::Float64,
-                value: Value {
-                    float64: dividend_arg.value.float64 % divisor_arg.value.float64,
-                },
-            }),
-            // 混合类型，转换为浮点数
-            _ => {
-                let dividend = match dividend_arg.value_type {
-                    DataType::UInt8 => dividend_arg.value.u8 as f64,
-                    DataType::UInt16 => dividend_arg.value.u16 as f64,
-                    DataType::UInt32 => dividend_arg.value.u32 as f64,
-                    DataType::UInt64 => dividend_arg.value.u64 as f64,
-                    DataType::Int8 => dividend_arg.value.i8 as f64,
-                    DataType::Int16 => dividend_arg.value.i16 as f64,
-                    DataType::Int32 => dividend_arg.value.i32 as f64,
-                    DataType::Int64 => dividend_arg.value.i64 as f64,
-                    DataType::Float32 => dividend_arg.value.float32 as f64,
-                    DataType::Float64 => dividend_arg.value.float64,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
-
-                let divisor = match divisor_arg.value_type {
-                    DataType::UInt8 => divisor_arg.value.u8 as f64,
-                    DataType::UInt16 => divisor_arg.value.u16 as f64,
-                    DataType::UInt32 => divisor_arg.value.u32 as f64,
-                    DataType::UInt64 => divisor_arg.value.u64 as f64,
-                    DataType::Int8 => divisor_arg.value.i8 as f64,
-                    DataType::Int16 => divisor_arg.value.i16 as f64,
-                    DataType::Int32 => divisor_arg.value.i32 as f64,
-                    DataType::Int64 => divisor_arg.value.i64 as f64,
-                    DataType::Float32 => divisor_arg.value.float32 as f64,
-                    DataType::Float64 => divisor_arg.value.float64,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
-
-                let result = dividend % divisor;
-
-                Ok(TypedValue {
-                    value_type: DataType::Float64,
-                    value: Value { float64: result },
-                })
-            }
-        }
-    }
-}
-
-/// 执行没有FROM子句的表达式查询
-fn execute_expression_query(
-    db: &mut RemDb,
-    query: &SqlQuery,
-) -> Result<ResultSet, QueryExecutionError> {
-    eprintln!("DEBUG execute_expression_query: called");
-    
-    // 确定要返回的列表达式
-    let columns = query.columns.clone();
-
-    eprintln!("DEBUG execute_expression_query: columns count = {}", columns.len());
-
-    // 生成结果集的列名
-    let result_columns = columns
-        .iter()
-        .map(|expr| match expr {
-            Expression::Field { name, alias } => alias.clone().unwrap_or_else(|| name.clone()),
-            Expression::FunctionCall { alias, name, .. } => {
-                alias.clone().unwrap_or_else(|| name.clone())
-            }
-            Expression::Constant { alias, .. } => {
-                alias.clone().unwrap_or_else(|| "constant".to_string())
-            }
-            Expression::BinaryOp { alias, .. } => {
-                alias.clone().unwrap_or_else(|| "binary_op".to_string())
-            }
-            Expression::LogicalOp { alias, .. } => {
-                alias.clone().unwrap_or_else(|| "logical_op".to_string())
-            }
-            Expression::UnaryOp { alias, .. } => {
-                alias.clone().unwrap_or_else(|| "unary_op".to_string())
-            }
-        })
-        .collect();
-
-    // 创建结果集
-    let mut result_set = ResultSet::new(result_columns);
-
-    // 评估每个表达式
-    let mut row_values = Vec::with_capacity(columns.len());
-    for expr in &columns {
-        let value = evaluate_expression_without_table(db, expr)?;
-        row_values.push(value);
-    }
-
-    // 添加行到结果集
-    eprintln!("DEBUG execute_expression_query: adding row with {} values", row_values.len());
-    result_set.add_row(row_values);
-
-    eprintln!("DEBUG execute_expression_query: result_set row_count = {}", result_set.row_count());
-    
-    Ok(result_set)
-}
-
-/// 评估表达式（没有表上下文）
-fn evaluate_expression_without_table(
-    db: &mut RemDb,
-    expr: &Expression,
-) -> Result<TypedValue, QueryExecutionError> {
-    evaluate_expression_without_table_with_depth(db, expr, 0)
-}
-
-fn evaluate_expression_without_table_with_depth(
-    db: &mut RemDb,
-    expr: &Expression,
-    depth: usize,
-) -> Result<TypedValue, QueryExecutionError> {
-    // Check recursion depth to prevent stack overflow
-    const MAX_RECURSION_DEPTH: usize = 100;
-    if depth > MAX_RECURSION_DEPTH {
-        return Err(QueryExecutionError::InternalError);
-    }
-    match expr {
-        Expression::Field {
-            name: field_name, ..
-        } => {
-            // 没有表上下文时，字段引用是无效的
-            Err(QueryExecutionError::FieldNotFound)
-        }
-        Expression::FunctionCall { name, args, .. } => {
-            // 评估函数参数
-            let mut evaluated_args = Vec::with_capacity(args.len());
-            for arg in args {
-                evaluated_args.push(evaluate_expression_without_table_with_depth(db, arg, depth + 1)?);
-            }
-
-            // 执行函数调用
-            execute_function_call(name, &evaluated_args)
-        }
-        Expression::Constant { value, .. } => {
-            // 返回常量值
-            // 需要将 query_parser::Value 转换为 TypedValue
-            match value {
-                crate::sql::query_parser::Value::Integer(i) => {
-                    Ok(TypedValue {
-                        value_type: DataType::Int64,
-                        value: Value { i64: *i },
-                    })
-                }
-                crate::sql::query_parser::Value::Float(f) => {
-                    Ok(TypedValue {
-                        value_type: DataType::Float64,
-                        value: Value { float64: *f },
-                    })
-                }
-                crate::sql::query_parser::Value::String(s) => {
-                    let mut buf = [0; MAX_STRING_LEN];
-                    let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-                    buf[..len].copy_from_slice(s.as_bytes());
-                    Ok(TypedValue {
-                        value_type: DataType::VarChar,
-                        value: Value { string: buf },
-                    })
-                }
-                crate::sql::query_parser::Value::Boolean(b) => {
-                    Ok(TypedValue {
-                        value_type: DataType::Bool,
-                        value: Value { bool: *b },
-                    })
-                }
-                crate::sql::query_parser::Value::Null => {
-                    Ok(TypedValue {
-                        value_type: DataType::Json,
-                        value: Value { json_storage: crate::types::JsonStorage::Null },
-                    })
-                }
-                crate::sql::query_parser::Value::Identifier(_) => {
-                    Err(QueryExecutionError::InvalidValue)
-                }
-                crate::sql::query_parser::Value::Json(s) => {
-                    let mut buf = [0u8; 256];
-                    let len = core::cmp::min(s.len(), 256);
-                    buf[..len].copy_from_slice(s.as_bytes());
-                    Ok(TypedValue {
-                        value_type: DataType::Json,
-                        value: Value { json_storage: JsonStorage::Inline(buf) },
-                    })
-                }
-            }
-        }
-        Expression::BinaryOp { op, left, right, .. } => {
-            // 评估左右操作数
-            let left_val = evaluate_expression_without_table_with_depth(db, left, depth + 1)?;
-            let right_val = evaluate_expression_without_table_with_depth(db, right, depth + 1)?;
-
-            // 执行二元运算
-            evaluate_binary_op(left_val, *op, right_val)
-        }
-        Expression::LogicalOp { op, left, right, .. } => {
-            // 评估左右操作数
-            let left_val = evaluate_expression_without_table_with_depth(db, left, depth + 1)?;
-            let right_val = evaluate_expression_without_table_with_depth(db, right, depth + 1)?;
-
-            // 执行逻辑运算
-            unsafe {
-                // 将左右操作数转换为布尔值
-                let left_bool = match left_val.value_type {
-                    DataType::Bool => left_val.value.bool,
-                    DataType::Int8 => left_val.value.i8 != 0,
-                    DataType::Int16 => left_val.value.i16 != 0,
-                    DataType::Int32 => left_val.value.i32 != 0,
-                    DataType::Int64 => left_val.value.i64 != 0,
-                    DataType::UInt8 => left_val.value.u8 != 0,
-                    DataType::UInt16 => left_val.value.u16 != 0,
-                    DataType::UInt32 => left_val.value.u32 != 0,
-                    DataType::UInt64 => left_val.value.u64 != 0,
-                    DataType::Float32 => left_val.value.float32 != 0.0,
-                    DataType::Float64 => left_val.value.float64 != 0.0,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
-
-                let right_bool = match right_val.value_type {
-                    DataType::Bool => right_val.value.bool,
-                    DataType::Int8 => right_val.value.i8 != 0,
-                    DataType::Int16 => right_val.value.i16 != 0,
-                    DataType::Int32 => right_val.value.i32 != 0,
-                    DataType::Int64 => right_val.value.i64 != 0,
-                    DataType::UInt8 => right_val.value.u8 != 0,
-                    DataType::UInt16 => right_val.value.u16 != 0,
-                    DataType::UInt32 => right_val.value.u32 != 0,
-                    DataType::UInt64 => right_val.value.u64 != 0,
-                    DataType::Float32 => right_val.value.float32 != 0.0,
-                    DataType::Float64 => right_val.value.float64 != 0.0,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
-
-                // 执行逻辑操作
-                let result = match op {
-                    crate::sql::query_parser::LogicalOperator::And => left_bool && right_bool,
-                    crate::sql::query_parser::LogicalOperator::Or => left_bool || right_bool,
-                };
-
-                Ok(TypedValue {
-                    value_type: DataType::Bool,
-                    value: Value { bool: result },
-                })
-            }
-        }
-        Expression::UnaryOp { op, operand, .. } => {
-            // 评估操作数
-            let operand_val = evaluate_expression_without_table_with_depth(db, operand, depth + 1)?;
-
-            // 执行一元运算
-            evaluate_unary_op(*op, operand_val)
-        }
-    }
-}
-
-/// 从TypedValue中提取JSON字符串
-fn typed_value_to_json_string(arg: &TypedValue) -> Result<String, QueryExecutionError> {
-    match arg.value_type {
-        DataType::Json => {
-            let json_storage = unsafe { &arg.value.json_storage };
-            match json_storage {
-                JsonStorage::Inline(data) => {
-                    let len = data.iter().rposition(|&b| b == 0).unwrap_or(256);
-                    eprintln!("DEBUG typed_value_to_json_string: data={:?}", data);
-                    eprintln!("DEBUG typed_value_to_json_string: len={}", len);
-                    let result = String::from_utf8_lossy(&data[..len]).to_string();
-                    eprintln!("DEBUG typed_value_to_json_string: result={}", result);
-                    Ok(result)
-                }
-                JsonStorage::External { pool_id, offset, length } => {
-                    let pool_manager = crate::json::memory_pool::get_global_json_pool_manager()
-                        .ok_or(QueryExecutionError::InternalError)?;
-                    let pool = pool_manager.get_pool(*pool_id)
-                        .ok_or(QueryExecutionError::InternalError)?;
-                    
-                    if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
-                        let data = unsafe { core::slice::from_raw_parts(data_ptr, *length as usize) };
-                        Ok(String::from_utf8_lossy(data).to_string())
-                    } else {
-                        Err(QueryExecutionError::InternalError)
-                    }
-                }
-                JsonStorage::Null => Ok("null".to_string()),
-            }
-        }
-        _ => Err(QueryExecutionError::TypeMismatch),
-    }
-}
-
-/// 从TypedValue中提取字符串
-fn typed_value_to_string(arg: &TypedValue) -> Result<String, QueryExecutionError> {
-    match arg.value_type {
-        DataType::VarChar | DataType::Char | DataType::Text => {
-            let data = unsafe { &arg.value.string };
-            let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
-            Ok(String::from_utf8_lossy(&data[..len]).to_string())
-        }
-        DataType::Int8 => {
-            Ok(unsafe { arg.value.i8 }.to_string())
-        }
-        DataType::Int16 => {
-            Ok(unsafe { arg.value.i16 }.to_string())
-        }
-        DataType::Int32 => {
-            Ok(unsafe { arg.value.i32 }.to_string())
-        }
-        DataType::Int64 => {
-            Ok(unsafe { arg.value.i64 }.to_string())
-        }
-        DataType::UInt8 => {
-            Ok(unsafe { arg.value.u8 }.to_string())
-        }
-        DataType::UInt16 => {
-            Ok(unsafe { arg.value.u16 }.to_string())
-        }
-        DataType::UInt32 => {
-            Ok(unsafe { arg.value.u32 }.to_string())
-        }
-        DataType::UInt64 => {
-            Ok(unsafe { arg.value.u64 }.to_string())
-        }
-        DataType::Float32 => {
-            Ok(unsafe { arg.value.float32 }.to_string())
-        }
-        DataType::Float64 => {
-            Ok(unsafe { arg.value.float64 }.to_string())
-        }
-        DataType::Bool => {
-            Ok(unsafe { arg.value.bool }.to_string())
-        }
-        DataType::Json => {
-            typed_value_to_json_string(arg)
-        }
-        _ => Err(QueryExecutionError::TypeMismatch),
-    }
-}
-
-/// 执行JSON_EXTRACT函数
-fn execute_json_extract(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let json_str = typed_value_to_json_string(&args[0])?;
-    let path = typed_value_to_string(&args[1])?;
-
-    let doc = crate::json::document::JsonDocument::from_json(&json_str)
-        .map_err(|_| QueryExecutionError::InvalidValue)?;
-
-    match crate::json::document::json_extract(&doc, &path) {
-        crate::json::document::JsonQueryResult::Scalar(s) => {
-            eprintln!("DEBUG execute_json_extract: extracted scalar value: {}", s);
-            // Try to parse as different types to enable comparisons
-            if let Ok(num) = s.parse::<i64>() {
-                eprintln!("DEBUG execute_json_extract: parsed as i64: {}", num);
-                Ok(TypedValue {
-                    value_type: DataType::Int64,
-                    value: Value { i64: num },
-                })
-            } else if let Ok(num) = s.parse::<f64>() {
-                eprintln!("DEBUG execute_json_extract: parsed as f64: {}", num);
-                Ok(TypedValue {
-                    value_type: DataType::Float64,
-                    value: Value { float64: num },
-                })
-            } else if s == "true" || s == "false" {
-                eprintln!("DEBUG execute_json_extract: parsed as bool: {}", s);
-                Ok(TypedValue {
-                    value_type: DataType::Bool,
-                    value: Value { bool: s == "true" },
-                })
-            } else {
-                // Default to string
-                eprintln!("DEBUG execute_json_extract: defaulting to string: {}", s);
-                let mut buf = [0; MAX_STRING_LEN];
-                let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-                buf[..len].copy_from_slice(s.as_bytes());
-                Ok(TypedValue {
-                    value_type: DataType::VarChar,
-                    value: Value { string: buf },
-                })
-            }
-        }
-        crate::json::document::JsonQueryResult::Object(_) | 
-        crate::json::document::JsonQueryResult::Array(_) => {
-            let result_json = match crate::json::document::json_extract(&doc, &path) {
-                crate::json::document::JsonQueryResult::Object(obj_doc) => {
-                    obj_doc.to_json().unwrap_or_else(|_| "null".to_string())
-                }
-                crate::json::document::JsonQueryResult::Array(arr) => {
-                    let json_str = arr.iter()
-                        .map(|item| match item {
-                            crate::json::document::JsonQueryResult::Scalar(s) => s.clone(),
-                            _ => "null".to_string(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    format!("[{}]", json_str)
-                }
-                _ => "null".to_string(),
-            };
-            
-            let mut buf = [0u8; 256];
-            let len = core::cmp::min(result_json.len(), 256);
-            buf[..len].copy_from_slice(result_json.as_bytes());
-            Ok(TypedValue {
-                value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
-            })
-        }
-        crate::json::document::JsonQueryResult::None => {
-            let mut buf = [0u8; 256];
-            Ok(TypedValue {
-                value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
-            })
-        }
-    }
-}
-
-/// 执行JSON_VALUE函数
-fn execute_json_value(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let json_str = typed_value_to_json_string(&args[0])?;
-    let path = typed_value_to_string(&args[1])?;
-
-    let doc = crate::json::document::JsonDocument::from_json(&json_str)
-        .map_err(|_| QueryExecutionError::InvalidValue)?;
-
-    match crate::json::document::json_extract(&doc, &path) {
-        crate::json::document::JsonQueryResult::Scalar(s) => {
-            let mut buf = [0; MAX_STRING_LEN];
-            let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-            buf[..len].copy_from_slice(s.as_bytes());
-            Ok(TypedValue {
-                value_type: DataType::VarChar,
-                value: Value { string: buf },
-            })
-        }
-        _ => {
-            let mut buf = [0; MAX_STRING_LEN];
-            Ok(TypedValue {
-                value_type: DataType::VarChar,
-                value: Value { string: buf },
-            })
-        }
-    }
-}
-
-/// 执行JSON_QUERY函数
-fn execute_json_query(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let json_str = typed_value_to_json_string(&args[0])?;
-    let path = typed_value_to_string(&args[1])?;
-
-    let doc = crate::json::document::JsonDocument::from_json(&json_str)
-        .map_err(|_| QueryExecutionError::InvalidValue)?;
-
-    match crate::json::document::json_extract(&doc, &path) {
-        crate::json::document::JsonQueryResult::Object(obj_doc) => {
-            let result_json = obj_doc.to_json()
-                .unwrap_or_else(|_| "null".to_string());
-            let mut buf = [0u8; 256];
-            let len = core::cmp::min(result_json.len(), 256);
-            buf[..len].copy_from_slice(result_json.as_bytes());
-            Ok(TypedValue {
-                value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
-            })
-        }
-        crate::json::document::JsonQueryResult::Array(arr) => {
-            let json_str = arr.iter()
-                .map(|item| match item {
-                    crate::json::document::JsonQueryResult::Scalar(s) => s.clone(),
-                    _ => "null".to_string(),
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            let result_json = format!("[{}]", json_str);
-            let mut buf = [0u8; 256];
-            let len = core::cmp::min(result_json.len(), 256);
-            buf[..len].copy_from_slice(result_json.as_bytes());
-            Ok(TypedValue {
-                value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
-            })
-        }
-        _ => {
-            let mut buf = [0u8; 256];
-            Ok(TypedValue {
-                value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
-            })
-        }
-    }
-}
-
-/// 执行JSON_HAS函数
-fn execute_json_has(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let json_str = typed_value_to_json_string(&args[0])?;
-    let path = typed_value_to_string(&args[1])?;
-
-    let doc = crate::json::document::JsonDocument::from_json(&json_str)
-        .map_err(|_| QueryExecutionError::InvalidValue)?;
-
-    let has = crate::json::document::json_has(&doc, &path);
-    Ok(TypedValue {
-        value_type: DataType::Bool,
-        value: Value { bool: has },
-    })
-}
-
-/// 执行JSON_TYPE函数
-fn execute_json_type(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let json_str = typed_value_to_json_string(&args[0])?;
-    let path = typed_value_to_string(&args[1])?;
-
-    let doc = crate::json::document::JsonDocument::from_json(&json_str)
-        .map_err(|_| QueryExecutionError::InvalidValue)?;
-
-    let type_str = crate::json::document::json_type(&doc, &path);
-    let mut buf = [0; MAX_STRING_LEN];
-    let len = core::cmp::min(type_str.len(), MAX_STRING_LEN);
-    buf[..len].copy_from_slice(type_str.as_bytes());
-    Ok(TypedValue {
-        value_type: DataType::VarChar,
-        value: Value { string: buf },
-    })
-}
-
-/// 执行JSON_SET函数
-fn execute_json_set(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 3 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let json_str = typed_value_to_json_string(&args[0])?;
-    let path = typed_value_to_string(&args[1])?;
-    
-    // Convert the value to proper JSON format based on its type
-    let value_json_str = unsafe {
-        match args[2].value_type {
-            DataType::Json => {
-                typed_value_to_json_string(&args[2])?
-            }
-            DataType::VarChar | DataType::Char | DataType::Text => {
-                let data = &args[2].value.string;
-                let len = data.iter().rposition(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
-                let s = String::from_utf8_lossy(&data[..len]).to_string();
-                format!("\"{}\"", s)
-            }
-            DataType::Int8 => format!("{}", args[2].value.i8),
-            DataType::Int16 => format!("{}", args[2].value.i16),
-            DataType::Int32 => format!("{}", args[2].value.i32),
-            DataType::Int64 => format!("{}", args[2].value.i64),
-            DataType::UInt8 => format!("{}", args[2].value.u8),
-            DataType::UInt16 => format!("{}", args[2].value.u16),
-            DataType::UInt32 => format!("{}", args[2].value.u32),
-            DataType::UInt64 => format!("{}", args[2].value.u64),
-            DataType::Float32 => format!("{}", args[2].value.float32),
-            DataType::Float64 => format!("{}", args[2].value.float64),
-            DataType::Bool => {
-                if args[2].value.bool { "true".to_string() } else { "false".to_string() }
-            }
-            _ => "null".to_string(),
-        }
-    };
-
-    let mut doc = crate::json::document::JsonDocument::from_json(&json_str)
-        .map_err(|e| {
-            eprintln!("DEBUG execute_json_set: from_json failed with error: {:?}", e);
-            QueryExecutionError::InvalidValue
-        })?;
-
-    crate::json::document::json_set(&mut doc, &path, &value_json_str)
-        .map_err(|e| {
-            eprintln!("DEBUG execute_json_set: json_set failed with error: {:?}", e);
-            QueryExecutionError::InternalError
-        })?;
-
-    let new_json_str = doc.to_json()
-        .map_err(|e| {
-            eprintln!("DEBUG execute_json_set: to_json failed with error: {:?}", e);
-            QueryExecutionError::InternalError
-        })?;
-
-    let mut buf = [0u8; 256];
-    let len = core::cmp::min(new_json_str.len(), 256);
-    buf[..len].copy_from_slice(new_json_str.as_bytes());
-    Ok(TypedValue {
-        value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
-    })
-}
-
-/// 执行JSON_REMOVE函数
-fn execute_json_remove(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let json_str = typed_value_to_json_string(&args[0])?;
-    eprintln!("DEBUG execute_json_remove: json_str from arg[0] = {}", json_str);
-    let path = typed_value_to_string(&args[1])?;
-    eprintln!("DEBUG execute_json_remove: path from arg[1] = {}", path);
-
-    let mut doc = crate::json::document::JsonDocument::from_json(&json_str)
-        .map_err(|_| QueryExecutionError::InvalidValue)?;
-    eprintln!("DEBUG execute_json_remove: doc parsed successfully");
-
-    crate::json::document::json_remove(&mut doc, &path)
-        .map_err(|e| {
-            eprintln!("DEBUG execute_json_remove: json_remove failed with error: {:?}", e);
-            QueryExecutionError::InternalError
-        })?;
-
-    let new_json_str = doc.to_json()
-        .map_err(|_| QueryExecutionError::InternalError)?;
-
-    let mut buf = [0u8; 256];
-    let len = core::cmp::min(new_json_str.len(), 256);
-    buf[..len].copy_from_slice(new_json_str.as_bytes());
-    Ok(TypedValue {
-        value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
-    })
-}
-
-/// 执行JSON_MERGE_PATCH函数
-fn execute_json_merge_patch(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let json_str = typed_value_to_json_string(&args[0])?;
-    
-    // Convert the patch to proper JSON format based on its type
-    let patch_json_str = unsafe {
-        match args[1].value_type {
-            DataType::Json => {
-                typed_value_to_json_string(&args[1])?
-            }
-            DataType::VarChar | DataType::Char | DataType::Text => {
-                let data = &args[1].value.string;
-                let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
-                let s = String::from_utf8_lossy(&data[..len]).to_string();
-                s
-            }
-            DataType::Int8 => format!("{}", args[1].value.i8),
-            DataType::Int16 => format!("{}", args[1].value.i16),
-            DataType::Int32 => format!("{}", args[1].value.i32),
-            DataType::Int64 => format!("{}", args[1].value.i64),
-            DataType::UInt8 => format!("{}", args[1].value.u8),
-            DataType::UInt16 => format!("{}", args[1].value.u16),
-            DataType::UInt32 => format!("{}", args[1].value.u32),
-            DataType::UInt64 => format!("{}", args[1].value.u64),
-            DataType::Float32 => format!("{}", args[1].value.float32),
-            DataType::Float64 => format!("{}", args[1].value.float64),
-            DataType::Bool => {
-                if args[1].value.bool { "true".to_string() } else { "false".to_string() }
-            }
-            _ => "null".to_string(),
-        }
-    };
-
-    let mut doc = crate::json::document::JsonDocument::from_json(&json_str)
-        .map_err(|_| QueryExecutionError::InvalidValue)?;
-
-    crate::json::document::json_merge_patch(&mut doc, &patch_json_str)
-        .map_err(|_| QueryExecutionError::InternalError)?;
-
-    let new_json_str = doc.to_json()
-        .map_err(|_| QueryExecutionError::InternalError)?;
-
-    let mut buf = [0u8; 256];
-    let len = core::cmp::min(new_json_str.len(), 256);
-    buf[..len].copy_from_slice(new_json_str.as_bytes());
-    Ok(TypedValue {
-        value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
-    })
-}
-
-/// 执行JSON_ARRAY_APPEND函数
-fn execute_json_array_append(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 3 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let json_str = typed_value_to_json_string(&args[0])?;
-    let path = typed_value_to_string(&args[1])?;
-    
-    // Convert the value to proper JSON format based on its type
-    let value_json_str = unsafe {
-        match args[2].value_type {
-            DataType::Json => {
-                typed_value_to_json_string(&args[2])?
-            }
-            DataType::VarChar | DataType::Char | DataType::Text => {
-                let data = &args[2].value.string;
-                let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
-                let s = String::from_utf8_lossy(&data[..len]).to_string();
-                format!("\"{}\"", s)
-            }
-            DataType::Int8 => format!("{}", args[2].value.i8),
-            DataType::Int16 => format!("{}", args[2].value.i16),
-            DataType::Int32 => format!("{}", args[2].value.i32),
-            DataType::Int64 => format!("{}", args[2].value.i64),
-            DataType::UInt8 => format!("{}", args[2].value.u8),
-            DataType::UInt16 => format!("{}", args[2].value.u16),
-            DataType::UInt32 => format!("{}", args[2].value.u32),
-            DataType::UInt64 => format!("{}", args[2].value.u64),
-            DataType::Float32 => format!("{}", args[2].value.float32),
-            DataType::Float64 => format!("{}", args[2].value.float64),
-            DataType::Bool => {
-                if args[2].value.bool { "true".to_string() } else { "false".to_string() }
-            }
-            _ => "null".to_string(),
-        }
-    };
-
-    let mut doc = crate::json::document::JsonDocument::from_json(&json_str)
-        .map_err(|_| QueryExecutionError::InvalidValue)?;
-
-    crate::json::document::json_set(&mut doc, &path, &value_json_str)
-        .map_err(|_| QueryExecutionError::InternalError)?;
-
-    let new_json_str = doc.to_json()
-        .map_err(|_| QueryExecutionError::InternalError)?;
-
-    let mut buf = [0u8; 256];
-    let len = core::cmp::min(new_json_str.len(), 256);
-    buf[..len].copy_from_slice(new_json_str.as_bytes());
-    Ok(TypedValue {
-        value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
-    })
-}
-
-/// 执行JSON_ARRAY_LENGTH函数
-fn execute_json_array_length(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let json_str = typed_value_to_json_string(&args[0])?;
-
-    let doc = crate::json::document::JsonDocument::from_json(&json_str)
-        .map_err(|_| QueryExecutionError::InvalidValue)?;
-
-    match crate::json::document::json_extract(&doc, "$") {
-        crate::json::document::JsonQueryResult::Array(arr) => {
-            let length = arr.len() as u64;
-            Ok(TypedValue {
-                value_type: DataType::UInt64,
-                value: Value { u64: length },
-            })
-        }
-        _ => {
-            Ok(TypedValue {
-                value_type: DataType::UInt64,
-                value: Value { u64: 0 },
-            })
-        }
-    }
-}
-
-/// 执行JSON_ARRAY函数
-fn execute_json_array(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    eprintln!("DEBUG execute_json_array: called with {} args", args.len());
-    
-    if args.is_empty() {
-        let mut buf = [0u8; 256];
-        let json_str = "[]";
-        let len = core::cmp::min(json_str.len(), 256);
-        buf[..len].copy_from_slice(json_str.as_bytes());
-        eprintln!("DEBUG execute_json_array: returning empty array");
-        return Ok(TypedValue {
-            value_type: DataType::Json,
-            value: Value { json_storage: JsonStorage::Inline(buf) },
-        });
-    }
-
-    let mut array_items = Vec::new();
-    for arg in args {
-        let item_str: String = unsafe {
-            match arg.value_type {
-                DataType::Json => {
-                    typed_value_to_json_string(arg)?
-                }
-                DataType::VarChar | DataType::Char | DataType::Text => {
-                    let data = &arg.value.string;
-                    let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
-                    let s = String::from_utf8_lossy(&data[..len]).to_string();
-                    format!("\"{}\"", s)
-                }
-                DataType::Int8 => format!("{}", arg.value.i8),
-                DataType::Int16 => format!("{}", arg.value.i16),
-                DataType::Int32 => format!("{}", arg.value.i32),
-                DataType::Int64 => format!("{}", arg.value.i64),
-                DataType::UInt8 => format!("{}", arg.value.u8),
-                DataType::UInt16 => format!("{}", arg.value.u16),
-                DataType::UInt32 => format!("{}", arg.value.u32),
-                DataType::UInt64 => format!("{}", arg.value.u64),
-                DataType::Float32 => format!("{}", arg.value.float32),
-                DataType::Float64 => format!("{}", arg.value.float64),
-                DataType::Bool => {
-                    if arg.value.bool { "true".to_string() } else { "false".to_string() }
-                }
-                _ => "null".to_string(),
-            }
-        };
-        array_items.push(item_str);
-    }
-
-    let json_str = format!("[{}]", array_items.join(","));
-    eprintln!("DEBUG execute_json_array: json_str = {}", json_str);
-    let mut buf = [0u8; 256];
-    let len = core::cmp::min(json_str.len(), 256);
-    buf[..len].copy_from_slice(json_str.as_bytes());
-    eprintln!("DEBUG execute_json_array: returning json, len = {}", len);
-    Ok(TypedValue {
-        value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
-    })
-}
-
-/// 执行JSON_OBJECT函数
-fn execute_json_object(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() || args.len() % 2 != 0 {
-        return Err(QueryExecutionError::TypeMismatch);
-    }
-
-    let mut object_items = Vec::new();
-    for i in (0..args.len()).step_by(2) {
-        let key_str = typed_value_to_string(&args[i])?;
-        let value_str: String = unsafe {
-            match args[i + 1].value_type {
-                DataType::Json => {
-                    typed_value_to_json_string(&args[i + 1])?
-                }
-                DataType::VarChar | DataType::Char | DataType::Text => {
-                    let data = &args[i + 1].value.string;
-                    let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
-                    let s = String::from_utf8_lossy(&data[..len]).to_string();
-                    format!("\"{}\"", s)
-                }
-                DataType::Int8 => format!("{}", args[i + 1].value.i8),
-                DataType::Int16 => format!("{}", args[i + 1].value.i16),
-                DataType::Int32 => format!("{}", args[i + 1].value.i32),
-                DataType::Int64 => format!("{}", args[i + 1].value.i64),
-                DataType::UInt8 => format!("{}", args[i + 1].value.u8),
-                DataType::UInt16 => format!("{}", args[i + 1].value.u16),
-                DataType::UInt32 => format!("{}", args[i + 1].value.u32),
-                DataType::UInt64 => format!("{}", args[i + 1].value.u64),
-                DataType::Float32 => format!("{}", args[i + 1].value.float32),
-                DataType::Float64 => format!("{}", args[i + 1].value.float64),
-                DataType::Bool => {
-                    if args[i + 1].value.bool { "true".to_string() } else { "false".to_string() }
-                }
-                _ => "null".to_string(),
-            }
-        };
-        object_items.push(format!("\"{}\":{}", key_str, value_str));
-    }
-
-    let json_str = format!("{{{}}}", object_items.join(","));
-    let mut buf = [0u8; 256];
-    let len = core::cmp::min(json_str.len(), 256);
-    buf[..len].copy_from_slice(json_str.as_bytes());
-    Ok(TypedValue {
-        value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
-    })
-}
-
-/// 解析时间间隔字符串
-fn parse_interval_string(interval_str: &str) -> Result<i64, QueryExecutionError> {
-    // 支持的时间单位
-    let units = [
-        ("ns", 1),              // 纳秒
-        ("us", 1),              // 微秒
-        ("ms", 1000),           // 毫秒
-        ("s", 1000000),         // 秒
-        ("sec", 1000000),       // 秒
-        ("second", 1000000),    // 秒
-        ("m", 60000000),        // 分钟
-        ("min", 60000000),      // 分钟
-        ("minute", 60000000),   // 分钟
-        ("h", 3600000000),      // 小时
-        ("hr", 3600000000),     // 小时
-        ("hour", 3600000000),   // 小时
-        ("d", 86400000000),     // 天
-        ("day", 86400000000),   // 天
-        ("w", 604800000000),    // 周
-        ("week", 604800000000), // 周
-    ];
-
-    // 去除空格并转换为小写
-    let normalized = interval_str.replace(" ", "").to_lowercase();
-
-    // 查找匹配的时间单位
-    for (unit, factor) in &units {
-        if normalized.ends_with(unit) {
-            // 提取数值部分
-            let num_str = &normalized[..normalized.len() - unit.len()];
-            let num = num_str
-                .parse::<i64>()
-                .map_err(|_| QueryExecutionError::TypeMismatch)?;
-            // 计算微秒数
-            return Ok(num * factor);
-        }
-    }
-
-    // 无法解析的时间间隔
-    Err(QueryExecutionError::TypeMismatch)
 }
 
 /// 执行CREATE TABLE查询
@@ -7949,6 +5635,214 @@ fn validate_columns(
     }
 
     Ok(())
+}
+
+/// 执行没有FROM子句的表达式查询
+fn execute_expression_query(
+    db: &mut RemDb,
+    query: &SqlQuery,
+) -> Result<ResultSet, QueryExecutionError> {
+    eprintln!("DEBUG execute_expression_query: called");
+
+    // 确定要返回的列表达式
+    let columns = query.columns.clone();
+
+    eprintln!("DEBUG execute_expression_query: columns count = {}", columns.len());
+
+    // 生成结果集的列名
+    let result_columns = columns
+        .iter()
+        .map(|expr| match expr {
+            Expression::Field { name, alias } => alias.clone().unwrap_or_else(|| name.clone()),
+            Expression::FunctionCall { alias, name, .. } => {
+                alias.clone().unwrap_or_else(|| name.clone())
+            }
+            Expression::Constant { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "constant".to_string())
+            }
+            Expression::BinaryOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "binary_op".to_string())
+            }
+            Expression::LogicalOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "logical_op".to_string())
+            }
+            Expression::UnaryOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "unary_op".to_string())
+            }
+        })
+        .collect();
+
+    // 创建结果集
+    let mut result_set = ResultSet::new(result_columns);
+
+    // 评估每个表达式
+    let mut row_values = Vec::with_capacity(columns.len());
+    for expr in &columns {
+        let value = evaluate_expression_without_table(db, expr)?;
+        row_values.push(value);
+    }
+
+    // 添加行到结果集
+    eprintln!("DEBUG execute_expression_query: adding row with {} values", row_values.len());
+    result_set.add_row(row_values);
+
+    eprintln!("DEBUG execute_expression_query: result_set row_count = {}", result_set.row_count());
+
+    Ok(result_set)
+}
+
+/// 评估表达式（没有表上下文）
+fn evaluate_expression_without_table(
+    db: &mut RemDb,
+    expr: &Expression,
+) -> Result<TypedValue, QueryExecutionError> {
+    evaluate_expression_without_table_with_depth(db, expr, 0)
+}
+
+fn evaluate_expression_without_table_with_depth(
+    db: &mut RemDb,
+    expr: &Expression,
+    depth: usize,
+) -> Result<TypedValue, QueryExecutionError> {
+    // Check recursion depth to prevent stack overflow
+    const MAX_RECURSION_DEPTH: usize = 100;
+    if depth > MAX_RECURSION_DEPTH {
+        return Err(QueryExecutionError::InternalError);
+    }
+    match expr {
+        Expression::Field {
+            name: field_name, ..
+        } => {
+            // 没有表上下文时，字段引用是无效的
+            Err(QueryExecutionError::FieldNotFound)
+        }
+        Expression::FunctionCall { name, args, .. } => {
+            // 评估函数参数
+            let mut evaluated_args = Vec::with_capacity(args.len());
+            for arg in args {
+                evaluated_args.push(evaluate_expression_without_table_with_depth(db, arg, depth + 1)?);
+            }
+
+            // 执行函数调用
+            execute_function_call(name, &evaluated_args)
+        }
+        Expression::Constant { value, .. } => {
+            // 返回常量值
+            // 需要将 query_parser::Value 转换为 TypedValue
+            match value {
+                crate::sql::query_parser::Value::Integer(i) => {
+                    Ok(TypedValue {
+                        value_type: DataType::Int64,
+                        value: Value { i64: *i },
+                    })
+                }
+                crate::sql::query_parser::Value::Float(f) => {
+                    Ok(TypedValue {
+                        value_type: DataType::Float64,
+                        value: Value { float64: *f },
+                    })
+                }
+                crate::sql::query_parser::Value::String(s) => {
+                    let mut buf = [0; MAX_STRING_LEN];
+                    let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                    buf[..len].copy_from_slice(s.as_bytes());
+                    Ok(TypedValue {
+                        value_type: DataType::VarChar,
+                        value: Value { string: buf },
+                    })
+                }
+                crate::sql::query_parser::Value::Boolean(b) => {
+                    Ok(TypedValue {
+                        value_type: DataType::Bool,
+                        value: Value { bool: *b },
+                    })
+                }
+                crate::sql::query_parser::Value::Null => {
+                    Ok(TypedValue {
+                        value_type: DataType::Json,
+                        value: Value { json_storage: crate::types::JsonStorage::Null },
+                    })
+                }
+                crate::sql::query_parser::Value::Identifier(_) => {
+                    Err(QueryExecutionError::InvalidValue)
+                }
+                crate::sql::query_parser::Value::Json(s) => {
+                    let mut buf = [0u8; 256];
+                    let len = core::cmp::min(s.len(), 256);
+                    buf[..len].copy_from_slice(s.as_bytes());
+                    Ok(TypedValue {
+                        value_type: DataType::Json,
+                        value: Value { json_storage: JsonStorage::Inline(buf) },
+                    })
+                }
+            }
+        }
+        Expression::BinaryOp { op, left, right, .. } => {
+            // 评估左右操作数
+            let left_val = evaluate_expression_without_table_with_depth(db, left, depth + 1)?;
+            let right_val = evaluate_expression_without_table_with_depth(db, right, depth + 1)?;
+
+            // 执行二元运算
+            evaluate_binary_op(left_val, *op, right_val)
+        }
+        Expression::LogicalOp { op, left, right, .. } => {
+            // 评估左右操作数
+            let left_val = evaluate_expression_without_table_with_depth(db, left, depth + 1)?;
+            let right_val = evaluate_expression_without_table_with_depth(db, right, depth + 1)?;
+
+            // 执行逻辑运算
+            unsafe {
+                // 将左右操作数转换为布尔值
+                let left_bool = match left_val.value_type {
+                    DataType::Bool => left_val.value.bool,
+                    DataType::Int8 => left_val.value.i8 != 0,
+                    DataType::Int16 => left_val.value.i16 != 0,
+                    DataType::Int32 => left_val.value.i32 != 0,
+                    DataType::Int64 => left_val.value.i64 != 0,
+                    DataType::UInt8 => left_val.value.u8 != 0,
+                    DataType::UInt16 => left_val.value.u16 != 0,
+                    DataType::UInt32 => left_val.value.u32 != 0,
+                    DataType::UInt64 => left_val.value.u64 != 0,
+                    DataType::Float32 => left_val.value.float32 != 0.0,
+                    DataType::Float64 => left_val.value.float64 != 0.0,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+
+                let right_bool = match right_val.value_type {
+                    DataType::Bool => right_val.value.bool,
+                    DataType::Int8 => right_val.value.i8 != 0,
+                    DataType::Int16 => right_val.value.i16 != 0,
+                    DataType::Int32 => right_val.value.i32 != 0,
+                    DataType::Int64 => right_val.value.i64 != 0,
+                    DataType::UInt8 => right_val.value.u8 != 0,
+                    DataType::UInt16 => right_val.value.u16 != 0,
+                    DataType::UInt32 => right_val.value.u32 != 0,
+                    DataType::UInt64 => right_val.value.u64 != 0,
+                    DataType::Float32 => right_val.value.float32 != 0.0,
+                    DataType::Float64 => right_val.value.float64 != 0.0,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+
+                // 执行逻辑操作
+                let result = match op {
+                    crate::sql::query_parser::LogicalOperator::And => left_bool && right_bool,
+                    crate::sql::query_parser::LogicalOperator::Or => left_bool || right_bool,
+                };
+
+                Ok(TypedValue {
+                    value_type: DataType::Bool,
+                    value: Value { bool: result },
+                })
+            }
+        }
+        Expression::UnaryOp { op, operand, .. } => {
+            // 评估操作数
+            let operand_val = evaluate_expression_without_table_with_depth(db, operand, depth + 1)?;
+
+            // 执行一元运算
+            evaluate_unary_op(*op, operand_val)
+        }
+    }
 }
 
 /// 执行DESCRIBE TABLE查询
@@ -10490,7 +8384,7 @@ unsafe fn evaluate_comparison_with_alias(
                             value: Value { string: path_string },
                         };
                         
-                        match execute_json_extract(&[data_value.clone(), path_value]) {
+                        match sql_functions::execute_json_extract(&[data_value.clone(), path_value]) {
                         Ok(extracted_value) => {
                             // 比较值
                             match &comp.value {
@@ -10554,7 +8448,7 @@ unsafe fn evaluate_comparison_with_alias(
                         value: Value { string: path_string },
                     };
                     
-                    match execute_json_has(&[data_value.clone(), path_value]) {
+                    match sql_functions::execute_json_has(&[data_value.clone(), path_value]) {
                         Ok(has_result) => {
                             eprintln!("DEBUG JSON_HAS result: {:?}", has_result);
                             // 比较值

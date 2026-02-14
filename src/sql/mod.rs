@@ -5,6 +5,8 @@
 mod query_executor;
 pub mod query_parser;
 mod result_set;
+pub mod functions;
+mod operations;
 
 pub use query_executor::{execute_query, QueryExecutionError};
 pub use query_parser::{
