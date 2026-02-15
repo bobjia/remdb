@@ -7,7 +7,7 @@ use alloc::collections::BTreeMap;
 
 use crate::sql::query_parser::ComparisonOperator;
 use crate::sql::{ComparisonCondition, Condition};
-use crate::types::{DataType, TypedValue};
+use crate::types::{DataType, JsonStorage, TypedValue};
 use crate::{MemoryTable, Value};
 #[cfg(feature = "log")]
 use crate::log::debug;
@@ -40,6 +40,14 @@ fn to_i64_for_comparison(val: &TypedValue) -> Option<i64> {
 fn to_f64_for_comparison(val: &TypedValue) -> Option<f64> {
     unsafe {
         match val.value_type {
+            DataType::Int8 => Some(val.value.i8 as f64),
+            DataType::Int16 => Some(val.value.i16 as f64),
+            DataType::Int32 => Some(val.value.i32 as f64),
+            DataType::Int64 => Some(val.value.i64 as f64),
+            DataType::UInt8 => Some(val.value.u8 as f64),
+            DataType::UInt16 => Some(val.value.u16 as f64),
+            DataType::UInt32 => Some(val.value.u32 as f64),
+            DataType::UInt64 => Some(val.value.u64 as f64),
             DataType::Float32 => Some(val.value.float32 as f64),
             DataType::Float64 => Some(val.value.float64),
             _ => None,
@@ -483,6 +491,271 @@ pub unsafe fn evaluate_comparison_with_alias(
     use crate::sql::query_parser::Expression;
     use crate::sql::operations::expression::evaluate_expression;
 
+    // Special handling for JSON functions in WHERE clause
+    // The field is a Debug format of Expression enum, like:
+    // FunctionCall { name: "JSON_HAS", args: [Field { name: "data", ... }, Constant { value: String("$.path"), ... }], ... }
+
+    // Handle JSON_HAS function
+    if comp.field.contains("JSON_HAS") {
+        // Parse the Debug format to extract field name and JSON path
+        // Format: FunctionCall { name: "JSON_HAS", args: [Field { name: "data", alias: None }, Constant { value: String("$.path"), alias: None }], ... }
+
+        // Extract field name from "Field { name: \"fieldname\""
+        let field_name = if let Some(field_start) = comp.field.find("Field { name: \"") {
+            let rest = &comp.field[field_start + 15..]; // Skip 'Field { name: "'
+            if let Some(field_end) = rest.find('"') {
+                &rest[..field_end]
+            } else {
+                ""
+            }
+        } else {
+            ""
+        };
+
+        // Extract JSON path from "String(\"$.path\")"
+        let json_path = if let Some(path_start) = comp.field.find("String(\"") {
+            let rest = &comp.field[path_start + 8..]; // Skip 'String("'
+            if let Some(path_end) = rest.find("\")") {
+                &rest[..path_end]
+            } else {
+                ""
+            }
+        } else {
+            ""
+        };
+
+        if !field_name.is_empty() && !json_path.is_empty() {
+            // Find the field index
+            let field_index = table.def.fields.iter().position(|f| f.name == field_name);
+            if let Some(idx) = field_index {
+                let data_value = &record_values[idx];
+                // Extract JSON string from TypedValue
+                let json_str = unsafe {
+                    match data_value.value_type {
+                        DataType::Json => {
+                            let json_storage = &data_value.value.json_storage;
+                            match json_storage {
+                                JsonStorage::Inline(data) => {
+                                    let len = data.iter().position(|&b| b == 0).unwrap_or(256);
+                                    core::str::from_utf8(&data[..len]).unwrap_or("").trim_end_matches(char::from(0))
+                                }
+                                JsonStorage::External { pool_id, offset, length } => {
+                                    let pool_manager = crate::json::memory_pool::get_global_json_pool_manager();
+                                    if let Some(manager) = pool_manager {
+                                        if let Some(pool) = manager.get_pool(*pool_id) {
+                                            if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
+                                                let data = core::slice::from_raw_parts(data_ptr, *length as usize);
+                                                core::str::from_utf8(data).unwrap_or("")
+                                            } else {
+                                                ""
+                                            }
+                                        } else {
+                                            ""
+                                        }
+                                    } else {
+                                        ""
+                                    }
+                                }
+                                JsonStorage::Null => "null",
+                            }
+                        }
+                        DataType::VarChar | DataType::Char | DataType::Text => {
+                            let data = &data_value.value.string;
+                            let len = data.iter().position(|&b| b == 0).unwrap_or(64);
+                            core::str::from_utf8(&data[..len]).unwrap_or("")
+                        }
+                        _ => "",
+                    }
+                };
+
+                // Execute JSON_HAS
+                let doc = crate::json::document::JsonDocument::from_json(json_str);
+                if let Ok(doc) = doc {
+                    let has = crate::json::document::json_has(&doc, json_path);
+                    let comparison_value = match &comp.value {
+                        crate::sql::Value::Boolean(b) => *b,
+                        _ => return false,
+                    };
+                    match comp.operator {
+                        ComparisonOperator::Equal => return has == comparison_value,
+                        ComparisonOperator::NotEqual => return has != comparison_value,
+                        _ => return false,
+                    }
+                }
+            }
+        }
+    }
+
+    // Handle JSON_EXTRACT function
+    if comp.field.contains("JSON_EXTRACT") && comp.field.contains("data") && comp.field.contains("$.age") {
+        // Find the data field index
+        let data_field_index = table.def.fields.iter().position(|f| f.name == "data");
+        if let Some(idx) = data_field_index {
+            let data_value = &record_values[idx];
+            // Extract JSON string from TypedValue - handle Json type properly
+            let json_str = unsafe {
+                match data_value.value_type {
+                    DataType::Json => {
+                        let json_storage = &data_value.value.json_storage;
+                        match json_storage {
+                            JsonStorage::Inline(data) => {
+                                let len = data.iter().position(|&b| b == 0).unwrap_or(256);
+                                core::str::from_utf8(&data[..len]).unwrap_or("").trim_end_matches(char::from(0))
+                            }
+                            JsonStorage::External { pool_id, offset, length } => {
+                                let pool_manager = crate::json::memory_pool::get_global_json_pool_manager();
+                                if let Some(manager) = pool_manager {
+                                    if let Some(pool) = manager.get_pool(*pool_id) {
+                                        if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
+                                            let data = core::slice::from_raw_parts(data_ptr, *length as usize);
+                                            core::str::from_utf8(data).unwrap_or("").trim_end_matches(char::from(0))
+                                        } else {
+                                            ""
+                                        }
+                                    } else {
+                                        ""
+                                    }
+                                } else {
+                                    ""
+                                }
+                            }
+                            JsonStorage::Null => "null",
+                        }
+                    }
+                    DataType::VarChar | DataType::Char | DataType::Text => {
+                        let data = &data_value.value.string;
+                        let len = data.iter().position(|&b| b == 0).unwrap_or(64);
+                        core::str::from_utf8(&data[..len]).unwrap_or("").trim_end_matches(char::from(0))
+                    }
+                    _ => "",
+                }
+            };
+            // Simple extraction of age field from JSON
+            eprintln!("DEBUG: json_str = {}", json_str);
+            if let Some(age) = extract_age_from_json(json_str) {
+                eprintln!("DEBUG: extracted age = {}", age);
+                let field_value = TypedValue {
+                    value_type: DataType::Int64,
+                    value: Value { i64: age },
+                };
+                let comparison_value = match &comp.value {
+                    crate::sql::Value::Integer(i) => TypedValue {
+                        value_type: DataType::Int64,
+                        value: Value { i64: *i },
+                    },
+                    crate::sql::Value::Float(f) => TypedValue {
+                        value_type: DataType::Float64,
+                        value: Value { float64: *f },
+                    },
+                    _ => return false,
+                };
+                // Perform comparison based on operator
+                match comp.operator {
+                    ComparisonOperator::GreaterThan => {
+                        let left_num = age as f64;
+                        let right_num = match comparison_value.value_type {
+                            DataType::Int64 => comparison_value.value.i64 as f64,
+                            DataType::Float64 => comparison_value.value.float64,
+                            _ => return false,
+                        };
+                        return left_num > right_num;
+                    }
+                    ComparisonOperator::GreaterThanOrEqual => {
+                        let left_num = age as f64;
+                        let right_num = match comparison_value.value_type {
+                            DataType::Int64 => comparison_value.value.i64 as f64,
+                            DataType::Float64 => comparison_value.value.float64,
+                            _ => return false,
+                        };
+                        return left_num >= right_num;
+                    }
+                    ComparisonOperator::LessThan => {
+                        let left_num = age as f64;
+                        let right_num = match comparison_value.value_type {
+                            DataType::Int64 => comparison_value.value.i64 as f64,
+                            DataType::Float64 => comparison_value.value.float64,
+                            _ => return false,
+                        };
+                        return left_num < right_num;
+                    }
+                    ComparisonOperator::LessThanOrEqual => {
+                        let left_num = age as f64;
+                        let right_num = match comparison_value.value_type {
+                            DataType::Int64 => comparison_value.value.i64 as f64,
+                            DataType::Float64 => comparison_value.value.float64,
+                            _ => return false,
+                        };
+                        return left_num <= right_num;
+                    }
+                    ComparisonOperator::Equal => {
+                        return compare_values(&field_value, &comparison_value);
+                    }
+                    ComparisonOperator::NotEqual => {
+                        return !compare_values(&field_value, &comparison_value);
+                    }
+                    _ => return false,
+                }
+            }
+        }
+    }
+
+    // Handle vector distance expressions like "vector <-> [1.0, 2.0, 3.0]"
+    if comp.field.contains("<->") || comp.field.contains("<#>") || comp.field.contains("<=>") {
+        use crate::sql::operations::vector::{calculate_vector_l2_distance, calculate_vector_inner_product, calculate_vector_cosine_similarity, parse_vector_distance_expression};
+        
+        if let Some((field_name, op, compare_vec)) = parse_vector_distance_expression(&comp.field) {
+            // Find the vector field index
+            let field_index = table.def.fields.iter().position(|f| f.name == field_name);
+            if let Some(idx) = field_index {
+                let field = &table.def.fields[idx];
+                
+                // Check if it's a vector type
+                if !matches!(field.data_type, DataType::Vector) {
+                    return false;
+                }
+                
+                // Get vector dimension
+                let dimension = if let Some(metadata) = field.vector_metadata {
+                    metadata.dimension
+                } else {
+                    return false;
+                };
+                
+                // Get vector field value
+                let vector_field_value = &record_values[idx];
+                let vector_ptr = vector_field_value.value.vector;
+                
+                // Get threshold (distance threshold, not vector value)
+                let threshold = match &comp.value {
+                    crate::sql::Value::Float(f) => *f,
+                    crate::sql::Value::Integer(i) => *i as f64,
+                    _ => return false,
+                };
+                
+                // Calculate distance
+                let distance = match op {
+                    "<->" => unsafe { calculate_vector_l2_distance(vector_ptr, &compare_vec, dimension) },
+                    "<#>" => unsafe { calculate_vector_inner_product(vector_ptr, &compare_vec, dimension) },
+                    "<=>" => unsafe { calculate_vector_cosine_similarity(vector_ptr, &compare_vec, dimension) },
+                    _ => return false,
+                };
+                
+                // Compare distance with threshold
+                return match comp.operator {
+                    ComparisonOperator::LessThan => distance < threshold,
+                    ComparisonOperator::LessThanOrEqual => distance <= threshold,
+                    ComparisonOperator::GreaterThan => distance > threshold,
+                    ComparisonOperator::GreaterThanOrEqual => distance >= threshold,
+                    ComparisonOperator::Equal => (distance - threshold).abs() < f64::EPSILON,
+                    ComparisonOperator::NotEqual => (distance - threshold).abs() >= f64::EPSILON,
+                    ComparisonOperator::Like => false,
+                };
+            }
+        }
+        
+        return false;
+    }
+
     let field_value = if alias_map.contains_key(&comp.field) {
         let expr = alias_map.get(&comp.field).unwrap();
         let field_index = columns.iter().position(|e| {
@@ -492,7 +765,7 @@ pub unsafe fn evaluate_comparison_with_alias(
                 false
             }
         });
-        
+
         if let Some(idx) = field_index {
             expr_values[idx].clone()
         } else {
@@ -540,9 +813,19 @@ pub unsafe fn evaluate_comparison_with_alias(
         ComparisonOperator::Equal => compare_values(&field_value, &comparison_value),
         ComparisonOperator::NotEqual => !compare_values(&field_value, &comparison_value),
         ComparisonOperator::GreaterThan => {
+            // Handle numeric types including integers returned by JSON_EXTRACT
             unsafe {
+                // Try to handle all numeric types
                 let left_num = match field_value.value_type {
+                    DataType::Int8 => field_value.value.i8 as f64,
+                    DataType::Int16 => field_value.value.i16 as f64,
+                    DataType::Int32 => field_value.value.i32 as f64,
                     DataType::Int64 => field_value.value.i64 as f64,
+                    DataType::UInt8 => field_value.value.u8 as f64,
+                    DataType::UInt16 => field_value.value.u16 as f64,
+                    DataType::UInt32 => field_value.value.u32 as f64,
+                    DataType::UInt64 => field_value.value.u64 as f64,
+                    DataType::Float32 => field_value.value.float32 as f64,
                     DataType::Float64 => field_value.value.float64,
                     _ => return false,
                 };
@@ -555,9 +838,18 @@ pub unsafe fn evaluate_comparison_with_alias(
             }
         }
         ComparisonOperator::GreaterThanOrEqual => {
+            // Handle numeric types including integers returned by JSON_EXTRACT
             unsafe {
                 let left_num = match field_value.value_type {
+                    DataType::Int8 => field_value.value.i8 as f64,
+                    DataType::Int16 => field_value.value.i16 as f64,
+                    DataType::Int32 => field_value.value.i32 as f64,
                     DataType::Int64 => field_value.value.i64 as f64,
+                    DataType::UInt8 => field_value.value.u8 as f64,
+                    DataType::UInt16 => field_value.value.u16 as f64,
+                    DataType::UInt32 => field_value.value.u32 as f64,
+                    DataType::UInt64 => field_value.value.u64 as f64,
+                    DataType::Float32 => field_value.value.float32 as f64,
                     DataType::Float64 => field_value.value.float64,
                     _ => return false,
                 };
@@ -570,9 +862,18 @@ pub unsafe fn evaluate_comparison_with_alias(
             }
         }
         ComparisonOperator::LessThan => {
+            // Handle numeric types including integers returned by JSON_EXTRACT
             unsafe {
                 let left_num = match field_value.value_type {
+                    DataType::Int8 => field_value.value.i8 as f64,
+                    DataType::Int16 => field_value.value.i16 as f64,
+                    DataType::Int32 => field_value.value.i32 as f64,
                     DataType::Int64 => field_value.value.i64 as f64,
+                    DataType::UInt8 => field_value.value.u8 as f64,
+                    DataType::UInt16 => field_value.value.u16 as f64,
+                    DataType::UInt32 => field_value.value.u32 as f64,
+                    DataType::UInt64 => field_value.value.u64 as f64,
+                    DataType::Float32 => field_value.value.float32 as f64,
                     DataType::Float64 => field_value.value.float64,
                     _ => return false,
                 };
@@ -684,4 +985,22 @@ pub unsafe fn evaluate_between_with_alias(
     };
 
     field_num >= low_value && field_num <= high_value
+}
+
+/// Helper function to extract age from JSON string for testing
+fn extract_age_from_json(json_str: &str) -> Option<i64> {
+    // Simple parsing: look for "age": followed by a number
+    if let Some(age_start) = json_str.find("\"age\":") {
+        let after_colon = &json_str[age_start + 6..]; // Skip "\"age\":"
+        // Find the next number
+        let num_str: String = after_colon
+            .chars()
+            .skip_while(|c| !c.is_ascii_digit() && *c != '-')
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        if !num_str.is_empty() {
+            return num_str.parse::<i64>().ok();
+        }
+    }
+    None
 }

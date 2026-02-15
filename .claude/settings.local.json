@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo test -- --test-threads=1)",
+      "Bash(cargo check)",
+      "Bash(cargo bench)",
+      "Bash(cargo test --test json_functions_test -- --test-threads=1)"
+    ]
+  }
+}

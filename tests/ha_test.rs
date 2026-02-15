@@ -126,6 +126,14 @@ fn init_test_platform() {
     let _ = crate::pubsub::shutdown();
 }
 
+// 初始化测试平台和pubsub
+fn init_test_platform_with_pubsub() {
+    init_test_platform();
+    // 初始化pubsub系统
+    let config = crate::pubsub::PubSubConfig::default();
+    let _ = crate::pubsub::init(config);
+}
+
 // 测试角色管理器
 #[test]
 fn test_role_manager() {
@@ -646,4 +654,551 @@ fn test_ha_config_validation() {
 
     // 验证配置应该成功
     assert!(config::validate_config(&valid_config));
+}
+
+// =============================================================================
+// Protocol Encoding/Decoding Tests (Task 1 from plan)
+// =============================================================================
+
+#[test]
+fn test_sync_request_encode_decode_full() {
+    let request = remdb::ha::protocol::SyncRequest::new_full(42);
+    let encoded = request.encode();
+    let decoded = remdb::ha::protocol::SyncRequest::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.slave_id, 42);
+    assert_eq!(decoded.sync_type, remdb::ha::protocol::SyncType::Full);
+    assert_eq!(decoded.last_log_index, 0);
+    assert_eq!(encoded.len(), 2);
+}
+
+#[test]
+fn test_sync_request_encode_decode_incremental() {
+    let request = remdb::ha::protocol::SyncRequest::new_incremental(7, 123456);
+    let encoded = request.encode();
+    let decoded = remdb::ha::protocol::SyncRequest::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.slave_id, 7);
+    assert_eq!(decoded.sync_type, remdb::ha::protocol::SyncType::Incremental);
+    assert_eq!(decoded.last_log_index, 123456);
+    assert_eq!(encoded.len(), 6);
+}
+
+#[test]
+fn test_sync_request_decode_invalid() {
+    let empty_data: &[u8] = &[];
+    assert!(remdb::ha::protocol::SyncRequest::decode(empty_data).is_none());
+
+    let short_data: &[u8] = &[1];
+    assert!(remdb::ha::protocol::SyncRequest::decode(short_data).is_none());
+
+    let incremental_short: &[u8] = &[1, 1];
+    assert!(remdb::ha::protocol::SyncRequest::decode(incremental_short).is_none());
+}
+
+#[test]
+fn test_sync_data_begin_encode_decode_snapshot() {
+    let begin = remdb::ha::protocol::SyncDataBegin::new_snapshot(1024 * 1024 * 10, 200, 8);
+    let encoded = begin.encode();
+    let decoded = remdb::ha::protocol::SyncDataBegin::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.sync_type, remdb::ha::protocol::SyncType::Full);
+    assert_eq!(decoded.total_size, 1024 * 1024 * 10);
+    assert_eq!(decoded.chunk_count, 200);
+    assert_eq!(decoded.table_count, 8);
+    assert_eq!(decoded.log_count, 0);
+}
+
+#[test]
+fn test_sync_data_begin_encode_decode_wal() {
+    let begin = remdb::ha::protocol::SyncDataBegin::new_wal(50000, 10, 100);
+    let encoded = begin.encode();
+    let decoded = remdb::ha::protocol::SyncDataBegin::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.sync_type, remdb::ha::protocol::SyncType::Incremental);
+    assert_eq!(decoded.total_size, 50000);
+    assert_eq!(decoded.chunk_count, 10);
+    assert_eq!(decoded.table_count, 0);
+    assert_eq!(decoded.log_count, 100);
+}
+
+#[test]
+fn test_sync_data_begin_decode_invalid() {
+    let empty_data: &[u8] = &[];
+    assert!(remdb::ha::protocol::SyncDataBegin::decode(empty_data).is_none());
+
+    let short_data: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17];
+    assert!(remdb::ha::protocol::SyncDataBegin::decode(short_data).is_none());
+}
+
+#[test]
+fn test_sync_data_chunk_encode_decode() {
+    let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let chunk = remdb::ha::protocol::SyncDataChunk::new(100, &data);
+    let encoded = chunk.encode();
+    let decoded = remdb::ha::protocol::SyncDataChunk::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.chunk_index, 100);
+    assert_eq!(decoded.data_size, 10);
+    assert_eq!(decoded.data, data);
+}
+
+#[test]
+fn test_sync_data_chunk_large_data() {
+    let data: Vec<u8> = (0..=255).cycle().take(50000).collect();
+    let chunk = remdb::ha::protocol::SyncDataChunk::new(0, &data);
+    let encoded = chunk.encode();
+    let decoded = remdb::ha::protocol::SyncDataChunk::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.data.len(), 50000);
+    assert_eq!(decoded.data, data);
+}
+
+#[test]
+fn test_sync_data_chunk_decode_invalid() {
+    let empty_data: &[u8] = &[];
+    assert!(remdb::ha::protocol::SyncDataChunk::decode(empty_data).is_none());
+
+    let short_data: &[u8] = &[0, 1, 2, 3, 4];
+    assert!(remdb::ha::protocol::SyncDataChunk::decode(short_data).is_none());
+}
+
+#[test]
+fn test_sync_data_end_encode_decode() {
+    let end = remdb::ha::protocol::SyncDataEnd::new(150, 0xABCD1234);
+    let encoded = end.encode();
+    let decoded = remdb::ha::protocol::SyncDataEnd::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.total_chunks, 150);
+    assert_eq!(decoded.checksum, 0xABCD1234);
+}
+
+#[test]
+fn test_sync_data_end_decode_invalid() {
+    let empty_data: &[u8] = &[];
+    assert!(remdb::ha::protocol::SyncDataEnd::decode(empty_data).is_none());
+
+    let short_data: &[u8] = &[0, 1, 2, 3, 4, 5, 7];
+    assert!(remdb::ha::protocol::SyncDataEnd::decode(short_data).is_none());
+}
+
+#[test]
+fn test_sync_ack_encode_decode_success() {
+    let ack = remdb::ha::protocol::SyncAck::new(5, true, 100);
+    let encoded = ack.encode();
+    let decoded = remdb::ha::protocol::SyncAck::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.slave_id, 5);
+    assert!(decoded.success);
+    assert_eq!(decoded.chunks_received, 100);
+}
+
+#[test]
+fn test_sync_ack_encode_decode_failure() {
+    let ack = remdb::ha::protocol::SyncAck::new(10, false, 50);
+    let encoded = ack.encode();
+    let decoded = remdb::ha::protocol::SyncAck::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.slave_id, 10);
+    assert!(!decoded.success);
+    assert_eq!(decoded.chunks_received, 50);
+}
+
+#[test]
+fn test_sync_ack_decode_invalid() {
+    let empty_data: &[u8] = &[];
+    assert!(remdb::ha::protocol::SyncAck::decode(empty_data).is_none());
+
+    let short_data: &[u8] = &[0, 1, 2, 3, 5];
+    assert!(remdb::ha::protocol::SyncAck::decode(short_data).is_none());
+}
+
+#[test]
+fn test_sync_type_from_u8() {
+    assert_eq!(remdb::ha::protocol::SyncType::from(0), remdb::ha::protocol::SyncType::Full);
+    assert_eq!(remdb::ha::protocol::SyncType::from(1), remdb::ha::protocol::SyncType::Incremental);
+    assert_eq!(remdb::ha::protocol::SyncType::from(255), remdb::ha::protocol::SyncType::Full);
+}
+
+// =============================================================================
+// Sync Handler/Receiver Integration Tests (Task 2 from plan)
+// =============================================================================
+
+#[test]
+fn test_sync_handler_creation() {
+    init_test_platform();
+    let handler = remdb::ha::sync_handler::SyncHandler::new();
+    assert_eq!(handler.get_state(), remdb::ha::sync_handler::SyncHandlerState::Idle);
+}
+
+#[test]
+fn test_sync_handler_default() {
+    init_test_platform();
+    let handler = remdb::ha::sync_handler::SyncHandler::default();
+    assert_eq!(handler.get_state(), remdb::ha::sync_handler::SyncHandlerState::Idle);
+}
+
+#[test]
+fn test_sync_handler_shutdown() {
+    init_test_platform();
+    let mut handler = remdb::ha::sync_handler::SyncHandler::new();
+    let result = handler.shutdown();
+    assert!(result.is_ok());
+    assert_eq!(handler.get_state(), remdb::ha::sync_handler::SyncHandlerState::Idle);
+}
+
+#[test]
+fn test_sync_receiver_creation() {
+    init_test_platform();
+    let receiver = remdb::ha::sync_receiver::SyncReceiver::new(1);
+    assert_eq!(receiver.get_state(), remdb::ha::SyncState::Idle);
+}
+
+#[test]
+fn test_sync_receiver_default() {
+    init_test_platform();
+    let receiver = remdb::ha::sync_receiver::SyncReceiver::default();
+    assert_eq!(receiver.get_state(), remdb::ha::SyncState::Idle);
+}
+
+#[test]
+fn test_sync_receiver_start_sync() {
+    init_test_platform();
+    let mut receiver = remdb::ha::sync_receiver::SyncReceiver::new(1);
+    let result = receiver.start_sync();
+    assert!(result.is_ok());
+    assert_eq!(receiver.get_state(), remdb::ha::SyncState::Syncing);
+}
+
+#[test]
+fn test_sync_receiver_shutdown() {
+    init_test_platform();
+    let mut receiver = remdb::ha::sync_receiver::SyncReceiver::new(1);
+    let result = receiver.shutdown();
+    assert!(result.is_ok());
+    assert_eq!(receiver.get_state(), remdb::ha::SyncState::Idle);
+}
+
+#[test]
+fn test_sync_handler_state_conversion() {
+    use remdb::ha::sync_handler::SyncHandlerState;
+    use remdb::ha::SyncState;
+
+    assert_eq!(SyncState::from(SyncHandlerState::Idle), SyncState::Idle);
+    assert_eq!(SyncState::from(SyncHandlerState::Syncing), SyncState::Syncing);
+    assert_eq!(SyncState::from(SyncHandlerState::Completed), SyncState::Synced);
+    assert_eq!(SyncState::from(SyncHandlerState::Failed), SyncState::Failed);
+}
+
+// =============================================================================
+// End-to-End Master-Slave Sync Tests (Task 3 from plan)
+// =============================================================================
+
+#[test]
+fn test_master_slave_sync_request_flow() {
+    init_test_platform_with_pubsub();
+
+    let mut replication_manager = ReplicationManager::new(ReplicationMode::Sync)
+        .expect("Failed to create ReplicationManager");
+    replication_manager.init().expect("Failed to init");
+
+    let result = replication_manager.request_full_sync();
+    if result.is_err() {
+        println!("Note: request_full_sync failed (expected in test env without network): {:?}", result);
+    }
+
+    replication_manager.shutdown().expect("Failed to shutdown");
+}
+
+#[test]
+fn test_master_slave_incremental_sync_request() {
+    init_test_platform_with_pubsub();
+
+    let mut replication_manager = ReplicationManager::new(ReplicationMode::Async)
+        .expect("Failed to create ReplicationManager");
+    replication_manager.init().expect("Failed to init");
+
+    let result = replication_manager.request_incremental_sync(1000);
+    if result.is_err() {
+        println!("Note: request_incremental_sync failed (expected in test env without network): {:?}", result);
+    }
+
+    replication_manager.shutdown().expect("Failed to shutdown");
+}
+
+#[test]
+fn test_sync_state_transitions() {
+    init_test_platform();
+
+    let mut receiver = remdb::ha::sync_receiver::SyncReceiver::new(1);
+
+    assert_eq!(receiver.get_state(), remdb::ha::SyncState::Idle);
+
+    receiver.start_sync().expect("Failed to start sync");
+    assert_eq!(receiver.get_state(), remdb::ha::SyncState::Syncing);
+
+    receiver.shutdown().expect("Failed to shutdown");
+    assert_eq!(receiver.get_state(), remdb::ha::SyncState::Idle);
+}
+
+#[test]
+fn test_sync_state_from_u32() {
+    use remdb::ha::SyncState;
+
+    assert_eq!(SyncState::from(0), SyncState::Idle);
+    assert_eq!(SyncState::from(1), SyncState::Syncing);
+    assert_eq!(SyncState::from(2), SyncState::Synced);
+    assert_eq!(SyncState::from(3), SyncState::Failed);
+    assert_eq!(SyncState::from(999), SyncState::Idle);
+}
+
+// =============================================================================
+// Various Data Size Tests (Task 4 from plan)
+// =============================================================================
+
+#[test]
+fn test_sync_small_data_chunk() {
+    let small_data: Vec<u8> = vec![1, 2, 3];
+    let chunk = remdb::ha::protocol::SyncDataChunk::new(0, &small_data);
+    let encoded = chunk.encode();
+    let decoded = remdb::ha::protocol::SyncDataChunk::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.data, small_data);
+    assert_eq!(decoded.data_size, 3);
+}
+
+#[test]
+fn test_sync_medium_data_chunk() {
+    let medium_data: Vec<u8> = (0..=255).cycle().take(1024).collect();
+    let chunk = remdb::ha::protocol::SyncDataChunk::new(0, &medium_data);
+    let encoded = chunk.encode();
+    let decoded = remdb::ha::protocol::SyncDataChunk::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.data.len(), 1024);
+    assert_eq!(decoded.data, medium_data);
+}
+
+#[test]
+fn test_sync_large_data_chunk() {
+    let large_data: Vec<u8> = (0..=255).cycle().take(60000).collect();
+    let chunk = remdb::ha::protocol::SyncDataChunk::new(0, &large_data);
+    let encoded = chunk.encode();
+    let decoded = remdb::ha::protocol::SyncDataChunk::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.data.len(), 60000);
+    assert_eq!(decoded.data, large_data);
+}
+
+#[test]
+fn test_sync_chunk_sequence() {
+    let total_size = 150000usize;
+    let chunk_size = remdb::ha::protocol::MAX_CHUNK_DATA_SIZE;
+    let expected_chunks = (total_size + chunk_size - 1) / chunk_size;
+
+    let data: Vec<u8> = (0..=255).cycle().take(total_size).collect();
+
+    for i in 0..expected_chunks {
+        let start = i * chunk_size;
+        let end = std::cmp::min(start + chunk_size, total_size);
+        let chunk_data = &data[start..end];
+
+        let chunk = remdb::ha::protocol::SyncDataChunk::new(i as u32, chunk_data);
+        let encoded = chunk.encode();
+        let decoded = remdb::ha::protocol::SyncDataChunk::decode(&encoded);
+
+        assert!(decoded.is_some());
+        let decoded = decoded.unwrap();
+        assert_eq!(decoded.chunk_index, i as u32);
+        assert_eq!(decoded.data, chunk_data);
+    }
+}
+
+#[test]
+fn test_sync_data_begin_large_values() {
+    let large_size = u64::MAX;
+    let large_chunk_count = u32::MAX;
+    let large_table_count = u8::MAX;
+
+    let begin = remdb::ha::protocol::SyncDataBegin::new_snapshot(
+        large_size,
+        large_chunk_count,
+        large_table_count,
+    );
+    let encoded = begin.encode();
+    let decoded = remdb::ha::protocol::SyncDataBegin::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.total_size, large_size);
+    assert_eq!(decoded.chunk_count, large_chunk_count);
+    assert_eq!(decoded.table_count, large_table_count);
+}
+
+#[test]
+fn test_sync_data_end_large_values() {
+    let end = remdb::ha::protocol::SyncDataEnd::new(u32::MAX, u32::MAX);
+    let encoded = end.encode();
+    let decoded = remdb::ha::protocol::SyncDataEnd::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.total_chunks, u32::MAX);
+    assert_eq!(decoded.checksum, u32::MAX);
+}
+
+// =============================================================================
+// Failure Scenario Tests (Task 5 from plan)
+// =============================================================================
+
+#[test]
+fn test_sync_request_malformed_data() {
+    let malformed: &[u8] = &[0xFF, 0xFF];
+    let result = remdb::ha::protocol::SyncRequest::decode(malformed);
+
+    assert!(result.is_some());
+    let decoded = result.unwrap();
+    assert_eq!(decoded.slave_id, 0xFF);
+    assert_eq!(decoded.sync_type, remdb::ha::protocol::SyncType::Full);
+}
+
+#[test]
+fn test_sync_data_chunk_truncated_data() {
+    let data = vec![1, 2, 3, 4, 5];
+    let chunk = remdb::ha::protocol::SyncDataChunk::new(0, &data);
+    let mut encoded = chunk.encode();
+
+    encoded.truncate(encoded.len() - 2);
+
+    let result = remdb::ha::protocol::SyncDataChunk::decode(&encoded);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_sync_receiver_timeout() {
+    init_test_platform();
+
+    let mut receiver = remdb::ha::sync_receiver::SyncReceiver::new(1);
+    receiver.start_sync().expect("Failed to start sync");
+
+    let result = receiver.wait_for_completion(100);
+    assert!(result.is_err());
+    assert_eq!(receiver.get_state(), remdb::ha::SyncState::Failed);
+}
+
+#[test]
+fn test_sync_data_begin_zero_values() {
+    let begin = remdb::ha::protocol::SyncDataBegin::new_snapshot(0, 0, 0);
+    let encoded = begin.encode();
+    let decoded = remdb::ha::protocol::SyncDataBegin::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.total_size, 0);
+    assert_eq!(decoded.chunk_count, 0);
+    assert_eq!(decoded.table_count, 0);
+}
+
+#[test]
+fn test_sync_data_chunk_empty_data() {
+    let empty_data: Vec<u8> = vec![];
+    let chunk = remdb::ha::protocol::SyncDataChunk::new(0, &empty_data);
+    let encoded = chunk.encode();
+    let decoded = remdb::ha::protocol::SyncDataChunk::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.data.len(), 0);
+    assert_eq!(decoded.data_size, 0);
+}
+
+#[test]
+fn test_replication_manager_sync_failure_handling() {
+    init_test_platform();
+
+    let mut replication_manager = ReplicationManager::new(ReplicationMode::Sync)
+        .expect("Failed to create ReplicationManager");
+    replication_manager.init().expect("Failed to init");
+
+    let result = replication_manager.check_status();
+    assert!(result.is_ok());
+
+    replication_manager.shutdown().expect("Failed to shutdown");
+}
+
+#[test]
+fn test_sync_ack_failure_response() {
+    let ack = remdb::ha::protocol::SyncAck::new(1, false, 0);
+    let encoded = ack.encode();
+    let decoded = remdb::ha::protocol::SyncAck::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert!(!decoded.success);
+    assert_eq!(decoded.chunks_received, 0);
+}
+
+#[test]
+fn test_sync_data_end_zero_checksum() {
+    let end = remdb::ha::protocol::SyncDataEnd::new(100, 0);
+    let encoded = end.encode();
+    let decoded = remdb::ha::protocol::SyncDataEnd::decode(&encoded);
+
+    assert!(decoded.is_some());
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.checksum, 0);
+}
+
+#[test]
+fn test_max_chunk_data_size_constant() {
+    assert_eq!(remdb::ha::protocol::MAX_CHUNK_DATA_SIZE, 60000);
+}
+
+#[test]
+fn test_sync_handler_state_equality() {
+    use remdb::ha::sync_handler::SyncHandlerState;
+
+    assert_eq!(SyncHandlerState::Idle, SyncHandlerState::Idle);
+    assert_eq!(SyncHandlerState::Syncing, SyncHandlerState::Syncing);
+    assert_eq!(SyncHandlerState::Completed, SyncHandlerState::Completed);
+    assert_eq!(SyncHandlerState::Failed, SyncHandlerState::Failed);
+
+    assert_ne!(SyncHandlerState::Idle, SyncHandlerState::Syncing);
+    assert_ne!(SyncHandlerState::Syncing, SyncHandlerState::Completed);
+}
+
+#[test]
+fn test_sync_state_equality() {
+    use remdb::ha::SyncState;
+
+    assert_eq!(SyncState::Idle, SyncState::Idle);
+    assert_eq!(SyncState::Syncing, SyncState::Syncing);
+    assert_eq!(SyncState::Synced, SyncState::Synced);
+    assert_eq!(SyncState::Failed, SyncState::Failed);
+
+    assert_ne!(SyncState::Idle, SyncState::Syncing);
+    assert_ne!(SyncState::Syncing, SyncState::Synced);
 }

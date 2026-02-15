@@ -14,7 +14,7 @@ fn typed_value_to_json_string(arg: &TypedValue) -> Result<String, QueryExecution
             let json_storage = unsafe { &arg.value.json_storage };
             match json_storage {
                 JsonStorage::Inline(data) => {
-                    let len = data.iter().rposition(|&b| b == 0).unwrap_or(256);
+                    let len = data.iter().position(|&b| b == 0).unwrap_or(256);
                     let result = String::from_utf8_lossy(&data[..len]).to_string();
                     Ok(result)
                 }

@@ -6417,7 +6417,7 @@ unsafe fn evaluate_comparison(
     // 检查字段名是否包含向量距离操作符
     if comp.field.contains("<->") || comp.field.contains("<#>") || comp.field.contains("<=>") {
         // 这是一个向量距离表达式，需要特殊处理
-        if let Some((field_name, op, _compare_vec)) = parse_vector_distance_expression(&comp.field) {
+        if let Some((field_name, op, compare_vec)) = parse_vector_distance_expression(&comp.field) {
             // 获取向量字段索引
             let field_index = match table
                 .def
@@ -6449,20 +6449,12 @@ unsafe fn evaluate_comparison(
             };
             let vector_ptr = vector_field_value.value.vector;
             
-            // 注意：当前实现中，向量值存储在条件的value字段中
-            // 由于Value类型中没有专门的向量变体，我们使用比较阈值作为向量
-            // 这里简化处理，假设阈值就是我们需要比较的向量
-            // 实际实现中，需要根据具体的数据结构调整
-            
-            // 获取条件阈值
+            // 获取条件阈值（距离阈值，不是向量值）
             let threshold = match &comp.value {
                 crate::sql::Value::Float(f) => *f,
                 crate::sql::Value::Integer(i) => *i as f64,
                 _ => return false,
             };
-            
-            // 简化实现：使用阈值作为比较向量（在实际实现中，应该从条件中提取实际向量）
-            let compare_vec = vec![threshold; dimension as usize];
             
             // 计算距离
             let distance = match op {
