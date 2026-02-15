@@ -926,6 +926,8 @@ pub unsafe extern "C" fn remdb_init_global(
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         ha_config,
+        #[cfg(feature = "model-runtime")]
+        model_worker_config: crate::config::ModelWorkerConfig::default(),
     };
 
     // 初始化全局数据库
@@ -1103,6 +1105,8 @@ pub unsafe extern "C" fn remdb_get_global(handle: *mut RemDbHandle) -> RemDbErro
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         ha_config: None,
+        #[cfg(feature = "model-runtime")]
+        model_worker_config: crate::config::ModelWorkerConfig::default(),
     };
 
     // 创建数据库实例

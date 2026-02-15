@@ -429,6 +429,68 @@ fn test_sql_window_functions() {
     remdb::reset_global_db();
 }
 
+#[cfg(feature = "posix")]
+#[test]
+#[serial]
+fn test_sql_create_checkpoint() {
+    println!("=== 测试SQL CREATE CHECKPOINT语句 ===");
+
+    use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig, WALCompressionType};
+    use common::setup_test_db_with_posix;
+
+    let _db_memory = setup_test_db_with_posix();
+
+    static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
+
+    static TEST_CHECKPOINT_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(|| {
+        #[cfg(windows)]
+        fn get_test_wal_path() -> &'static str {
+            ".\\target\\test_checkpoint_wal.log"
+        }
+
+        #[cfg(not(windows))]
+        fn get_test_wal_path() -> &'static str {
+            "./target/test_checkpoint_wal.log"
+        }
+
+        DbConfig {
+            tables: vec![],
+            total_memory: 1024 * 1024,
+            low_power_mode_supported: false,
+            low_power_max_records: None,
+            default_max_records: 1000,
+            memory_allocator: &ALLOCATOR,
+            wal_config: WALConfig {
+                log_path: get_test_wal_path(),
+                log_mode: LogMode::Sync,
+                checkpoint_interval_ms: 60000,
+                log_file_size_limit: 16 * 1024 * 1024,
+                log_prealloc_size: 1 * 1024 * 1024,
+                log_segment_size: 16 * 1024 * 1024,
+                retained_checkpoints: 3,
+                max_consecutive_invalid: 100,
+                skip_threshold: 1000,
+                skip_block_size: 1024 * 1024,
+                max_skip_attempts: 3,
+                compression_type: WALCompressionType::None,
+                compression_level: 3,
+            },
+            time_series_defaults: TimeSeriesConfig::DEFAULT,
+            #[cfg(feature = "pubsub")]
+            pubsub_config: None,
+            #[cfg(feature = "ha")]
+            ha_config: None,
+        }
+    });
+
+    let db = unsafe { init_global_db(&TEST_CHECKPOINT_DB_CONFIG).unwrap() };
+
+    let result = db.sql_query("CREATE CHECKPOINT;");
+    assert!(result.is_ok(), "CREATE CHECKPOINT语句应该成功执行");
+
+    remdb::reset_global_db();
+}
+
 // 定义混合查询测试表，包含向量字段
 remdb::table!(
     HYBRID_TABLE,

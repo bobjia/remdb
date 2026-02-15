@@ -4,6 +4,63 @@ pub use crate::time_series::TimeSeriesConfig;
 use crate::types::TableDef;
 use core::mem::size_of;
 
+/// Model Worker 配置
+#[cfg(feature = "model-runtime")]
+#[derive(Clone, Debug)]
+pub struct ModelWorkerConfig {
+    /// 是否启用 Model Worker
+    pub enabled: bool,
+    /// 分配给 Worker 的 CPU 核心数
+    pub cpu_cores: usize,
+    /// 内存限制（MB）
+    pub memory_limit_mb: usize,
+    /// 最大模型数量
+    pub max_models: usize,
+    /// 请求超时时间（毫秒）
+    pub request_timeout_ms: u64,
+    /// Worker 崩溃时是否自动重启
+    pub restart_on_failure: bool,
+    /// 最大重启尝试次数
+    pub max_restart_attempts: u32,
+}
+
+#[cfg(feature = "model-runtime")]
+impl Default for ModelWorkerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            cpu_cores: 2,
+            memory_limit_mb: 2048,
+            max_models: 10,
+            request_timeout_ms: 5000,
+            restart_on_failure: true,
+            max_restart_attempts: 3,
+        }
+    }
+}
+
+#[cfg(feature = "model-runtime")]
+impl ModelWorkerConfig {
+    pub fn validate(&self) -> bool {
+        if self.cpu_cores == 0 || self.cpu_cores > 64 {
+            return false;
+        }
+        if self.memory_limit_mb < 256 || self.memory_limit_mb > 65536 {
+            return false;
+        }
+        if self.max_models == 0 || self.max_models > 100 {
+            return false;
+        }
+        if self.request_timeout_ms < 100 || self.request_timeout_ms > 60000 {
+            return false;
+        }
+        if self.max_restart_attempts > 10 {
+            return false;
+        }
+        true
+    }
+}
+
 /// 默认内存分配器实现
 pub struct DefaultMemoryAllocator;
 
@@ -127,6 +184,10 @@ pub struct DbConfig {
     /// HA配置
     #[cfg(feature = "ha")]
     pub ha_config: Option<HAConfig>,
+
+    /// Model Worker配置
+    #[cfg(feature = "model-runtime")]
+    pub model_worker_config: ModelWorkerConfig,
 }
 
 /// 编译时配置检查
@@ -223,6 +284,14 @@ pub fn validate_config(config: &DbConfig) -> bool {
                 // 最大10秒
                 return false;
             }
+        }
+    }
+
+    // 检查Model Worker配置
+    #[cfg(feature = "model-runtime")]
+    {
+        if !config.model_worker_config.validate() {
+            return false;
         }
     }
 

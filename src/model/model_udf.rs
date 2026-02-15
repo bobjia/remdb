@@ -9,39 +9,52 @@ use alloc::sync::Arc;
 use crate::model::onnx_runtime::OnnxModel;
 use crate::types::{DataType, TypedValue, Value};
 
+#[cfg(feature = "model-runtime")]
+use crate::model::worker_protocol::{ModelRequest, ModelResponse};
+
 #[cfg(feature = "log")]
 use crate::log::{debug, error, info, warn};
 
-/// Model UDF
 #[derive(Debug)]
 pub struct ModelUDF {
-    /// Model name
     name: String,
-    /// Underlying model
-    model: Arc<OnnxModel>,
+    model: Option<Arc<OnnxModel>>,
+    use_worker: bool,
 }
 
 impl ModelUDF {
-    /// Create a new model UDF
     pub fn new(name: String, model: Arc<OnnxModel>) -> Self {
         Self {
             name,
-            model,
+            model: Some(model),
+            use_worker: false,
         }
     }
 
-    /// Get the UDF name
+    pub fn new_with_worker(name: String) -> Self {
+        Self {
+            name,
+            model: None,
+            use_worker: true,
+        }
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// Execute UDF
     pub fn execute(&self, args: &[TypedValue]) -> core::result::Result<TypedValue, String> {
-        // Debug print: start of execute
         #[cfg(feature = "log")]
-        debug!("ModelUDF::execute: start");
+        debug!("ModelUDF::execute: start for model {}", self.name);
 
-        // Convert arguments to model inputs
+        #[cfg(feature = "model-runtime")]
+        if self.use_worker {
+            return self.execute_via_worker(args);
+        }
+
+        let model = self.model.as_ref()
+            .ok_or_else(|| "Model not loaded".to_string())?;
+
         let mut model_inputs = Vec::new();
         for arg in args {
             #[cfg(feature = "log")]
@@ -49,9 +62,6 @@ impl ModelUDF {
 
             match arg.value_type {
                 DataType::VarChar | DataType::Char | DataType::Text => {
-                    // For string inputs, we would typically tokenize and embed
-                    // For now, we'll create a dummy input
-                    // Use heap allocation instead of stack allocation to avoid stack overflow
                     model_inputs.push(Vec::from_iter((0..768).map(|_| 0.0)));
                 }
                 DataType::Float32 => {
@@ -84,56 +94,158 @@ impl ModelUDF {
                         model_inputs.push(vec![arg.value.u64 as f32]);
                     }
                 }
+                DataType::Vector => {
+                    unsafe {
+                        if !arg.value.vector.is_null() {
+                            let dimension = arg.value.vector_metadata.dimension as usize;
+                            let vec_slice = core::slice::from_raw_parts(arg.value.vector, dimension);
+                            model_inputs.push(vec_slice.to_vec());
+                        } else {
+                            model_inputs.push(vec![0.0; 768]);
+                        }
+                    }
+                }
                 _ => {
                     return Err("Unsupported input type".to_string());
                 }
             }
         }
 
-        // Debug print: after processing args
         #[cfg(feature = "log")]
         debug!("ModelUDF::execute: after processing args, model_inputs len: {}", model_inputs.len());
 
-        // Execute the model
-        let output = self.model.execute(&model_inputs)?;
+        let output = model.execute(&model_inputs)?;
 
-        // Debug print: after executing model
         #[cfg(feature = "log")]
         debug!("ModelUDF::execute: after executing model, output len: {}", output.len());
 
-        // Convert model output to TypedValue
-        // Assuming output is a vector
         let typed_value = TypedValue {
             value_type: DataType::Vector,
             value: Value {
-                // In a real implementation, this would properly store the vector
-                // For now, we'll use a null pointer as placeholder
                 vector: core::ptr::null(),
             },
         };
 
-        // Debug print: before returning
         #[cfg(feature = "log")]
         debug!("ModelUDF::execute: before returning, typed_value type: {:?}", typed_value.value_type);
 
         Ok(typed_value)
     }
+
+    #[cfg(feature = "model-runtime")]
+    fn execute_via_worker(&self, args: &[TypedValue]) -> core::result::Result<TypedValue, String> {
+        use crate::model::worker_manager::get_worker_manager;
+
+        #[cfg(feature = "log")]
+        debug!("ModelUDF::execute_via_worker: start for model {}", self.name);
+
+        let mut model_inputs = Vec::new();
+        for arg in args {
+            match arg.value_type {
+                DataType::VarChar | DataType::Char | DataType::Text => {
+                    model_inputs.push(Vec::from_iter((0..768).map(|_| 0.0)));
+                }
+                DataType::Float32 => {
+                    unsafe {
+                        model_inputs.push(vec![arg.value.float32]);
+                    }
+                }
+                DataType::Float64 => {
+                    unsafe {
+                        model_inputs.push(vec![arg.value.float64 as f32]);
+                    }
+                }
+                DataType::Int32 => {
+                    unsafe {
+                        model_inputs.push(vec![arg.value.i32 as f32]);
+                    }
+                }
+                DataType::Int64 => {
+                    unsafe {
+                        model_inputs.push(vec![arg.value.i64 as f32]);
+                    }
+                }
+                DataType::UInt32 => {
+                    unsafe {
+                        model_inputs.push(vec![arg.value.u32 as f32]);
+                    }
+                }
+                DataType::UInt64 => {
+                    unsafe {
+                        model_inputs.push(vec![arg.value.u64 as f32]);
+                    }
+                }
+                DataType::Vector => {
+                    unsafe {
+                        if !arg.value.vector.is_null() {
+                            let dimension = arg.value.vector_metadata.dimension as usize;
+                            let vec_slice = core::slice::from_raw_parts(arg.value.vector, dimension);
+                            model_inputs.push(vec_slice.to_vec());
+                        } else {
+                            model_inputs.push(vec![0.0; 768]);
+                        }
+                    }
+                }
+                _ => {
+                    return Err("Unsupported input type".to_string());
+                }
+            }
+        }
+
+        let mut manager_guard = get_worker_manager()
+            .map_err(|_| "Worker manager unavailable".to_string())?;
+
+        let manager = manager_guard.as_mut()
+            .ok_or_else(|| "Worker not initialized".to_string())?;
+
+        let request = ModelRequest::Execute {
+            model_name: self.name.clone(),
+            inputs: model_inputs,
+        };
+
+        let response = manager.send_request(&request)
+            .map_err(|e| format!("Worker request failed: {:?}", e))?;
+
+        match response {
+            ModelResponse::ExecutionResult { output: _ } => {
+                Ok(TypedValue {
+                    value_type: DataType::Vector,
+                    value: Value {
+                        vector: core::ptr::null(),
+                    },
+                })
+            }
+            ModelResponse::Error { code, message } => {
+                Err(format!("Model execution error ({:?}): {}", code, message))
+            }
+            _ => Err("Unexpected response from worker".to_string()),
+        }
+    }
 }
 
-/// Execute a model UDF by name
 pub fn execute_model_udf(name: &str, args: &[TypedValue]) -> Result<crate::types::TypedValue, crate::sql::QueryExecutionError> {
     use crate::model::model_manager::get_global_model_manager;
 
-    // Get the global model manager
     let model_manager = get_global_model_manager().map_err(|_| crate::sql::QueryExecutionError::InternalError)?;
 
-    // Get the model
-    let model = model_manager.get_model(name).map_err(|_| crate::sql::QueryExecutionError::UnsupportedFunction(name.to_string()))?;
+    if model_manager.is_using_worker() {
+        let model_udf = ModelUDF::new_with_worker(name.to_string());
+        model_udf.execute(args)
+            .map_err(|e| {
+                #[cfg(feature = "log")]
+                error!("Model UDF execution failed: {}", e);
+                crate::sql::QueryExecutionError::InternalError
+            })
+    } else {
+        let model = model_manager.get_model(name)
+            .map_err(|_| crate::sql::QueryExecutionError::UnsupportedFunction(name.to_string()))?;
 
-    // Create a model UDF
-    let model_udf = ModelUDF::new(name.to_string(), model);
-
-    // Execute the model UDF
-    model_udf.execute(args)
-        .map_err(|e| crate::sql::QueryExecutionError::InternalError)
+        let model_udf = ModelUDF::new(name.to_string(), model);
+        model_udf.execute(args)
+            .map_err(|e| {
+                #[cfg(feature = "log")]
+                error!("Model UDF execution failed: {}", e);
+                crate::sql::QueryExecutionError::InternalError
+            })
+    }
 }

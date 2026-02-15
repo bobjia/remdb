@@ -7,6 +7,24 @@ pub mod model_manager;
 pub mod model_udf;
 pub mod onnx_runtime;
 
-pub use model_manager::{ModelManager, ModelError};
+#[cfg(feature = "model-runtime")]
+pub mod worker_protocol;
+
+#[cfg(feature = "model-runtime")]
+pub mod worker_manager;
+
+#[cfg(feature = "model-runtime")]
+pub mod builtin_models;
+
+#[cfg(feature = "model-download")]
+pub mod downloader;
+
+pub use model_manager::{ModelManager, ModelError, ModelMetadata};
 pub use model_udf::ModelUDF;
-pub use onnx_runtime::OnnxModel;
+pub use onnx_runtime::{OnnxModel, ModelInfo};
+
+#[cfg(feature = "model-runtime")]
+pub use builtin_models::{BuiltinModel, BUILTIN_MODELS, get_builtin_model, list_builtin_models, register_builtin_models};
+
+#[cfg(feature = "model-download")]
+pub use downloader::{DownloadError, DownloadProgress, download_model, download_model_sync, resolve_model_path, is_url};

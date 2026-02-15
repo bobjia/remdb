@@ -318,6 +318,8 @@ impl DatabaseManager {
             pubsub_config: None,
             #[cfg(feature = "ha")]
             ha_config: None,
+            #[cfg(feature = "model-runtime")]
+            model_worker_config: config::ModelWorkerConfig::default(),
         }));
 
         // 创建数据库实例
@@ -1102,6 +1104,15 @@ impl RemDb {
     pub unsafe fn flush_logs(&mut self) -> Result<()> {
         let tx_manager = crate::transaction::get_tx_manager();
         tx_manager.flush_logs()
+    }
+
+    /// 创建检查点
+    pub unsafe fn checkpoint(&mut self) -> Result<()> {
+        if let Some(log_manager) = crate::transaction::get_log_manager() {
+            log_manager.create_checkpoint()
+        } else {
+            Err(RemDbError::ConfigError)
+        }
     }
 
     /// 初始化数据库

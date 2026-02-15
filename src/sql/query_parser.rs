@@ -359,6 +359,8 @@ impl std::fmt::Display for IndexType {
         Commit,
         /// ROLLBACK查询
         Rollback,
+        /// CREATE CHECKPOINT查询
+        CreateCheckpoint,
         /// SHOW INDEX BUILD STATUS查询
         ShowIndexBuildStatus,
         /// SHOW TABLES查询
@@ -771,6 +773,38 @@ impl SqlParser {
             }),
             QueryType::Rollback => Ok(SqlQuery {
                 query_type: QueryType::Rollback,
+                table_name: String::new(),
+                table_alias: None,
+                joins: Vec::new(),
+                columns: Vec::new(),
+                select_all: false,
+                distinct: false,
+                where_clause: None,
+                having_clause: None,
+                group_by: None,
+                order_by: None,
+                limit: None,
+                sample_by: None,
+                fill_clause: None,
+                window_functions: Vec::new(),
+                insert_columns: Vec::new(),
+                values: Vec::new(),
+                table_def: Vec::new(),
+                primary_key: None,
+                index_column: None,
+                index_type: None,
+                index_params: HashMap::new(),
+                index_online: true,
+                update_pairs: Vec::new(),
+                ignore_duplicates: false,
+                if_not_exists: false,
+                model_path: String::new(),
+                model_inputs: Vec::new(),
+                model_output: (String::new(), String::new()),
+                table_config: HashMap::new(),
+            }),
+            QueryType::CreateCheckpoint => Ok(SqlQuery {
+                query_type: QueryType::CreateCheckpoint,
                 table_name: String::new(),
                 table_alias: None,
                 joins: Vec::new(),
@@ -2077,7 +2111,9 @@ impl SqlParser {
             Ok(QueryType::Describe)
         } else if self.match_keyword("CREATE") {
             self.skip_whitespace();
-            if self.match_keyword("TIMESERIES") {
+            if self.match_keyword("CHECKPOINT") {
+                Ok(QueryType::CreateCheckpoint)
+            } else if self.match_keyword("TIMESERIES") {
                 self.skip_whitespace();
                 if self.match_keyword("TABLE") {
                     Ok(QueryType::CreateTimeSeriesTable)

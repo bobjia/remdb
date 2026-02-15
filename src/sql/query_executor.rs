@@ -122,6 +122,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         crate::sql::QueryType::CreateIndex => execute_create_index_query(db, query),
         crate::sql::QueryType::ShowIndexBuildStatus => execute_show_index_build_status_query(db, query),
         crate::sql::QueryType::ShowTables => execute_show_tables_query(db),
+        crate::sql::QueryType::CreateCheckpoint => execute_create_checkpoint_query(db),
         crate::sql::QueryType::AlterTable => {
             // 处理ALTER TABLE语句
             for (field1, field2, pk, not_null, unique, auto_inc, default_val) in &query.table_def {
@@ -7076,4 +7077,30 @@ unsafe fn get_field_value(
         value_type: field.data_type,
         value,
     })
+}
+
+/// 执行CREATE CHECKPOINT查询
+fn execute_create_checkpoint_query(db: &mut RemDb) -> Result<ResultSet, QueryExecutionError> {
+    unsafe {
+        db.checkpoint().map_err(|_| QueryExecutionError::InternalError)?;
+    }
+
+    // 创建结果集，返回成功消息
+    let columns = alloc::vec!["status".to_string()];
+    let mut result_set = ResultSet::new(columns);
+
+    // 创建一个表示成功的消息
+    let mut success_msg = [b'0'; 64];
+    let msg = "Checkpoint created successfully";
+    let msg_bytes = msg.as_bytes();
+    let copy_len = core::cmp::min(msg_bytes.len(), 63);
+    success_msg[..copy_len].copy_from_slice(&msg_bytes[..copy_len]);
+    success_msg[copy_len] = 0;
+
+    result_set.add_row(alloc::vec![TypedValue {
+        value_type: crate::DataType::VarChar,
+        value: crate::Value { string: success_msg },
+    }]);
+
+    Ok(result_set)
 }
