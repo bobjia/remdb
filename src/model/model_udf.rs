@@ -12,6 +12,9 @@ use crate::types::{DataType, TypedValue, Value};
 #[cfg(feature = "model-runtime")]
 use crate::model::worker_protocol::{ModelRequest, ModelResponse};
 
+#[cfg(feature = "model-runtime")]
+use crate::model::cache::{CacheKey, get_or_init_cache};
+
 #[cfg(feature = "log")]
 use crate::log::{debug, error, info, warn};
 
@@ -114,10 +117,41 @@ impl ModelUDF {
         #[cfg(feature = "log")]
         debug!("ModelUDF::execute: after processing args, model_inputs len: {}", model_inputs.len());
 
-        let output = model.execute(&model_inputs)?;
+        #[cfg(feature = "model-runtime")]
+        {
+            let cache = get_or_init_cache();
+            let cache_key = CacheKey::new(self.name.clone(), &model_inputs);
+            
+            if let Some(_entry) = cache.get(&cache_key) {
+                #[cfg(feature = "log")]
+                debug!("ModelUDF::execute: cache hit for model {}", self.name);
+                
+                return Ok(TypedValue {
+                    value_type: DataType::Vector,
+                    value: Value {
+                        vector: core::ptr::null(),
+                    },
+                });
+            }
+            
+            let output = model.execute(&model_inputs)?;
+            
+            #[cfg(feature = "log")]
+            debug!("ModelUDF::execute: after executing model, output len: {}", output.len());
+            
+            cache.put(cache_key, output);
+            
+            #[cfg(feature = "log")]
+            debug!("ModelUDF::execute: cache miss, result cached for model {}", self.name);
+        }
 
-        #[cfg(feature = "log")]
-        debug!("ModelUDF::execute: after executing model, output len: {}", output.len());
+        #[cfg(not(feature = "model-runtime"))]
+        {
+            let output = model.execute(&model_inputs)?;
+            
+            #[cfg(feature = "log")]
+            debug!("ModelUDF::execute: after executing model, output len: {}", output.len());
+        }
 
         let typed_value = TypedValue {
             value_type: DataType::Vector,
@@ -192,6 +226,21 @@ impl ModelUDF {
             }
         }
 
+        let cache = get_or_init_cache();
+        let cache_key = CacheKey::new(self.name.clone(), &model_inputs);
+        
+        if let Some(_entry) = cache.get(&cache_key) {
+            #[cfg(feature = "log")]
+            debug!("ModelUDF::execute_via_worker: cache hit for model {}", self.name);
+            
+            return Ok(TypedValue {
+                value_type: DataType::Vector,
+                value: Value {
+                    vector: core::ptr::null(),
+                },
+            });
+        }
+
         let mut manager_guard = get_worker_manager()
             .map_err(|_| "Worker manager unavailable".to_string())?;
 
@@ -207,7 +256,12 @@ impl ModelUDF {
             .map_err(|e| format!("Worker request failed: {:?}", e))?;
 
         match response {
-            ModelResponse::ExecutionResult { output: _ } => {
+            ModelResponse::ExecutionResult { output } => {
+                cache.put(cache_key, output);
+                
+                #[cfg(feature = "log")]
+                debug!("ModelUDF::execute_via_worker: cache miss, result cached for model {}", self.name);
+                
                 Ok(TypedValue {
                     value_type: DataType::Vector,
                     value: Value {
