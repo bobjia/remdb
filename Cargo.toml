@@ -301,7 +301,7 @@ path = "examples/misc/test_ttl_ringbuffer.rs"
 
 [[example]]
 name = "model_runtime"
-path = "example/misc/model_runtime.rs"
+path = "examples/misc/model_runtime.rs"
 
 [features]
 default = ["std", "posix", "ha", "pubsub", "c-api", "log"]
