@@ -1,3 +1,4 @@
+pub mod allocator;
 pub mod pool;
 
 // Re-export types and functions from remdb-alloc

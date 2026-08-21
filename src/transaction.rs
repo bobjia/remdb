@@ -863,11 +863,7 @@ impl LogManager {
             
             // 读取日志项
             let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
-            let read = match crate::platform::file_read(
-                handle,
-                log_bytes.as_mut_ptr(),
-                log_bytes.len()
-            ) {
+            let read = match crate::platform::file_read(handle, &mut log_bytes) {
                 Ok(read) => read,
                 Err(_) => {
                     println!("Warning: Failed to read log item {}, skipping...", i);
@@ -1018,110 +1014,110 @@ impl LogManager {
                                         if offset + 1 <= new_data_len {
                                             let val = log_item.new_data[offset] != 0;
                                             offset += 1;
-                                            crate::types::Value { bool: val }
+                                            crate::types::Value::Bool(val)
                                         } else {
                                             offset += 1;
-                                            crate::types::Value { bool: false }
+                                            crate::types::Value::Bool(false)
                                         }
                                     },
                                     crate::types::DataType::Int8 => {
                                         if offset + 1 <= new_data_len {
                                             let val = log_item.new_data[offset] as i8;
                                             offset += 1;
-                                            crate::types::Value { i8: val }
+                                            crate::types::Value::I8(val)
                                         } else {
                                             offset += 1;
-                                            crate::types::Value { i8: 0 }
+                                            crate::types::Value::I8(0)
                                         }
                                     },
                                     crate::types::DataType::UInt8 => {
                                         if offset + 1 <= new_data_len {
                                             let val = log_item.new_data[offset];
                                             offset += 1;
-                                            crate::types::Value { u8: val }
+                                            crate::types::Value::U8(val)
                                         } else {
                                             offset += 1;
-                                            crate::types::Value { u8: 0 }
+                                            crate::types::Value::U8(0)
                                         }
                                     },
                                     crate::types::DataType::Int16 => {
                                         if offset + 2 <= new_data_len {
                                             let val = i16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
                                             offset += 2;
-                                            crate::types::Value { i16: val }
+                                            crate::types::Value::I16(val)
                                         } else {
                                             offset += 2;
-                                            crate::types::Value { i16: 0 }
+                                            crate::types::Value::I16(0)
                                         }
                                     },
                                     crate::types::DataType::UInt16 => {
                                         if offset + 2 <= new_data_len {
                                             let val = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
                                             offset += 2;
-                                            crate::types::Value { u16: val }
+                                            crate::types::Value::U16(val)
                                         } else {
                                             offset += 2;
-                                            crate::types::Value { u16: 0 }
+                                            crate::types::Value::U16(0)
                                         }
                                     },
                                     crate::types::DataType::Int32 => {
                                         if offset + 4 <= new_data_len {
                                             let val = i32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                             offset += 4;
-                                            crate::types::Value { i32: val }
+                                            crate::types::Value::I32(val)
                                         } else {
                                             offset += 4;
-                                            crate::types::Value { i32: 0 }
+                                            crate::types::Value::I32(0)
                                         }
                                     },
                                     crate::types::DataType::UInt32 => {
                                         if offset + 4 <= new_data_len {
                                             let val = u32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                             offset += 4;
-                                            crate::types::Value { u32: val }
+                                            crate::types::Value::U32(val)
                                         } else {
                                             offset += 4;
-                                            crate::types::Value { u32: 0 }
+                                            crate::types::Value::U32(0)
                                         }
                                     },
                                     crate::types::DataType::Float32 => {
                                         if offset + 4 <= new_data_len {
                                             let val = f32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                             offset += 4;
-                                            crate::types::Value { float32: val }
+                                            crate::types::Value::Float32(val)
                                         } else {
                                             offset += 4;
-                                            crate::types::Value { float32: 0.0 }
+                                            crate::types::Value::Float32(0.0)
                                         }
                                     },
                                     crate::types::DataType::Int64 => {
                                         if offset + 8 <= new_data_len {
                                             let val = i64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                             offset += 8;
-                                            crate::types::Value { i64: val }
+                                            crate::types::Value::I64(val)
                                         } else {
                                             offset += 8;
-                                            crate::types::Value { i64: 0 }
+                                            crate::types::Value::I64(0)
                                         }
                                     },
                                     crate::types::DataType::UInt64 => {
                                         if offset + 8 <= new_data_len {
                                             let val = u64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                             offset += 8;
-                                            crate::types::Value { u64: val }
+                                            crate::types::Value::U64(val)
                                         } else {
                                             offset += 8;
-                                            crate::types::Value { u64: 0 }
+                                            crate::types::Value::U64(0)
                                         }
                                     },
                                     crate::types::DataType::Float64 => {
                                         if offset + 8 <= new_data_len {
                                             let val = f64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                             offset += 8;
-                                            crate::types::Value { float64: val }
+                                            crate::types::Value::Float64(val)
                                         } else {
                                             offset += 8;
-                                            crate::types::Value { float64: 0.0 }
+                                            crate::types::Value::Float64(0.0)
                                         }
                                     },
                                     crate::types::DataType::String => {
@@ -1153,12 +1149,12 @@ impl LogManager {
                                             }
                                             offset += str_data_size; // 固定64字节字符串空间
                                             
-                                            crate::types::Value { string: str_val }
+                                            crate::types::Value::String(str_val)
                                         } else {
                                             // 空间不足，跳过字符串长度
                                             offset += 1;
                                             offset += 64; // 跳过固定64字节字符串空间
-                                            crate::types::Value { string: [0u8; crate::types::MAX_STRING_LEN] }
+                                            crate::types::Value::String([0u8; crate::types::MAX_STRING_LEN])
                                         }
                                     },
                                     _ => {
@@ -1169,7 +1165,7 @@ impl LogManager {
                                             // 空间不足，只跳过可用的数据
                                             offset = new_data_len;
                                         }
-                                        crate::types::Value { u64: 0 }
+                                        crate::types::Value::U64(0)
                                     },
                                 }
                             };
@@ -1292,33 +1288,15 @@ impl LogManager {
                                 // 添加到表向量
                                 db.tables[table_def.id as usize] = Some(table);
                                 
-                                // 创建主键索引
-                                let hash_table_size = (table_def.max_records * 2).next_power_of_two();
-                                let index_memory_size = crate::index::PrimaryIndex::calculate_memory_size(&table_def, hash_table_size, table_def.max_records);
+                                // 创建主键索引（使用安全实现，内部自行管理内存）
+                                let primary_index = crate::index::PrimaryIndex::new(
+                                    table_def_arc.clone(),
+                                    table_def.max_records
+                                );
+                                db.primary_indices[table_def.id as usize] = Some(primary_index);
                                 
-                                match crate::memory::allocator::alloc(index_memory_size) {
-                                    Ok(index_memory) => {
-                                        let hash_table_start = index_memory.as_ptr() as *mut Option<core::ptr::NonNull<crate::index::PrimaryIndexItem>>;
-                                        let items_start = (index_memory.as_ptr() as usize + hash_table_size * core::mem::size_of::<Option<core::ptr::NonNull<crate::index::PrimaryIndexItem>>>()) as *mut crate::index::PrimaryIndexItem;
-                                        
-                                        let primary_index = crate::index::PrimaryIndex::new(
-                                            table_def_arc.clone(),
-                                            hash_table_start,
-                                            items_start,
-                                            hash_table_size,
-                                            table_def.max_records
-                                        );
-                                        db.primary_indices[table_def.id as usize] = Some(primary_index);
-                                        
-                                        // 初始化辅助索引位置
-                                        db.secondary_indices[table_def.id as usize] = None;
-                                    },
-                                    Err(err) => {
-                                        println!("Warning: Failed to allocate memory for primary index: {:?}, skipping CreateTable operation for table_id {}", err, log_item.table_id);
-                                        db.tables[table_def.id as usize] = None;
-                                        continue;
-                                    }
-                                }
+                                // 初始化辅助索引位置
+                                db.secondary_indices[table_def.id as usize] = None;
                             },
                             Err(err) => {
                                 println!("Warning: Failed to create MemoryTable: {:?}, skipping CreateTable operation for table_id {}", err, log_item.table_id);
@@ -1379,29 +1357,11 @@ impl LogManager {
                             
                             // 更新状态
                             db.low_power_mode = true;
-
-                        // 检查记录是否已存在
-                        let record_id = log_item.record_id as usize;
-                        let status = table.status_array[record_id].status;
-                        if status != crate::types::RecordStatus::Used {
-                            // 记录不存在，执行插入
-                            let record_slice = table.get_record_slice_mut(record_id);
-                            let data_size = log_item.data_size as usize;
-                            crate::platform::memcpy(
-                                &mut record_slice[..data_size],
-                                &log_item.new_data[..data_size]
-                            );
-                            
-                            table.status_array[record_id].status = crate::types::RecordStatus::Used;
-                            table.status_array[record_id].version += 1;
-                            table.status_array[record_id].create_tx_id = log_item.tx_id;
-                            table.status_array[record_id].delete_tx_id = 0;
-                            table.status_array[record_id].next_version_ptr = 0;
-                            table.inc_record_count();
                         }
-                    },
-                    LogOperation::Delete => {
-                        // 执行删除操作
+                    }
+                },
+                LogOperation::Delete => {
+                    // 执行删除操作
                         let table = match &mut db.tables[log_item.table_id as usize] {
                             Some(table) => table,
                             None => return Err(RemDbError::TableNotFound),
@@ -1439,10 +1399,6 @@ impl LogManager {
                             table.status_array[record_id].version += 1;
                             table.status_array[record_id].create_tx_id = log_item.tx_id;
                         }
-                    } else {
-                        // 如果配置不支持低功耗模式，确保事务管理器也处于正常模式
-                        crate::transaction::set_low_power_mode(false);
-                    }
                 },
                 LogOperation::ExitLowPowerMode => {
                     // 处理退出低功耗模式日志
@@ -1505,7 +1461,7 @@ impl LogManager {
                     if (*status_ptr).status != crate::types::RecordStatus::Used {
                         // 记录不存在，执行插入
                     let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                    crate::platform::memcpy(
+                    crate::platform::memcpy_ptr(
                         record_ptr,
                         log_item.new_data.as_ptr(),
                         log_item.data_size as usize
@@ -1519,27 +1475,9 @@ impl LogManager {
                     table.inc_record_count();
                     
                     // 从空闲槽栈中移除该槽位，确保不重复使用
-                    if table.free_slot_count > 0 {
-                        // 查找并移除该槽位
-                        let mut found = false;
-                        let mut i = 0;
-                        while i < table.free_slot_count {
-                            if *table.free_slots.as_ptr().add(i) == log_item.record_id as usize {
-                                // 找到，将最后一个元素移动到当前位置
-                                *table.free_slots.as_ptr().add(i) = *table.free_slots.as_ptr().add(table.free_slot_count - 1);
-                                table.free_slot_count -= 1;
-                                found = true;
-                                break;
-                            }
-                            i += 1;
-                        }
-                        if !found {
-                            // 如果没有找到，说明可能已经被移除，或者初始状态不对，直接减少free_slot_count
-                            // 但确保不小于0
-                            if table.free_slot_count > 0 {
-                                table.free_slot_count -= 1;
-                            }
-                        }
+                    if let Some(pos) = table.free_slots.iter().position(|&s| s == log_item.record_id as usize)
+                    {
+                        table.free_slots.swap_remove(pos);
                     }
                         
                         // 更新主键索引
@@ -1602,12 +1540,11 @@ impl LogManager {
                         
                         // 清空记录数据
                         let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                        crate::platform::memset(record_ptr, 0, table.record_size);
+                        crate::platform::memset_ptr(record_ptr, 0, table.record_size);
                         
                         // 将空闲槽压回栈中，确保不超过数组大小
-                        if table.free_slot_count < table.def.max_records {
-                            *table.free_slots.as_ptr().add(table.free_slot_count) = log_item.record_id as usize;
-                            table.free_slot_count += 1;
+                        if table.free_slots.len() < table.def.max_records {
+                            table.free_slots.push(log_item.record_id as usize);
                         }
                         
                         // 更新记录计数
@@ -1644,7 +1581,7 @@ impl LogManager {
                         
                         // 记录存在，执行更新
                         let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                        crate::platform::memcpy(
+                        crate::platform::memcpy_ptr(
                             record_ptr,
                             log_item.new_data.as_ptr(),
                             log_item.data_size as usize
@@ -1704,11 +1641,7 @@ impl LogManager {
                         ts_table.index.insert(record.timestamp, partition_guard.records.len() - 1);
                     }
                 },
-                _ => continue, // 跳过非数据操作
-            }
-
-                    },
-                    LogOperation::CreateTable => {
+                LogOperation::CreateTable => {
                         // 执行创建表操作
                         // 从日志中解析表名
                         let name_len = log_item.new_data[0] as usize;
@@ -1877,13 +1810,20 @@ impl LogManager {
     }
 }
 
+
+/// 活跃事务快照
+struct ActiveSnapshot {
+    /// 事务ID
+    tx_id: u32,
+    /// 快照版本号
+    snapshot_version: u32,
+}
+
 /// 事务管理器
 pub struct TransactionManager {
     /// 当前活动事务
     current_tx: Option<NonNull<Transaction>>,
     /// 事务ID计数器
-    tx_id_counter: u32,
-
     pub tx_id_counter: u32,
     /// 全局快照版本号
     pub snapshot_version: u32,
@@ -1893,15 +1833,15 @@ pub struct TransactionManager {
     lock: parking_lot::Mutex<()>,
     /// 日志管理器
     log_manager: Option<LogManager>,
-    /// 快照版本号
-    snapshot_version: u32,
-    /// 活动快照列表
-    active_snapshots: Vec<u32>,
     /// 低功耗模式标志
     low_power_mode: bool,
-    /// 自旋锁
-    lock: u32,
 }
+
+// Transaction 和 TransactionManager 包含 NonNull 指针，需要手动实现 Send/Sync
+unsafe impl Send for Transaction {}
+unsafe impl Sync for Transaction {}
+unsafe impl Send for TransactionManager {}
+unsafe impl Sync for TransactionManager {}
 
 impl TransactionManager {
     /// 创建新的事务管理器
@@ -1909,39 +1849,34 @@ impl TransactionManager {
         Self {
             current_tx: None,
             tx_id_counter: 1,
-
-            tx_id_counter: 0,
             snapshot_version: 0,
             active_snapshots: alloc::vec::Vec::new(),
             lock: parking_lot::Mutex::new(()),
             log_manager: None,
-            snapshot_version: 0,
-            active_snapshots: Vec::new(),
             low_power_mode: false,
-            lock: 0,
         }
     }
-    
+
     /// 设置日志管理器
-    pub unsafe fn set_log_manager(&mut self, log_manager: LogManager) {
+    pub fn set_log_manager(&mut self, log_manager: LogManager) {
         self.log_manager = Some(log_manager);
     }
-    
+
     /// 清除日志管理器
     pub fn clear_log_manager(&mut self) {
         self.log_manager = None;
     }
-    
+
     /// 获取日志管理器（可变）
-    pub unsafe fn get_log_manager_mut(&mut self) -> Option<&mut LogManager> {
+    pub fn get_log_manager_mut(&mut self) -> Option<&mut LogManager> {
         self.log_manager.as_mut()
     }
-    
+
     /// 获取日志管理器（只读）
-    pub unsafe fn get_log_manager(&self) -> Option<&LogManager> {
+    pub fn get_log_manager(&self) -> Option<&LogManager> {
         self.log_manager.as_ref()
     }
-    
+
     /// 刷新所有日志
     pub unsafe fn flush_logs(&mut self) -> Result<()> {
         if let Some(log_manager) = &mut self.log_manager {
@@ -1950,17 +1885,17 @@ impl TransactionManager {
             Ok(())
         }
     }
-    
+
     /// 检查是否有活动事务
     pub fn has_active_tx(&self) -> bool {
         self.current_tx.is_some()
     }
-    
+
     /// 获取当前事务ID计数器
     pub fn tx_id_counter(&self) -> u32 {
         self.tx_id_counter
     }
-    
+
     /// 开始事务
     pub unsafe fn begin(
         &mut self,
@@ -1968,302 +1903,25 @@ impl TransactionManager {
         isolation_level: IsolationLevel,
         tx_buffer: *mut Transaction,
         log_buffer: *mut LogItem,
-        max_log_items: usize
+        max_log_items: usize,
     ) -> Result<NonNull<Transaction>> {
-        // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
-        
-        // 检查是否已有活动事务
-        if self.current_tx.is_some() {
-            crate::platform::spin_unlock(&mut self.lock);
-            return Err(RemDbError::TransactionError);
-        }
-        
-        // 生成新的事务ID
-        let tx_id = self.tx_id_counter;
-        self.tx_id_counter += 1;
-        
-        // 初始化事务
-        let tx = tx_buffer.as_mut().unwrap();
-        *tx = Transaction {
-            id: tx_id,
-            tx_type,
-            status: TransactionStatus::Active,
-            isolation_level,
-            start_time: crate::platform::get_timestamp_us(),
-            log_items: NonNull::new(log_buffer).unwrap(),
-            max_log_items,
-            log_item_count: 0,
-            depth: 1,
-            lock: 0,
-        };
-        
-        // 设置当前事务
-        self.current_tx = Some(NonNull::new_unchecked(tx_buffer));
-        
-        // 解锁
-        crate::platform::spin_unlock(&mut self.lock);
-        
-        Ok(NonNull::new_unchecked(tx_buffer))
-    }
-    
-    /// 提交事务
-    pub unsafe fn commit(&mut self) -> Result<()> {
-        // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
-        
-        // 检查是否有活动事务
-        let mut tx = match self.current_tx {
-            Some(tx) => tx,
-            None => {
-                crate::platform::spin_unlock(&mut self.lock);
-                return Err(RemDbError::TransactionError);
-            }
-        };
-        
-        // 解锁以允许日志写入
-        crate::platform::spin_unlock(&mut self.lock);
-        
-        // 提交事务日志项
-        tx.as_mut().commit_log_item()?;
-        
-        // 重新获取锁来更新事务状态
-        crate::platform::spin_lock(&mut self.lock);
-        
-        // 更新事务状态
-        tx.as_mut().status = TransactionStatus::Committed;
-        
-        // 清除当前事务
-        self.current_tx = None;
-        
-        // 解锁
-        crate::platform::spin_unlock(&mut self.lock);
-        
-        Ok(())
-    }
-    
-    /// 回滚事务
-    pub unsafe fn rollback(&mut self) -> Result<()> {
-        // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
-        
-        // 检查是否有活动事务
-        let mut tx = match self.current_tx {
-            Some(tx) => tx,
-            None => {
-                crate::platform::spin_unlock(&mut self.lock);
-                return Err(RemDbError::TransactionError);
-            }
-        };
-        
-        // 解锁以允许回滚操作
-        crate::platform::spin_unlock(&mut self.lock);
-        
-        // 执行实际的回滚操作：遍历日志项，按相反顺序撤销操作
-        for i in (0..tx.as_mut().log_item_count).rev() {
-            let log_item = &tx.as_mut().log_items.as_ptr().add(i).as_ref().unwrap();
-            
-            // 获取数据库实例
-            let db = crate::get_global_db().ok_or(RemDbError::InternalError)?;
-            
-            match log_item.op_type {
-                LogOperation::Insert => {
-                    // 撤销插入：执行删除操作
-                    let table_id = log_item.table_id as usize;
-                    if table_id < db.tables.len() {
-                        if let Some(table) = &mut db.tables[table_id] {
-                            // 检查记录是否存在
-                            let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                            if (*status_ptr).status == crate::types::RecordStatus::Used {
-                                // 从主键索引中删除
-                                if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                                    let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                                    let primary_key_field = &table.def.fields[table.def.primary_key];
-                                    let key_ptr = record_ptr.add(primary_key_field.offset);
-                                    let _: Result<()> = primary_index.delete(key_ptr, primary_key_field.size);
-                                }
-                                
-                                // 标记记录为空闲
-                                (*status_ptr).status = crate::types::RecordStatus::Free;
-                                (*status_ptr).version += 1;
-                                
-                                // 清空记录数据
-                                let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                                crate::platform::memset(record_ptr, 0, table.record_size);
-                                
-                                // 将空闲槽压回栈中，确保不超过数组大小
-                                if table.free_slot_count < table.def.max_records {
-                                    *table.free_slots.as_ptr().add(table.free_slot_count) = log_item.record_id as usize;
-                                    table.free_slot_count += 1;
-                                }
-                                
-                                // 更新记录计数
-                                table.record_count -= 1;
-                            }
-                        }
-                    }
-                },
-                LogOperation::Delete => {
-                    // 撤销删除：执行插入操作，恢复旧数据
-                    let table_id = log_item.table_id as usize;
-                    if table_id < db.tables.len() {
-                        if let Some(table) = &mut db.tables[table_id] {
-                            // 检查记录是否空闲
-                            let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                            if (*status_ptr).status != crate::types::RecordStatus::Used {
-                                // 恢复记录数据
-                                let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                                crate::platform::memcpy(
-                                    record_ptr,
-                                    log_item.old_data.as_ptr(),
-                                    log_item.data_size as usize
-                                );
-                                
-                                // 标记记录为已使用
-                                (*status_ptr).status = crate::types::RecordStatus::Used;
-                                (*status_ptr).version += 1;
-                                (*status_ptr).create_tx_id = log_item.tx_id;
-                                (*status_ptr).delete_tx_id = 0;
-                                (*status_ptr).next_version_ptr = 0;
-                                table.record_count += 1;
-                                
-                                // 更新主键索引
-                                if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                                    let primary_key_field = &table.def.fields[table.def.primary_key];
-                                    let key_ptr = record_ptr.add(primary_key_field.offset);
-                                    let _: Result<()> = primary_index.insert(key_ptr, primary_key_field.size, log_item.record_id as u16);
-                                }
-                            }
-                        }
-                    }
-                },
-                LogOperation::Update => {
-                    // 撤销更新：恢复旧数据
-                    let table_id = log_item.table_id as usize;
-                    if table_id < db.tables.len() {
-                        if let Some(table) = &mut db.tables[table_id] {
-                            // 检查记录是否存在
-                            let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                            if (*status_ptr).status == crate::types::RecordStatus::Used {
-                                // 从主键索引中删除旧记录（当前更新后的数据）
-                                if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                                    let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                                    let primary_key_field = &table.def.fields[table.def.primary_key];
-                                    let key_ptr = record_ptr.add(primary_key_field.offset);
-                                    let _: Result<()> = primary_index.delete(key_ptr, primary_key_field.size);
-                                }
-                                
-                                // 恢复旧数据
-                                let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                                crate::platform::memcpy(
-                                    record_ptr,
-                                    log_item.old_data.as_ptr(),
-                                    log_item.data_size as usize
-                                );
-                                
-                                // 更新版本号和创建事务ID
-                                (*status_ptr).version += 1;
-                                (*status_ptr).create_tx_id = log_item.tx_id;
-                                
-                                // 将恢复后的数据插入到主键索引中
-                                if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                                    let primary_key_field = &table.def.fields[table.def.primary_key];
-                                    let key_ptr = record_ptr.add(primary_key_field.offset);
-                                    let _: Result<()> = primary_index.insert(key_ptr, primary_key_field.size, log_item.record_id as u16);
-                                }
-                            }
-                        }
-                    }
-                },
-                _ => {
-                    // 其他操作类型不需要回滚
-                    continue;
-                }
-            }
-        }
-        
-        // 更新事务状态为回滚中
-        tx.as_mut().status = TransactionStatus::RolledBack;
-        
-        // 重新获取锁来清除当前事务
-        crate::platform::spin_lock(&mut self.lock);
-        
-        // 清除当前事务
-        self.current_tx = None;
-        
-        // 解锁
-        crate::platform::spin_unlock(&mut self.lock);
-        
-        Ok(())
-    }
-    
-    /// 检查记录是否对当前事务可见（MVCC实现）
-    pub fn is_visible(&self, create_tx_id: u32, delete_tx_id: u32, current_tx_id: u32) -> bool {
-        // MVCC可见性规则：
-        // 1. 记录是由当前事务创建的，对当前事务可见
-        // 2. 记录是由已提交事务创建的，并且未被删除或被当前事务删除
-        // 3. 记录是由已提交事务创建的，并且删除事务尚未提交
-        
-        // 如果当前事务是创建者，记录可见
-        if create_tx_id == current_tx_id {
-            return true;
-        }
-        
-        // 如果记录已被删除，并且删除事务已提交，记录不可见
-        if delete_tx_id > 0 && delete_tx_id < current_tx_id {
-            return false;
-        }
-        
-        // 如果记录是由已提交事务创建的，并且未被删除，记录可见
-        if create_tx_id < current_tx_id {
-            return true;
-        }
-        
-        // 其他情况，记录不可见
-        false
-    }
-    
-    /// 获取当前活动事务
-    pub fn get_current_tx(&self) -> Option<NonNull<Transaction>> {
-        self.current_tx
-    }
-    
-    /// 设置低功耗模式
-    pub fn set_low_power_mode(&mut self, enabled: bool) {
-        self.low_power_mode = enabled;
-    }
-    
-    /// 获取低功耗模式状态
-    pub fn is_low_power_mode(&self) -> bool {
-        self.low_power_mode
-    }
-    
-    /// 重置事务管理器状态
-    pub fn reset(&mut self) {
-        // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
-
         let _lock = self.lock.lock();
-        // 锁在函数结束时自动释放
-        
-        // 清除所有活动事务
 
         // 检查是否已经有活跃事务（不支持嵌套事务）
         if self.current_tx.is_some() {
             return Err(RemDbError::TransactionError);
         }
-        
+
         // 更新事务ID计数器
         let tx_id = self.tx_id_counter;
         self.tx_id_counter += 1;
-        
+
         // 生成快照版本号
         let snapshot_version = self.snapshot_version;
-        
+
         // 检查外部缓冲区是否有效
         if !tx_buffer.is_null() && !log_buffer.is_null() && max_log_items > 0 {
             // 测试环境：使用外部提供的缓冲区初始化事务对象
-            // 设置事务属性
             (*tx_buffer).id = tx_id;
             (*tx_buffer).tx_type = tx_type;
             (*tx_buffer).status = TransactionStatus::Active;
@@ -2274,205 +1932,163 @@ impl TransactionManager {
             (*tx_buffer).log_item_count = 0;
             (*tx_buffer).depth = 1;
             (*tx_buffer).lock = parking_lot::Mutex::new(());
-            
+
             // 保存当前事务引用
             self.current_tx = Some(NonNull::new_unchecked(tx_buffer));
-            
+
             // 添加事务快照到活跃快照列表
             self.active_snapshots.push(ActiveSnapshot {
                 tx_id,
                 snapshot_version,
             });
-            
+
             Ok(NonNull::new_unchecked(tx_buffer))
         } else {
             // JDBC服务器环境：只跟踪事务状态，不使用外部缓冲区
-            // 创建一个简单的事务结构，使用内部状态管理
-            // 注意：这种模式下不支持复杂的事务操作，只用于状态跟踪
             self.current_tx = Some(NonNull::dangling());
-            
+
             // 添加事务快照到活跃快照列表
             self.active_snapshots.push(ActiveSnapshot {
                 tx_id,
                 snapshot_version,
             });
-            
+
             Ok(NonNull::dangling())
         }
     }
-    
+
     /// 提交事务
     pub unsafe fn commit(&mut self) -> Result<()> {
         // 增加已提交事务计数
         crate::get_global_db().map(|db| db.metrics.inc_committed_transactions());
-        // 自旋锁保护
         let _lock = self.lock.lock();
-        // 锁在函数结束时自动释放
-        
+
         // 检查是否有活跃事务
         let tx_ptr = match self.current_tx.take() {
             Some(tx) => tx,
             None => return Err(RemDbError::TransactionError),
         };
-        
+
         // 检查是否是悬垂指针（用于JDBC服务器）
         let is_dangling = tx_ptr.as_ptr() == NonNull::dangling().as_ptr();
-        
+
         let tx_id = if !is_dangling {
             // 测试环境：更新事务状态
             let tx = &mut *tx_ptr.as_ptr();
-            
+
             // 记录提交日志
             if let Some(log_manager) = &mut self.log_manager {
-                // 创建提交日志项
                 let log_item = LogItem {
                     op_type: LogOperation::Commit,
-                    table_id: 0, // 提交操作不关联特定表
-                    record_id: 0, // 提交操作不关联特定记录
-                    data_size: 0, // 提交操作没有数据
+                    table_id: 0,
+                    record_id: 0,
+                    data_size: 0,
                     old_data: [0; 512],
                     new_data: [0; 512],
                     tx_id: tx.id,
                     timestamp: crate::platform::get_timestamp_us(),
-                    checksum: 0, // 后面会计算
+                    checksum: 0,
                 };
-                
-                // 计算校验和
+
                 let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
                 core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut LogItem, log_item);
                 let mut check_bytes = log_bytes.clone();
                 let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<LogItem>() - 4) as *mut u32;
                 *checksum_ptr = 0;
                 let calculated_checksum = Transaction::calculate_checksum(&check_bytes);
-                
+
                 let mut final_log_item = log_item;
                 final_log_item.checksum = calculated_checksum;
-                
-                // 写入日志
+
                 log_manager.write_log_item(&final_log_item)?;
             }
-            
+
             tx.status = TransactionStatus::Committed;
             tx.id
         } else {
-            // JDBC服务器环境：获取事务ID（这里假设悬垂指针也关联了一个有效的事务ID）
-            // 注意：实际实现中可能需要更复杂的逻辑来跟踪悬垂指针的事务ID
             self.tx_id_counter - 1
         };
-        
+
         // 移除事务快照从活跃快照列表
         self.active_snapshots.retain(|snapshot| snapshot.tx_id != tx_id);
-        
         // 增加全局快照版本号
         self.snapshot_version += 1;
-        
+
         Ok(())
     }
-    
+
     /// 回滚事务
     pub unsafe fn rollback(&mut self, db: &mut crate::RemDb) -> Result<()> {
-        // 增加已回滚事务计数
         crate::get_global_db().map(|db| db.metrics.inc_rolled_back_transactions());
-        // 自旋锁保护
         let _lock = self.lock.lock();
-        // 锁在函数结束时自动释放
-        
-        // 检查是否有活跃事务
+
         let tx_ptr = match self.current_tx.take() {
             Some(tx) => tx,
             None => return Err(RemDbError::TransactionError),
         };
-        
-        // 检查是否是悬垂指针（用于JDBC服务器）
+
         let is_dangling = tx_ptr.as_ptr() == NonNull::dangling().as_ptr();
-        
+
         if !is_dangling {
-            // 测试环境：遍历事务日志，执行回滚操作
             let tx = &mut *tx_ptr.as_ptr();
-            
+
             for i in (0..tx.log_item_count).rev() {
                 let log_ptr = tx.log_items.as_ptr().add(i);
                 let log_item = *log_ptr;
-                
-                // 根据日志类型执行相应的回滚操作
+
                 match log_item.op_type {
                     LogOperation::Insert => {
-                        // 回滚插入操作：删除记录
                         let table = match &mut db.tables[log_item.table_id as usize] {
                             Some(table) => table,
                             None => continue,
                         };
-                        
                         let record_id = log_item.record_id as usize;
                         if table.status_array[record_id].status == crate::types::RecordStatus::Used {
-                            // 执行删除操作
                             table.status_array[record_id].status = crate::types::RecordStatus::Free;
                             table.status_array[record_id].version += 1;
-                            
                             let record_slice = table.get_record_slice_mut(record_id);
                             let data_size = log_item.data_size as usize;
                             crate::platform::memset(&mut record_slice[..data_size], 0);
                             drop(record_slice);
-                            
-                            // 将空闲槽压回栈中
                             table.free_slots.push(log_item.record_id as usize);
-                            
                             table.record_count -= 1;
                         }
                     },
                     LogOperation::Delete => {
-                        // 回滚删除操作：恢复记录
                         let table = match &mut db.tables[log_item.table_id as usize] {
                             Some(table) => table,
                             None => continue,
                         };
-                        
                         let record_id = log_item.record_id as usize;
                         if table.status_array[record_id].status == crate::types::RecordStatus::Free {
-                            // 执行恢复操作
                             table.status_array[record_id].status = crate::types::RecordStatus::Used;
                             table.status_array[record_id].version += 1;
-                            
                             let record_slice = table.get_record_slice_mut(record_id);
                             let data_size = log_item.data_size as usize;
-                            crate::platform::memcpy(
-                                &mut record_slice[..data_size],
-                                &log_item.old_data[..data_size]
-                            );
+                            crate::platform::memcpy(&mut record_slice[..data_size], &log_item.old_data[..data_size]);
                             drop(record_slice);
-                            
                             table.record_count += 1;
                         }
                     },
                     LogOperation::Update => {
-                        // 回滚更新操作：恢复到旧值
                         let table = match &mut db.tables[log_item.table_id as usize] {
                             Some(table) => table,
                             None => continue,
                         };
-                        
                         let record_id = log_item.record_id as usize;
                         if table.status_array[record_id].status == crate::types::RecordStatus::Used {
-                            // 执行恢复操作
                             let record_slice = table.get_record_slice_mut(record_id);
                             let data_size = log_item.data_size as usize;
-                            crate::platform::memcpy(
-                                &mut record_slice[..data_size],
-                                &log_item.old_data[..data_size]
-                            );
+                            crate::platform::memcpy(&mut record_slice[..data_size], &log_item.old_data[..data_size]);
                             drop(record_slice);
-                            
                             table.status_array[record_id].version += 1;
                         }
                     },
                     LogOperation::TimeSeriesInsert => {
-                        // 回滚时序数据插入：从分区中删除记录
                         let ts_table = match &mut db.time_series_tables[log_item.table_id as usize] {
                             Some(table) => table,
                             None => continue,
                         };
-                        
-                        // 从日志中解析出时间序列记录
                         let mut record = crate::time_series::TimeSeriesRecord {
                             timestamp: 0,
                             value: 0.0,
@@ -2481,26 +2097,16 @@ impl TransactionManager {
                         };
                         let size = core::mem::size_of::<crate::time_series::TimeSeriesRecord>();
                         let record_bytes = unsafe {
-                            core::slice::from_raw_parts_mut(
-                                &mut record as *mut _ as *mut u8,
-                                size
-                            )
+                            core::slice::from_raw_parts_mut(&mut record as *mut _ as *mut u8, size)
                         };
-                        crate::platform::memcpy(
-                            record_bytes,
-                            &log_item.new_data[..size]
-                        );
-                        
-                        // 获取分区
+                        crate::platform::memcpy(record_bytes, &log_item.new_data[..size]);
+
                         let partitions_guard = ts_table.partitions.lock().unwrap();
                         if let Some(partition) = partitions_guard.get_partition(record.timestamp) {
-                            // 从分区中删除记录
                             let mut partition_guard = partition.lock().unwrap();
                             if let Some(index) = partition_guard.records.iter().position(|r| r.timestamp == record.timestamp) {
                                 partition_guard.records.remove(index);
                                 partition_guard.stats.record_count = partition_guard.records.len();
-                                
-                                // 更新索引
                                 ts_table.index.remove(record.timestamp);
                             }
                         }
@@ -2508,74 +2114,60 @@ impl TransactionManager {
                     _ => continue,
                 }
             }
-            
+
             // 记录回滚日志
             if let Some(log_manager) = &mut self.log_manager {
-                // 创建回滚日志项
                 let log_item = LogItem {
                     op_type: LogOperation::Abort,
-                    table_id: 0, // 回滚操作不关联特定表
-                    record_id: 0, // 回滚操作不关联特定记录
-                    data_size: 0, // 回滚操作没有数据
+                    table_id: 0,
+                    record_id: 0,
+                    data_size: 0,
                     old_data: [0; 512],
                     new_data: [0; 512],
                     tx_id: tx.id,
                     timestamp: crate::platform::get_timestamp_us(),
-                    checksum: 0, // 后面会计算
+                    checksum: 0,
                 };
-                
-                // 计算校验和
+
                 let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
                 core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut LogItem, log_item);
                 let mut check_bytes = log_bytes.clone();
                 let checksum_ptr = check_bytes.as_mut_ptr().add(core::mem::size_of::<LogItem>() - 4) as *mut u32;
                 *checksum_ptr = 0;
                 let calculated_checksum = Transaction::calculate_checksum(&check_bytes);
-                
+
                 let mut final_log_item = log_item;
                 final_log_item.checksum = calculated_checksum;
-                
-                // 写入日志
+
                 log_manager.write_log_item(&final_log_item)?;
             }
-            
-            // 更新事务状态
+
             tx.status = TransactionStatus::RolledBack;
         }
-        
-        // 获取事务ID
+
         let tx_id = if !is_dangling {
             let tx = &mut *tx_ptr.as_ptr();
             tx.id
         } else {
-            // JDBC服务器环境：获取事务ID
             self.tx_id_counter - 1
         };
-        
+
         // 移除事务快照从活跃快照列表
         self.active_snapshots.retain(|snapshot| snapshot.tx_id != tx_id);
-        
+
         Ok(())
     }
-    
+
     /// 获取当前事务
     pub fn get_current_tx(&self) -> Option<NonNull<Transaction>> {
         self.current_tx
     }
-    
-    /// 检查是否有活跃事务
-    pub fn has_active_tx(&self) -> bool {
-        self.current_tx.is_some()
-    }
-    
+
     /// 可见性判断：检查记录版本是否对当前事务可见
     pub fn is_visible(&self, create_tx_id: u32, delete_tx_id: u32, tx_id: u32) -> bool {
-        // 可见性规则：
-        // 1. 记录创建事务ID <= 当前事务ID，且记录删除事务ID > 当前事务ID或为0
-        // 2. 记录创建事务已提交，且记录删除事务未提交或不存在
         create_tx_id <= tx_id && (delete_tx_id == 0 || delete_tx_id > tx_id)
     }
-    
+
     /// 获取活跃事务中最小的事务ID
     pub fn get_min_active_tx_id(&self) -> u32 {
         if self.active_snapshots.is_empty() {
@@ -2584,53 +2176,47 @@ impl TransactionManager {
             self.active_snapshots.iter().map(|s| s.tx_id).min().unwrap_or(self.tx_id_counter)
         }
     }
-    
+
     /// 垃圾回收检查：判断记录版本是否可以被回收
     pub fn can_recycle(&self, create_tx_id: u32, delete_tx_id: u32) -> bool {
-        // 回收规则：
-        // 1. 记录创建事务ID < 最小活跃事务ID
-        // 2. 记录删除事务ID < 最小活跃事务ID（如果有删除事务）
         let min_active_tx_id = self.get_min_active_tx_id();
         create_tx_id < min_active_tx_id && (delete_tx_id == 0 || delete_tx_id < min_active_tx_id)
     }
-    
+
     /// 检测写入冲突：检查记录是否被其他事务修改
     pub fn detect_write_conflict(&self, create_tx_id: u32, current_tx_id: u32) -> bool {
-        // 冲突规则：
-        // 1. 记录创建事务ID > 当前事务ID
-        // 2. 表示该记录已被更晚开始的事务修改
         create_tx_id > current_tx_id
     }
-    
+
+    /// 设置低功耗模式
+    pub fn set_low_power_mode(&mut self, enabled: bool) {
+        self.low_power_mode = enabled;
+    }
+
+    /// 获取低功耗模式状态
+    pub fn is_low_power_mode(&self) -> bool {
+        self.low_power_mode
+    }
+
     /// 重置事务管理器
-    pub unsafe fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.current_tx = None;
         self.active_snapshots.clear();
-        
-        // 重置事务计数
-        self.tx_id_counter = 1; // 从1开始，避免与初始值0冲突
+        self.tx_id_counter = 1;
         self.snapshot_version = 0;
-        
-        // 解锁
-        crate::platform::spin_unlock(&mut self.lock);
     }
 }
 
 impl Transaction {
-    /// 提交事务日志项
-    pub unsafe fn commit_log_item(&mut self) -> Result<()> {
-        // 检查是否有活动事务
-
     /// 计算数据校验和
     pub fn calculate_checksum(data: &[u8]) -> u32 {
-        // 简单的XOR校验和实现，适合嵌入式环境
         let mut checksum = 0u32;
         for &byte in data {
             checksum ^= byte as u32;
         }
         checksum
     }
-    
+
     /// 添加日志项
     pub unsafe fn add_log_item(
         &mut self,
@@ -2639,36 +2225,23 @@ impl Transaction {
         record_id: u16,
         old_data: *const u8,
         new_data: *const u8,
-        data_size: usize
+        data_size: usize,
     ) -> Result<()> {
-        // 自旋锁保护
         let _lock = self.lock.lock();
-        // 锁在函数结束时自动释放
-        
+
         // 检查事务状态
         if self.status != TransactionStatus::Active {
             return Err(RemDbError::TransactionError);
         }
-        
-        // 遍历所有日志项
-        for i in 0..self.log_item_count {
-            let log_item = &self.log_items.as_ptr().add(i).as_ref().unwrap();
-            
-            // 写入日志项到日志管理器
-            if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
-                log_manager.write_log_item(log_item)?;
-            }
-        }
-        
 
         // 检查数据大小
         if data_size > 512 {
             return Err(RemDbError::UnsupportedOperation);
         }
-        
+
         // 获取日志项指针
         let log_ptr = self.log_items.as_ptr().add(self.log_item_count);
-        
+
         // 设置日志项基本信息
         (*log_ptr).op_type = op_type;
         (*log_ptr).table_id = table_id;
@@ -2676,7 +2249,7 @@ impl Transaction {
         (*log_ptr).data_size = data_size as u16;
         (*log_ptr).tx_id = self.id;
         (*log_ptr).timestamp = crate::platform::get_timestamp_us();
-        
+
         // 拷贝旧数据
         if old_data.is_null() {
             memset(&mut (&mut (*log_ptr).old_data)[..data_size], 0);
@@ -2684,7 +2257,7 @@ impl Transaction {
             let old_slice = unsafe { core::slice::from_raw_parts(old_data, data_size) };
             memcpy(&mut (&mut (*log_ptr).old_data)[..data_size], old_slice);
         }
-        
+
         // 拷贝新数据
         if new_data.is_null() {
             memset(&mut (&mut (*log_ptr).new_data)[..data_size], 0);
@@ -2692,36 +2265,30 @@ impl Transaction {
             let new_slice = unsafe { core::slice::from_raw_parts(new_data, data_size) };
             memcpy(&mut (&mut (*log_ptr).new_data)[..data_size], new_slice);
         }
-        
+
         // 计算校验和
         let mut checksum_data = [0u8; 1024];
         let mut offset = 0;
-        
-        // 拷贝操作类型和元数据
         checksum_data[offset] = (*log_ptr).op_type as u8;
         offset += 1;
         checksum_data[offset] = (*log_ptr).table_id;
         offset += 1;
-        checksum_data[offset..offset+2].copy_from_slice(&(*log_ptr).record_id.to_le_bytes());
+        checksum_data[offset..offset + 2].copy_from_slice(&(*log_ptr).record_id.to_le_bytes());
         offset += 2;
-        checksum_data[offset..offset+2].copy_from_slice(&(*log_ptr).data_size.to_le_bytes());
+        checksum_data[offset..offset + 2].copy_from_slice(&(*log_ptr).data_size.to_le_bytes());
         offset += 2;
-        
-        // 拷贝数据
-        checksum_data[offset..offset+data_size].copy_from_slice(&(&(*log_ptr).old_data)[0..data_size]);
+        checksum_data[offset..offset + data_size].copy_from_slice(&(&(*log_ptr).old_data)[0..data_size]);
         offset += data_size;
-        checksum_data[offset..offset+data_size].copy_from_slice(&(&(*log_ptr).new_data)[0..data_size]);
+        checksum_data[offset..offset + data_size].copy_from_slice(&(&(*log_ptr).new_data)[0..data_size]);
         offset += data_size;
-        
-        // 计算校验和
         (*log_ptr).checksum = Self::calculate_checksum(&checksum_data[0..offset]);
-        
+
         // 更新日志项计数
         self.log_item_count += 1;
-        
+
         Ok(())
     }
-    
+
     /// 开始事务日志项
     pub unsafe fn begin_log_item(
         &mut self,
@@ -2731,16 +2298,15 @@ impl Transaction {
         record_id: u16,
         data_size: u16,
         old_data: Option<&[u8]>,
-        new_data: Option<&[u8]>
+        new_data: Option<&[u8]>,
     ) -> Option<NonNull<LogItem>> {
         if self.log_item_count >= self.max_log_items {
             return None;
         }
-        
+
         let log_item_ptr = self.log_items.as_ptr().add(self.log_item_count);
         let log_item = log_item_ptr.as_mut().unwrap();
-        
-        // 初始化日志项
+
         log_item.op_type = op_type;
         log_item.table_id = table_id;
         log_item.record_id = record_id;
@@ -2750,56 +2316,31 @@ impl Transaction {
         log_item.tx_id = tx_id;
         log_item.timestamp = crate::platform::get_timestamp_us();
         log_item.checksum = 0;
-        
-        // 复制旧数据（如果有）
+
         if let Some(data) = old_data {
             let copy_len = core::cmp::min(data.len(), 512);
-            crate::platform::memcpy(log_item.old_data.as_mut_ptr(), data.as_ptr(), copy_len);
+            log_item.old_data[..copy_len].copy_from_slice(&data[..copy_len]);
         }
-        
-        // 复制新数据（如果有）
         if let Some(data) = new_data {
             let copy_len = core::cmp::min(data.len(), 512);
-            crate::platform::memcpy(log_item.new_data.as_mut_ptr(), data.as_ptr(), copy_len);
+            log_item.new_data[..copy_len].copy_from_slice(&data[..copy_len]);
         }
-        
-        // 计算校验和：直接基于字段计算，避免结构体填充问题
+
         let calculated_checksum = Transaction::calculate_log_item_checksum(log_item);
         log_item.checksum = calculated_checksum;
-        
+
         self.log_item_count += 1;
         Some(NonNull::new_unchecked(log_item_ptr))
     }
-    
+
     /// 检查事务是否活跃
     pub fn is_active(&self) -> bool {
         self.status == TransactionStatus::Active
     }
-    
+
     /// 检查事务是否为只读
     pub fn is_read_only(&self) -> bool {
         self.tx_type == TransactionType::ReadOnly
-    }
-    
-    /// 计算数据校验和
-    pub fn calculate_checksum(data: &[u8]) -> u32 {
-        let mut checksum = 0u32;
-        let mut i = 0;
-        
-        // 按4字节为单位计算校验和
-        while i + 4 <= data.len() {
-            let value = u32::from_le_bytes([data[i], data[i+1], data[i+2], data[i+3]]);
-            checksum ^= value;
-            i += 4;
-        }
-        
-        // 处理剩余的字节
-        while i < data.len() {
-            checksum ^= data[i] as u32;
-            i += 1;
-        }
-        
-        checksum
     }
 }
 
@@ -2821,13 +2362,17 @@ pub fn init_tx_manager() {
 }
 
 /// 刷新所有日志
-pub unsafe fn flush_all_logs() -> Result<()> {
-    TX_MANAGER.flush_logs()
+pub fn flush_all_logs() -> Result<()> {
+    unsafe {
+        TX_MANAGER.flush_logs()
+    }
 }
 
 /// 设置全局日志管理器
-pub unsafe fn set_log_manager(log_manager: LogManager) {
-    TX_MANAGER.set_log_manager(log_manager);
+pub fn set_log_manager(log_manager: LogManager) {
+    unsafe {
+        TX_MANAGER.set_log_manager(log_manager);
+    }
 }
 
 /// 获取全局日志管理器
@@ -2844,21 +2389,21 @@ pub fn reset_log_manager() {
     }
 }
 
-/// 设置低功耗模式
+/// 设置事务管理器低功耗模式
 pub fn set_low_power_mode(enabled: bool) {
     unsafe {
         TX_MANAGER.set_low_power_mode(enabled);
     }
 }
 
-/// 获取低功耗模式状态
+/// 获取事务管理器低功耗模式状态
 pub fn is_low_power_mode() -> bool {
     unsafe {
         TX_MANAGER.is_low_power_mode()
     }
 }
 
-/// 检查是否有活动事务
+/// 检查是否有活跃事务
 pub fn has_active_tx() -> bool {
     unsafe {
         TX_MANAGER.has_active_tx()
@@ -2866,30 +2411,10 @@ pub fn has_active_tx() -> bool {
 }
 
 /// 获取当前事务
-pub unsafe fn get_current_tx() -> Option<NonNull<Transaction>> {
-    TX_MANAGER.get_current_tx()
-
-/// 全局事务管理器
-use parking_lot::Mutex;
-#[cfg(feature = "std")]
-use std::sync::OnceLock;
-#[cfg(not(feature = "std"))]
-use crate::platform::OnceLock;
-
-// Transaction 和 TransactionManager 包含 NonNull 指针，需要手动实现 Send
-// 因为 NonNull<T> 在 Rust 1.95.0 中不再自动实现 Send/Sync
-unsafe impl Send for Transaction {}
-unsafe impl Send for TransactionManager {}
-
-static TX_MANAGER: OnceLock<Mutex<TransactionManager>> = OnceLock::new();
-
-/// 获取事务管理器并执行操作
-fn with_tx_manager<F, R>(f: F) -> R
-where
-    F: FnOnce(&mut TransactionManager) -> R,
-{
-    let mut guard = TX_MANAGER.get_or_init(|| Mutex::new(TransactionManager::new())).lock();
-    f(&mut *guard)
+pub fn get_current_tx() -> Option<NonNull<Transaction>> {
+    unsafe {
+        TX_MANAGER.get_current_tx()
+    }
 }
 
 /// 开始事务
@@ -2898,27 +2423,25 @@ pub fn begin(
     isolation_level: IsolationLevel,
     tx_buffer: *mut Transaction,
     log_buffer: *mut LogItem,
-    max_log_items: usize
+    max_log_items: usize,
 ) -> Result<NonNull<Transaction>> {
-    with_tx_manager(|tx_manager| {
-        // SAFETY: TransactionManager::begin() is unsafe due to raw pointer parameters.
-        // These will be made safe in a later phase (T2: MemoryTable).
-        unsafe { tx_manager.begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items) }
-    })
+    unsafe {
+        TX_MANAGER.begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items)
+    }
 }
 
 /// 提交事务
 pub fn commit() -> Result<()> {
-    with_tx_manager(|tx_manager| {
-        // SAFETY: TransactionManager::commit() is unsafe due to static mut access.
-        // The static mut access is now managed by the Mutex.
-        unsafe { tx_manager.commit() }
-    })
+    unsafe {
+        TX_MANAGER.commit()
+    }
 }
 
 /// 回滚事务
-pub unsafe fn rollback() -> Result<()> {
-    TX_MANAGER.rollback()
+pub fn rollback(db: &mut crate::RemDb) -> Result<()> {
+    unsafe {
+        TX_MANAGER.rollback(db)
+    }
 }
 
 /// 检查记录是否对当前事务可见（MVCC实现）
@@ -2929,61 +2452,17 @@ pub fn is_visible(create_tx_id: u32, delete_tx_id: u32, current_tx_id: u32) -> b
 }
 
 /// 获取当前事务ID计数器
-pub fn tx_id_counter() -> u32 {
+pub fn get_tx_id_counter() -> u32 {
     unsafe {
         TX_MANAGER.tx_id_counter()
     }
-
-pub fn rollback(db: &mut crate::RemDb) -> Result<()> {
-    with_tx_manager(|tx_manager| {
-        // SAFETY: TransactionManager::rollback() is unsafe due to static mut access.
-        // The static mut access is now managed by the Mutex.
-        unsafe { tx_manager.rollback(db) }
-    })
 }
 
-/// 获取当前事务
-pub fn get_current_tx() -> Option<NonNull<Transaction>> {
-    with_tx_manager(|tx_manager| {
-        tx_manager.get_current_tx()
-    })
-}
-
-/// 检查是否有活跃事务
-pub fn has_active_tx() -> bool {
-    with_tx_manager(|tx_manager| {
-        tx_manager.has_active_tx()
-    })
-}
-
-/// 设置事务管理器低功耗模式
-pub fn set_low_power_mode(enabled: bool) {
-    with_tx_manager(|tx_manager| {
-        tx_manager.set_low_power_mode(enabled);
-    })
-}
-
-/// 设置日志管理器
-pub fn set_log_manager(log_manager: LogManager) {
-    with_tx_manager(|tx_manager| {
-        // SAFETY: TransactionManager::set_log_manager() is unsafe due to static mut access.
-        // The static mut access is now managed by the Mutex.
-        unsafe { tx_manager.set_log_manager(log_manager); }
-    })
-}
-
-/// 获取事务ID计数器
-pub fn get_tx_id_counter() -> u32 {
-    with_tx_manager(|tx_manager| {
-        tx_manager.tx_id_counter
-    })
-}
-
-/// 检查记录是否可见
+/// 检查记录是否可见（MVCC实现）
 pub fn is_record_visible(create_tx_id: u32, delete_tx_id: u32, tx_id: u32) -> bool {
-    with_tx_manager(|tx_manager| {
-        tx_manager.is_visible(create_tx_id, delete_tx_id, tx_id)
-    })
+    unsafe {
+        TX_MANAGER.is_visible(create_tx_id, delete_tx_id, tx_id)
+    }
 }
 
 /// 使用日志管理器执行操作
@@ -2991,23 +2470,22 @@ pub fn with_log_manager<F, R>(f: F) -> R
 where
     F: FnOnce(Option<&mut LogManager>) -> R,
 {
-    with_tx_manager(|tx_manager| {
-        f(tx_manager.get_log_manager_mut())
-    })
+    unsafe {
+        f(TX_MANAGER.get_log_manager_mut())
+    }
 }
 
 /// 重置事务管理器
 pub fn reset_tx_manager() {
-    with_tx_manager(|tx_manager| {
-        // SAFETY: TransactionManager::reset() is unsafe due to static mut access.
-        // The static mut access is now managed by the Mutex.
-        unsafe { tx_manager.reset() }
-    })
+    unsafe {
+        TX_MANAGER.reset();
+    }
 }
 
 /// 清除日志管理器
 pub fn clear_log_manager_tx() {
-    with_tx_manager(|tx_manager| {
-        tx_manager.clear_log_manager();
-    })
+    unsafe {
+        TX_MANAGER.clear_log_manager();
+    }
 }
+

@@ -18,34 +18,17 @@ impl remdb::platform::Platform for TestPlatform {
         1609459200000000 // 2021-01-01 00:00:00 UTC in microseconds
     }
     
-    fn spin_lock(&self, _lock: &mut u32) {
-        // 简单实现，不做实际锁定
-    }
-    
-    fn spin_unlock(&self, _lock: &mut u32) {
-        // 简单实现，不做实际解锁
-    }
-    
-    fn memcpy(&self, dst: *mut u8, src: *const u8, size: usize) {
-        // 使用标准库的内存拷贝
+    fn memcpy(&self, dst: &mut [u8], src: &[u8]) {
+        let n = core::cmp::min(dst.len(), src.len());
         unsafe {
-            std::ptr::copy(src, dst, size);
+            std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), n);
         }
     }
     
-    fn memset(&self, ptr: *mut u8, value: u8, size: usize) {
-        // 使用标准库的内存设置
-        unsafe {
-            std::ptr::write_bytes(ptr, value, size);
+    fn memset(&self, dst: &mut [u8], value: u8) {
+        for b in dst.iter_mut() {
+            *b = value;
         }
-    }
-    
-    fn compiler_barrier(&self) {
-        // 不执行任何操作
-    }
-    
-    fn full_memory_barrier(&self) {
-        // 不执行任何操作
     }
     
     fn delay_ms(&self, _ms: u32) {
@@ -56,23 +39,23 @@ impl remdb::platform::Platform for TestPlatform {
         // 不执行任何操作
     }
     
-    fn file_open(&self, _path: &str, _mode: remdb::platform::FileMode) -> std::result::Result<*const u8, ()> {
-        Ok(std::ptr::null())
+    fn file_open(&self, _path: &str, _mode: remdb::platform::FileMode) -> std::result::Result<usize, ()> {
+        Ok(0)
     }
     
-    fn file_close(&self, _handle: *const u8) -> std::result::Result<(), ()> {
+    fn file_close(&self, _handle: usize) -> std::result::Result<(), ()> {
         Ok(())
     }
     
-    fn file_write(&self, _handle: *const u8, _data: *const u8, _size: usize) -> std::result::Result<usize, ()> {
-        Ok(0)
+    fn file_write(&self, _handle: usize, _data: &[u8]) -> std::result::Result<usize, ()> {
+        Ok(_data.len())
     }
     
-    fn file_read(&self, _handle: *const u8, _data: *mut u8, _size: usize) -> std::result::Result<usize, ()> {
-        Ok(0)
+    fn file_read(&self, _handle: usize, _data: &mut [u8]) -> std::result::Result<usize, ()> {
+        Ok(_data.len())
     }
     
-    fn file_seek(&self, _handle: *const u8, _offset: i64, _whence: remdb::platform::SeekWhence) -> std::result::Result<u64, ()> {
+    fn file_seek(&self, _handle: usize, _offset: i64, _whence: remdb::platform::SeekWhence) -> std::result::Result<u64, ()> {
         Ok(0)
     }
     
@@ -84,7 +67,7 @@ impl remdb::platform::Platform for TestPlatform {
         Ok(0)
     }
     
-    fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+    fn crc32(&self, _data: &[u8]) -> u32 {
         0
     }
 }

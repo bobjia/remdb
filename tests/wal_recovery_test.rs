@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig}; use remdb::{init_global_db, reset_global_db, RemDb}; use remdb::platform::{Platform, FileMode, FileResult, FileHandle, SeekWhence, init_platform}; use remdb::transaction::set_low_power_mode;
 
 // 测试用Platform实现
@@ -12,42 +13,16 @@ impl Platform for TestPlatform {
         0
     }
     
-    fn spin_lock(&self, lock: &mut u32) {
+    fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+        let n = core::cmp::min(dest.len(), src.len());
         unsafe {
-            while core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .compare_exchange(0, 1, 
-                                 core::sync::atomic::Ordering::Acquire,
-                                 core::sync::atomic::Ordering::Relaxed)
-                .is_err() {
-                core::hint::spin_loop();
-            }
+            core::ptr::copy_nonoverlapping(src.as_ptr(), dest.as_mut_ptr(), n);
         }
     }
     
-    fn spin_unlock(&self, lock: &mut u32) {
+    fn memset(&self, dest: &mut [u8], value: u8) {
         unsafe {
-            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .store(0, core::sync::atomic::Ordering::Release);
-        }
-    }
-    
-    fn compiler_barrier(&self) {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    fn full_memory_barrier(&self) {
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-        unsafe {
-            core::ptr::copy_nonoverlapping(src, dest, size);
-        }
-    }
-    
-    fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-        unsafe {
-            core::ptr::write_bytes(dest, value, size);
+            core::ptr::write_bytes(dest.as_mut_ptr(), value, dest.len());
         }
     }
     
@@ -60,20 +35,20 @@ impl Platform for TestPlatform {
     }
     
     fn file_open(&self, _path: &str, _mode: FileMode) -> FileResult<FileHandle> {
-        // 返回一个非空指针作为有效的FileHandle
-        Ok(1 as *const u8)
+        // 返回一个非空句柄作为有效的FileHandle
+        Ok(1)
     }
     
     fn file_close(&self, _handle: FileHandle) -> FileResult<()> {
         Ok(())
     }
     
-    fn file_write(&self, _handle: FileHandle, _buffer: *const u8, size: usize) -> FileResult<usize> {
+    fn file_write(&self, _handle: FileHandle, buf: &[u8]) -> FileResult<usize> {
         // 模拟写入成功，返回写入的字节数
-        Ok(size)
+        Ok(buf.len())
     }
     
-    fn file_read(&self, _handle: FileHandle, _buffer: *mut u8, _size: usize) -> FileResult<usize> {
+    fn file_read(&self, _handle: FileHandle, _buffer: &mut [u8]) -> FileResult<usize> {
         // 模拟读取成功，返回0表示文件为空
         Ok(0)
     }
@@ -91,7 +66,7 @@ impl Platform for TestPlatform {
         Ok(0)
     }
     
-    fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+    fn crc32(&self, _data: &[u8]) -> u32 {
         0
     }
 }

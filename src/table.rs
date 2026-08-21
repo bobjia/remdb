@@ -503,10 +503,10 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                         crate::transaction::LogOperation::Insert,
                         self.def.id,
                         slot_id as u16,
-                        self.record_size as u16,
-                        None,
-                        Some(&new_data)
-                    );
+                        core::ptr::null(),
+                        new_data.as_ptr(),
+                        self.record_size
+                    )?;
                 }
             }
         }
@@ -618,7 +618,6 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                 }
             }
         }
-        }
         
         // 更新记录数据
         self.data[record_start..record_end].copy_from_slice(&record_data[..self.record_size]);
@@ -666,7 +665,6 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                     )?;
                 }
             }
-        }
         }
         
         // 标记为空闲
@@ -723,7 +721,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
             if (*status_ptr).status != RecordStatus::Used {
                 return None;
             }
-            let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
+            let record_ptr = self.data.as_ptr().add(id * self.record_size) as *mut u8;
             Some(RecordRef {
                 table: self,
                 id,
@@ -1010,11 +1008,32 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
         Ok(())
     }
     
-    /// 获取记录状态引用
-    pub fn get_status_ptr(&self, index: usize) -> &RecordHeader {
+    /// 获取记录状态指针（可写）
+    ///
+    /// 返回指向记录状态的 `*mut RecordHeader`，调用方负责确保索引在有效范围内
+    /// 且生命周期正确。主要用于日志恢复等底层场景。
+    pub fn get_status_ptr(&self, index: usize) -> *mut RecordHeader {
         // 安全检查：确保索引在有效范围内
         debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})", index, self.def.max_records);
-        &self.status_array[index]
+        unsafe { self.status_array.as_ptr().add(index) as *mut RecordHeader }
+    }
+
+    /// 获取记录数据的可变原始指针（零拷贝写入）
+    ///
+    /// 返回指向该记录起始地址的 `*mut u8`，调用方负责确保索引在有效范围
+    /// 内且生命周期正确。该方法主要用于日志恢复等底层场景。
+    pub fn get_record_ptr_mut(&mut self, index: usize) -> *mut u8 {
+        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})", index, self.def.max_records);
+        unsafe { self.data.as_mut_ptr().add(index * self.record_size) }
+    }
+
+    /// 获取记录数据的原始指针（零拷贝只读）
+    ///
+    /// 返回指向该记录起始地址的 `*const u8`。调用方负责确保索引在有效范围
+    /// 内且生命周期正确。
+    pub fn get_record_ptr(&self, index: usize) -> *const u8 {
+        debug_assert!(index < self.def.max_records, "Record index out of bounds: {} (max: {})", index, self.def.max_records);
+        unsafe { self.data.as_ptr().add(index * self.record_size) }
     }
     
     /// 获取记录数据切片（零拷贝访问）
@@ -2031,6 +2050,133 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
     ) -> Result<()> {
         // no_std环境下不支持Vec和BTreeMap，返回错误
         Err(RemDbError::UnsupportedOperation)
+    }
+}
+
+/// 记录引用（零拷贝访问单条记录）
+///
+/// 直接借用 `MemoryTable` 的存储空间，通过 `RawRecordView` 提供类型化的
+/// 字段读取，避免分配 `Value` 枚举。
+pub struct RecordRef<'a> {
+    /// 所属表
+    pub table: &'a MemoryTable,
+    /// 记录ID
+    pub id: usize,
+    /// 记录数据指针
+    pub record_ptr: *mut u8,
+}
+
+impl<'a> RecordRef<'a> {
+    /// 创建一个只读的记录视图
+    fn view(&self) -> crate::Result<crate::record_view::RawRecordView<'a>> {
+        // 表的借用与其数据生命周期一致，因此这里的指针转换是安全的
+        let slice = unsafe {
+            core::slice::from_raw_parts(
+                self.record_ptr as *const u8,
+                self.table.record_size,
+            )
+        };
+        Ok(crate::record_view::RawRecordView::new(slice, &self.table.def))
+    }
+
+    /// 读取一个 `u32` 字段
+    pub fn get_u32(&self, field_idx: usize) -> crate::Result<u32> {
+        self.view()?.read_u32(field_idx)
+    }
+    /// 读取一个 `u64` 字段
+    pub fn get_u64(&self, field_idx: usize) -> crate::Result<u64> {
+        self.view()?.read_u64(field_idx)
+    }
+    /// 读取一个 `u16` 字段
+    pub fn get_u16(&self, field_idx: usize) -> crate::Result<u16> {
+        self.view()?.read_u16(field_idx)
+    }
+    /// 读取一个 `u8` 字段
+    pub fn get_u8(&self, field_idx: usize) -> crate::Result<u8> {
+        self.view()?.read_u8(field_idx)
+    }
+    /// 读取一个字符串字段
+    pub fn get_str(&self, field_idx: usize) -> crate::Result<&'a str> {
+        self.view()?.read_str(field_idx)
+    }
+    /// 读取一个 `i64` 字段
+    pub fn get_i64(&self, field_idx: usize) -> crate::Result<i64> {
+        self.view()?.read_i64(field_idx)
+    }
+    /// 读取一个 `f64` 字段
+    pub fn get_f64(&self, field_idx: usize) -> crate::Result<f64> {
+        self.view()?.read_f64(field_idx)
+    }
+    /// 读取一个布尔字段
+    pub fn get_bool(&self, field_idx: usize) -> crate::Result<bool> {
+        self.view()?.read_bool(field_idx)
+    }
+}
+
+/// 记录游标（零拷贝遍历表中所有记录）
+pub struct RecordCursor<'a> {
+    table: &'a MemoryTable,
+    next_id: usize,
+}
+
+impl<'a> RecordCursor<'a> {
+    /// 创建新的记录游标
+    pub fn new(table: &'a MemoryTable) -> Self {
+        RecordCursor { table, next_id: 0 }
+    }
+}
+
+impl<'a> Iterator for RecordCursor<'a> {
+    type Item = RecordRef<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.next_id < self.table.def.max_records {
+            let id = self.next_id;
+            self.next_id += 1;
+            if self.table.status_array[id].status == RecordStatus::Used {
+                let record_ptr = unsafe { self.table.data.as_ptr().add(id * self.table.record_size) as *mut u8 };
+                return Some(RecordRef {
+                    table: self.table,
+                    id,
+                    record_ptr,
+                });
+            }
+        }
+        None
+    }
+}
+
+/// 基于记录ID列表的记录游标（零拷贝）
+pub struct RecordIdCursor<'a> {
+    table: &'a MemoryTable,
+    ids: Vec<usize>,
+    next_idx: usize,
+}
+
+impl<'a> RecordIdCursor<'a> {
+    /// 创建新的记录ID游标
+    pub fn new(table: &'a MemoryTable, ids: Vec<usize>) -> Self {
+        RecordIdCursor { table, ids, next_idx: 0 }
+    }
+}
+
+impl<'a> Iterator for RecordIdCursor<'a> {
+    type Item = RecordRef<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.next_idx < self.ids.len() {
+            let id = self.ids[self.next_idx];
+            self.next_idx += 1;
+            if id < self.table.def.max_records
+                && self.table.status_array[id].status == RecordStatus::Used
+            {
+                let record_ptr = unsafe { self.table.data.as_ptr().add(id * self.table.record_size) as *mut u8 };
+                return Some(RecordRef {
+                    table: self.table,
+                    id,
+                    record_ptr,
+                });
+            }
+        }
+        None
     }
 }
 

@@ -5193,7 +5193,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                             // 如果是自动创建的事务，需要回滚
                             if !has_active_tx {
                                 unsafe {
-                                    crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
+                                    crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
                                 }
                             }
                             return Err(QueryExecutionError::ConstraintsConflicts);
@@ -5203,7 +5203,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                         // 如果是自动创建的事务，需要回滚
                         if !has_active_tx {
                             unsafe {
-                                crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
+                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
                             }
                         }
                         return Err(QueryExecutionError::ConstraintsConflicts);
@@ -5212,7 +5212,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                         // 如果是自动创建的事务，需要回滚
                         if !has_active_tx {
                             unsafe {
-                                crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
+                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
                             }
                         }
                         return Err(QueryExecutionError::OutOfMemory);
@@ -5221,7 +5221,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                         // 如果是自动创建的事务，需要回滚
                         if !has_active_tx {
                             unsafe {
-                                crate::transaction::rollback().map_err(|_| QueryExecutionError::InternalError)?;
+                                crate::transaction::rollback(db).map_err(|_| QueryExecutionError::InternalError)?;
                             }
                         }
                         return Err(QueryExecutionError::InternalError);
