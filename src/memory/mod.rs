@@ -1,7 +1,10 @@
 pub mod pool;
 
-// Re-export MemoryBlock and MemoryStats from remdb-alloc
-pub use remdb_alloc::{MemoryBlock, MemoryStats, init_global_allocator};
+// Re-export types and functions from remdb-alloc
+pub use remdb_alloc::{
+    MemoryBlock, MemoryStats, StaticAllocator,
+    init_global_allocator, reset_allocator as reset_global_allocator,
+};
 
 // Re-export Mutex for no_std compatibility (used by time_series modules)
 #[cfg(feature = "std")]

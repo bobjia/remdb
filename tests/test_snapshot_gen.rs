@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 use core::mem::MaybeUninit;
 use remdb::*;
 use remdb::types::*;
@@ -96,44 +97,12 @@ impl Platform for TestPlatform {
         0
     }
     
-    fn spin_lock(&self, lock: &mut u32) {
-        // 简单的自旋锁实现
-        unsafe {
-            while core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .compare_exchange(0, 1, 
-                                 core::sync::atomic::Ordering::Acquire,
-                                 core::sync::atomic::Ordering::Relaxed)
-                .is_err() {
-                core::hint::spin_loop();
-            }
-        }
+    fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+        dest.copy_from_slice(src);
     }
     
-    fn spin_unlock(&self, lock: &mut u32) {
-        unsafe {
-            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .store(0, core::sync::atomic::Ordering::Release);
-        }
-    }
-    
-    fn compiler_barrier(&self) {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    fn full_memory_barrier(&self) {
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-        unsafe {
-            core::ptr::copy_nonoverlapping(src, dest, size);
-        }
-    }
-    
-    fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-        unsafe {
-            core::ptr::write_bytes(dest, value, size);
-        }
+    fn memset(&self, dest: &mut [u8], value: u8) {
+        dest.fill(value);
     }
     
     fn delay_ms(&self, _ms: u32) {
@@ -183,27 +152,25 @@ impl Platform for TestPlatform {
         Ok(())
     }
     
-    fn file_write(&self, handle: FileHandle, buffer: *const u8, size: usize) -> FileResult<usize> {
+    fn file_write(&self, handle: FileHandle, buf: &[u8]) -> FileResult<usize> {
         // 使用std::fs::File实现文件写入
         use std::io::Write;
         
         let file = unsafe { &mut *(handle as *mut std::fs::File) };
-        let slice = unsafe { std::slice::from_raw_parts(buffer, size) };
         
-        match file.write(slice) {
+        match file.write(buf) {
             Ok(n) => Ok(n),
             Err(_) => Err(()),
         }
     }
     
-    fn file_read(&self, handle: FileHandle, buffer: *mut u8, size: usize) -> FileResult<usize> {
+    fn file_read(&self, handle: FileHandle, buf: &mut [u8]) -> FileResult<usize> {
         // 使用std::fs::File实现文件读取
         use std::io::Read;
         
         let file = unsafe { &mut *(handle as *mut std::fs::File) };
-        let slice = unsafe { std::slice::from_raw_parts_mut(buffer, size) };
         
-        match file.read(slice) {
+        match file.read(buf) {
             Ok(n) => Ok(n),
             Err(_) => Err(()),
         }
@@ -246,11 +213,10 @@ impl Platform for TestPlatform {
         }
     }
     
-    fn crc32(&self, data: *const u8, size: usize) -> u32 {
+    fn crc32(&self, data: &[u8]) -> u32 {
         // 简单的XOR校验和实现
-        let slice = unsafe { std::slice::from_raw_parts(data, size) };
         let mut checksum = 0u32;
-        for &byte in slice {
+        for &byte in data {
             checksum ^= byte as u32;
         }
         checksum

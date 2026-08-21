@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 extern crate alloc;
 
 use remdb::*;
@@ -284,43 +285,12 @@ fn test_time_series_batch_performance() {
                     1609459200000000
                 }
                 
-                fn spin_lock(&self, lock: &mut u32) {
-                    while unsafe {
-                        core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                            .compare_exchange(0, 1, 
-                                            core::sync::atomic::Ordering::Acquire,
-                                            core::sync::atomic::Ordering::Relaxed)
-                            .is_err()
-                    } {
-                        core::hint::spin_loop();
-                    }
+                fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+                    dest.copy_from_slice(src);
                 }
                 
-                fn spin_unlock(&self, lock: &mut u32) {
-                    unsafe {
-                        core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                            .store(0, core::sync::atomic::Ordering::Release);
-                    }
-                }
-                
-                fn compiler_barrier(&self) {
-                    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-                }
-                
-                fn full_memory_barrier(&self) {
-                    core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-                }
-                
-                fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-                    unsafe {
-                        core::ptr::copy(src, dest, size);
-                    }
-                }
-                
-                fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-                    unsafe {
-                        core::ptr::write_bytes(dest, value, size);
-                    }
+                fn memset(&self, dest: &mut [u8], value: u8) {
+                    dest.fill(value);
                 }
                 
                 fn delay_ms(&self, ms: u32) {
@@ -339,11 +309,11 @@ fn test_time_series_batch_performance() {
                     Err(())
                 }
                 
-                fn file_write(&self, _handle: crate::platform::FileHandle, _buffer: *const u8, _size: usize) -> crate::platform::FileResult<usize> {
+                fn file_write(&self, _handle: crate::platform::FileHandle, _buf: &[u8]) -> crate::platform::FileResult<usize> {
                     Err(())
                 }
                 
-                fn file_read(&self, _handle: crate::platform::FileHandle, _buffer: *mut u8, _size: usize) -> crate::platform::FileResult<usize> {
+                fn file_read(&self, _handle: crate::platform::FileHandle, _buf: &mut [u8]) -> crate::platform::FileResult<usize> {
                     Err(())
                 }
                 
@@ -359,7 +329,7 @@ fn test_time_series_batch_performance() {
                     Err(())
                 }
                 
-                fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+                fn crc32(&self, _data: &[u8]) -> u32 {
                     0
                 }
             }

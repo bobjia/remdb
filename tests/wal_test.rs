@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig};
 #[cfg(feature = "ha")]
 use remdb::config::HAConfig;
@@ -18,44 +19,12 @@ impl Platform for TestPlatform {
         0
     }
     
-    fn spin_lock(&self, lock: &mut u32) {
-        // Simple spin lock implementation
-        unsafe {
-            while core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .compare_exchange(0, 1, 
-                                 core::sync::atomic::Ordering::Acquire,
-                                 core::sync::atomic::Ordering::Relaxed)
-                .is_err() {
-                core::hint::spin_loop();
-            }
-        }
+    fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+        dest.copy_from_slice(src);
     }
     
-    fn spin_unlock(&self, lock: &mut u32) {
-        unsafe {
-            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .store(0, core::sync::atomic::Ordering::Release);
-        }
-    }
-    
-    fn compiler_barrier(&self) {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    fn full_memory_barrier(&self) {
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-        unsafe {
-            core::ptr::copy_nonoverlapping(src, dest, size);
-        }
-    }
-    
-    fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-        unsafe {
-            core::ptr::write_bytes(dest, value, size);
-        }
+    fn memset(&self, dest: &mut [u8], value: u8) {
+        dest.fill(value);
     }
     
     fn delay_ms(&self, _ms: u32) {
@@ -68,19 +37,19 @@ impl Platform for TestPlatform {
     
     fn file_open(&self, _path: &str, _mode: FileMode) -> FileResult<FileHandle> {
         // 返回一个非空指针作为有效的FileHandle
-        Ok(1 as *const u8)
+        Ok(1)
     }
     
     fn file_close(&self, _handle: FileHandle) -> FileResult<()> {
         Ok(())
     }
     
-    fn file_write(&self, _handle: FileHandle, _buffer: *const u8, size: usize) -> FileResult<usize> {
+    fn file_write(&self, _handle: FileHandle, _buf: &[u8]) -> FileResult<usize> {
         // 模拟写入成功，返回写入的字节数
-        Ok(size)
+        Ok(_buf.len())
     }
     
-    fn file_read(&self, _handle: FileHandle, _buffer: *mut u8, _size: usize) -> FileResult<usize> {
+    fn file_read(&self, _handle: FileHandle, _buf: &mut [u8]) -> FileResult<usize> {
         // 模拟读取成功，返回0表示文件为空
         Ok(0)
     }
@@ -98,9 +67,8 @@ impl Platform for TestPlatform {
         Ok(0)
     }
     
-    fn crc32(&self, data: *const u8, size: usize) -> u32 {
+    fn crc32(&self, data: &[u8]) -> u32 {
         // 简单的CRC32实现，仅用于测试
-        let data = unsafe { std::slice::from_raw_parts(data, size) };
         let mut crc = 0xFFFFFFFF;
         
         for &byte in data {

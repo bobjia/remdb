@@ -1,7 +1,8 @@
-use remdb::memory::allocator::*;
+#![allow(unsafe_code)]
+
+use remdb::memory::*;
 use remdb::memory::pool::*;
 use remdb::types::Result;
-use remdb::memory::MemoryBlock;
 
 #[test]
 fn test_static_allocator() {

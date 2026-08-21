@@ -1,6 +1,7 @@
 // 导出功能测试
 // 使用标准库
 #![cfg(feature = "std")]
+#![allow(unsafe_code)]
 
 // 确保测试顺序执行，避免全局状态冲突
 extern crate alloc;
@@ -84,7 +85,7 @@ fn test_export_ddl() {
     reset_global_db();
     
     // 重置全局分配器
-    crate::memory::allocator::reset_global_allocator().unwrap();
+    crate::memory::reset_global_allocator().unwrap();
 }
 
 #[test]
@@ -188,7 +189,7 @@ fn test_export_data() {
     reset_global_db();
     
     // 重置全局内存分配器
-    crate::memory::allocator::reset_global_allocator().unwrap();
+    crate::memory::reset_global_allocator().unwrap();
 }
 
 #[test]
@@ -240,5 +241,5 @@ fn test_export_empty_table() {
     reset_global_db();
     
     // 重置全局分配器
-    crate::memory::allocator::reset_global_allocator().unwrap();
+    crate::memory::reset_global_allocator().unwrap();
 }
