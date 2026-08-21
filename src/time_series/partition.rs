@@ -1,3 +1,5 @@
+use crate::try_lock;
+
 use super::TimeSeriesRecord;
 use alloc::{sync::Arc, vec::Vec};
 use core::time::Duration;
@@ -90,7 +92,7 @@ impl PartitionManager {
 
         // 检查是否已存在该分区
         for partition in &self.partitions {
-            let p = partition.lock().unwrap();
+            let p = try_lock!(partition);
             if p.start_time == start_time {
                 return partition.clone();
             }
@@ -119,7 +121,7 @@ impl PartitionManager {
         let mut result = Vec::new();
 
         for partition in &self.partitions {
-            let p = partition.lock().unwrap();
+            let p = try_lock!(partition);
             if p.start_time <= end_time && p.end_time >= start_time {
                 result.push(partition.clone());
             }
@@ -143,7 +145,7 @@ impl PartitionManager {
         let expire_time = current_time - retention_period.as_secs();
 
         self.partitions.retain(|partition| {
-            let p = partition.lock().unwrap();
+            let p = try_lock!(partition);
             p.end_time > expire_time
         });
     }
@@ -159,7 +161,7 @@ impl PartitionManager {
         let start_time = partition_key * self.partition_duration;
 
         for partition in &self.partitions {
-            let p = partition.lock().unwrap();
+            let p = try_lock!(partition);
             if p.start_time == start_time {
                 return Some(partition.clone());
             }
@@ -171,7 +173,7 @@ impl PartitionManager {
     /// 压缩所有可压缩的分区
     pub fn compress_all_partitions(&self) {
         for partition in &self.partitions {
-            let mut p = partition.lock().unwrap();
+            let mut p = try_lock!(partition);
             if !p.compressed {
                 // 压缩分区逻辑（需要与压缩模块集成）
                 p.compressed = true;

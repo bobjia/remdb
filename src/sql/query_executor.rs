@@ -2,6 +2,10 @@
 //!
 //! 该模块负责执行SQL查询并返回结果集。
 
+use crate::try_lock;
+
+
+
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::sync::Arc;
@@ -3625,7 +3629,7 @@ fn execute_show_index_build_status_query(
     
     // 遍历所有状态，添加到结果集
     for status_arc in status_list {
-        let status = status_arc.lock().unwrap();
+        let status = try_lock!(status_arc);
         
         // 转换状态为字符串
         let state_str = status.get_state_str();
@@ -6240,11 +6244,11 @@ fn execute_insert_timeseries_query(
         };
 
         // 获取或创建分区
-        let mut partitions_guard = ts_table.partitions.lock().unwrap();
+        let mut partitions_guard = try_lock!(ts_table.partitions);
         let partition = partitions_guard.get_or_create_partition(record.timestamp);
 
         // 写入记录到分区
-        let mut partition_guard = partition.lock().unwrap();
+        let mut partition_guard = try_lock!(partition);
         partition_guard.records.push(record);
         partition_guard.stats.record_count = partition_guard.records.len();
 

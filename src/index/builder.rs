@@ -1,3 +1,5 @@
+use crate::try_lock;
+
 use crate::sql::query_parser::IndexType as SqlIndexType;
 use crate::types::{IndexType, RemDbError, Result};
 use alloc::sync::Arc;
@@ -138,7 +140,7 @@ impl IndexBuildStatus {
     /// 更新状态为失败
     fn set_failed(&mut self, error: String) {
         self.state = IndexBuildState::Failed(error.clone());
-        *self.error.lock().unwrap() = Some(error);
+        *try_lock!(self.error) = Some(error);
     }
     
     /// 检查是否已取消
@@ -202,7 +204,7 @@ impl IndexBuildThreadPool {
         while !stop.load(Ordering::SeqCst) {
             // 尝试从任务队列中获取任务
             let task = {
-                let mut queue = task_queue.lock().unwrap();
+                let mut queue = try_lock!(task_queue);
                 queue.pop_front()
             };
             
@@ -280,7 +282,7 @@ impl IndexBuildThreadPool {
         )));
         
         // 存储状态
-        self.build_status.lock().unwrap().insert(task_id, status);
+        try_lock!(self.build_status).insert(task_id, status);
         
         // 创建并提交任务
         let task = IndexBuildTask {
@@ -293,14 +295,14 @@ impl IndexBuildThreadPool {
         };
         
         // 将任务添加到队列
-        self.task_queue.lock().unwrap().push_back(task);
+        try_lock!(self.task_queue).push_back(task);
         
         task_id
     }
     
     /// 获取索引构建状态
     pub fn get_build_status(&self, task_id: Option<IndexBuildTaskId>) -> Vec<Arc<Mutex<IndexBuildStatus>>> {
-        let status_map = self.build_status.lock().unwrap();
+        let status_map = try_lock!(self.build_status);
         
         match task_id {
             Some(id) => {

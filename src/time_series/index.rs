@@ -1,3 +1,7 @@
+use crate::try_lock;
+use crate::try_read;
+use crate::try_write;
+
 use alloc::{collections::BTreeMap, string::String, string::ToString, sync::Arc, vec::Vec};
 
 #[cfg(feature = "std")]
@@ -36,18 +40,18 @@ impl TimeSeriesIndex {
     /// 插入索引项
     pub fn insert(&self, timestamp: u64, record_id: usize) {
         #[cfg(feature = "std")]
-        let mut time_index = self.time_index.write().unwrap();
+        let mut time_index = try_write!(self.time_index);
         #[cfg(not(feature = "std"))]
-        let mut time_index = self.time_index.lock().unwrap();
+        let mut time_index = try_lock!(self.time_index);
         time_index.entry(timestamp).or_default().push(record_id);
     }
 
     /// 插入标签索引
     pub fn insert_tag(&self, tag_name: &str, tag_value: &str, record_id: usize) {
         #[cfg(feature = "std")]
-        let mut tag_index = self.tag_index.write().unwrap();
+        let mut tag_index = try_write!(self.tag_index);
         #[cfg(not(feature = "std"))]
-        let mut tag_index = self.tag_index.lock().unwrap();
+        let mut tag_index = try_lock!(self.tag_index);
         tag_index
             .entry(tag_name.to_string())
             .or_default()
@@ -59,9 +63,9 @@ impl TimeSeriesIndex {
     /// 时间范围查询
     pub fn query_time_range(&self, start_time: u64, end_time: u64) -> Vec<usize> {
         #[cfg(feature = "std")]
-        let time_index = self.time_index.read().unwrap();
+        let time_index = try_read!(self.time_index);
         #[cfg(not(feature = "std"))]
-        let time_index = self.time_index.lock().unwrap();
+        let time_index = try_lock!(self.time_index);
         let mut result = Vec::new();
 
         for (_, ids) in time_index.range(start_time..=end_time) {
@@ -84,7 +88,7 @@ impl TimeSeriesIndex {
 
         let mut filtered_ids = record_ids.to_vec();
 
-        let tag_index = self.tag_index.read().unwrap();
+        let tag_index = try_read!(self.tag_index);
 
         for (tag_name, tag_value) in tags {
             if let Some(tag_values) = tag_index.get(tag_name) {
@@ -126,7 +130,7 @@ impl TimeSeriesIndex {
             return record_ids.to_vec();
         }
 
-        let tag_index = self.tag_index.lock().unwrap();
+        let tag_index = try_lock!(self.tag_index);
         let mut filtered_ids = record_ids.to_vec();
 
         for (tag_name, tag_value) in tags {
@@ -161,9 +165,9 @@ impl TimeSeriesIndex {
     /// 清除指定时间之前的索引
     pub fn clear_before(&self, timestamp: u64) {
         #[cfg(feature = "std")]
-        let mut time_index = self.time_index.write().unwrap();
+        let mut time_index = try_write!(self.time_index);
         #[cfg(not(feature = "std"))]
-        let mut time_index = self.time_index.lock().unwrap();
+        let mut time_index = try_lock!(self.time_index);
         let keys_to_remove: Vec<u64> = time_index.range(..timestamp).map(|(k, _)| *k).collect();
 
         for key in keys_to_remove {
@@ -174,9 +178,9 @@ impl TimeSeriesIndex {
     /// 删除指定时间戳的索引项
     pub fn remove(&self, timestamp: u64) {
         #[cfg(feature = "std")]
-        let mut time_index = self.time_index.write().unwrap();
+        let mut time_index = try_write!(self.time_index);
         #[cfg(not(feature = "std"))]
-        let mut time_index = self.time_index.lock().unwrap();
+        let mut time_index = try_lock!(self.time_index);
         time_index.remove(&timestamp);
     }
 }

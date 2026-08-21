@@ -3299,7 +3299,7 @@ impl TTreeIndex {
     }
 
     /// 递归插入索引�?
-    unsafe fn insert_recursive_with_depth(&mut self, mut node: NonNull<TTreeNode>, key: SecondaryIndexItem, depth: usize) {
+    unsafe fn insert_recursive_with_depth(&mut self, mut node: NonNull<TTreeNode>, key: SecondaryIndexItem, depth: usize) -> Result<()> {
         const MAX_RECURSION_DEPTH: usize = 100;
         if depth > MAX_RECURSION_DEPTH {
             // 递归深度过大，强制分裂当前节点以避免栈溢出

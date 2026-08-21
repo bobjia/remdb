@@ -1,6 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![recursion_limit = "1024"]
 
+
+
 use crate::table::Defer;
 use core::ptr::NonNull;
 
@@ -25,9 +27,60 @@ pub mod table;
 pub mod time_series;
 pub mod transaction;
 pub mod types;
+pub mod sync;
 pub mod system_tables;
 pub mod utf8;
 pub mod wal_compression;
+
+/// 安全地获取 Mutex 锁，自动处理中毒情况
+/// 不会 panic
+#[macro_export]
+macro_rules! try_lock {
+    ($lock:expr) => {{
+        #[cfg(feature = "std")]
+        {
+            $lock.lock().unwrap_or_else(|e| e.into_inner())
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            $lock.lock().unwrap_or_else(|_| unreachable!())
+        }
+    }};
+}
+
+/// 安全地获取 RwLock 读锁，自动处理中毒情况
+/// 不会 panic
+#[macro_export]
+macro_rules! try_read {
+    ($lock:expr) => {{
+        #[cfg(feature = "std")]
+        {
+            $lock.read().unwrap_or_else(|e| e.into_inner())
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            // no_std 下没有真正的 RwLock，使用 Mutex 的 lock() 模拟
+            $lock.lock().unwrap_or_else(|_| unreachable!())
+        }
+    }};
+}
+
+/// 安全地获取 RwLock 写锁，自动处理中毒情况
+/// 不会 panic
+#[macro_export]
+macro_rules! try_write {
+    ($lock:expr) => {{
+        #[cfg(feature = "std")]
+        {
+            $lock.write().unwrap_or_else(|e| e.into_inner())
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            // no_std 下没有真正的 RwLock，使用 Mutex 的 lock() 模拟
+            $lock.lock().unwrap_or_else(|_| unreachable!())
+        }
+    }};
+}
 
 // 导出核心类型
 pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};
@@ -3939,11 +3992,11 @@ impl RemDb {
             // 注意：这不是完整的ACID事务，但确保了基本的批量写入功能
             for record in data_points {
                 // 获取或创建分区
-                let mut partitions_guard = table.partitions.lock().unwrap();
+                let mut partitions_guard = try_lock!(table.partitions);
                 let partition = partitions_guard.get_or_create_partition(record.timestamp);
 
                 // 写入记录到分区
-                let mut partition_guard = partition.lock().unwrap();
+                let mut partition_guard = try_lock!(partition);
                 partition_guard.records.push(*record);
                 partition_guard.stats.record_count = partition_guard.records.len();
 

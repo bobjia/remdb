@@ -1,3 +1,5 @@
+use crate::try_lock;
+
 use crate::defer;
 use crate::types::{RemDbError, Result, DEFAULT_TEXT_SIZE, DEFAULT_JSON_SIZE};
 use core::default::Default;
@@ -2864,11 +2866,11 @@ impl LogManager {
                         );
 
                         // 获取或创建分区
-                        let mut partitions_guard = ts_table.partitions.lock().unwrap();
+                        let mut partitions_guard = try_lock!(ts_table.partitions);
                         let partition = partitions_guard.get_or_create_partition(record.timestamp);
 
                         // 写入记录到分区
-                        let mut partition_guard = partition.lock().unwrap();
+                        let mut partition_guard = try_lock!(partition);
                         partition_guard.records.push(record);
                         partition_guard.stats.record_count = partition_guard.records.len();
 

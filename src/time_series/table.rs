@@ -1,3 +1,5 @@
+use crate::try_lock;
+
 use super::{CompressionType, LifecycleManager, PartitionManager, TimeSeriesIndex};
 use crate::{RemDbError, Result, TableDef};
 use alloc::{sync::Arc, vec::Vec};
@@ -159,7 +161,7 @@ impl TimeSeriesTable {
         let partitions_clone = partition_manager.clone();
         let retention_period = def.config.retention_period();
         lifecycle_manager.set_cleanup_callback(move || {
-            let mut partitions_guard = partitions_clone.lock().unwrap();
+            let mut partitions_guard = try_lock!(partitions_clone);
             let current_time = LifecycleManager::get_current_timestamp();
             partitions_guard.cleanup_expired_partitions(current_time, retention_period);
         });
@@ -185,7 +187,7 @@ impl TimeSeriesTable {
         interval_seconds: u64,
         aggregation: &str,
     ) -> Result<()> {
-        let mut pre_aggregation_guard = self.pre_aggregation.lock().unwrap();
+        let mut pre_aggregation_guard = try_lock!(self.pre_aggregation);
         
         // 检查是否已存在相同配置
         let existing_config = pre_aggregation_guard.configs.iter()
@@ -212,7 +214,7 @@ impl TimeSeriesTable {
         interval_seconds: u64,
         aggregation: &str,
     ) -> Result<Vec<TimeSeriesRecord>> {
-        let pre_aggregation_guard = self.pre_aggregation.lock().unwrap();
+        let pre_aggregation_guard = try_lock!(self.pre_aggregation);
         
         // 检查预聚合配置是否存在
         let config_exists = pre_aggregation_guard.configs.iter()
@@ -250,7 +252,7 @@ impl TimeSeriesTable {
     
     /// 更新预聚合数据
     fn update_pre_aggregations(&self, record: &TimeSeriesRecord) {
-        let mut pre_aggregation_guard = self.pre_aggregation.lock().unwrap();
+        let mut pre_aggregation_guard = try_lock!(self.pre_aggregation);
         
         // 先复制配置，避免借用冲突
         let configs = pre_aggregation_guard.configs.clone();
@@ -308,11 +310,11 @@ impl TimeSeriesTable {
             let record = *records.add(i);
 
             // 获取或创建分区
-            let mut partitions_guard = self.partitions.lock().unwrap();
+            let mut partitions_guard = try_lock!(self.partitions);
             let partition = partitions_guard.get_or_create_partition(record.timestamp);
 
             // 写入记录到分区
-            let mut partition_guard = partition.lock().unwrap();
+            let mut partition_guard = try_lock!(partition);
             partition_guard.records.push(record);
             partition_guard.stats.record_count += 1;
 
@@ -350,11 +352,11 @@ impl TimeSeriesTable {
         // 批量写入逻辑
         for (i, record) in data_points.iter().enumerate() {
             // 获取或创建分区
-            let mut partitions_guard = self.partitions.lock().unwrap();
+            let mut partitions_guard = try_lock!(self.partitions);
             let partition = partitions_guard.get_or_create_partition(record.timestamp);
 
             // 写入记录到分区
-            let mut partition_guard = partition.lock().unwrap();
+            let mut partition_guard = try_lock!(partition);
             partition_guard.records.push(*record);
             partition_guard.stats.record_count = partition_guard.records.len();
 
@@ -400,14 +402,14 @@ impl TimeSeriesTable {
         end_time: u64,
     ) -> Result<Vec<TimeSeriesRecord>> {
         // 获取所有相关分区
-        let partitions_guard = self.partitions.lock().unwrap();
+        let partitions_guard = try_lock!(self.partitions);
         let relevant_partitions = partitions_guard.get_partitions_in_range(start_time, end_time);
 
         let mut results = Vec::new();
 
         // 遍历所有相关分区，查询符合条件的记录
         for partition in relevant_partitions {
-            let partition_guard = partition.lock().unwrap();
+            let partition_guard = try_lock!(partition);
 
             // 遍历分区中的记录，过滤符合时间范围的记录
             for record in &partition_guard.records {

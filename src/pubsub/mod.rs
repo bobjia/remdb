@@ -1,3 +1,5 @@
+use crate::try_lock;
+
 // 基于UDP的高可靠数据订阅与发布模块
 
 pub mod crc32;
@@ -191,7 +193,7 @@ impl PubSub {
 
         // 启动接收线程
         std::thread::spawn(move || {
-            let mut pubsub = pubsub.lock().unwrap();
+            let mut pubsub = try_lock!(pubsub);
             pubsub.receive_loop();
         });
 
