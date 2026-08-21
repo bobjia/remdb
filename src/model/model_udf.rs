@@ -16,7 +16,7 @@ use crate::model::worker_protocol::{ModelRequest, ModelResponse};
 use crate::model::cache::{CacheKey, get_or_init_cache};
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{debug, error};
 
 #[derive(Debug)]
 pub struct ModelUDF {

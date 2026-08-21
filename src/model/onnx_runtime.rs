@@ -16,7 +16,7 @@ use ort::session::Session;
 use ort::value::Tensor;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{debug, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputType {
@@ -365,7 +365,7 @@ impl OnnxModel {
     }
 
     #[cfg(not(feature = "model-runtime"))]
-    pub fn execute(&self, inputs_data: &[Vec<f32>]) -> Result<Vec<f32>, String> {
+    pub fn execute(&self, _inputs_data: &[Vec<f32>]) -> Result<Vec<f32>, String> {
         #[cfg(feature = "log")]
         debug!("Using stub model execution");
 

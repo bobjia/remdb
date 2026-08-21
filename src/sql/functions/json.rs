@@ -155,7 +155,7 @@ pub fn execute_json_extract(args: &[TypedValue]) -> Result<TypedValue, QueryExec
             })
         }
         crate::json::document::JsonQueryResult::None => {
-            let mut buf = [0u8; 256];
+            let buf = [0u8; 256];
             Ok(TypedValue {
                 value_type: DataType::Json,
                 value: Value { json_storage: JsonStorage::Inline(buf) },
@@ -187,7 +187,7 @@ pub fn execute_json_value(args: &[TypedValue]) -> Result<TypedValue, QueryExecut
             })
         }
         _ => {
-            let mut buf = [0; MAX_STRING_LEN];
+            let buf = [0; MAX_STRING_LEN];
             Ok(TypedValue {
                 value_type: DataType::VarChar,
                 value: Value { string: buf },
@@ -238,7 +238,7 @@ pub fn execute_json_query(args: &[TypedValue]) -> Result<TypedValue, QueryExecut
             })
         }
         _ => {
-            let mut buf = [0u8; 256];
+            let buf = [0u8; 256];
             Ok(TypedValue {
                 value_type: DataType::Json,
                 value: Value { json_storage: JsonStorage::Inline(buf) },

@@ -189,7 +189,7 @@ impl JsonMemoryPool {
     }
     
     /// 增加引用计数
-    pub fn add_ref(&self, block_idx: usize, offset: usize) {
+    pub fn add_ref(&self, block_idx: usize, _offset: usize) {
         if let Some(block) = self.blocks.get(block_idx) {
             if let Some(block_ptr) = block {
                 let header = unsafe { &mut *(block_ptr.as_ptr() as *mut BlockHeader) };
@@ -199,7 +199,7 @@ impl JsonMemoryPool {
     }
     
     /// 减少引用计数，当计数为0时释放
-    pub fn release(&self, block_idx: usize, offset: usize) {
+    pub fn release(&self, block_idx: usize, _offset: usize) {
         if let Some(block) = self.blocks.get(block_idx) {
             if let Some(block_ptr) = block {
                 let header = unsafe { &mut *(block_ptr.as_ptr() as *mut BlockHeader) };

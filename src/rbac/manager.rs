@@ -188,7 +188,7 @@ impl RbacManager {
             SYSTEM_ROLES_TABLE, SYSTEM_ROLE_PERMISSIONS_TABLE, 
             SYSTEM_USERS_TABLE, SYSTEM_USER_ROLES_TABLE
         };
-        use crate::types::RemDbError;
+        
 
         // Clear existing data
         manager.roles.clear();
@@ -203,7 +203,7 @@ impl RbacManager {
                 while let Some(record) = cursor.next() {
                     let role_name = record.get_str(0).unwrap_or("");
                     if !role_name.is_empty() {
-                        let mut role = Role::new(role_name.to_string());
+                        let role = Role::new(role_name.to_string());
                         manager.roles.insert(role_name.to_string(), role);
                     }
                 }
@@ -242,7 +242,7 @@ impl RbacManager {
                 while let Some(record) = cursor.next() {
                     let username = record.get_str(0).unwrap_or("");
                     if !username.is_empty() {
-                        let mut user = User::new(username.to_string());
+                        let user = User::new(username.to_string());
                         manager.users.insert(username.to_string(), user);
                     }
                 }
@@ -278,7 +278,7 @@ impl RbacManager {
             SYSTEM_ROLES_TABLE, SYSTEM_ROLE_PERMISSIONS_TABLE, 
             SYSTEM_USERS_TABLE, SYSTEM_USER_ROLES_TABLE
         };
-        use crate::types::RemDbError;
+        
 
         let now = crate::platform::get_timestamp_us();
 

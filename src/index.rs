@@ -3,7 +3,7 @@ pub mod builder; mod hnsw; mod ivf; use crate::platform::{memcpy, memset}; use c
 pub use builder::init_index_build_thread_pool;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::error;
 
 /// B-Tree阶数（每个节点的最大键数量）
 const BTREE_ORDER: usize = 4; // 阶数为4的B-Tree

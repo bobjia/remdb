@@ -706,7 +706,7 @@ impl HNSWIndex {
             let mut node = target_node;
             node.as_mut().neighbors.clear();            
             node.as_mut().neighbor_counts.clear();            
-            let next_free = self.free_nodes;            
+            let _next_free = self.free_nodes;            
             self.free_nodes = Some(node);            
             
             Ok(())

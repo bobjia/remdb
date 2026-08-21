@@ -12,7 +12,7 @@ use crate::model::onnx_runtime::OnnxModel;
 use crate::model::worker_protocol::{ModelRequest, ModelResponse, ErrorCode};
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{error, info};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModelError {

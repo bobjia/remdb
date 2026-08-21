@@ -6,17 +6,14 @@ use alloc::string::String;
 use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use std::env;
 use std::time::Instant;
 
 use crate::sql::query_parser::{
-    BetweenCondition, BinaryOperator, Expression, GroupByClause, JoinType, LogicalOperator, UnaryOperator,
+    BetweenCondition, Expression, GroupByClause, JoinType,
 };
 use crate::sql::{
     ComparisonCondition, ComparisonOperator, Condition, OrderByClause, ResultSet, SqlQuery,
     QueryExecutionError, parse_data_type_with_precision, check_memory_limit,
-    process_at_time_zone, process_timezone_function, process_to_char,
-    process_to_iso8601, process_to_epoch,
 };
 use crate::types::{DataType, TypedValue, JsonStorage};
 use crate::{
@@ -24,7 +21,6 @@ use crate::{
     MAX_STRING_LEN,
 };
 use crate::model::model_manager::get_global_model_manager;
-use crate::sql::functions as sql_functions;
 use crate::sql::operations::ddl;
 use crate::sql::operations::vector::{
     calculate_vector_l2_distance, calculate_vector_inner_product,
@@ -32,18 +28,14 @@ use crate::sql::operations::vector::{
 };
 use crate::sql::operations::expression::{
     evaluate_expression, evaluate_expression_with_depth,
-    evaluate_unary_op, evaluate_binary_op, evaluate_vector_binary_op,
     execute_function_call, evaluate_expression_without_table,
-    evaluate_expression_without_table_with_depth,
 };
 use crate::sql::operations::comparison::{
-    compare_values, compare_field_with_condition, compare_numbers,
-    compare_booleans, compare_strings, like_pattern_match,
-    evaluate_condition_with_alias, evaluate_comparison_with_alias,
-    evaluate_between_with_alias,
+    compare_values, compare_field_with_condition,
+    evaluate_condition_with_alias,
 };
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{debug, error, info};
 
 /// 执行SQL查询
 pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
@@ -401,7 +393,7 @@ fn extract_time_range_from_condition(
     condition: &crate::sql::query_parser::Condition,
     ts_table: &crate::time_series::TimeSeriesTable,
 ) -> Result<(u64, u64), QueryExecutionError> {
-    use crate::sql::query_parser::{BetweenCondition, ComparisonCondition, ComparisonOperator};
+    use crate::sql::query_parser::ComparisonOperator;
     
     // 获取时间字段名称
     let time_field_name = ts_table.def.base.fields[ts_table.def.time_field].name.clone();
@@ -664,7 +656,7 @@ fn downsample_records(
     
     let mut current_window = first_window;
     while current_window <= last_window {
-        if let Some((&window_start, window_records)) = next_window_iter.peek() {
+        if let Some((&window_start, _window_records)) = next_window_iter.peek() {
             if window_start == current_window {
                 // 当前窗口有数据
                 let window_records = next_window_iter.next().unwrap().1;
@@ -1537,7 +1529,7 @@ fn execute_select_query(
     
     // 从系统表获取查询资源配置
     let (max_memory_mb, query_timeout_ms) = crate::get_query_resource_config();
-    let query_timeout_ms = Some(query_timeout_ms as u64);
+    let _query_timeout_ms = Some(query_timeout_ms as u64);
     
     // 开始计时
     let start_time = Instant::now();
@@ -1690,7 +1682,7 @@ fn execute_select_query(
 
     // 检查是否有WHERE条件可以使用索引
     // 使用之前获取的索引（如果存在）
-    if let Some((secondary_index, indexed_field, index_operation)) = maybe_index {
+    if let Some((secondary_index, _indexed_field, index_operation)) = maybe_index {
         match index_operation {
             IndexOperation::Equal(index_value) => {
                 // 相等查询 - 使用索引
@@ -2158,7 +2150,7 @@ fn execute_select_join_query(
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
     // 从系统表获取查询资源配置
-    let (max_memory_mb, query_timeout_ms) = crate::get_query_resource_config();
+    let (_max_memory_mb, _query_timeout_ms) = crate::get_query_resource_config();
     
     // 1. 查找主表
     let main_table = find_table_by_name(db, &query.table_name)?;
@@ -3039,7 +3031,7 @@ fn execute_create_table_query(
     ) in &query.table_def
     {
         // 解析数据类型，支持带精度的时间类型如TIMESTAMP(6)
-        let (base_type, precision, distance_type) = parse_data_type_with_precision(data_type_str)?;
+        let (base_type, precision, _distance_type) = parse_data_type_with_precision(data_type_str)?;
 
         let data_type = match base_type.as_str() {
             // 无符号整数类型

@@ -8,7 +8,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::error;
 
 /// 索引构建状态
 enum IndexBuildState {
@@ -225,7 +225,7 @@ impl IndexBuildThreadPool {
             error!("Database not initialized");
             return;
         }
-        let mut db = db.unwrap();
+        let db = db.unwrap();
         
         // 查找表ID
         let mut table_id = None;
@@ -246,7 +246,7 @@ impl IndexBuildThreadPool {
         let table_id = table_id.unwrap();
 
         // 获取表引用
-        let table = match db.get_table(table_id) {
+        let _table = match db.get_table(table_id) {
             Ok(table) => table,
             Err(e) => {
                 #[cfg(feature = "log")]

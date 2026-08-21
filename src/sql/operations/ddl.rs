@@ -2,7 +2,6 @@
 //!
 //! This module contains DDL operations like CREATE/DROP TABLE, DATABASE, INDEX, etc.
 
-use alloc::string::String;
 use alloc::vec::Vec;
 use crate::sql::{QueryExecutionError, ResultSet, SqlQuery};
 use crate::RemDb;

@@ -11,7 +11,7 @@ pub mod sync_receiver;
 use core::fmt;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::debug;
 
 // HA角色
 #[derive(Copy, Clone, PartialEq, Debug)]

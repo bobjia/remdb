@@ -5,7 +5,6 @@
 use crate::types::DataType;
 use crate::types::TypedValue;
 use crate::Value;
-use super::time::parse_time_interval;
 
 /// 执行COUNT函数
 pub fn execute_count(_args: &[TypedValue]) -> Result<TypedValue, crate::sql::QueryExecutionError> {

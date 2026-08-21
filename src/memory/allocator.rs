@@ -3,15 +3,11 @@ use crate::types::Result;
 use core::ptr::NonNull;
 
 // 使用条件编译，在std环境下使用std::sync::OnceLock，在no_std环境下使用platform::OnceLock
-#[cfg(feature = "std")]
-use std::sync::OnceLock;
 
 #[cfg(not(feature = "std"))]
 use crate::platform::OnceLock;
 
 // 根据是否启用std特性选择不同的同步机制
-#[cfg(feature = "std")]
-use std::sync::Mutex;
 
 // no_std环境下的简单自旋锁实现
 #[cfg(not(feature = "std"))]

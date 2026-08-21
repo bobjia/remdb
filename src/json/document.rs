@@ -6,8 +6,7 @@
 //! - 延迟解析
 //! - 与JSON内存池集成
 
-use core::ptr::NonNull;
-use crate::json::memory_pool::{get_global_json_pool_manager, JsonMemoryPool};
+use crate::json::memory_pool::get_global_json_pool_manager;
 use crate::types::JsonStorage;
 
 /// JSON值类型
@@ -492,7 +491,7 @@ impl JsonDocument {
     /// 增加引用计数
     pub fn add_ref(&self) {
         match &self.storage {
-            JsonStorage::External { pool_id, offset, length } => {
+            JsonStorage::External { pool_id: _, offset: _, length: _ } => {
                 let pool_manager = get_global_json_pool_manager();
                 if let Some(_manager) = pool_manager {
                     // 暂时不实现引用计数，因为内存池还没有相应的方法
@@ -505,7 +504,7 @@ impl JsonDocument {
     /// 减少引用计数
     pub fn release(&self) {
         match &self.storage {
-            JsonStorage::External { pool_id, offset, length } => {
+            JsonStorage::External { pool_id: _, offset: _, length: _ } => {
                 let pool_manager = get_global_json_pool_manager();
                 if let Some(_manager) = pool_manager {
                     // 暂时不实现引用计数，因为内存池还没有相应的方法

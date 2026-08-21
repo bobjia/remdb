@@ -5,7 +5,7 @@ use crate::transaction::{IsolationLevel, TransactionType};
 use crate::types::{DataType, FieldDef, TableDef, Value};
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::debug;
 
 /// C API: 数据类型枚举
 #[repr(u8)]

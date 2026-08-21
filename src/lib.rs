@@ -1876,7 +1876,7 @@ impl RemDb {
             }
 
             // 读取辅助索引字段索引列表
-            let mut secondary_index_indices = if secondary_index_count > 0 {
+            let secondary_index_indices = if secondary_index_count > 0 {
                 let mut indices = Vec::new();
                 for _ in 0..secondary_index_count {
                     let mut idx_bytes = [0u8; 1];
@@ -3389,7 +3389,7 @@ impl DdlExecutor for RemDb {
                     
                     // 直接插入新记录到新表，绕过约束验证和事务处理
                         // 获取空闲槽
-                        let mut new_slot_id;
+                        let new_slot_id;
                         let _is_overwrite = false;
                         
                         // 自旋锁保护

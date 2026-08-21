@@ -9,7 +9,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::debug;
 
 /// 解析时间字符串为微秒时间戳
 /// 支持的格式：

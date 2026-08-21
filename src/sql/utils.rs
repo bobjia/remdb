@@ -7,7 +7,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::sql::QueryExecutionError;
-use crate::types::{DataType, DEFAULT_TEXT_SIZE, DEFAULT_JSON_SIZE};
+use crate::types::{DEFAULT_TEXT_SIZE, DEFAULT_JSON_SIZE};
 
 /// 解析数据类型字符串，提取基本类型、精度/维度和距离类型
 /// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6, None)

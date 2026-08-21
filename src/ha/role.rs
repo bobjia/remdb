@@ -6,7 +6,7 @@ use crate::pubsub;
 use core::sync::atomic::{AtomicU8, Ordering};
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{debug, error};
 
 // 角色变更主题ID
 const ROLE_CHANGE_TOPIC: u16 = 4;

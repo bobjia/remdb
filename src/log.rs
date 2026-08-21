@@ -1,4 +1,3 @@
-use core::fmt::Write;
 
 #[cfg(feature = "std")]
 use std::sync::Arc;

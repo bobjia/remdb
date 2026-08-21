@@ -12,7 +12,7 @@ use crate::pubsub::{init as pubsub_init, PubSubConfig, UdpMode};
 use crate::transaction::LogItem;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{debug, error, info};
 
 /// HA管理器
 pub struct HAManager {

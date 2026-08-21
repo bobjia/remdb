@@ -6,7 +6,7 @@ use crate::pubsub;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{debug, error};
 
 // 心跳主题ID
 const HEARTBEAT_TOPIC: u16 = 3;

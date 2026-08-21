@@ -4,7 +4,7 @@ use crate::config::WALCompressionType;
 use crate::types::Result;
 use crate::types::RemDbError;
 
-pub fn compress_wal_data(data: &[u8], compression_type: WALCompressionType, level: u8) -> Result<Vec<u8>> {
+pub fn compress_wal_data(data: &[u8], compression_type: WALCompressionType, _level: u8) -> Result<Vec<u8>> {
     match compression_type {
         WALCompressionType::None => {
             Ok(data.to_vec())

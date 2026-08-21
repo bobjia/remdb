@@ -9,7 +9,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{error, info, warn};
 
 /// 事务隔离级别
 #[derive(PartialEq)]
@@ -1010,11 +1010,11 @@ impl LogManager {
     }
 
     /// 复制可变大小WAL日志到从节点
-    unsafe fn replicate_variable_size_wal(&self, var_log_item: &VariableSizeLogItem) -> Result<()> {
+    unsafe fn replicate_variable_size_wal(&self, _var_log_item: &VariableSizeLogItem) -> Result<()> {
         // 尝试获取HA管理器
         #[cfg(feature = "ha")]
         {
-            if let Some(ha_manager) = crate::ha::get_ha_manager() {
+            if let Some(_ha_manager) = crate::ha::get_ha_manager() {
                 // 将可变大小日志项转换为固定大小日志项进行复制
                 // 这里需要HA管理器支持可变大小日志项
                 // 暂时跳过复制，避免兼容性问题
@@ -1071,7 +1071,7 @@ impl LogManager {
             + core::mem::size_of::<LogCheckpoint>();
 
         // 遍历前面的所有日志项来计算偏移量
-        for i in 0..index {
+        for _i in 0..index {
             // 读取当前日志项的头部
             let current_offset = log_offset;
             crate::platform::file_seek(
@@ -1399,8 +1399,8 @@ impl LogManager {
                 break;
             }
 
-            const header_size_bytes: usize = core::mem::size_of::<LogItem>();
-            let mut log_bytes = [0u8; header_size_bytes];
+            const HEADER_SIZE_BYTES: usize = core::mem::size_of::<LogItem>();
+            let mut log_bytes = [0u8; HEADER_SIZE_BYTES];
             let read = match crate::platform::file_read(handle, log_bytes.as_mut_ptr(), log_bytes.len()) {
                 Ok(read) => read,
                 Err(_) => {
@@ -1424,7 +1424,7 @@ impl LogManager {
                 new_data: Vec::new(),
             };
 
-            let mut data_offset = current_offset + header_size_bytes;
+            let mut data_offset = current_offset + HEADER_SIZE_BYTES;
             let mut read_success = true;
 
             // Determine compression type from log header
@@ -1592,7 +1592,7 @@ impl LogManager {
                                 | LogOperation::DropTable
                         ) {
                             valid_log_items.push(var_log_item);
-                            current_offset += header_size_bytes + header.old_data_size as usize + header.new_data_size as usize;
+                            current_offset += HEADER_SIZE_BYTES + header.old_data_size as usize + header.new_data_size as usize;
                             record_index += 1;
                             consecutive_invalid_records = 0;
                             continue;
@@ -1651,7 +1651,7 @@ impl LogManager {
 
             #[cfg(feature = "log")]
             warn!("Invalid log item at offset {}, skipping to next record (consecutive invalid: {})", current_offset, consecutive_invalid_records);
-            current_offset += header_size_bytes;
+            current_offset += HEADER_SIZE_BYTES;
         }
 
         let _ = crate::platform::file_close(handle);
@@ -3370,7 +3370,7 @@ impl Transaction {
         op_type: LogOperation,
         table_id: u8,
         record_id: u16,
-        data_size: u16,
+        _data_size: u16,
         old_data: Option<&[u8]>,
         new_data: Option<&[u8]>,
     ) -> Option<NonNull<VariableSizeLogItem>> {
