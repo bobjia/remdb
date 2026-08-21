@@ -151,9 +151,19 @@ Default features: `std`, `posix`, `ha`, `pubsub`, `c-api`, `log`
 
 ## Important Patterns
 
-### Error Handling
+### Error Handling (Panic-Free Requirement)
 
-The codebase uses `Result<T, RemDbError>` for fallible operations. Avoid `.unwrap()` in library code; use `?` for error propagation.
+**Panic is not allowed.** The codebase uses `Result<T, RemDbError>` for fallible operations. The following are strictly forbidden in all code:
+
+- `unwrap()` / `expect()` / `unwrap_unchecked()` / `unwrap_or_default()` on `Result` or `Option`
+- `panic!()` / `todo!()` / `unreachable!()` / `unimplemented!()`
+- `assert!()` / `debug_assert!()` (use `if`-based checks with `?` instead)
+- `[i]` indexing on `Vec`, `[T]`, or `[T; N]` without explicit bounds check (use `.get(i)` / `.get_mut(i)` and handle the `None` case)
+- `[i..j]` slicing that could fail (validate bounds first)
+- Integer overflow that would panic (use `checked_*` / `wrapping_*` / `saturating_*` as appropriate)
+- `mem::uninitialized()` / `transmute()` that could produce invalid state
+
+Always propagate errors with `?` or handle them explicitly. Every match on `Result` or `Option` must handle the error/`None` arm — do not use `if let Ok(v)` as a substitute for full match (it silently drops the error).
 
 ### Memory Safety
 
