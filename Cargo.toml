@@ -6,7 +6,7 @@ members = [
 
 [package]
 name = "remdb"
-version = "0.2.9"
+version = "0.3.0"
 edition = "2021"
 authors = ["remdb contributors"]
 description = "嵌入式内存数据库"
@@ -26,24 +26,297 @@ crate-type = ["staticlib", "rlib", "cdylib"]
 rand = { version = "0.8.5", optional = true }
 remdb-macros = { path = "./remdb-macros", version = "0.2.9" }
 socket2 = { version = "0.5.5", optional = true }
+lazy_static = "1.4.0"
+tracing-core = { version = "0.1", optional = true }
+heapless = { version = "0.8", optional = true }
+regex = { version = "1.10.0", optional = true }
+lz4 = { version = "1.24", optional = true }
+zstd = { version = "0.13", optional = true }
+ort = { version = "2.0.0-rc.11", optional = true, default-features = false, features = ["download-binaries", "ndarray", "std", "tls-native", "copy-dylibs"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
+bincode = { version = "1.3", optional = true }
+tokio = { version = "1.0", features = ["rt", "sync", "time"], optional = true }
+reqwest = { version = "0.12", features = ["stream"], optional = true }
+sha2 = { version = "0.10", optional = true }
+futures = { version = "0.3", optional = true }
+ndarray = { version = "0.15", optional = true }
+ureq = { version = "2.9", optional = true }
+
+[dependencies.tracing]
+version = "0.1"
+optional = true
+features = ["attributes"]
+
+[dependencies.tracing-subscriber]
+version = "0.3"
+optional = true
+features = ["fmt", "env-filter"]
+
+[dependencies.tracing-appender]
+version = "0.2"
+optional = true
 
 [dev-dependencies]
 criterion = "0.5"
 serial_test = "3.0.0"
 
+# Binary targets
+[[bin]]
+name = "model_worker"
+path = "src/bin/model_worker.rs"
+required-features = ["model-runtime"]
+
 [[bench]]
 name = "database"
 harness = false
 
+# API Examples
+[[example]]
+name = "basic_usage"
+path = "examples/api/basic_usage.rs"
+
+[[example]]
+name = "composite_pk_example"
+path = "examples/api/composite_pk_example.rs"
+
+[[example]]
+name = "multiple_tables"
+path = "examples/api/multiple_tables.rs"
+
+[[example]]
+name = "multi_database_example"
+path = "examples/api/multi_database_example.rs"
+
+[[example]]
+name = "time_series"
+path = "examples/api/time_series.rs"
+
+[[example]]
+name = "time_series_complete"
+path = "examples/api/time_series_complete.rs"
+
+[[example]]
+name = "time_series_iot"
+path = "examples/api/time_series_iot.rs"
+
+[[example]]
+name = "vector_example"
+path = "examples/api/vector_example.rs"
+
+[[example]]
+name = "vector_distance_test"
+path = "examples/api/vector_distance_test.rs"
+
+[[example]]
+name = "varchar_example"
+path = "examples/api/varchar_example.rs"
+
+[[example]]
+name = "rbac_example"
+path = "examples/api/rbac_example.rs"
+
+[[example]]
+name = "json_example"
+path = "examples/api/json_example.rs"
+
+[[example]]
+name = "alter_table_example"
+path = "examples/api/alter_table_example.rs"
+
+[[example]]
+name = "batch_insert_example"
+path = "examples/api/batch_insert_example.rs"
+
+[[example]]
+name = "monitoring_example"
+path = "examples/api/monitoring_example.rs"
+
+# SQL Examples
+[[example]]
+name = "sql_query"
+path = "examples/sql/sql_query.rs"
+
+[[example]]
+name = "ddl_example"
+path = "examples/sql/ddl_example.rs"
+
+[[example]]
+name = "ddl_full_example"
+path = "examples/sql/ddl_full_example.rs"
+
+[[example]]
+name = "ddl_runtime_example"
+path = "examples/sql/ddl_runtime_example.rs"
+
+[[example]]
+name = "timeseries_ddl_core"
+path = "examples/sql/timeseries_ddl_core.rs"
+
+[[example]]
+name = "timeseries_ddl_usage"
+path = "examples/sql/timeseries_ddl_usage.rs"
+
+[[example]]
+name = "test_auto_increment"
+path = "examples/sql/test_auto_increment.rs"
+
+[[example]]
+name = "test_create_timeseries_table"
+path = "examples/sql/test_create_timeseries_table.rs"
+
+[[example]]
+name = "test_default_value"
+path = "examples/sql/test_default_value.rs"
+
+[[example]]
+name = "test_null_fix"
+path = "examples/sql/test_null_fix.rs"
+
+[[example]]
+name = "test_parse"
+path = "examples/sql/test_parse.rs"
+
+[[example]]
+name = "test_system_tables"
+path = "examples/sql/test_system_tables.rs"
+
+[[example]]
+name = "sql_select_advanced"
+path = "examples/sql/sql_select_advanced.rs"
+
+[[example]]
+name = "sql_aggregate_functions"
+path = "examples/sql/sql_aggregate_functions.rs"
+
+[[example]]
+name = "sql_table_management"
+path = "examples/sql/sql_table_management.rs"
+
+[[example]]
+name = "sql_transactions"
+path = "examples/sql/sql_transactions.rs"
+
+[[example]]
+name = "sql_time_functions"
+path = "examples/sql/sql_time_functions.rs"
+
+[[example]]
+name = "sql_vector_operations"
+path = "examples/sql/sql_vector_operations.rs"
+
+[[example]]
+name = "sql_json_functions"
+path = "examples/sql/sql_json_functions.rs"
+
+[[example]]
+name = "sql_like_operator"
+path = "examples/sql/sql_like_operator.rs"
+
+# Misc Examples
+[[example]]
+name = "debug_table_creation"
+path = "examples/misc/debug_table_creation.rs"
+
+[[example]]
+name = "describe_table"
+path = "examples/misc/describe_table.rs"
+
+[[example]]
+name = "drop_table_example"
+path = "examples/misc/drop_table_example.rs"
+
+[[example]]
+name = "export_example"
+path = "examples/misc/export_example.rs"
+
+[[example]]
+name = "generate_snapshot"
+path = "examples/misc/generate_snapshot.rs"
+
+[[example]]
+name = "incremental_snapshot"
+path = "examples/misc/incremental_snapshot.rs"
+
+[[example]]
+name = "ha_example"
+path = "examples/misc/ha_example.rs"
+required-features = ["ha"]
+
+[[example]]
+name = "ha_example_master"
+path = "examples/misc/ha_example_master.rs"
+required-features = ["ha"]
+
+[[example]]
+name = "ha_example_slave"
+path = "examples/misc/ha_example_slave.rs"
+required-features = ["ha"]
+
+[[example]]
+name = "log_example"
+path = "examples/misc/log_example.rs"
+required-features = ["log"]
+
+[[example]]
+name = "low_power_mode"
+path = "examples/misc/low_power_mode.rs"
+
+[[example]]
+name = "pubsub_example"
+path = "examples/misc/pubsub_example.rs"
+required-features = ["pubsub"]
+
+[[example]]
+name = "pubsub_sql_test_server"
+path = "examples/misc/pubsub_sql_test_server.rs"
+required-features = ["pubsub"]
+
+[[example]]
+name = "pubsub_test_system_client"
+path = "examples/misc/pubsub_test_system_client.rs"
+required-features = ["pubsub"]
+
+[[example]]
+name = "pubsub_test_system_server"
+path = "examples/misc/pubsub_test_system_server.rs"
+required-features = ["pubsub"]
+
+[[example]]
+name = "pubsub_wildcard"
+path = "examples/misc/pubsub_wildcard.rs"
+required-features = ["pubsub"]
+
+[[example]]
+name = "test_max_records_config"
+path = "examples/misc/test_max_records_config.rs"
+
+[[example]]
+name = "test_remdb_server"
+path = "examples/misc/test_remdb_server.rs"
+required-features = ["ha", "pubsub"]
+
+[[example]]
+name = "test_ttl_ringbuffer"
+path = "examples/misc/test_ttl_ringbuffer.rs"
+
+[[example]]
+name = "model_runtime"
+path = "examples/misc/model_runtime.rs"
+
 [features]
-default = ["std", "posix", "ha", "pubsub"]
-std = ["rand", "socket2"]
+default = ["std", "posix", "ha", "pubsub", "c-api", "log"]
+std = ["rand", "socket2", "tracing", "tracing-subscriber", "tracing-appender", "regex"]
 posix = ["std"]
-baremetal = []
+baremetal = ["log", "tracing-core", "heapless"]
 debug = []
 c-api = []
 pubsub = ["std"]
 ha = ["pubsub"]
+log = []
+wal-compression-lz4 = ["lz4"]
+wal-compression-zstd = ["zstd"]
+model-runtime = ["ort", "serde", "bincode", "tokio", "ndarray"]
+model-download = ["reqwest", "sha2", "std", "futures", "ureq"]
 
 [profile.release]
 opt-level = "z"          # 优化大小
@@ -55,9 +328,10 @@ panic = "abort"          # 崩溃时直接终止
 opt-level = 1            # 开发模式也有一些优化
 panic = "unwind"         # 开发模式也使用unwind，以便调试
 
-[profile.test]
-panic = "unwind"         # 测试模式使用unwind，以便生成测试回溯
+# Test settings have been moved to tool.cargo.test in newer Cargo versions
+[tool.cargo.test]
 test-threads = 1
+stack-size = 16777216  # 16MB stack size for tests
 
 [build-dependencies]
 cc = "1.0"

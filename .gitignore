@@ -1,6 +1,7 @@
 target/*
-.trae/*
 *.remd
 *.wal
 wal/*
 *.log
+.idea/*
+.vscode/*

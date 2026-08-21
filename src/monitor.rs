@@ -1,7 +1,5 @@
-
-
-use core::sync::atomic::{AtomicUsize, AtomicU32, Ordering};
 use alloc::string::String;
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// 数据库健康状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,7 +225,8 @@ impl DbMetrics {
 
     /// 增加已回滚事务计数
     pub fn inc_rolled_back_transactions(&self) {
-        self.rolled_back_transactions.fetch_add(1, Ordering::Relaxed);
+        self.rolled_back_transactions
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     /// 增加垃圾回收操作计数
@@ -256,19 +255,40 @@ impl DbMetricsSnapshot {
     pub fn to_text(&self) -> String {
         let mut text = alloc::string::String::new();
         text.push_str("===== 数据库监控指标 =====\n");
-        text.push_str(&alloc::format!("内存使用: {}/{} 字节\n", self.used_memory, self.total_memory));
-        text.push_str(&alloc::format!("操作计数: 读={}, 写={}, 删除={}, 更新={}\n", 
-                               self.read_ops, self.write_ops, self.delete_ops, self.update_ops));
-        text.push_str(&alloc::format!("缓存统计: 命中={}, 未命中={}, 命中率={:.2}%\n", 
-                               self.cache_hits, self.cache_misses, self.cache_hit_rate));
-        text.push_str(&alloc::format!("索引操作: 查找={}, 插入={}, 删除={}\n", 
-                               self.index_lookups, self.index_inserts, self.index_deletes));
-        text.push_str(&alloc::format!("事务统计: 总数={}, 已提交={}, 已回滚={}\n", 
-                               self.transactions, self.committed_transactions, self.rolled_back_transactions));
+        text.push_str(&alloc::format!(
+            "内存使用: {}/{} 字节\n",
+            self.used_memory,
+            self.total_memory
+        ));
+        text.push_str(&alloc::format!(
+            "操作计数: 读={}, 写={}, 删除={}, 更新={}\n",
+            self.read_ops,
+            self.write_ops,
+            self.delete_ops,
+            self.update_ops
+        ));
+        text.push_str(&alloc::format!(
+            "缓存统计: 命中={}, 未命中={}, 命中率={:.2}%\n",
+            self.cache_hits,
+            self.cache_misses,
+            self.cache_hit_rate
+        ));
+        text.push_str(&alloc::format!(
+            "索引操作: 查找={}, 插入={}, 删除={}\n",
+            self.index_lookups,
+            self.index_inserts,
+            self.index_deletes
+        ));
+        text.push_str(&alloc::format!(
+            "事务统计: 总数={}, 已提交={}, 已回滚={}\n",
+            self.transactions,
+            self.committed_transactions,
+            self.rolled_back_transactions
+        ));
         text.push_str("========================\n");
         text
     }
-    
+
     /// 将指标转换为JSON格式
     pub fn to_json(&self) -> String {
         alloc::format!(
@@ -290,7 +310,7 @@ impl DbMetricsSnapshot {
             self.rolled_back_transactions
         )
     }
-    
+
     /// 将指标转换为字节数组
     pub fn to_bytes(&self) -> alloc::vec::Vec<u8> {
         self.to_json().into_bytes()
@@ -319,7 +339,7 @@ impl HealthCheckResult {
         text.push_str("========================\n");
         text
     }
-    
+
     /// 将健康检查结果转换为JSON格式
     pub fn to_json(&self) -> String {
         alloc::format!(
@@ -330,7 +350,7 @@ impl HealthCheckResult {
             self.details
         )
     }
-    
+
     /// 将健康检查结果转换为字节数组
     pub fn to_bytes(&self) -> alloc::vec::Vec<u8> {
         self.to_json().into_bytes()

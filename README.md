@@ -17,7 +17,13 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
 - **编译时配置**：使用宏实现表和数据库的编译时配置，优化性能
 - **低功耗模式**：优化内存使用，减少事务日志写入频率
 - **增量快照**：只保存版本号变化的记录，减少快照大小和保存时间
-- **SQL查询支持**：支持标准SQL SELECT语句查询内存数据库的数据，包括聚合函数、数学函数、时间转换函数和JOIN操作
+- **SQL查询支持**：支持标准SQL SELECT语句查询内存数据库的数据，包括聚合函数、数学函数、时间转换函数、JOIN操作和LIKE模式匹配运算符
+- **SQL DDL支持**：支持CREATE TABLE和DROP TABLE语句，允许动态创建和删除表结构
+- **SQL数据库管理支持**：支持CREATE DATABASE和DROP DATABASE语句，允许创建和管理数据库
+- **UTF8字符支持**：完全支持UTF8字符编码，包括字符串存储、字符函数、LIKE运算符和排序
+- **JSON支持**：原生JSON数据类型，支持JSON路径查询、JSON修改函数、JSON索引和JSON与其他功能的结合
+- **SAMPLE BY语法**：支持按指定时间间隔对时序数据进行采样，提供简洁的时间窗口聚合语法
+- **FILL语法**：支持在时间序列数据中填充缺失的时间窗口，确保时间序列的连续性，支持多种填充方式
 - **数据库监控**：实时监控数据库指标，包括内存使用、查询性能、事务状态等
 - **基于UDP的高可靠数据订阅与发布**：支持单播、广播和组播模式，提供基于NACK的重传机制
 - **高可用支持**：
@@ -30,6 +36,17 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 从节点确认机制：从节点接收到WAL日志后发送确认给主节点
   - 复制状态检查：定期检查复制状态，包括从节点数量、延迟等
   - 支持全量和增量同步：从节点可以请求全量同步或从特定日志索引开始的增量同步
+  - **启动同步协议**：完整的启动同步机制，确保从节点启动时与主节点数据一致
+    - 协议流程：SYNC_REQUEST → SYNC_DATA_BEGIN → SYNC_DATA_CHUNK* → SYNC_DATA_END → SYNC_ACK
+    - 全量同步：发送完整数据库快照，支持大容量数据分块传输
+    - 增量同步：发送指定日志索引后的WAL日志，减少网络传输
+    - 数据完整性：支持CRC32校验和验证
+- **向量数据库支持**：
+  - 原生向量数据类型：`VECTOR(dimension)`
+  - 支持多种距离度量：L2（欧几里得距离）、IP（内积）、COSINE（余弦相似度）
+  - 多种向量索引类型：HNSW、HNSW_SQ（带标量量化）、HNSW_BQ（带二值量化）、IVF、IVF_FLAT（带扁平量化）、IVF_PQ（带乘积量化）
+  - 向量相似性查询：支持L2距离 `<->`、内积 `<#>`、余弦相似度 `<=>` 操作符
+  - 混合查询：支持向量搜索与标量过滤的混合查询
 - **时序数据库支持**：
   - 专用的时序表实现，优化时间序列数据存储和查询
   - 支持多种压缩算法
@@ -70,6 +87,57 @@ remdb = { path = "./remdb", default-features = false }
 | posix | - | 启用POSIX平台支持 |
 | pubsub | std | 启用基于UDP的高可靠数据订阅与发布功能 |
 | ha | pubsub | 启用高可用支持（主从复制机制） |
+| log | - | 启用日志功能 |
+| debug | - | 启用debug级别日志（仅在debug构建时生效） |
+
+### 日志配置
+
+remdb提供了灵活的日志配置选项，支持不同环境下的日志输出：
+
+#### 标准库环境日志配置
+
+```rust
+use remdb::log::{init_logger, init_logger_with_file};
+
+// 基础初始化（输出到控制台，debug级别）
+init_logger();
+
+// 带文件输出的初始化
+// debug_mode: true - 输出DEBUG及以上级别日志
+// debug_mode: false - 仅输出INFO及以上级别日志
+init_logger_with_file("/var/log/remdb.log", true).unwrap();
+```
+
+#### no_std环境日志配置
+
+在no_std环境下，日志级别由编译模式自动控制：
+
+- **Debug构建**：输出DEBUG及以上级别日志
+- **Release构建**：仅输出WARN及以上级别日志
+
+```rust
+use remdb::log::init_logger;
+
+// 初始化no_std日志
+init_logger();
+
+// 使用日志宏
+use remdb::log::{debug, info, warn, error};
+debug!("调试信息");  // 仅在debug构建中输出
+info!("普通信息");
+warn!("警告信息");
+error!("错误信息");
+```
+
+#### 日志级别说明
+
+| 级别 | 描述 | Debug构建 | Release构建 |
+|-----|------|----------|-------------|
+| TRACE | 最详细的跟踪信息 | ✓ | ✗ |
+| DEBUG | 调试信息 | ✓ | ✗ |
+| INFO | 普通信息 | ✓ | ✓ |
+| WARN | 警告信息 | ✓ | ✓ |
+| ERROR | 错误信息 | ✓ | ✓ |
 
 ## Rust语言的三种使用方式
 
@@ -245,7 +313,7 @@ fn main() {
     
     // 创建数据库配置
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: buffer.len(),
         low_power_mode_supported: false,
         low_power_max_records: None,
@@ -280,7 +348,7 @@ fn main() {
         "users",
         &[
             ("id", DataType::UInt32),
-            ("name", DataType::String),
+            ("name", DataType::VarChar),
             ("age", DataType::UInt8),
             ("active", DataType::Bool),
         ],
@@ -381,13 +449,18 @@ remdb提供了基于UDP的高可靠数据订阅与发布机制，支持单播、
 
 #### 预定义主题
 
-| 主题名称 | 描述 | 消息格式 |
-|---------|------|---------|
-| wal | 所有WAL操作 | WAL_LOG_<id>: Operation=<operation_type>, Table=<table_name>, ID=<record_id>, Data=<data> |
-| tables | 表创建/删除事件 | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> 或 DELETE:table=<table_name>,id=<table_id> |
-| metrics | 数据库指标 | JSON格式的数据库指标数据 |
-| healthstatus | 健康状态 | JSON格式的健康状态数据 |
-| table.<table_name> | 表内容变更 | INSERT:table=<table_name>,id=<record_id>,data=<hex_data> 或 UPDATE:table=<table_name>,id=<record_id>,data=<hex_data> |
+| 主题名称 | 主题ID | 描述 | 消息格式 |
+|---------|--------|------|---------|
+| wal | - | 所有WAL操作 | WAL_LOG_<id>: Operation=<operation_type>, Table=<table_name>, ID=<record_id>, Data=<data> |
+| tables | - | 表创建/删除事件 | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> 或 DELETE:table=<table_name>,id=<table_id> |
+| metrics | - | 数据库指标 | JSON格式的数据库指标数据 |
+| healthstatus | - | 健康状态 | JSON格式的健康状态数据 |
+| table.<table_name> | - | 表内容变更 | INSERT:table=<table_name>,id=<record_id>,data=<hex_data> 或 UPDATE:table=<table_name>,id=<record_id>,data=<hex_data> |
+| SYNC_REQUEST | 2 | 同步请求主题 | 从节点发送同步请求给主节点 |
+| SYNC_DATA_BEGIN | 5 | 同步数据开始 | 主节点发送同步元数据给从节点 |
+| SYNC_DATA_CHUNK | 6 | 同步数据块 | 主节点发送同步数据块给从节点 |
+| SYNC_DATA_END | 7 | 同步数据结束 | 主节点标记同步数据传输结束 |
+| SYNC_ACK | 8 | 同步确认 | 从节点发送确认给主节点 |
 
 #### 使用示例
 
@@ -464,6 +537,12 @@ let result = db.sql_query("SELECT id, name, TO_EPOCH(created_at) AS unix_time FR
 
 // 结合聚合函数和时间函数
 let result = db.sql_query("SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS date, AVG(value) AS avg_value FROM sensor_data GROUP BY date").unwrap();
+
+// 使用LIKE运算符进行模式匹配
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE 'A%'").unwrap(); // 匹配以'A'开头的名称
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE '%son'").unwrap(); // 匹配以'son'结尾的名称
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE '%mi%'").unwrap(); // 匹配包含'mi'的名称
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE 'A__e'").unwrap(); // 匹配长度为4且以'A'开头、以'e'结尾的名称
 ```
 
 ## 时序数据库
@@ -544,6 +623,134 @@ fn main() {
         }
     }
 }
+
+### 时序数据预聚合
+
+remdb 现在支持时序数据预聚合功能，在数据写入时自动计算并存储不同时间间隔的聚合结果，显著提高查询性能。
+
+#### 核心特性
+
+- **自动更新**：当写入新数据时，预聚合数据会自动更新
+- **多种聚合函数**：支持 SUM、AVG、MIN 和 MAX 聚合函数
+- **自定义时间间隔**：允许配置不同的预聚合时间间隔
+- **线程安全**：使用 Mutex 确保并发写入时的数据一致性
+- **高效存储**：将预聚合数据存储在哈希表中，实现快速查找
+
+#### 使用示例
+
+```rust
+use remdb::*;
+use remdb::time_series::*;
+
+// 获取时序表引用
+let ts_table = db.get_time_series_table("sensor_data").unwrap();
+
+// 添加预聚合配置
+ts_table.add_pre_aggregation(60, "AVG").unwrap();   // 1分钟平均值
+ts_table.add_pre_aggregation(300, "SUM").unwrap();  // 5分钟总和
+
+// 写入数据（预聚合会自动更新）
+let records = vec![
+    TimeSeriesRecord {
+        timestamp: 1609459200000, // 2021-01-01 00:00:00
+        value: 25.5,
+        tags: vec!["sensor_id=1"],
+    },
+    // 更多记录...
+];
+ts_table.batch_write(&records).unwrap();
+
+// 查询预聚合数据
+let start_time = 1609459200000;
+let end_time = 1609462800000; // 1小时后
+
+// 查询1分钟平均值数据
+let avg_result = ts_table.query_pre_aggregated(start_time, end_time, 60, "AVG").unwrap();
+for record in avg_result {
+    println!("时间: {}, 平均值: {}", record.timestamp, record.value);
+}
+
+// 查询5分钟总和数据
+let sum_result = ts_table.query_pre_aggregated(start_time, end_time, 300, "SUM").unwrap();
+for record in sum_result {
+    println!("时间: {}, 总和: {}", record.timestamp, record.value);
+}
+```
+
+#### 优势
+
+- **查询速度更快**：直接获取预计算结果，避免实时计算
+- **减少CPU使用**：避免实时聚合计算
+- **性能稳定**：查询性能不受数据量影响
+- **配置灵活**：支持多种聚合函数和时间间隔
+
+#### 适用场景
+
+- **实时监控**：快速查询最近的聚合数据
+- **历史数据分析**：高效查询长时间范围的聚合结果
+- **仪表盘展示**：预计算常用时间间隔的聚合数据
+- **告警系统**：基于预聚合数据进行阈值判断
+
+## 向量数据库
+
+remdb提供了强大的向量数据库功能，支持原生向量类型、多种距离度量和高效的向量索引：
+
+### 基本使用
+
+```rust
+use remdb::*;
+use remdb::config::{DbConfig, WALConfig};
+
+// 初始化数据库配置
+let config = Box::leak(Box::new(DbConfig {
+    tables: vec![],
+    total_memory: 16 * 1024 * 1024, // 16MB
+    low_power_mode_supported: false,
+    low_power_max_records: None,
+    memory_allocator: &SimpleAllocator,
+    wal_config: WALConfig {
+        log_path: "./wal".to_string(),
+        log_mode: remdb::config::LogMode::Async,
+        checkpoint_interval_ms: 60000,
+        log_file_size_limit: 16 * 1024 * 1024,
+        log_prealloc_size: 4 * 1024 * 1024,
+        log_segment_size: 16 * 1024 * 1024,
+        retained_checkpoints: 2,
+    },
+    time_series_defaults: TimeSeriesConfig {
+        partition_duration_secs: 3600,
+        retention_period_secs: 7 * 24 * 3600,
+        compression: remdb::time_series::compression::CompressionType::None,
+        max_partitions: 100,
+    },
+}));
+
+// 初始化数据库
+let mut db = RemDb::new(config);
+db.init()?;
+
+// 创建包含向量字段的表
+let create_sql = r#"CREATE TABLE products (
+    id INT32 PRIMARY KEY,
+    name TEXT,
+    embedding VECTOR(4) WITH DISTANCE=IP
+)"#;
+db.sql_query(create_sql)?;
+
+// 插入向量数据
+let insert_sql = r#"INSERT INTO products (id, name, embedding) VALUES
+    (1, 'product1', '[0.1, 0.2, 0.3, 0.4]'),
+    (2, 'product2', '[1.0, 0.9, 0.8, 0.7]')
+"#;
+db.sql_query(insert_sql)?;
+
+// 向量相似性查询 - 内积距离
+let similarity_sql = "SELECT id, name, embedding <#> '[0.2, 0.3, 0.4, 0.5]' AS similarity FROM products ORDER BY similarity DESC LIMIT 2";
+let similarity_result = db.sql_query(similarity_sql)?;
+
+// 创建向量索引
+let create_index_sql = "CREATE INDEX idx_products_embedding ON products (embedding) USING HNSW WITH (M=16, ef_construction=200)";
+db.sql_query(create_index_sql)?;
 ```
 
 ## 平台支持
@@ -637,6 +844,9 @@ cargo check --no-default-features --features=baremetal
 - `ddl_runtime_example.rs`：运行时DDL配置示例，展示如何使用运行时DDL API
 - `pubsub_example.rs`：发布/订阅示例，展示如何使用基于UDP的高可靠数据订阅与发布功能
 - `time_series.rs`：时间序列示例，展示如何处理时间序列数据
+- `vector_example.rs`：向量数据库示例，展示如何使用向量字段、插入向量数据和执行向量相似性查询
+- `vector_distance_test.rs`：向量距离测试示例，展示不同距离度量的向量相似性计算
+- `drop_table_example.rs`：DROP TABLE示例，展示如何使用SQL DROP TABLE语句删除表结构
 - `test_remdb_server.rs`：主从复制示例，展示如何使用同步或异步复制模式运行主从服务器
 
 ### 主从复制示例
@@ -717,7 +927,10 @@ remdb/
 │   │   ├── manager.rs      # HA管理器实现
 │   │   ├── replication.rs  # 复制功能实现
 │   │   ├── heartbeat.rs    # 心跳检测实现
-│   │   └── role.rs         # 角色管理实现
+│   │   ├── role.rs         # 角色管理实现
+│   │   ├── protocol.rs     # 同步协议定义
+│   │   ├── sync_handler.rs # 主节点同步处理器
+│   │   └── sync_receiver.rs # 从节点同步接收器
 │   ├── pubsub/
 │   │   ├── mod.rs          # 发布/订阅模块入口
 │   │   ├── protocol.rs     # 协议帧定义与解析
@@ -768,6 +981,6 @@ MIT许可证
 - 增加更多的示例和文档
 - 实现更复杂的内存优化算法
 - 完善运行时DDL配置API，支持完整的表和索引创建功能
-- 支持DROP TABLE和ALTER TABLE语句
+- 支持ALTER TABLE语句
 - 优化运行时DDL操作的性能
 - 支持更复杂的索引配置选项

@@ -17,7 +17,13 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
 - **Compile-time Configuration**: Table and database configuration via macros for performance optimization
 - **Low Power Mode**: Optimized memory usage with reduced transaction log write frequency
 - **Incremental Snapshot**: Only saves records with changed version numbers, reducing snapshot size and save time
-- **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data, including aggregate functions, mathematical functions, time conversion functions, and JOIN operations
+- **SQL Query Support**: Supports standard SQL SELECT statements to query in-memory database data, including aggregate functions, mathematical functions, time conversion functions, JOIN operations, and LIKE pattern matching operator
+- **SQL DDL Support**: Supports CREATE TABLE and DROP TABLE statements, allowing dynamic creation and deletion of table structures
+- **SQL Database Management Support**: Supports CREATE DATABASE and DROP DATABASE statements for database creation and management
+- **UTF8 Character Support**: Full UTF8 character encoding support, including string storage, character functions, LIKE operator, and sorting
+- **JSON Support**: Native JSON data type with support for JSON path queries, JSON modification functions, JSON indexing, and integration with other features
+- **SAMPLE BY Syntax**: Supports time series data sampling at specified intervals, providing concise time window aggregation syntax
+- **FILL Syntax**: Supports filling missing time windows in time series data to ensure time series continuity, with multiple filling methods
 - **Database Monitoring**: Real-time monitoring of database metrics, including memory usage, query performance, and transaction status
 - **UDP-based Reliable Data Pub/Sub**: Supports unicast, broadcast, and multicast modes with NACK-based retransmission
 - **High Availability Support**:
@@ -30,6 +36,17 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Slave node acknowledgment mechanism: Slaves send acknowledgment to master after receiving WAL logs
   - Replication status checking: Regularly checks replication status including slave count and latency
   - Support for full and incremental synchronization: Slaves can request full sync or incremental sync from specific log index
+  - **Startup Sync Protocol**: Complete startup synchronization mechanism ensuring data consistency between slave and master nodes
+    - Protocol flow: SYNC_REQUEST → SYNC_DATA_BEGIN → SYNC_DATA_CHUNK* → SYNC_DATA_END → SYNC_ACK
+    - Full sync: Sends complete database snapshot with support for chunked transfer of large data
+    - Incremental sync: Sends WAL logs after specified log index to reduce network transfer
+    - Data integrity: Supports CRC32 checksum verification
+- **Vector Database Support**:
+  - Native vector data type: `VECTOR(dimension)`
+  - Support for multiple distance metrics: L2 (Euclidean), IP (Inner Product), COSINE (Cosine Similarity)
+  - Multiple vector index types: HNSW, HNSW_SQ (with scalar quantization), HNSW_BQ (with binary quantization), IVF, IVF_FLAT (with flat quantization), IVF_PQ (with product quantization)
+  - Vector similarity search: Support for L2 distance `<->`, inner product `<#>`, cosine similarity `<=>` operators
+  - Hybrid search: Support for combining vector search with scalar filtering
 - **Time Series Database Support**:
   - Dedicated time series table implementation optimized for time series data storage and querying
   - Support for multiple compression algorithms
@@ -70,6 +87,57 @@ remdb = { path = "./remdb", default-features = false }
 | posix | - | Enable POSIX platform support |
 | pubsub | std | Enable UDP-based reliable data publish/subscribe functionality |
 | ha | pubsub | Enable high availability support (master-slave replication mechanism) |
+| log | - | Enable logging functionality |
+| debug | - | Enable debug level logging (only effective in debug builds) |
+
+### Logging Configuration
+
+remdb provides flexible logging configuration options supporting log output in different environments:
+
+#### Standard Library Environment Logging Configuration
+
+```rust
+use remdb::log::{init_logger, init_logger_with_file};
+
+// Basic initialization (output to console, debug level)
+init_logger();
+
+// Initialization with file output
+// debug_mode: true - Output DEBUG and above level logs
+// debug_mode: false - Output INFO and above level logs only
+init_logger_with_file("/var/log/remdb.log", true).unwrap();
+```
+
+#### no_std Environment Logging Configuration
+
+In no_std environment, log level is automatically controlled by build mode:
+
+- **Debug build**: Output DEBUG and above level logs
+- **Release build**: Output WARN and above level logs only
+
+```rust
+use remdb::log::init_logger;
+
+// Initialize no_std logging
+init_logger();
+
+// Use logging macros
+use remdb::log::{debug, info, warn, error};
+debug!("Debug message");  // Only output in debug builds
+info!("Info message");
+warn!("Warning message");
+error!("Error message");
+```
+
+#### Log Level Description
+
+| Level | Description | Debug Build | Release Build |
+|-------|-------------|-------------|---------------|
+| TRACE | Most detailed trace information | ✓ | ✗ |
+| DEBUG | Debug information | ✓ | ✗ |
+| INFO | Normal information | ✓ | ✓ |
+| WARN | Warning information | ✓ | ✓ |
+| ERROR | Error information | ✓ | ✓ |
 
 ## Three Ways to Use remdb with Rust
 
@@ -245,7 +313,7 @@ fn main() {
     
     // Create database configuration
     let config = DbConfig {
-        tables: &[],
+        tables: vec![],
         total_memory: buffer.len(),
         low_power_mode_supported: false,
         low_power_max_records: None,
@@ -280,7 +348,7 @@ fn main() {
         "users",
         &[
             ("id", DataType::UInt32),
-            ("name", DataType::String),
+            ("name", DataType::VarChar),
             ("age", DataType::UInt8),
             ("active", DataType::Bool),
         ],
@@ -381,13 +449,18 @@ remdb provides a UDP-based reliable data publish/subscribe mechanism, supporting
 
 #### Predefined Topics
 
-| Topic Name | Description | Message Format |
-|-----------|-------------|---------------|
-| wal | All WAL operations | WAL_LOG_<id>: Operation=<operation_type>, Table=<table_name>, ID=<record_id>, Data=<data> |
-| tables | Table creation/deletion events | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> or DELETE:table=<table_name>,id=<table_id> |
-| metrics | Database metrics | JSON-formatted database metrics data |
-| healthstatus | Health status | JSON-formatted health status data |
-| table.<table_name> | Table content changes | INSERT:table=<table_name>,id=<record_id>,data=<hex_data> or UPDATE:table=<table_name>,id=<record_id>,data=<hex_data> |
+| Topic Name | Topic ID | Description | Message Format |
+|-----------|----------|-------------|---------------|
+| wal | - | All WAL operations | WAL_LOG_<id>: Operation=<operation_type>, Table=<table_name>, ID=<record_id>, Data=<data> |
+| tables | - | Table creation/deletion events | CREATE:table=<table_name>,id=<table_id>,fields=<field_count> or DELETE:table=<table_name>,id=<table_id> |
+| metrics | - | Database metrics | JSON-formatted database metrics data |
+| healthstatus | - | Health status | JSON-formatted health status data |
+| table.<table_name> | - | Table content changes | INSERT:table=<table_name>,id=<record_id>,data=<hex_data> or UPDATE:table=<table_name>,id=<record_id>,data=<hex_data> |
+| SYNC_REQUEST | 2 | Sync request topic | Slave sends sync request to master |
+| SYNC_DATA_BEGIN | 5 | Sync data begin | Master sends sync metadata to slave |
+| SYNC_DATA_CHUNK | 6 | Sync data chunk | Master sends sync data chunks to slave |
+| SYNC_DATA_END | 7 | Sync data end | Master signals end of sync data transmission |
+| SYNC_ACK | 8 | Sync acknowledgment | Slave sends acknowledgment to master |
 
 #### Usage Example
 
@@ -464,6 +537,12 @@ let result = db.sql_query("SELECT id, name, TO_EPOCH(created_at) AS unix_time FR
 
 // Combine aggregate functions with time functions
 let result = db.sql_query("SELECT TO_CHAR(timestamp, 'YYYY-MM-DD') AS date, AVG(value) AS avg_value FROM sensor_data GROUP BY date").unwrap();
+
+// Use LIKE operator for pattern matching
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE 'A%'").unwrap(); // Match names starting with 'A'
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE '%son'").unwrap(); // Match names ending with 'son'
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE '%mi%'").unwrap(); // Match names containing 'mi'
+let result = db.sql_query("SELECT * FROM users WHERE name LIKE 'A__e'").unwrap(); // Match names of length 4 starting with 'A' and ending with 'e'
 ```
 
 ## Time Series Database
@@ -544,6 +623,134 @@ fn main() {
         }
     }
 }
+
+### Time Series Pre-Aggregation
+
+remdb now supports time series data pre-aggregation, which automatically calculates and stores aggregated results at different time intervals during data writing, significantly improving query performance.
+
+#### Key Features
+
+- **Automatic Updates**: Pre-aggregated data is automatically updated when new data is written
+- **Multiple Aggregation Functions**: Supports SUM, AVG, MIN, and MAX aggregation functions
+- **Custom Time Intervals**: Allows configuring different time intervals for pre-aggregation
+- **Thread Safety**: Uses Mutex to ensure data consistency during concurrent writes
+- **Efficient Storage**: Stores pre-aggregated data in a hash table for fast lookup
+
+#### Usage Example
+
+```rust
+use remdb::*;
+use remdb::time_series::*;
+
+// Get time series table reference
+let ts_table = db.get_time_series_table("sensor_data").unwrap();
+
+// Add pre-aggregation configurations
+ts_table.add_pre_aggregation(60, "AVG").unwrap();   // 1-minute average
+ts_table.add_pre_aggregation(300, "SUM").unwrap();  // 5-minute sum
+
+// Write data (pre-aggregations will be automatically updated)
+let records = vec![
+    TimeSeriesRecord {
+        timestamp: 1609459200000, // 2021-01-01 00:00:00
+        value: 25.5,
+        tags: vec!["sensor_id=1"],
+    },
+    // More records...
+];
+ts_table.batch_write(&records).unwrap();
+
+// Query pre-aggregated data
+let start_time = 1609459200000;
+let end_time = 1609462800000; // 1 hour later
+
+// Query 1-minute average data
+let avg_result = ts_table.query_pre_aggregated(start_time, end_time, 60, "AVG").unwrap();
+for record in avg_result {
+    println!("Time: {}, Average Value: {}", record.timestamp, record.value);
+}
+
+// Query 5-minute sum data
+let sum_result = ts_table.query_pre_aggregated(start_time, end_time, 300, "SUM").unwrap();
+for record in sum_result {
+    println!("Time: {}, Sum Value: {}", record.timestamp, record.value);
+}
+```
+
+#### Benefits
+
+- **Faster Queries**: Directly retrieve pre-calculated results instead of computing on the fly
+- **Reduced CPU Usage**: Avoids real-time aggregation calculations
+- **Consistent Performance**: Query performance remains stable regardless of data volume
+- **Flexible Configuration**: Supports multiple aggregation functions and time intervals
+
+#### Use Cases
+
+- **Real-time Monitoring**: Quickly query recent aggregated data
+- **Historical Analysis**: Efficiently query long-term aggregated results
+- **Dashboard Display**: Pre-calculate common time interval aggregations
+- **Alerting Systems**: Use pre-aggregated data for threshold-based alerts
+
+## Vector Database
+
+remdb provides powerful vector database functionality, supporting native vector types, multiple distance metrics, and efficient vector indexing:
+
+### Basic Usage
+
+```rust
+use remdb::*;
+use remdb::config::{DbConfig, WALConfig};
+
+// Initialize database configuration
+let config = Box::leak(Box::new(DbConfig {
+    tables: vec![],
+    total_memory: 16 * 1024 * 1024, // 16MB
+    low_power_mode_supported: false,
+    low_power_max_records: None,
+    memory_allocator: &SimpleAllocator,
+    wal_config: WALConfig {
+        log_path: "./wal",
+        log_mode: remdb::config::LogMode::Async,
+        checkpoint_interval_ms: 60000,
+        log_file_size_limit: 16 * 1024 * 1024,
+        log_prealloc_size: 4 * 1024 * 1024,
+        log_segment_size: 16 * 1024 * 1024,
+        retained_checkpoints: 2,
+    },
+    time_series_defaults: TimeSeriesConfig {
+        partition_duration_secs: 3600,
+        retention_period_secs: 7 * 24 * 3600,
+        compression: remdb::time_series::compression::CompressionType::None,
+        max_partitions: 100,
+    },
+}));
+
+// Initialize database
+let mut db = RemDb::new(config);
+db.init()?;
+
+// Create table with vector field
+let create_sql = r#"CREATE TABLE products (
+    id INT32 PRIMARY KEY,
+    name TEXT,
+    embedding VECTOR(4) WITH DISTANCE=IP
+)"#;
+db.sql_query(create_sql)?;
+
+// Insert vector data
+let insert_sql = r#"INSERT INTO products (id, name, embedding) VALUES
+    (1, 'product1', '[0.1, 0.2, 0.3, 0.4]'),
+    (2, 'product2', '[1.0, 0.9, 0.8, 0.7]')
+"#;
+db.sql_query(insert_sql)?;
+
+// Vector similarity query - inner product distance
+let similarity_sql = "SELECT id, name, embedding <#> '[0.2, 0.3, 0.4, 0.5]' AS similarity FROM products ORDER BY similarity DESC LIMIT 2";
+let similarity_result = db.sql_query(similarity_sql)?;
+
+// Create vector index
+let create_index_sql = "CREATE INDEX idx_products_embedding ON products (embedding) USING HNSW WITH (M=16, ef_construction=200)";
+db.sql_query(create_index_sql)?;
 ```
 
 ## Platform Support
@@ -637,6 +844,9 @@ Check the examples directory for sample code:
 - `ddl_runtime_example.rs`: Runtime DDL configuration example demonstrating how to use the runtime DDL API
 - `pubsub_example.rs`: Pub/Sub example demonstrating how to use the UDP-based reliable data publish/subscribe functionality
 - `time_series.rs`: Time series example demonstrating how to handle time series data
+- `vector_example.rs`: Vector database example demonstrating how to use vector fields, insert vector data, and perform vector similarity queries
+- `vector_distance_test.rs`: Vector distance test example demonstrating vector similarity calculations with different distance metrics
+- `drop_table_example.rs`: DROP TABLE example demonstrating how to use SQL DROP TABLE statements to delete table structures
 - `test_remdb_server.rs`: Master-slave replication example demonstrating how to run master and slave servers with synchronous or asynchronous replication mode
 
 ### Master-Slave Replication Example
@@ -717,7 +927,10 @@ remdb/
 │   │   ├── manager.rs      # HA Manager implementation
 │   │   ├── replication.rs  # Replication functionality implementation
 │   │   ├── heartbeat.rs    # Heartbeat monitoring implementation
-│   │   └── role.rs         # Role management implementation
+│   │   ├── role.rs         # Role management implementation
+│   │   ├── protocol.rs     # Sync protocol definitions
+│   │   ├── sync_handler.rs # Master sync handler
+│   │   └── sync_receiver.rs # Slave sync receiver
 │   ├── pubsub/
 │   │   ├── mod.rs          # Pub/Sub module entry
 │   │   ├── protocol.rs     # Protocol frame definition and parsing
@@ -768,7 +981,7 @@ Issues and pull requests are welcome!
 - Add more examples and documentation
 - Implement more complex memory optimization algorithms
 - Complete runtime DDL configuration API, supporting full table and index creation functionality
-- Support DROP TABLE and ALTER TABLE statements
+- Support ALTER TABLE statements
 - Implement more flexible memory allocation strategies
 - Optimize performance of runtime DDL operations
 - Support more complex index configuration options

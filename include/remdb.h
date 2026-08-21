@@ -24,18 +24,21 @@ extern "C" {
 
 /**
  * @brief Data types supported by RemDB
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbDataType {
-    REMDB_TYPE_UINT8 = 0,
-    REMDB_TYPE_UINT16 = 1,
-    REMDB_TYPE_UINT32 = 2,
-    REMDB_TYPE_UINT64 = 3,
-    REMDB_TYPE_FLOAT32 = 4,
-    REMDB_TYPE_FLOAT64 = 5,
-    REMDB_TYPE_BOOL = 6,
-    REMDB_TYPE_TIMESTAMP = 7,
-    REMDB_TYPE_STRING = 8,
-};
+typedef uint8_t RemDbDataType;
+
+#define REMDB_TYPE_UINT8     ((RemDbDataType)0)
+#define REMDB_TYPE_UINT16    ((RemDbDataType)1)
+#define REMDB_TYPE_UINT32    ((RemDbDataType)2)
+#define REMDB_TYPE_UINT64    ((RemDbDataType)3)
+#define REMDB_TYPE_FLOAT32   ((RemDbDataType)4)
+#define REMDB_TYPE_FLOAT64   ((RemDbDataType)5)
+#define REMDB_TYPE_BOOL      ((RemDbDataType)6)
+#define REMDB_TYPE_TIMESTAMP ((RemDbDataType)7)
+#define REMDB_TYPE_STRING    ((RemDbDataType)8)
+#define REMDB_TYPE_JSON      ((RemDbDataType)9)
+#define REMDB_TYPE_VECTOR    ((RemDbDataType)10)
 
 /**
  * @brief Compression types for time series data
@@ -61,9 +64,19 @@ typedef union RemDbValue {
     uint64_t u64;
     float float32;
     double float64;
-    uint8_t bool;
+    uint8_t boolean;
     uint64_t timestamp;
     uint8_t string[REMDB_MAX_STRING_LEN];
+    struct {
+        uint8_t pool_id;
+        uint32_t offset;
+        uint32_t length;
+    } json;
+    struct {
+        uint8_t pool_id;
+        uint32_t offset;
+        uint32_t length;
+    } vector;
 } RemDbValue;
 
 /**
@@ -92,10 +105,13 @@ typedef struct RemDbTableDef {
 
 /**
  * @brief Typed value for SQL result set
+ * Note: data_type is uint8_t (1 byte) with 7 bytes padding before value
+ * to match Rust's #[repr(C)] layout with #[repr(u8)] enum
  */
 typedef struct RemDbTypedValue {
-    enum RemDbDataType data_type;
-    RemDbValue value;
+    RemDbDataType data_type;  /* 1 byte */
+    /* 7 bytes implicit padding to align value to 8 bytes */
+    RemDbValue value;         /* 64 bytes */
 } RemDbTypedValue;
 
 /**
@@ -166,6 +182,7 @@ typedef struct RemDbConfig {
     size_t total_memory;
     uint8_t low_power_mode_supported;
     int32_t low_power_max_records;
+    void* ha_config;
 } RemDbConfig;
 
 /**
@@ -231,6 +248,119 @@ typedef struct RemDbHealthCheckResult {
 } RemDbHealthCheckResult;
 
 /* =========================================== */
+/*              Vector Index Types              */
+/* =========================================== */
+
+/**
+ * @brief Vector index type
+ */
+enum RemDbVectorIndexType {
+    REMDB_VECTOR_INDEX_HNSW = 0,
+    REMDB_VECTOR_INDEX_HNSW_SQ = 1,
+    REMDB_VECTOR_INDEX_HNSW_BQ = 2,
+    REMDB_VECTOR_INDEX_IVF = 3,
+    REMDB_VECTOR_INDEX_IVF_PQ = 4,
+};
+
+/**
+ * @brief Vector distance type
+ */
+enum RemDbDistanceType {
+    REMDB_DISTANCE_L2 = 0,
+    REMDB_DISTANCE_INNER_PRODUCT = 1,
+    REMDB_DISTANCE_COSINE = 2,
+};
+
+/**
+ * @brief Vector metadata configuration
+ */
+typedef struct RemDbVectorMetadata {
+    uint16_t dimension;
+    enum RemDbDistanceType distance_type;
+    enum RemDbVectorIndexType index_type;
+    uint8_t compression_enabled;
+    uint8_t compression_scheme;
+    uint8_t compression_level;
+    uint8_t hnsw_m;
+    uint32_t hnsw_ef_construction;
+    uint32_t hnsw_ef_search;
+    uint32_t ivf_nlist;
+    uint32_t ivf_nprobe;
+} RemDbVectorMetadata;
+
+/* =========================================== */
+/*              PubSub Types                   */
+/* =========================================== */
+
+/**
+ * @brief UDP mode for PubSub
+ */
+enum RemDbUdpMode {
+    REMDB_UDP_UNICAST = 0,
+    REMDB_UDP_BROADCAST = 1,
+    REMDB_UDP_MULTICAST = 2,
+};
+
+/**
+ * @brief PubSub configuration
+ */
+typedef struct RemDbPubSubConfig {
+    enum RemDbUdpMode udp_mode;
+    const char* multicast_addr;
+    uint16_t port;
+    size_t max_topics;
+    size_t max_subscribers_per_topic;
+    size_t buffer_size;
+    uint8_t enable_nack;
+    uint32_t retransmit_timeout_ms;
+    size_t max_retransmits;
+    uint32_t heartbeat_interval_secs;
+    size_t frame_pool_size;
+} RemDbPubSubConfig;
+
+/**
+ * @brief PubSub callback function type
+ */
+typedef uint8_t (*RemDbPubSubCallback)(uint16_t topic_id, const uint8_t* data, size_t data_len);
+
+/* =========================================== */
+/*              HA Types                       */
+/* =========================================== */
+
+/**
+ * @brief HA role
+ */
+enum RemDbHARole {
+    REMDB_HA_ROLE_MASTER = 0,
+    REMDB_HA_ROLE_SLAVE = 1,
+    REMDB_HA_ROLE_AUTO = 2,
+};
+
+/**
+ * @brief Replication mode
+ */
+enum RemDbReplicationMode {
+    REMDB_REPLICATION_MODE_ASYNC = 0,
+    REMDB_REPLICATION_MODE_SYNC = 1,
+};
+
+/**
+ * @brief HA configuration
+ */
+typedef struct RemDbHAConfig {
+    enum RemDbHARole ha_role;
+    enum RemDbReplicationMode replication_mode;
+    uint32_t heartbeat_interval_ms;
+    uint32_t failure_detection_ms;
+    uint32_t sync_timeout_ms;
+    const char* master_address;
+    uint16_t master_port;
+    uint16_t replication_port;
+    uint16_t heartbeat_port;
+    uint32_t node_id;
+} RemDbHAConfig;
+
+/* =========================================== */
 /*              Error Codes                    */
 /* =========================================== */
 
@@ -257,6 +387,15 @@ enum RemDbError {
     REMDB_ERROR_LOCK_TIMEOUT = 16,
     REMDB_ERROR_TABLE_NOT_FOUND = 17,
     REMDB_ERROR_INVALID_RECORD_SIZE = 18,
+    REMDB_ERROR_PUBSUB_INIT_FAILED = 19,
+    REMDB_ERROR_PUBSUB_NETWORK_ERROR = 20,
+    REMDB_ERROR_PUBSUB_INVALID_PARAMETER = 21,
+    REMDB_ERROR_PUBSUB_RESOURCE_EXHAUSTED = 22,
+    REMDB_ERROR_PUBSUB_INVALID_FRAME_FORMAT = 23,
+    REMDB_ERROR_PUBSUB_CRC_CHECK_FAILED = 24,
+    REMDB_ERROR_PUBSUB_TOPIC_NOT_FOUND = 25,
+    REMDB_ERROR_PUBSUB_SUBSCRIPTION_NOT_FOUND = 26,
+    REMDB_ERROR_NOT_ALLOWED = 27,
 };
 
 /* =========================================== */
@@ -548,6 +687,24 @@ enum RemDbError remdb_execute_query(RemDbHandle handle, const char* table_name, 
  */
 enum RemDbError remdb_free_result_set(RemDbResultSet* result_set);
 
+/**
+ * @brief Get JSON string from a typed value
+ *
+ * @param value Typed value containing JSON data
+ * @param json_string Output parameter for JSON string pointer
+ * @param length Output parameter for string length
+ * @return Error code
+ */
+enum RemDbError remdb_get_json_string(const RemDbTypedValue* value, const char** json_string, size_t* length);
+
+/**
+ * @brief Free string memory allocated by RemDB
+ *
+ * @param s String pointer to free
+ * @return Error code
+ */
+enum RemDbError remdb_free_string(const char* s);
+
 /* =========================================== */
 /*              Data Manipulation Operations   */
 /* =========================================== */
@@ -623,6 +780,154 @@ enum RemDbError remdb_export_ddl(RemDbHandle handle, const char* path);
  * @return Error code
  */
 enum RemDbError remdb_export_data(RemDbHandle handle, const char* path);
+
+/* =========================================== */
+/*              Vector Index Operations         */
+/* =========================================== */
+
+/**
+ * @brief Initialize index build thread pool
+ *
+ * @param thread_count Number of threads to use for index building
+ * @return Error code
+ */
+enum RemDbError remdb_init_index_build_thread_pool(uint32_t thread_count);
+
+/**
+ * @brief Create vector index
+ *
+ * @param handle Database handle
+ * @param table_name Table name
+ * @param field_name Field name to index
+ * @param metadata Vector metadata configuration
+ * @return Error code
+ */
+enum RemDbError remdb_create_vector_index(RemDbHandle handle, const char* table_name, const char* field_name, const RemDbVectorMetadata* metadata);
+
+/**
+ * @brief Vector similarity search
+ *
+ * @param handle Database handle
+ * @param table_name Table name
+ * @param field_name Field name with vector index
+ * @param query_vector Query vector
+ * @param vector_dim Vector dimension
+ * @param k Number of results to return
+ * @param results Output parameter for matching record IDs
+ * @param distances Output parameter for distances
+ * @param result_count Output parameter for actual number of results
+ * @return Error code
+ */
+enum RemDbError remdb_vector_search(RemDbHandle handle, const char* table_name, const char* field_name, const float* query_vector, uint16_t vector_dim, uint32_t k, uint32_t** results, float** distances, uint32_t* result_count);
+
+/**
+ * @brief Free vector search results memory
+ *
+ * @param results Results array to free
+ * @param distances Distances array to free
+ * @param count Number of elements in arrays
+ * @return Error code
+ */
+enum RemDbError remdb_free_vector_search_results(uint32_t* results, float* distances, uint32_t count);
+
+/**
+ * @brief Get index build status
+ *
+ * @param handle Database handle
+ * @param table_name Table name
+ * @param field_name Field name
+ * @param is_building Output parameter for build status
+ * @param progress Output parameter for build progress (0-100)
+ * @return Error code
+ */
+enum RemDbError remdb_get_index_build_status(RemDbHandle handle, const char* table_name, const char* field_name, uint8_t* is_building, uint32_t* progress);
+
+/* =========================================== */
+/*              PubSub Operations              */
+/* =========================================== */
+
+/**
+ * @brief Initialize PubSub system
+ *
+ * @param config PubSub configuration
+ * @return Error code
+ */
+enum RemDbError remdb_pubsub_init(const RemDbPubSubConfig* config);
+
+/**
+ * @brief Subscribe to a topic
+ *
+ * @param topic_id Topic ID to subscribe to
+ * @param callback Callback function for received messages
+ * @param subscription_id Output parameter for subscription ID
+ * @return Error code
+ */
+enum RemDbError remdb_pubsub_subscribe(uint16_t topic_id, RemDbPubSubCallback callback, size_t* subscription_id);
+
+/**
+ * @brief Unsubscribe from a topic
+ *
+ * @param subscription_id Subscription ID to cancel
+ * @return Error code
+ */
+enum RemDbError remdb_pubsub_unsubscribe(size_t subscription_id);
+
+/**
+ * @brief Publish data to a topic
+ *
+ * @param topic_id Topic ID to publish to
+ * @param data Data to publish
+ * @param data_len Length of data
+ * @return Error code
+ */
+enum RemDbError remdb_pubsub_publish(uint16_t topic_id, const uint8_t* data, size_t data_len);
+
+/**
+ * @brief Start PubSub receiver thread
+ *
+ * @return Error code
+ */
+enum RemDbError remdb_pubsub_start_receiver(void);
+
+/**
+ * @brief Shutdown PubSub system
+ *
+ * @return Error code
+ */
+enum RemDbError remdb_pubsub_shutdown(void);
+
+/* =========================================== */
+/*              HA Operations                  */
+/* =========================================== */
+
+/**
+ * @brief Get current HA role
+ *
+ * @param role Output parameter for current HA role
+ * @return Error code
+ */
+enum RemDbError remdb_ha_get_role(enum RemDbHARole* role);
+
+/**
+ * @brief Promote current node to Master
+ *
+ * @return Error code
+ */
+enum RemDbError remdb_ha_promote_to_master(void);
+
+/**
+ * @brief Demote current node to Slave
+ *
+ * @return Error code
+ */
+enum RemDbError remdb_ha_demote_to_slave(void);
+
+/**
+ * @brief Check HA status
+ *
+ * @return Error code
+ */
+enum RemDbError remdb_ha_check_status(void);
 
 #ifdef __cplusplus
 }

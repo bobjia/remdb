@@ -222,6 +222,10 @@
 
 零拷贝访问需求的本质，是让内存数据库从“数据存储服务”向“内存管理服务”演进。它不再仅仅负责安全地存放数据，更要高效地组织内存，使应用程序能像使用自己的堆内存一样，直接、安全、并发地访问数据库中的数据。这需要数据库在存储布局、并发控制、内存管理和API设计上进行高度协同的、精细化的设计，是实现百万级QPS目标（US-505）的基石技术之一。
 
+---
+
+
+
 ### **阶段二：核心优化**
 
 **持久化与可靠性**
@@ -675,15 +679,21 @@
     *   数据库必须提供两个核心的特性开关（`no_std` 和 `POSIX`），编译时选定，运行时不可更改。
     *   在 `no_std` 特性下，数据库必须满足：
         *   混合读写负载（读写比 9:1）下，**每秒查询率（QPS）不低于 10万**。
-        *   单表支持的最大列数 **≤ 12**。
-        *   支持创建的最大表数量 **≤ 32**。
+        *   单表支持的最大列数 **≤ 32**。
+        *   支持创建的最大表数量 **≤ 64**。
+        *   最大向量维度 **≤ 4096**。
+        *   向量索引数量 **≤ 1024**。
+        *   支持向量索引算法配置，默认使用**近似最近邻（ANN）算法**以优化内存占用和查询性能。
     *   在 `POSIX` 特性下，数据库必须满足：
         *   混合读写负载（读写比 9:1）下，**每秒查询率（QPS）不低于 50万**。
         *   对单表列数和数据库总表数**不做编译期限制**，仅受运行时可用内存约束。
+        *   最大向量维度 **≤ 4096**。
+        *   向量索引数量 **≤ 1024**。
+        *   支持向量索引算法配置，默认使用**近似最近邻（ANN）算法**以优化内存占用和查询性能。
 
 2.  **持久化子系统参数指引**
-    *   基于核心QPS指标和典型负载（写入操作占10%，平均WAL记录100字节），数据库应提供默认的持久化配置，并允许用户在初始化时调整：
-        *   **WAL日志段大小**：`no_std` 环境默认 **32MB**；`POSIX` 环境默认 **300MB**。必须支持日志轮转。
+    *   基于核心QPS指标和典型负载（写入操作占10%，平均WAL记录256字节），数据库应提供默认的持久化配置，并允许用户在初始化时调整：
+        *   **WAL日志段大小**：`no_std` 环境默认 **64MB**；`POSIX` 环境默认 **512MB**。必须支持日志轮转。
         *   **检查点周期**：`no_std` 环境默认 **60秒**；`POSIX` 环境默认 **300秒**。
     *   这些默认配置的目标是：在对应环境下，**恢复时间（RTO）** 应分别少于 **5秒**（`no_std`）和 **30秒**（`POSIX`）。
 
@@ -691,43 +701,1938 @@
     *   无论何种环境，数据库在持续压力测试下必须同时满足：
         *   **写入延迟**：99% 的请求延迟（P99） **< 1ms**。
         *   **读取延迟**：99% 的请求延迟（P99） **< 500μs**。
+        *   **向量相似度搜索延迟**：99% 的请求延迟（P99） **< 1ms**（针对1000个向量的数据集）。
         *   **数据持久性（RPO）**：在启用同步WAL模式下，必须为 **0**（崩溃后无数据丢失）。
         *   **可用性**：在模拟的年度运行周期测试中，系统可用性不低于 **99.9%**。
 
 4.  **资源占用上限指标**
-    *   在 `no_std` 环境下，数据库所有组件（数据、索引、事务上下文等）的**最大内存占用必须静态分配，且总值不得超过 64MB**。此限制必须在编译期通过配置计算得出，并在启动时完成分配。
-    *   在 `POSIX` 环境下，数据库应提供清晰的内存使用监控接口，并支持设置软性上限（如1GB），在接近上限时进行告警或流量控制。
+    *   在 `no_std` 环境下：
+        *   数据库核心组件（数据、索引、事务上下文等）的**最大内存占用必须静态分配，且默认总值不得超过 64MB**。此限制必须在编译期通过配置计算得出，并在启动时完成分配。
+        *   提供**向量功能的单独内存配置选项**，允许用户根据实际向量需求调整向量相关内存分配，最高可配置为核心内存的2倍（即默认最高128MB）。
+        *   支持**向量数据压缩选项**，提供至少2种压缩算法（如标量量化、乘积量化）供用户选择，以减少内存占用和持久化开销。
+    *   在 `POSIX` 环境下：
+        *   数据库应提供清晰的内存使用监控接口，并支持设置软性上限（如1GB），在接近上限时进行告警或流量控制。
+        *   支持**向量功能的单独内存配置选项**，允许用户根据实际向量需求调整向量相关内存分配。
+        *   支持**向量数据压缩选项**，提供至少2种压缩算法（如标量量化、乘积量化）供用户选择，以减少内存占用和持久化开销。
 
 **验收测试场景：**
 
 1.  **基准性能验证**：
     *   使用标准的键值存储性能测试工具（如改造后的YCSB），运行读写比为9:1的负载，持续至少5分钟，验证平均QPS和P99延迟达标。
     *   在 `no_std` 环境下，需验证在达到32张表、每表12列的配置极限时，系统功能正常，性能无显著衰减。
+    *   验证向量维度4096下的相似度搜索性能，确保延迟达标。
+    *   验证不同向量索引算法（包括ANN算法）的性能表现，确保内存占用和查询性能符合预期。
 
 2.  **恢复与持久化验证**：
     *   在持续达到50%目标QPS的压力下运行，随机触发模拟崩溃。测量从重启到完全恢复服务的时间，验证其小于规定的RTO目标。
     *   崩溃恢复后，校验数据完整性，必须确保RPO目标达成。
+    *   验证包含压缩向量数据的持久化和恢复性能，确保符合预期。
 
 3.  **容量与稳定性边界测试**：
-    *   **`no_std` 测试**：运行直到内存占用接近64MB上限，验证系统行为符合预期（如优雅拒绝新写入），且无内存越界。
-    *   **`POSIX` 长稳测试**：以80%的最大目标QPS持续运行24小时，监控内存、CPU使用率，要求无资源泄漏，且性能曲线平稳。
+    *   **`no_std` 测试**：
+        *   运行直到核心内存占用接近64MB上限，验证系统行为符合预期（如优雅拒绝新写入），且无内存越界。
+        *   验证向量功能单独内存配置选项的有效性，确保向量内存分配正确。
+        *   验证向量数据压缩选项的效果，测量压缩前后的内存占用差异。
+    *   **`POSIX` 长稳测试**：
+        *   以80%的最大目标QPS持续运行24小时，监控内存、CPU使用率，要求无资源泄漏，且性能曲线平稳。
+        *   验证向量功能在长时间运行下的稳定性和性能表现。
+
+4.  **向量功能专项测试**：
+    *   测试向量维度4096时的内存使用情况，验证内存配置的合理性。
+    *   测试1024个向量索引的创建和查询性能，验证系统稳定性。
+    *   比较不同向量压缩算法的性能和压缩率，验证压缩选项的有效性。
 
 ---
 🧠 设计关联与说明
 
-此需求是对之前所有技术设计的**定量化约束和验收标准**。
+此需求是对之前所有技术设计的**定量化约束和验收标准**，特别是针对向量功能的确定性容量和性能指标。
 
-*   **与US-104（内存管理）的关联**：`no_std` 下的64MB上限是静态内存池设计的直接输入。`POSIX` 下的内存监控是动态管理的前提。
-*   **与US-107（WAL与检查点）的关联**：本需求中推导出的WAL大小和检查点周期，应作为US-107实现的**默认配置和性能验证基准**。
-*   **与US-103（事务）和US-505（百万QPS）的关联**：本需求的性能指标是这些高级功能的**阶段性、环境差异化的具体目标**。
-*   **指标的可配置性**：虽然规定了默认值和目标，但WAL大小、检查点周期、内存上限等关键参数必须保留为**可配置项**，允许高级用户根据实际硬件和负载特征进行调优。
+*   **与US-104（内存管理）的关联**：
+    *   `no_std` 下的64MB核心内存上限是静态内存池设计的直接输入。
+    *   向量功能的单独内存配置选项扩展了内存管理的灵活性，允许用户根据实际需求调整。
+    *   `POSIX` 下的内存监控是动态管理的前提。
+*   **与US-107（WAL与检查点）的关联**：
+    *   本需求中推导出的WAL大小和检查点周期，应作为US-107实现的**默认配置和性能验证基准**。
+    *   向量数据的压缩存储需与WAL机制协同设计，确保压缩数据的高效持久化和恢复。
+*   **与US-103（事务）和US-505（百万QPS）的关联**：
+    *   本需求的性能指标是这些高级功能的**阶段性、环境差异化的具体目标**。
+    *   向量操作的性能指标需与整体QPS目标协同考虑。
+*   **指标的可配置性**：
+    *   虽然规定了默认值和目标，但WAL大小、检查点周期、内存上限、向量算法选择和压缩选项等关键参数必须保留为**可配置项**，允许高级用户根据实际硬件和负载特征进行调优。
 
-这个需求将性能愿景转化为了**可测量、可验证的工程契约**，是确保 `remdb` 在不同目标环境中都能交付确定性表现的核心。
+这个需求将性能愿景转化为了**可测量、可验证的工程契约**，特别是针对向量功能的确定性表现，是确保 `remdb` 在不同目标环境中都能交付稳定可靠表现的核心。
 
 ---
 
+#### **US-215：动态表结构管理支持**
+
+**作为** 嵌入式应用开发者，**我希望** 数据库在运行时支持有限的表结构修改操作，包括删除表（DROP TABLE）和修改表（ALTER TABLE），**以便于** 在应用生命周期中能够适应数据结构的变化需求，而无需重启系统或重新编译数据库。
+
+---
+
+**验收条件：**
+
+**1. DROP TABLE 功能**
+
+- 支持 `DROP TABLE [IF EXISTS] table_name` 语法
+- 删除表时自动清理：
+  - 所有数据记录
+  - 所有关联的索引（主键索引和辅助索引）
+  - 表级统计信息
+  - 事务上下文中的相关资源
+- 内存立即回收：表占用的内存应返回内存池，可供其他表重用
+- 并发安全：当有活跃事务正在访问该表时，删除操作应被阻塞或优雅拒绝
+- 持久化支持：如果启用了WAL，删除操作应记入日志，确保崩溃恢复后表状态一致
+- 提供删除前的安全检查选项（如检查外键依赖，但注意当前设计无外键）
+
+**示例语法支持：**
+
+```sql
+-- 基本删除
+DROP TABLE sensor_data;
+
+-- 安全删除（表不存在时不报错）
+DROP TABLE IF EXISTS old_sensor_data;
+```
+
+**2. ALTER TABLE 基本功能**
+
+支持以下常用的表结构修改操作：
+
+**a) 增加列**
+
+```sql
+ALTER TABLE sensor_data ADD COLUMN status INTEGER DEFAULT 0;
+```
+
+- 新列必须指定数据类型
+- 支持默认值（DEFAULT）子句，用于填充现有记录
+- 现有记录的新列值初始化为默认值或NULL
+- 内存重新分配策略：可延迟分配，在第一次访问时按需扩展记录空间
+
+**b) 删除列**
+
+```sql
+ALTER TABLE sensor_data DROP COLUMN obsolete_flag;
+```
+
+- 立即释放该列占用的存储空间
+- 如果该列有索引，自动删除相关索引
+- 注意：主键列不能被删除
+
+**c) 重命名列**
+
+```sql
+ALTER TABLE sensor_data RENAME COLUMN temp TO temperature;
+```
+
+- 仅修改元数据，不移动数据
+- 保持现有索引，但更新索引元数据中的列名引用
+- 如果该列有约束，约束应继续有效
+
+**d) 重命名表**
+
+```sql
+ALTER TABLE sensor_data RENAME TO device_metrics;
+```
+
+- 仅修改表名元数据
+- 所有索引、约束保持有效
+- 已编译的查询计划可能需要失效并重新准备
+
+**3. ALTER TABLE 高级功能（可选，按优先级）**
+
+**e) 修改列类型**（有限支持）
+
+```sql
+ALTER TABLE sensor_data MODIFY COLUMN value DOUBLE PRECISION;
+```
+
+- 仅支持不改变数据二进制表示的扩展转换（如INT32→INT64，FLOAT→DOUBLE）
+- 不支持可能丢失精度的收缩转换（如INT64→INT32）
+- 需要重新组织数据，对于大表可能耗时较长
+
+**f) 增加/删除约束**
+
+```sql
+-- 增加唯一约束
+ALTER TABLE users ADD UNIQUE (username);
+
+-- 删除约束
+ALTER TABLE users DROP CONSTRAINT username_unique;
+```
+
+- 唯一约束需要创建索引
+- NOT NULL约束可动态添加/删除
+
+**4. 编译期DDL与运行时DDL的协同（US-210相关）**
+
+- **编译期声明的表**：
+  - 仍然支持运行时ALTER，但会生成警告日志
+  - 修改后的表结构无法在编译期验证
+  - 建议提供迁移工具，将运行时修改同步回DDL文件
+
+- **运行时创建的表**：
+  - 完全支持所有DDL操作
+  - 表元数据存储在专门区域，与编译期表隔离
+
+**5. 事务性与原子性**
+
+- 所有DDL操作必须在事务内执行：
+
+  ```sql
+  BEGIN TRANSACTION;
+  ALTER TABLE sensor_data ADD COLUMN status INTEGER;
+  UPDATE sensor_data SET status = 1 WHERE value > 100;
+  COMMIT;
+  ```
+
+- DDL操作失败时，必须完全回滚，不留部分修改
+
+- 支持DDL操作与DML操作在同一个事务中混合执行
+
+**6. 并发控制**
+
+- DDL操作需要获取表级排他锁
+- 锁升级机制：当有长时间运行的查询正在访问表时，DDL操作应等待或超时失败
+- 提供可配置的锁等待超时（默认：5000ms）
+- 支持ONLINE DDL模式（可选）：某些操作（如增加NULLABLE列）允许并发读写
+
+**7. 内存管理影响**
+
+- 结构修改对US-104（可配置内存管理）的影响：
+  - ADD COLUMN：可能触发内存池扩展或记录重新分配
+  - DROP COLUMN：立即回收内存，但可能有碎片
+  - 提供内存使用预测：在执行ALTER前估算所需内存
+- 修改操作超出内存限制时的行为：
+  - 如果超过硬上限，操作失败
+  - 如果超过软上限，触发清理回调
+
+**8. 持久化与恢复**
+
+- 所有DDL操作必须记入WAL（US-107）
+- 日志格式需要扩展以支持DDL操作类型
+- 崩溃恢复时，重放DDL日志必须保证幂等性
+- 检查点（快照）必须包含完整的表结构信息
+
+**9. 性能要求**
+
+- 轻量级操作（重命名表/列）：< 10ms
+- 中等操作（增加可为NULL的列）：< 50ms（10,000条记录的表）
+- 重量级操作（修改列类型）：需要进度反馈，允许后台执行
+- DDL操作期间，对未修改表的查询性能影响< 5%
+
+**10. 资源约束**
+
+- 最大表数量限制（US-101）：DROP TABLE后，计数减少，可创建新表
+- 单记录最大大小（512字节）：ADD COLUMN不能超过此限制
+- 每表最大列数（US-214）：ALTER不能超过编译时或运行时配置的限制
+
+**11. 错误处理与验证**
+
+- 语法验证：无效DDL语句给出清晰错误信息
+- 语义验证：检查约束冲突、类型兼容性、名称重复等
+- 资源验证：检查内存、存储空间是否足够
+- 依赖验证：检查是否有视图、索引、触发器依赖（未来扩展）
+
+**12. 系统表支持**
+
+- 新增`__system_tables`系统表，记录所有表的结构信息
+
+- 新增`__system_columns`系统表，记录所有列的元数据
+
+- 查询系统表获取表结构信息：
+
+  ```sql
+  SELECT * FROM __system_tables WHERE table_name = 'sensor_data';
+  SELECT * FROM __system_columns WHERE table_name = 'sensor_data';
+  ```
+
+**13. 向后兼容性**
+
+- 现有数据格式兼容：旧版本数据库文件应能加载，忽略未知DDL特性
+- API兼容：现有应用程序使用旧API应继续工作
+- 提供表结构版本号，支持多版本结构共存（有限场景）
+
+---
+
+**技术约束与限制：**
+
+1. **不支持的操作**（第一期）：
+   - 跨表操作（如合并表、拆分表）
+   - 修改主键列
+   - 增加自增列
+   - 复杂约束（外键、检查约束）
+
+2. **编译期与运行时的权衡**：
+   - 编译期定义的表结构修改后，编译期类型安全可能失效
+   - 建议重要表结构仍在编译期定义，运行时DDL主要用于维护和调整
+
+3. **嵌入式环境特殊考虑**：
+   - 内存受限时，大表结构修改可能失败
+   - 提供中止机制：长时间运行的ALTER可被用户取消
+   - 支持仅元数据修改的操作优先实现
+
+4. **与MVCC的交互**（如果实现US-213）：
+   - DDL操作需要维护多版本的表结构信息
+   - 旧事务可能访问旧版本的表结构
+   - 表结构版本需要垃圾回收
+
+---
+
+**测试场景：**
+
+1. **功能正确性测试**：
+   - 创建表→插入数据→修改结构→查询数据，验证结果正确
+   - 并发测试：一边修改表结构一边查询数据
+   - 事务回滚测试：ALTER失败后表状态不变
+
+2. **性能与资源测试**：
+   - 测量不同规模表（100/10K/100K记录）的ALTER操作时间
+   - 监控DDL操作期间的内存使用峰值
+   - 压力测试：连续执行多个DDL操作，验证系统稳定性
+
+3. **恢复测试**：
+   - 执行ALTER后立即模拟崩溃，重启验证表结构正确
+   - 从旧版本快照恢复，验证向前兼容性
+
+4. **边界条件测试**：
+   - 尝试修改不存在的表（应报错）
+   - 尝试添加重复列名（应报错）
+   - 在内存不足时尝试ADD COLUMN（应优雅失败）
+   - 删除正在被查询的表（应阻塞或报错）
+
+5. **集成测试**：
+   - 与编译期DDL（US-210）集成测试
+   - 与索引功能（US-102, US-212）集成测试
+   - 与事务功能（US-205）集成测试
+
+---
+
+**依赖与关联：**
+
+1. **强依赖**：
+   - US-101（内存表存储）：基础存储引擎需要支持动态结构
+   - US-104（内存管理）：内存池需要支持动态调整
+   - US-107（WAL）：DDL操作必须持久化
+
+2. **重要关联**：
+   - US-210（编译期DDL）：运行时DDL与编译期DDL的协同
+   - US-102/US-212（索引）：列删除时需要清理相关索引
+   - US-205（ACID事务）：DDL操作需要事务支持
+
+3. **未来扩展**：
+   - 为US-303（主从复制）提供DDL操作的复制支持
+   - 为US-404（时序数据）提供专门的ALTER扩展
+
+---
+
+**实施建议分阶段：**
+
+**阶段1（基础DDL）**：
+
+- DROP TABLE（IF EXISTS）
+- ADD COLUMN（可为NULL，有默认值）
+- RENAME TABLE/COLUMN
+- 系统表查询
+
+**阶段2（完整DDL）**：
+
+- DROP COLUMN
+- MODIFY COLUMN TYPE（有限支持）
+- 约束管理（UNIQUE, NOT NULL）
+
+**阶段3（高级DDL）**：
+
+- ONLINE DDL（部分操作不阻塞读写）
+- 并行DDL（大表操作后台执行）
+- DDL操作进度查询
+
+---
+
+**风险与缓解：**
+
+| 风险              | 可能性 | 影响 | 缓解措施                   |
+| ----------------- | ------ | ---- | -------------------------- |
+| 数据结构碎片化    | 中     | 中   | 定期整理工具，延迟分配策略 |
+| 长时间锁表        | 高     | 高   | ONLINE DDL选项，超时机制   |
+| 内存不足          | 中     | 高   | 预检查机制，增量迁移选项   |
+| 版本兼容性        | 低     | 高   | 表结构版本号，迁移工具     |
+| 编译期/运行时冲突 | 中     | 中   | 明确的使用规范，警告系统   |
+
+---
+
+**成功指标（KPI）：**
+
+1. **功能性**：
+   - 支持核心DDL操作集（ADD/DROP/RENAME）
+   - 与现有功能的集成无冲突
+
+2. **性能**：
+   - 元数据操作（重命名）< 10ms
+   - 结构变更操作平均延迟 < 100ms（万级记录表）
+
+3. **可靠性**：
+   - DDL操作崩溃恢复成功率 100%
+   - 并发访问下的数据一致性 100%
+
+4. **资源效率**：
+   - DDL操作内存开销 < 操作数据的10%
+   - 无内存泄漏（通过24小时压力测试）
+
+---
+
+#### **US-216：轻量级JSON数据类型与路径查询**
+
+**作为** 工业物联网和嵌入式应用开发者，**我希望** 在内存数据库中支持高效的JSON数据类型，**以便于** 存储和处理设备配置、动态标签、非结构化传感器数据等半结构化信息，同时保持嵌入式环境下的性能和内存效率。
+
+---
+
+**验收条件：**
+
+**1. JSON列定义与存储**
+
+- 支持在CREATE TABLE语句中定义JSON类型列：
+  ```sql
+  CREATE TABLE device_configs (
+      id INTEGER PRIMARY KEY,
+      device_id INTEGER NOT NULL,
+      config JSON NOT NULL,          -- JSON类型列
+      tags JSON,                     -- 可为NULL的JSON列
+      created_at TIMESTAMP NOT NULL,
+      updated_at TIMESTAMP NOT NULL
+  );
+  ```
+
+- **存储格式优化**：
+  - 默认使用**MessagePack**二进制格式存储，相比文本JSON减少30-50%空间
+  - 提供可选的**CBOR**（Concise Binary Object Representation）格式
+  - 内联存储：< 64字节的JSON直接内联在记录中
+  - 外部存储：> 64字节的JSON存储在专用JSON内存池中
+
+- **内存布局**：
+  ```rust
+  // 内部表示
+  enum JsonStorage {
+      Inline([u8; 64]),           // 内联存储
+      External {                   // 外部存储
+          pool_id: u8,             // 内存池ID
+          offset: u32,             // 偏移量
+          length: u32,             // 长度
+      },
+      Null,                        // NULL值
+  }
+  ```
+
+**2. JSON数据操作API**
+
+**a) 插入与更新**：
+```sql
+-- 插入JSON数据
+INSERT INTO device_configs (id, device_id, config, tags, created_at, updated_at)
+VALUES (1, 1001, 
+        '{"sampling_rate": 1000, "thresholds": {"temp": 85.0, "vibration": 0.5}}',
+        '{"location": "cell-1", "criticality": "high"}',
+        NOW(), NOW());
+
+-- 更新整个JSON列
+UPDATE device_configs 
+SET config = '{"sampling_rate": 2000, "thresholds": {"temp": 90.0}}'
+WHERE id = 1;
+
+-- 部分更新（JSON Merge Patch）
+UPDATE device_configs 
+SET config = json_merge_patch(config, '{"thresholds": {"temp": 95.0}}')
+WHERE id = 1;
+```
+
+**b) 路径查询与提取**：
+```sql
+-- 提取标量值
+SELECT 
+    id,
+    json_extract(config, '$.sampling_rate') as rate,
+    json_extract(config, '$.thresholds.temp') as temp_threshold
+FROM device_configs
+WHERE device_id = 1001;
+
+-- 提取JSON片段
+SELECT 
+    json_extract(config, '$.thresholds') as thresholds_json
+FROM device_configs;
+
+-- 路径存在性检查
+SELECT id
+FROM device_configs
+WHERE json_has(config, '$.thresholds.temp') = 1;
+```
+
+**3. JSON路径表达式支持**
+
+- **完整路径语法**：
+  ```
+  $               -- 根对象
+  $.key           -- 对象键访问
+  $[0]            -- 数组索引访问
+  $[*]            -- 数组通配符
+  $.key[*].sub    -- 嵌套通配符
+  $.key[0:5]      -- 数组切片
+  $.key[?(@ > 10)]-- 过滤表达式（可选）
+  ```
+
+- **编译时路径优化**：频繁使用的路径在编译时预编译为访问计划
+
+**4. JSON索引支持**
+
+**a) 虚拟生成列索引**：
+```sql
+-- 在JSON路径上创建虚拟列并索引
+ALTER TABLE device_configs 
+ADD COLUMN temp_threshold FLOAT 
+GENERATED ALWAYS AS (json_extract(config, '$.thresholds.temp'));
+
+CREATE INDEX idx_temp_threshold ON device_configs(temp_threshold);
+```
+
+**b) JSON路径索引**（有限支持）：
+```sql
+-- 在特定JSON路径上创建索引
+CREATE INDEX idx_config_sampling 
+ON device_configs(json_extract(config, '$.sampling_rate'));
+
+-- 支持多路径复合索引（最多3个路径）
+CREATE INDEX idx_config_thresholds 
+ON device_configs(
+    json_extract(config, '$.thresholds.temp'),
+    json_extract(config, '$.thresholds.vibration')
+);
+```
+
+**5. 与向量数据集成**（US-601增强）
+
+```sql
+-- JSON中的向量数组作为向量字段
+CREATE TABLE device_features (
+    id INTEGER PRIMARY KEY,
+    device_id INTEGER NOT NULL,
+    features JSON NOT NULL,  -- 包含向量数组
+    vector VECTOR(128) GENERATED ALWAYS AS (
+        json_extract_vector(features, '$.embedding')
+    )
+);
+
+-- 混合查询：JSON过滤 + 向量搜索
+SELECT * FROM device_features
+WHERE json_extract(features, '$.device_type') = 'motor'
+AND VECTOR_SIMILAR(vector, @query_vector) < 0.2;
+```
+
+**6. 内存管理优化**（与US-104集成）
+
+- **专用JSON内存池**：预分配固定大小的JSON存储块（4KB/块）
+- **内存碎片控制**：使用slab分配器减少碎片
+- **引用计数**：JSON对象可被多个记录共享（只读场景）
+- **大小限制**：
+  - 单JSON文档最大：16KB（嵌入式环境）
+  - 嵌套深度最大：16层
+  - 总JSON内存使用可配置上限
+
+**7. 事务与并发**（与US-205集成）
+
+- **MVCC for JSON**：JSON修改创建新版本，旧版本由GC回收
+- **部分更新优化**：只修改的路径创建新版本，未修改部分共享
+- **锁粒度**：JSON对象级细粒度锁（读不阻塞写不同路径）
+
+**8. 序列化/反序列化优化**
+
+- **零拷贝访问**：json_extract返回原始存储的引用（只读）
+- **延迟解析**：只有访问的路径才被解析
+- **结构共享**：修改操作尽量复用未修改部分
+- **SIMD加速**：使用SIMD指令加速JSON解析（ARM NEON支持）
+
+**9. JSON函数集**
+
+```sql
+-- 构造函数
+json_object('key1', value1, 'key2', value2)
+json_array(value1, value2, value3)
+
+-- 查询函数
+json_extract(json_doc, path) → value
+json_extract_text(json_doc, path) → TEXT
+json_extract_int(json_doc, path) → INTEGER
+json_extract_float(json_doc, path) → FLOAT
+json_extract_vector(json_doc, path) → VECTOR
+
+-- 存在性检查
+json_has(json_doc, path) → BOOLEAN
+json_type(json_doc, path) → TEXT  -- 'object', 'array', 'number', 'string', 'boolean', 'null'
+
+-- 修改函数
+json_set(json_doc, path, value) → JSON
+json_insert(json_doc, path, value) → JSON
+json_replace(json_doc, path, value) → JSON
+json_remove(json_doc, path) → JSON
+json_merge_patch(json_doc, patch) → JSON
+
+-- 聚合函数
+json_group_object(key, value) → JSON  -- 聚合多行为JSON对象
+json_group_array(value) → JSON        -- 聚合多行为JSON数组
+
+-- 验证函数
+json_valid(json_text) → BOOLEAN
+json_schema_valid(schema, json_doc) → BOOLEAN  -- 可选，JSON Schema验证
+```
+
+**10. 嵌入式环境特殊优化**
+
+- **无堆分配模式**：所有JSON操作使用预分配内存池
+- **确定性内存使用**：JSON操作最大内存使用可预测
+- **快速路径**：常见操作（如读取顶层字段）有专门优化路径
+- **ARM Cortex-M优化**：Thumb2指令集优化版本
+
+**11. 与编译期DDL集成**（US-210扩展）
+
+```rust
+// Rust过程宏支持JSON列
+#[derive(MemdbTable)]
+#[memdb_schema(ddl = "
+    CREATE TABLE device_configs (
+        id INTEGER PRIMARY KEY,
+        config JSON NOT NULL,
+        tags JSON
+    );
+")]
+struct DeviceConfigs;
+
+// 自动生成类型安全的JSON访问方法
+let config: JsonValue = table.get_json("config");
+let sampling_rate: i32 = config.get_i32("sampling_rate").unwrap_or_default();
+
+// 编译时验证JSON Schema（可选）
+#[memdb_schema(ddl = "...", json_schema = "config_schema.json")]
+struct DeviceConfigs;
+```
+
+**12. 性能指标**
+
+- **插入性能**：1KB JSON插入延迟 < 200μs（STM32F4 @ 168MHz）
+- **查询性能**：json_extract(顶层字段)延迟 < 50μs
+- **路径查询**：嵌套3层路径查询延迟 < 150μs
+- **内存效率**：存储开销 < 原始文本JSON的60%
+- **更新性能**：部分更新延迟 < 全量更新的30%
+
+**13. 持久化支持**（US-107/201扩展）
+
+- **WAL日志优化**：JSON部分更新只记录差异
+- **快照压缩**：JSON数据在快照中使用字典压缩
+- **版本回滚**：支持JSON的MVCC版本回滚
+
+**14. 监控与诊断**
+
+```sql
+-- JSON列统计信息
+SELECT 
+    table_name,
+    column_name,
+    json_column_stats(json_column) as stats
+FROM __system_json_columns;
+
+-- 示例统计信息
+{
+  "total_documents": 1000,
+  "total_size_bytes": 1024000,
+  "avg_size_bytes": 1024,
+  "avg_depth": 3.2,
+  "key_distribution": {"sampling_rate": 1000, "thresholds": 1000},
+  "type_distribution": {"object": 800, "array": 200}
+}
+```
+
+**技术约束与限制**
+
+1. **一期限制**：
+   - 不支持JSON全文索引
+   - 不支持递归路径查询
+   - JSON Schema验证为可选功能
+   - 数组操作仅限于简单索引访问
+
+2. **内存约束**：
+   - 单个JSON文档最大16KB（可配置）
+   - 最大嵌套深度16层
+   - 键名最大长度64字节
+
+3. **嵌入式特殊考虑**：
+   - 无浮点硬件时，JSON浮点数使用定点数模拟
+   - 支持禁用JSON完整功能，只保留基础路径查询
+
+**测试场景**
+
+1. **功能正确性**：
+   - JSON往返测试：插入→查询→验证一致性
+   - 路径查询嵌套测试：10层嵌套路径访问
+   - 并发修改测试：多线程同时修改同一JSON不同路径
+
+2. **性能基准**：
+   - 与SQLite JSON1扩展性能对比
+   - 不同大小JSON文档的CRUD性能
+   - 内存碎片化测试（24小时连续运行）
+
+3. **边缘案例**：
+   - 损坏JSON数据处理
+   - 内存不足时的优雅降级
+   - 最大限制测试（16KB文档，16层嵌套）
+
+4. **集成测试**：
+   - 与向量搜索混合查询
+   - 与时序数据联合查询
+   - 事务中的JSON操作原子性
+
+**依赖关系**
+
+- **强依赖**：
+  - US-101（内存存储）：基础存储引擎
+  - US-104（内存管理）：JSON专用内存池
+  
+- **重要集成**：
+  - US-210（编译期DDL）：JSON类型安全
+  - US-601（向量数据）：JSON向量提取
+  - US-205（MVCC）：JSON并发控制
+  
+- **可选增强**：
+  - US-406（时序查询）：JSON路径上的时序聚合
+  - US-613（分数融合）：JSON字段参与分数计算
+
+**实施阶段**
+
+**阶段1（基础JSON）**：
+- 二进制JSON存储（MessagePack）
+- 基本路径查询（json_extract）
+- 内联/外部存储策略
+
+**阶段2（完整功能）**：
+- JSON索引支持
+- 部分更新（json_set, json_merge_patch）
+- 事务支持与MVCC
+
+**阶段3（高级优化）**：
+- SIMD加速解析
+- 与向量数据深度集成
+- JSON Schema验证
+
+**风险与缓解**
+
+| 风险         | 可能性 | 影响 | 缓解措施              |
+| ------------ | ------ | ---- | --------------------- |
+| 内存碎片     | 中     | 高   | 专用内存池 + 定期整理 |
+| 解析性能     | 高     | 中   | 懒解析 + SIMD优化     |
+| 嵌套深度爆炸 | 低     | 高   | 深度限制 + 栈保护     |
+| 二进制兼容性 | 中     | 中   | 版本化存储格式        |
+
+**成功指标**
+
+1. **功能性**：
+   - 支持标准JSON路径查询语法
+   - JSON列与现有类型系统无缝集成
+
+2. **性能**：
+   - JSON操作额外开销 < 相同数据文本操作的50%
+   - 路径查询延迟满足嵌入式实时要求
+
+3. **资源效率**：
+   - 存储空间 < 文本JSON的70%
+   - 内存使用可预测且有限
+
+4. **开发者体验**：
+   - API直观易用，与SQL标准兼容
+   - 错误信息清晰，调试方便
+
+---
+
+**将此用户故事放置在阶段二（核心优化）中，作为US-210（编译期DDL）的扩展，为嵌入式应用提供灵活的半结构化数据处理能力，同时保持嵌入式数据库的确定性和高性能特点。**
+
+#### **US-217：嵌入式优化的复合主键与组合索引**
+
+**作为** 工业物联网和时序数据应用开发者，**我希望** 数据库支持复合主键（多列主键）和组合索引，**以便于** 高效地存储和查询具有多维度标识的数据（如设备ID+指标ID+时间戳），同时保持嵌入式环境下的性能和内存效率。
+
+---
+
+**验收条件：**
+
+**1. 复合主键定义语法**
+
+- 支持在CREATE TABLE中定义复合主键：
+
+  ```sql
+  -- 基础语法
+  CREATE TABLE sensor_readings (
+      device_id INTEGER NOT NULL,
+      metric_id INTEGER NOT NULL,  -- 温度、压力等指标类型
+      timestamp TIMESTAMP NOT NULL,
+      value DOUBLE NOT NULL,
+      quality TINYINT DEFAULT 100,
+      PRIMARY KEY (device_id, metric_id, timestamp)  -- 复合主键
+  );
+  
+  -- 内联语法（与SQLite兼容）
+  CREATE TABLE sensor_readings (
+      device_id INTEGER NOT NULL,
+      metric_id INTEGER NOT NULL,
+      timestamp TIMESTAMP NOT NULL,
+      value DOUBLE NOT NULL,
+      PRIMARY KEY (device_id, metric_id, timestamp)
+  );
+  
+  -- 命名约束语法
+  CREATE TABLE sensor_readings (
+      device_id INTEGER NOT NULL,
+      metric_id INTEGER NOT NULL,
+      timestamp TIMESTAMP NOT NULL,
+      value DOUBLE NOT NULL,
+      CONSTRAINT pk_sensor_readings 
+          PRIMARY KEY (device_id, metric_id, timestamp)
+  );
+  ```
+
+**2. 复合主键存储优化**
+
+- **紧凑的键编码**：复合键编码为紧凑的二进制格式
+
+  ```rust
+  // 复合键的内部表示
+  struct CompositeKey {
+      // 键组件按定义顺序存储
+      components: Vec<KeyComponent>,
+      // 编码后的二进制表示（变长编码）
+      encoded: Vec<u8>,
+      // 哈希值用于快速比较
+      hash: u64,
+  }
+  
+  // 键组件的变长编码策略
+  enum KeyComponent {
+      Null,           // NULL值（主键列不允许，但索引允许）
+      Int8(i8),       // 1字节整数
+      Int16(i16),     // 2字节整数
+      Int32(i32),     // 4字节整数
+      Int64(i64),     // 8字节整数
+      Float32(f32),   // 4字节浮点
+      Float64(f64),   // 8字节浮点
+      Timestamp(i64), // 时间戳
+      String(&str),   // 字符串（前缀压缩）
+      Blob(&[u8]),    // 二进制数据
+  }
+  ```
+
+- **键编码规则**：
+
+  - 整数类型：使用变长编码（Varint）
+  - 浮点数：IEEE 754二进制格式
+  - 字符串：前缀压缩 + 长度前缀
+  - 时间戳：毫秒级UNIX时间戳
+  - 最大键长度：256字节（可配置）
+
+- **内存布局优化**：
+
+  ```rust
+  // 基于复合键的存储布局
+  struct CompositeKeyIndex {
+      // 主键列数
+      key_columns: u8,
+      // 每列的类型和偏移量
+      column_info: Vec<ColumnInfo>,
+      // 编码后的键值对存储
+      entries: BTreeMap<Vec<u8>, RecordPointer>,
+  }
+  
+  // 支持两种存储布局：
+  // 1. 平铺布局：所有列连续存储（默认）
+  // 2. 分离布局：主键列与数据列分离存储（可选）
+  ```
+
+**3. 组合索引支持**
+
+```sql
+-- 复合主键自动创建主键索引
+-- 主键索引是特殊的组合索引
+
+-- 辅助组合索引
+CREATE INDEX idx_device_metric ON sensor_readings(device_id, metric_id);
+
+-- 包含排序方向的组合索引
+CREATE INDEX idx_metric_timestamp ON sensor_readings(metric_id, timestamp DESC);
+
+-- 部分索引（可选，过滤部分数据）
+CREATE INDEX idx_active_devices ON sensor_readings(device_id, timestamp)
+WHERE device_status = 'active';
+
+-- 覆盖索引（包含非键列）
+CREATE INDEX idx_query_covering ON sensor_readings(device_id, metric_id, timestamp)
+INCLUDE (value, quality);
+```
+
+**4. 查询优化与最左前缀原则**
+
+- **最左前缀匹配**：查询条件必须包含复合索引的最左列才能使用索引
+
+  ```sql
+  -- 有效使用索引的查询
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001;  -- 使用主键索引的最左列
+  
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001 AND metric_id = 2;  -- 使用前两列
+  
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001 AND metric_id = 2 AND timestamp > '2024-01-01';
+  
+  -- 无法使用索引的查询（缺少最左列）
+  SELECT * FROM sensor_readings WHERE metric_id = 2;  -- 无法使用主键索引
+  
+  -- 部分使用索引的查询
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001 AND timestamp > '2024-01-01';  -- 只使用device_id列
+  ```
+
+- **查询计划优化**：
+
+  ```sql
+  -- 显示查询执行计划
+  EXPLAIN QUERY PLAN
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001 AND metric_id = 2;
+  
+  -- 预期输出：
+  -- SEARCH TABLE sensor_readings USING INDEX pk_sensor_readings (device_id=? AND metric_id=?)
+  ```
+
+**5. 范围查询与排序优化**
+
+- **高效的范围扫描**：
+
+  ```sql
+  -- 时间范围查询（使用复合主键）
+  SELECT * FROM sensor_readings 
+  WHERE device_id = 1001 
+    AND metric_id = 2 
+    AND timestamp BETWEEN '2024-01-01 00:00:00' AND '2024-01-01 23:59:59'
+  ORDER BY timestamp;  -- 自动按索引顺序返回，无需额外排序
+  
+  -- 多设备批量查询
+  SELECT * FROM sensor_readings 
+  WHERE device_id IN (1001, 1002, 1003)
+    AND metric_id = 2
+    AND timestamp > '2024-01-01'
+  ORDER BY device_id, timestamp;
+  ```
+
+- **排序优化**：
+
+  ```sql
+  -- 利用索引避免排序
+  SELECT device_id, metric_id, AVG(value) as avg_value
+  FROM sensor_readings 
+  WHERE timestamp BETWEEN '2024-01-01' AND '2024-01-31'
+  GROUP BY device_id, metric_id
+  ORDER BY device_id, metric_id;  -- 与主键顺序一致，无需额外排序
+  ```
+
+**6. 复合主键的CRUD操作**
+
+```sql
+-- 插入（必须提供所有主键列）
+INSERT INTO sensor_readings (device_id, metric_id, timestamp, value, quality)
+VALUES (1001, 2, '2024-01-01 10:00:00', 23.5, 100);
+
+-- 批量插入优化
+INSERT INTO sensor_readings (device_id, metric_id, timestamp, value)
+VALUES 
+  (1001, 2, '2024-01-01 10:00:00', 23.5),
+  (1001, 2, '2024-01-01 10:00:01', 23.6),
+  (1001, 2, '2024-01-01 10:00:02', 23.7);
+
+-- 更新（必须通过完整主键或范围）
+UPDATE sensor_readings 
+SET value = 24.0, quality = 95
+WHERE device_id = 1001 
+  AND metric_id = 2 
+  AND timestamp = '2024-01-01 10:00:00';
+
+-- 删除
+DELETE FROM sensor_readings 
+WHERE device_id = 1001 
+  AND metric_id = 2 
+  AND timestamp < '2024-01-01';
+```
+
+**7. 与现有索引类型集成**
+
+- **复合哈希索引**：用于等值查询
+
+  ```rust
+  struct CompositeHashIndex {
+      // 多列哈希组合
+      fn hash_key(&self, columns: &[KeyComponent]) -> u64 {
+          let mut hasher = MetroHash::new();
+          for col in columns {
+              col.hash(&mut hasher);
+          }
+          hasher.finish()
+      }
+  }
+  ```
+
+- **复合B+树索引**：用于范围查询和排序
+
+- **复合T-Tree索引**：用于内存中频繁更新的场景
+
+**8. 与MVCC集成**（US-213）
+
+- **版本化的复合键**：每个版本包含完整的主键信息
+- **并发控制**：复合主键上的行级锁
+- **垃圾回收**：旧版本的复合键记录清理
+
+```rust
+struct VersionedCompositeKey {
+    key: CompositeKey,
+    version: TransactionId,
+    next_version: Option<Box<VersionedCompositeKey>>,  // 版本链
+}
+```
+
+**9. 嵌入式优化**
+
+- **编译时确定的最大列数**：复合主键最多支持8列（可配置）
+- **内存预分配**：键编码缓冲区预分配
+- **快速路径**：常见组合（如INT+INT+TIMESTAMP）有专门优化
+- **ARM Cortex-M优化**：使用整数指令集加速键比较
+
+```c
+// ARM Thumb2优化的键比较
+int compare_composite_key_thumb2(const uint8_t* key1, const uint8_t* key2) {
+    // 内联汇编优化关键路径
+    asm volatile(
+        "ldmia %1!, {r2, r3, r4} \n"  // 加载key1
+        "ldmia %2!, {r5, r6, r7} \n"  // 加载key2
+        "cmp r2, r5 \n"
+        "bne 1f \n"
+        "cmp r3, r6 \n"
+        "bne 1f \n"
+        "cmp r4, r7 \n"
+        "1: \n"
+        : "+r"(key1), "+r"(key2)
+        :
+        : "r2", "r3", "r4", "r5", "r6", "r7", "cc"
+    );
+}
+```
+
+**10. 复合外键支持**（可选扩展）
+
+```sql
+-- 复合外键（如果支持外键）
+CREATE TABLE device_alerts (
+    alert_id INTEGER PRIMARY KEY,
+    device_id INTEGER NOT NULL,
+    metric_id INTEGER NOT NULL,
+    alert_time TIMESTAMP NOT NULL,
+    FOREIGN KEY (device_id, metric_id) 
+        REFERENCES device_metrics(device_id, metric_id)
+);
+```
+
+**11. 性能指标**
+
+- **插入性能**：复合主键插入 vs 单列主键，性能差异 < 20%
+- **查询性能**：
+  - 等值查询（完整主键）：< 100μs
+  - 范围查询（最左前缀）：< 500μs（1000条记录）
+  - 部分键查询：性能随匹配列数线性变化
+- **内存开销**：
+  - 每个复合键额外开销：4-16字节（取决于列数）
+  - 索引内存：不超过数据大小的40%
+
+**12. 监控与诊断**
+
+```sql
+-- 复合索引使用统计
+SELECT 
+    index_name,
+    key_columns,
+    equality_lookups,
+    range_scans,
+    avg_lookup_time_ms,
+    index_size_kb
+FROM __system_composite_index_stats
+WHERE table_name = 'sensor_readings';
+
+-- 索引推荐
+SELECT * FROM index_recommendations
+WHERE recommendation_type = 'composite_index';
+/*
+示例输出：
+| 表名 | 推荐列 | 预期收益 | 当前查询 |
+|------|--------|----------|----------|
+| sensor_readings | (device_id, metric_type) | 查询加速5x | SELECT * WHERE device_id=? |
+*/
+```
+
+**13. 迁移与兼容性**
+
+- **从单列主键迁移**：
+
+  ```sql
+  -- 添加复合主键（需要数据迁移）
+  ALTER TABLE sensor_readings 
+  DROP PRIMARY KEY,
+  ADD PRIMARY KEY (device_id, metric_id, timestamp);
+  ```
+
+- **向后兼容**：现有单列主键表继续工作
+
+- **升级工具**：提供复合主键迁移工具
+
+**技术约束**
+
+1. **最大限制**：
+   - 复合主键最大列数：8列（编译时可配置）
+   - 复合索引最大列数：8列
+   - 复合键最大总长度：256字节
+
+2. **类型限制**：
+   - 主键列不允许NULL值
+   - 支持类型：整数、浮点、字符串、时间戳、BLOB（有限制）
+   - JSON类型不能作为主键列
+
+3. **嵌入式限制**：
+   - 内存受限环境下，复合键列数建议≤4
+   - 字符串主键列在嵌入式环境中建议定长或短字符串
+
+**实施细节**
+
+**键编码方案**
+
+```rust
+// 复合键编码示例
+fn encode_composite_key(columns: &[KeyComponent]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(32);
+    
+    for (i, col) in columns.iter().enumerate() {
+        // 列分隔符（类型+长度）
+        buf.push(col.type_code());
+        
+        match col {
+            KeyComponent::Int32(val) => {
+                buf.extend_from_slice(&val.to_varint_bytes());
+            }
+            KeyComponent::String(s) => {
+                // 字符串：长度前缀 + 内容
+                let bytes = s.as_bytes();
+                buf.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+                buf.extend_from_slice(bytes);
+            }
+            KeyComponent::Timestamp(ts) => {
+                // 时间戳：毫秒级
+                buf.extend_from_slice(&ts.to_le_bytes());
+            }
+            // 其他类型...
+        }
+    }
+    
+    buf
+}
+```
+
+**索引结构**
+
+```rust
+// 复合B+树索引
+struct CompositeBPlusTree {
+    order: usize,  // 树阶数
+    root: BPlusTreeNode,
+    
+    // 插入时保持键顺序
+    fn insert(&mut self, key: CompositeKey, value: RecordPointer) {
+        // 1. 编码键
+        let encoded = key.encode();
+        
+        // 2. 查找插入位置
+        let (node, position) = self.find_insert_position(&encoded);
+        
+        // 3. 插入并可能分裂
+        self.insert_into_node(node, encoded, value, position);
+    }
+}
+
+// 支持部分键查询
+fn search_partial(&self, prefix: &[KeyComponent]) -> Vec<RecordPointer> {
+    // 使用最左前缀匹配
+    // 1. 编码前缀
+    // 2. 在B+树中查找第一个匹配前缀的键
+    // 3. 遍历所有匹配前缀的键
+}
+```
+
+**测试场景**
+
+1. **功能正确性测试**：
+   - 插入重复复合主键应失败
+   - 部分主键查询返回正确结果
+   - 范围查询边界条件测试
+   - 并发插入同设备不同时间戳数据
+
+2. **性能基准测试**：
+   - 复合主键 vs 单列主键插入性能对比
+   - 不同列数复合键的查询性能
+   - 范围查询随数据量增长的性能变化
+   - 内存使用与键列数的关系
+
+3. **压力测试**：
+   - 高并发插入（1000个设备，每设备10000个点）
+   - 长时间运行（24小时）的复合主键表
+   - 内存不足时的优雅降级
+
+4. **恢复测试**：
+   - 复合主键表的崩溃恢复
+   - WAL重放复合键操作
+   - 从备份恢复复合主键表
+
+**依赖关系**
+
+- **强依赖**：
+  - US-101（内存表存储）：基础存储引擎
+  - US-102（简单索引机制）：索引基础
+
+- **重要集成**：
+  - US-107（WAL）：复合主键操作的持久化
+  - US-205（ACID事务）：复合主键的事务保证
+  - US-404（时序数据）：与时间序列复合主键优化
+
+- **协同优化**：
+  - US-210（编译期DDL）：复合主键的类型安全
+  - US-212（高级索引）：复合索引的多种类型支持
+
+---
+
+#### **US-218：嵌入式安全的表删除（DROP TABLE）**
+
+**作为** 嵌入式应用开发者或系统维护者，**我希望** 通过一条确定性的 `DROP TABLE` 语句安全、彻底地删除数据库中的表及其所有数据，**以便于** 在设备生命周期管理、配置重置或存储空间回收等场景中，能够以事务安全的方式清理不再需要的数据结构，同时保证操作的高性能和系统整体的稳定性。
+
+---
+
+**1. 核心设计原则：嵌入式环境下的安全删除**
+
+在资源受限、通常无专业DBA的嵌入式环境中，`DROP TABLE` 必须是 **显式的、受控的、可预测的**。设计围绕以下原则：
+
+*   **安全第一**：默认阻止可能造成数据丢失的意外删除，提供确认机制。
+*   **资源确定**：删除操作的内存与CPU开销有严格上限，行为可预测。
+*   **深度集成**：与事务、持久化、内存管理无缝协作，保证系统一致性。
+*   **优雅降级**：在极端资源条件下，操作能安全中止或转入低资源模式。
+
+**2. 详细语法与语义**
+
+**2.1 基础语法与安全守卫**
+
+```sql
+-- 基础语法：删除表，释放所有关联资源
+DROP TABLE [IF EXISTS] <table_name> [CASCADE | RESTRICT];
+
+-- 示例
+DROP TABLE obsolete_logs;                    -- 直接删除
+DROP TABLE IF EXISTS temp_sensor_data;       -- 安全删除（表不存在时不报错）
+DROP TABLE user_sessions CASCADE;            -- 级联删除依赖对象（未来扩展）
+```
+
+*   **`IF EXISTS` 子句（必须）**：防止因表名拼写错误或已删除而导致的语句执行失败，是嵌入式脚本健壮性的关键。
+*   **`CASCADE | RESTRICT` 子句（可选，一期占位）**：
+    *   `RESTRICT`（默认）：如果存在依赖该表的视图、外键（未来）等，则删除失败。
+    *   `CASCADE`：同时删除所有依赖对象。**一期实现仅标记，详细功能随未来依赖特性一同实现。**
+
+**2.2 扩展语法：可控的延迟删除**
+
+```sql
+-- 标记表为“待删除”，在系统低峰期或下一个检查点异步清理数据
+DROP TABLE large_telemetry_data DEFERRED;
+
+-- 立即执行一个之前延迟的删除
+COMMIT DEFERRED DELETION FOR TABLE large_telemetry_data;
+```
+
+*   **应用场景**：删除大表时，避免长时间阻塞系统，适合对实时性要求极高的嵌入式控制回路。
+
+**3. 操作语义与资源回收**
+
+**3.1 原子性操作内容**
+
+执行 `DROP TABLE` 时，必须原子性地删除以下所有关联资源：
+
+1.  **表数据**：所有行记录。
+2.  **所有索引**：主键索引、辅助索引（US-102, US-212）。
+3.  **内存资源**：
+    *   表结构元数据。
+    *   数据页和索引页占用的内存。
+    *   关联的MVCC版本链（US-213）。
+    *   统计信息。
+4.  **系统目录**：从 `__system_tables`, `__system_columns` 等系统表中移除条目。
+
+**3.2 内存回收确定性**
+
+*   **立即返还内存池**：被释放的内存**必须立即返还**给创建该表时所属的专用内存池（与 **US-104**、**US-xxx (CREATE DATABASE)** 集成），以供同一数据库内的其他表使用。
+*   **零内存泄漏**：通过编译期RAII（资源获取即初始化）和引用计数，确保无任何内存遗留。
+*   **碎片控制**：与内存池分配器协同，标记整块内存区域为可重用，而非逐条释放，最大限度减少碎片。
+
+**4. 与核心架构的深度集成**
+
+**4.1 事务性保证（与US-205集成）**
+
+```sql
+BEGIN TRANSACTION;
+INSERT INTO new_table ...;
+DROP TABLE old_table; -- 删除操作是事务的一部分
+COMMIT; -- 只有提交后，删除才真正生效，否则完全回滚
+```
+
+*   **DROP TABLE 必须作为一个事务操作**。在事务回滚时，被删除的表及其数据必须能完全恢复。
+*   实现机制：在事务提交前，表元数据被标记为“待删除”，数据实际清理在提交后发生。
+
+**4.2 持久化与恢复（与US-107/201集成）**
+
+*   **WAL日志**：`DROP TABLE` 操作必须作为一条强一致性日志记录写入WAL。日志需包含足够信息，以便在恢复时能重新执行或回滚该操作。
+*   **检查点/快照**：
+    *   如果快照发生在 `DROP TABLE` 之后，新快照中不应包含该表。
+    *   恢复时，从快照点之后重放WAL，遇到 `DROP TABLE` 日志应应用删除。
+
+**4.3 并发控制与访问隔离（与US-213集成）**
+
+* **排他锁**：`DROP TABLE` 需要对目标表获取最高级别的排他锁。
+
+* **优雅的访问冲突处理**：
+
+  ```c
+  // 伪代码：删除前的状态检查
+  if (table->active_queries_count > 0 || table->pending_transactions_count > 0) {
+      // 选项1：等待（可配置超时，默认5秒）
+      // 选项2：立即返回错误 "ERROR: table 'xxx' is being accessed by other queries"
+      return ERR_TABLE_BUSY;
+  }
+  ```
+
+**4.4 与编译期DDL的协同（与US-210集成）**
+
+对于通过编译期DDL定义的表，运行时 `DROP TABLE` 后：
+
+*   **类型安全降级**：Rust编译器在编译时生成的、对应于该表的类型和方法仍然存在，但运行时调用将返回明确的“表不存在”错误。
+*   **建议工作流**：重要表结构的删除，应同步修改DDL文件并重新编译，确保代码与运行时状态一致。
+
+**5. 性能与资源约束**
+
+| 指标               | 目标（嵌入式环境）                         | 测量条件                         |
+| :----------------- | :----------------------------------------- | :------------------------------- |
+| **删除空表延迟**   | < 100 µs                                   | 仅有表结构，无数据               |
+| **删除数据表延迟** | < 5 ms + (记录数 * 0.1 µs)                 | 1万条记录，含索引                |
+| **内存回收完整性** | 100% 无泄漏                                | 通过Valgrind或自定义内存追踪验证 |
+| **阻塞时间**       | 获取排他锁的等待时间可配置，默认不超过5秒  | 并发访问场景下                   |
+| **CPU开销**        | 删除操作期间，其他数据库操作延迟增加 < 10% | 在70%负载基准上测试              |
+
+**6. 安全与可恢复性措施**
+
+1. **二次确认（可选API）**：
+
+   ```c
+   // 在真正执行DROP前，可通过API进行预检查
+   RemdbOpPreview preview = remdb_preview_drop_table("critical_data");
+   if (preview.estimated_released_memory_kb > 1024) {
+       // 弹出一个需要用户确认的界面
+       if (!user_confirmed) return;
+   }
+   remdb_execute_drop_table(preview);
+   ```
+
+2. **元数据备份（用于紧急恢复）**：在 `__system_deleted_tables` 中保留已删除表的元数据（如表结构、删除时间）一段时间（如24小时），仅用于审计或极端情况下的手动恢复尝试，不保证数据可恢复。
+
+3. **资源防护**：如果系统检测到当前可用内存已极低，可以拒绝或延迟 `DROP TABLE` 操作（因为回收内存的过程本身也需要少量内存开销）。
+
+**7. 验收测试场景**
+
+1.  **功能正确性**：
+    *   创建表并插入数据 → 执行 `DROP TABLE` → 验证表及所有数据消失，后续访问返回明确错误。
+    *   在事务中执行 `DROP TABLE` 然后 `ROLLBACK` → 验证表和数据完全恢复。
+    *   并发测试：当有查询正在读取表时，尝试删除应被阻塞或立即失败（根据配置）。
+
+2.  **资源与性能**：
+    *   删除一个包含10万个索引条目的表，测量内存占用的下降是否与理论值吻合。
+    *   在持续高负载写入时，执行删除操作，监控系统P99延迟是否符合预期。
+
+3.  **恢复与持久化**：
+    *   执行 `DROP TABLE` → 立即模拟断电 → 重启恢复 → 验证表仍处于被删除状态，且未产生任何残留数据文件。
+    *   从包含 `DROP TABLE` 操作的旧WAL日志进行恢复，验证过程顺利。
+
+4.  **边界与错误**：
+    *   尝试删除不存在的表（带/不带 `IF EXISTS`）。
+    *   在只读模式或事务中尝试删除。
+    *   在数据库已关闭或正在关闭时尝试删除。
+
+---
+
+#### **US-219：嵌入式优化的LIKE模式匹配运算符**
+
+**作为** 在嵌入式设备上处理日志、配置项或设备标识符的开发者，**我希望** 数据库提供一个高效、资源确定且功能完整的 `LIKE` 运算符，**以便于** 我能使用标准的SQL通配符语法对字符串字段进行灵活的模式匹配查询，同时确保在资源受限的环境中，此类查询仍能保持可预测的性能和内存占用，满足实时查询的需求。
+
+---
+
+**1. 核心语法与语义扩展**
+
+* **基础通配符支持**：
+
+  ```sql
+  -- %: 匹配任意数量（包括零个）的任意字符
+  SELECT * FROM logs WHERE message LIKE '%error%';
+  -- _: 匹配单个任意字符
+  SELECT * FROM devices WHERE serial_number LIKE 'ABC_123';
+  -- 组合使用
+  SELECT * FROM files WHERE path LIKE '/var/log/%2024-%.log';
+  ```
+
+* **转义字符支持**：
+
+  ```sql
+  -- 使用 ESCAPE 子句定义转义符（默认为‘\’）
+  SELECT * FROM metadata WHERE key LIKE ‘%\_internal’ ESCAPE ‘\’; -- 匹配以“_internal”结尾
+  ```
+
+* **与现有查询引擎集成**：
+
+  ```sql
+  -- 作为US-206条件查询引擎的一部分，支持与其它条件组合
+  SELECT * FROM sensor_alerts 
+  WHERE device_id = 1001 
+    AND severity > 2 
+    AND description LIKE ‘%temperature%overt%’;
+  ```
+
+**2. 嵌入式环境的关键优化设计**
+
+**2.1 确定性算法与固定内存占用**
+
+* **禁用回溯算法**：明确不采用正则表达式中常见的、可能导致指数最坏情况复杂度的回溯算法。
+
+* **采用Shift-Or (Bitap) 算法或其变种**：
+
+  *   **优势**：对于模式长度 <= 机器字长（如64位）的情况，可以在 `O(n)` 时间内完成匹配，仅需几个寄存器和位操作，**无需动态内存分配**。
+  *   **实现**：
+
+  ```c
+  // 简化示例：用于嵌入式环境的类Shift-Or匹配核心
+  int embedded_like_match(const char *text, const char *pattern) {
+      uint64_t mask[256]; // 预计算的字符掩码表（静态或栈上）
+      uint64_t state = ~(uint64_t)0;
+      // ... 初始化mask（编译时常量或一次性计算）
+      for (const char *t = text; *t; t++) {
+          state = (state << 1) | mask[(uint8_t)*t];
+          if ((state & (1ULL << (pattern_len-1))) == 0) {
+              return MATCH_FOUND;
+          }
+      }
+      return NO_MATCH;
+  }
+  ```
+
+**2.2 与索引和存储引擎的协同**
+
+* **前缀索引加速**：
+
+  ```sql
+  -- 如果对 `hostname` 列创建了索引，以下查询可以利用索引进行范围扫描
+  SELECT * FROM servers WHERE hostname LIKE 'web-svr-%';
+  -- 优化器应能识别 `'web-svr-%'` 是“前缀匹配”，并将其转化为：
+  -- `hostname >= 'web-svr-' AND hostname < 'web-svt-'` （‘t’ 是 ‘s’ 的后继字符）
+  ```
+
+  *   **验收条件**：对于前缀匹配模式，查询性能应与同等选择性的范围查询相当。
+
+* **与列式存储（可选）集成**：如果启用US-404中的列式存储优化，`LIKE` 操作应能直接在压缩后的字符串块上执行，避免完全解压。
+
+**2.3 资源约束与保护**
+
+*   **模式长度限制**：单个 `LIKE` 模式的最大长度被限制为 **64字符**（编译时可调）。这既符合嵌入式场景的典型需求，也是保证Shift-Or等算法在单次机器字内运算的关键。
+*   **匹配堆栈深度限制**：对于复杂的嵌套`%`通配符，内部状态机的深度有上限，防止极端模式导致栈溢出。
+*   **CPU周期预算**：可配置每次 `LIKE` 匹配操作的最大CPU周期（或指令数），超时则中止并返回错误，防止拒绝服务攻击或错误模式导致的系统停滞。
+
+**3. 性能指标与验收条件**
+
+| 场景                        | 数据规模                             | 目标延迟 (P99) | 内存分配               |
+| :-------------------------- | :----------------------------------- | :------------- | :--------------------- |
+| **前缀匹配 (有索引)**       | 10万行                               | < 100 µs       | 零堆分配， < 100字节栈 |
+| **中缀匹配 (`%value%`)**    | 1万行                                | < 2 ms         | 零堆分配， < 1KB栈     |
+| **复杂模式 (多个`_`和`%`)** | 1000行                               | < 5 ms         | 零堆分配， < 2KB栈     |
+| **全表扫描LIKE**            | 与全表扫描时间相当 + (行数 * 0.1 µs) | 零堆分配       |                        |
+
+**功能正确性验收**：
+
+1.  完成标准通配符 (`%`, `_`) 和转义功能测试。
+2.  验证与 `AND`、`OR`、`NOT` 的逻辑组合正确性。
+3.  测试在事务内和MVCC快照下的匹配结果一致性。
+4.  验证索引加速逻辑对前缀、后缀（如果索引支持反向）模式的有效性。
+
+**4. 与现有架构的集成点**
+
+*   **与 US-206 (条件查询引擎) 集成**：`LIKE` 作为新的 `WHERE` 条件谓词被解析、优化和执行。
+*   **与 US-102 / US-212 (索引) 集成**：查询优化器能识别可索引的 `LIKE` 模式，并生成利用索引的执行计划。
+*   **与 US-104 (内存管理) 集成**：整个匹配过程在预分配的栈或线程本地缓冲区内完成，杜绝动态内存分配。
+*   **与 US-110 (零拷贝) 集成**：对于存储在连续内存区的字符串列，`LIKE` 操作直接对原始数据指针进行，无需拷贝。
+
+**5. 进阶考量与未来扩展**
+
+*   **字符集支持**：一期仅支持单字节字符集。未来可扩展UTF-8支持，但需明确其性能影响。
+*   **大小写敏感**：默认区分大小写。可通过 `LIKE` 或专属的 `ILIKE` 运算符提供不敏感选项。
+*   **SIMD加速**：在支持SIMD的ARM Cortex-M内核上，可使用NEON指令并行进行多个字符的比对。
+
+**总结**
+
+在 `remdb` 中增加 `LIKE` 运算符，绝非简单地移植一个通用库。本需求的核心在于：**在嵌入式资源的硬约束下，通过精心选择的算法（如Shift-Or）、与索引和存储的深度协同、以及严格的内存与CPU管控，交付一个既符合SQL标准、又具备嵌入式系统所必需的确定性和高性能的模式匹配能力。** 这确保了 `remdb` 在处理设备标识、日志过滤等常见边缘场景时，功能完整且表现可靠。建议将其置于 **阶段二（核心优化）** 作为查询引擎的增强功能实现。
+
+---
+
+#### **US-220：声明式数据库创建与生命周期管理**
+
+**作为** 嵌入式系统或边缘计算节点的开发者，**我希望** 通过一个声明式的 `CREATE DATABASE` 语句来初始化、配置并隔离不同的数据存储单元，**以便于** 在同一物理设备或进程中，为不同的应用、租户或数据类型（如设备A的时序数据、设备B的配置库）创建逻辑隔离且资源可控的独立数据库环境，同时保持极低的运行时开销。
+
+---
+
+**1. 核心设计理念：编译时定义，运行时实例化**
+
+在嵌入式环境中，`CREATE DATABASE` **不**应被理解为在运行时动态创建一个全新的、完全自由的数据库。相反，它应是一个 **“实例化”过程**，基于**编译期已预定义和优化的数据库模式（Schema）蓝图**，分配和初始化一组确定性的运行时资源。
+
+```sql
+-- 核心语法
+CREATE DATABASE [IF NOT EXISTS] <database_name>
+USING SCHEMA <schema_identifier>  -- 关键：绑定到编译期定义的Schema
+[WITH CONFIGURATION (<option>=<value>, ...)];
+```
+
+**2. 详细需求与验收条件**
+
+**2.1 数据库定义与模式绑定**
+
+* **模式（Schema）先行**：数据库的结构（表、列、索引、约束）必须在编译期通过 **US-210（编译期DDL）** 定义。`CREATE DATABASE` 实例化一个具体的数据库时，必须引用一个已编译的Schema ID。
+
+  ```rust
+  // 编译期：定义数据库模式 (schema.ddl)
+  // 文件: schemas/production_v1.ddl
+  CREATE TABLE devices (...);
+  CREATE TABLE telemetry (...);
+  
+  // Rust代码中声明该Schema
+  #[derive(MemdbSchema)]
+  #[memdb_schema(file = "schemas/production_v1.ddl")]
+  struct ProductionSchemaV1; // 此结构体即 `schema_identifier`
+  ```
+
+* **运行时实例化**：
+
+  ```sql
+  -- 运行时SQL或API调用：基于 `ProductionSchemaV1` 创建两个独立的数据库实例
+  CREATE DATABASE line_a USING SCHEMA ProductionSchemaV1;
+  CREATE DATABASE line_b USING SCHEMA ProductionSchemaV1 
+         WITH CONFIGURATION (max_tables=32, memory_limit='64MB');
+  ```
+
+  *   **结果**：`line_a` 和 `line_b` 是两个完全独立的数据库实例，拥有相同的表结构，但数据、事务、连接彼此隔离。
+
+**2.2 资源隔离与确定性配置**
+
+* **独立的内存池**：每个数据库实例拥有从全局内存中划分出的**独立、预分配的静态内存池**。这确保了：
+
+  *   **故障隔离**：一个数据库的内存错误不会污染另一个。
+  *   **性能隔离**：一个数据库的繁重操作不会抢占另一个的关键资源。
+  *   **资源可预测**：符合 **US-104（可配置内存管理）** 和 **US-214（确定性容量）** 的要求。
+
+* **配置继承与覆盖**：数据库实例继承Schema编译期的默认配置（如索引类型），但可以在 `WITH CONFIGURATION` 子句中覆盖：
+
+  ```sql
+  CREATE DATABASE high_perf USING SCHEMA TelemetrySchema
+  WITH CONFIGURATION (
+      wal_mode = 'ASYNC',           -- 覆盖持久化策略
+      default_index_type = 'T-TREE', -- 覆盖默认索引
+      temp_store = 'MEMORY'         -- 临时数据存储位置
+  );
+  ```
+
+**2.3 数据库上下文与连接管理**
+
+* **轻量级上下文切换**：提供 API 或 SQL 语句（如 `USE DATABASE line_a;`）在同一个进程内切换当前操作的数据库上下文。切换代价应极低（< 1µs），本质上是切换一个指向不同内存池和元数据的指针。
+
+* **跨数据库查询（有限支持）**：在明确授权和连接模式下，支持只读的跨数据库查询，用于系统监控或聚合分析。
+
+  ```sql
+  -- 在监控数据库中，聚合查询产线A和B的总数据量
+  SELECT 'line_a' as source, COUNT(*) FROM line_a.telemetry
+  UNION ALL
+  SELECT 'line_b' as source, COUNT(*) FROM line_b.telemetry;
+  ```
+
+**2.4 生命周期与持久化管理**
+
+* **独立的持久化命名空间**：每个数据库的 WAL 日志（**US-107**）和快照文件（**US-201**）以数据库名称作为命名空间前缀，确保物理隔离。
+
+  ```
+  /data/remdb/
+  ├── line_a/
+  │   ├── snapshot.rdb
+  │   └── wal_0001.bin
+  └── line_b/
+      ├── snapshot.rdb
+      └── wal_0001.bin
+  ```
+
+* **数据库级操作**：
+
+  ```sql
+  -- 关闭数据库，优雅持久化并释放资源（除预分配内存池）
+  CLOSE DATABASE line_a;
+  
+  -- 重新打开数据库，从持久化存储加载
+  OPEN DATABASE line_a;
+  
+  -- 删除数据库（危险操作），释放所有资源，包括持久化文件
+  DROP DATABASE [IF EXISTS] line_a;
+  ```
+
+* **启动时自动恢复**：系统重启时，可根据配置自动恢复所有需要打开的数据库到一致状态。
+
+**2.5 与核心架构的深度集成**
+
+| 集成模块                 | 集成方式与收益                                               |
+| :----------------------- | :----------------------------------------------------------- |
+| **US-210 编译期DDL**     | `CREATE DATABASE` 的核心。Schema在编译时完成语法检查、代码生成和优化，运行时实例化零解析开销。 |
+| **US-104 内存管理**      | 每个数据库实例是一个独立的“内存租户”，拥有专属的内存池和配额监控。 |
+| **US-107/201 WAL与快照** | 持久化以数据库为单位，实现独立的崩溃恢复和备份恢复粒度。     |
+| **US-205 MVCC事务**      | 事务ID和版本链以数据库为范围，不同数据库的事务完全独立。     |
+| **US-208 UDP发布**       | 数据发布可配置为按数据库进行，实现更精细的数据流管控。       |
+
+**3. 技术约束与嵌入式优化**
+
+*   **最大数据库实例数**：编译期配置，例如 `no_std` 下 ≤ 8，`POSIX` 下 ≤ 64，防止资源耗尽。
+*   **零动态模式变更**：数据库实例化后，其结构（Schema）**不可更改**。如需变更，需创建基于新Schema的新数据库并迁移数据。
+*   **启动时间优化**：多个数据库的并行恢复，利用多核（如果可用）加速启动过程。
+*   **内存开销**：每个数据库实例的元数据内存开销应 < 10KB。
+
+**4. 验收测试场景**
+
+1.  **基础功能测试**：
+    *   基于同一Schema创建两个数据库，分别插入数据，验证数据完全隔离。
+    *   执行 `USE DATABASE` 切换，验证操作上下文正确变更。
+    *   关闭并重新打开数据库，验证数据完整恢复。
+
+2.  **资源隔离测试**：
+    *   向数据库A持续写入直至触发其内存上限警告，验证数据库B的操作完全不受影响。
+    *   模拟数据库A崩溃，验证数据库B依然可正常提供服务。
+
+3.  **性能基准测试**：
+    *   测量创建、切换、关闭数据库等操作的延迟。
+    *   对比单数据库与多数据库实例运行时，在相同总负载下的性能差异（目标：额外开销 < 5%）。
+
+4.  **恢复与持久化测试**：
+    *   在多个数据库都有活跃事务时模拟系统崩溃，重启后验证每个数据库都能独立恢复到一致状态。
+
+**5. 总结与定位**
+
+此需求不是要创建一个通用、动态的SQL数据库管理系统，而是为 `remdb` 提供一种**符合嵌入式哲学的资源组织范式**。它强化了 `remdb` 的核心优势：
+
+*   **确定性**：通过编译期绑定和静态分配，资源用量和性能完全可预测。
+*   **隔离性**：为复杂的边缘应用（如一台网关服务多个车间）提供故障和安全隔离。
+*   **效率**：逻辑隔离避免了为每个应用运行独立进程的巨大开销。
+
+**建议将本需求置于“阶段二：核心优化”中，作为 US-210（编译期DDL） 的自然延伸和 US-104（内存管理） 的重要应用场景，与数据库的基础设施能力紧密耦合。**
+
+---
+
+#### **US-221：嵌入式全功能UTF-8编码支持**
+
+**作为** 需要在全球范围内部署的嵌入式设备开发者，**我希望** 数据库的所有文本处理功能（包括存储、索引、比较、LIKE匹配和JSON处理）都能完整、高效地支持UTF-8编码，**以便于** 我的设备能够正确处理多语言用户输入、国际化日志消息和包含表情符号等Unicode字符的数据，同时仍然满足嵌入式环境对性能和资源确定性的严苛要求。
+
+---
+
+**1. 核心设计原则**
+
+**1.1 分层架构与渐进增强**
+
+UTF-8支持将采用分层架构，确保基础功能在**所有配置下都可用**，而高级功能（如规范化、排序规则）可作为可选模块启用。
+
+```rust
+// 核心UTF-8处理模块的配置选项
+struct Utf8Config {
+    validation_level: Utf8ValidationLevel, // 严格/宽松/无
+    normalization: Option<NormalizationForm>, // NFC, NFD等（可选）
+    case_mapping: bool,                    // 大小写映射（可选）
+    grapheme_cluster: bool,                // 字素簇边界（高级）
+}
+```
+
+**1.2 性能与资源的平衡**
+
+| 操作类型     | 纯ASCII优化路径     | 通用UTF-8路径 | 额外开销目标 |
+| ------------ | ------------------- | ------------- | ------------ |
+| **长度计算** | O(1) 直接使用字节数 | O(n) 遍历计数 | < 30%        |
+| **比较操作** | `memcmp`            | 字符迭代比较  | < 50%        |
+| **LIKE匹配** | 字节模式匹配        | 字符感知匹配  | < 100%       |
+| **索引构建** | 直接字节排序        | 按字符排序    | < 20%        |
+
+**2. UTF-8核心功能需求**
+
+**2.1 基础存储与验证**
+
+```sql
+-- 所有TEXT类型列自动支持UTF-8
+CREATE TABLE multilingual_data (
+    id INTEGER PRIMARY KEY,
+    log_message TEXT,           -- UTF-8文本
+    user_input VARCHAR(255),    -- UTF-8可变长度
+    emoji_label CHAR(10)        -- UTF-8定长（以字符为单位）
+);
+
+-- 插入包含各种Unicode字符的数据
+INSERT INTO multilingual_data VALUES 
+(1, '正常ASCII文本', '普通输入'),
+(2, '中文测试', '日本語テスト'),
+(3, 'Emoji 🚀 和混合文本', '🔥 Hot!'),
+(4, 'Z͑ͫ̓ͪ̂ͫ̽͏̴̙̤̞͉͚̯̞̠͍A̴̵̜̰͔ͫ͗͢L̠ͨͧͩ͘G̴̻͈͍͔̹̑͗̎̅͛́Ǫ̵̹̻̝̳͂̌̌͘表情!', '特殊');
+```
+
+**验证策略**：
+
+- **严格模式**（默认）：拒绝无效UTF-8序列，防止安全漏洞
+- **宽松模式**：替换无效序列为U+FFFD（�）
+- **无验证模式**：仅用于性能关键场景
+
+**2.2 字符感知的字符串操作**
+
+```sql
+-- 字符长度（而非字节长度）
+SELECT 
+    message,
+    LENGTH(message) AS byte_length,
+    CHAR_LENGTH(message) AS char_length  -- 新增：字符数
+FROM multilingual_data;
+
+-- 字符位置操作
+SELECT 
+    SUBSTRING(message FROM 3 FOR 2) AS chars_3_to_4,  -- 字符位置
+    LEFT(message, 5) AS first_5_chars
+FROM multilingual_data;
+
+-- 示例结果：
+-- 'Emoji 🚀 和混合文本' | byte_len=23 | char_len=10
+-- SUBSTRING: 'ji 🚀' (注意：🚀是单个字符)
+```
+
+**2.3 增强的LIKE运算符（扩展US-219）**
+
+```sql
+-- UTF-8感知的LIKE匹配（字符为单位）
+SELECT * FROM logs WHERE message LIKE '%🚀%';      -- 匹配包含火箭emoji
+SELECT * FROM users WHERE name LIKE '_大_';         -- 匹配三字中文名，中间为"大"
+SELECT * FROM texts WHERE content LIKE 'Café%';    -- 正确匹配带重音字符
+
+-- 可选的校对规则敏感匹配
+SELECT * FROM data WHERE text LIKE 'cafe%' COLLATE utf8mb4_unicode_ci;
+```
+
+**算法优化**：
+
+- 实现UTF-8感知的**Shift-Or/Bitap算法变体**
+- 为纯ASCII模式保留快速路径
+- 支持预编译的匹配状态机，避免每次解析模式
+
+**3. 索引与排序优化**
+
+**3.1 UTF-8感知的B-Tree索引**
+
+```sql
+-- 在UTF-8列上创建索引，支持排序和前缀匹配
+CREATE INDEX idx_multilingual ON multilingual_data(log_message);
+
+-- 索引将使用字符感知的比较，而非字节比较
+-- 'café' 会正确排序在 'caff' 之前，而不是按字节顺序
+```
+
+**索引键编码优化**：
+
+```rust
+// 索引键的UTF-8友好编码
+struct Utf8IndexKey {
+    // 为常见字符（ASCII、常用CJK）使用优化编码
+    // 为复杂字符保留可变长度编码
+    encoded: Vec<u8>,
+    
+    // 用于快速比较的辅助信息
+    fast_cmp_prefix: [u8; 8],  // 前几个字符的标准化形式
+}
+```
+
+**3.2 可配置的排序规则（Collation）**
+
+```sql
+-- 指定列的排序规则
+CREATE TABLE products (
+    name TEXT COLLATE utf8mb4_unicode_ci,  -- 不区分大小写和重音
+    sku TEXT COLLATE utf8mb4_bin           -- 二进制比较（最快）
+);
+
+-- 查询时可指定排序规则
+SELECT * FROM products 
+ORDER BY name COLLATE utf8mb4_zh_0900_as_cs;  -- 中文拼音排序
+```
+
+**支持的排序规则**（按优先级）：
+
+1.  `utf8mb4_bin`：二进制，最快，一期支持
+2.  `utf8mb4_unicode_ci`：Unicode大小写不敏感，二期支持
+3.  语言特定规则（如中文拼音），三期支持
+
+**4. 高级Unicode功能（可选模块）**
+
+**4.1 Unicode规范化支持**
+
+```sql
+-- 确保文本以规范形式存储和比较
+SET NORMALIZATION_FORM = 'NFC';  -- 标准推荐形式
+
+-- 规范化敏感的比较
+SELECT * FROM users 
+WHERE NORMALIZE(username) = NORMALIZE('café');  -- 匹配'café'
+```
+
+**4.2 字素簇边界处理**
+
+```sql
+-- 处理组合字符（如e + ´ = é）
+SELECT 
+    text,
+    GRAPHEME_LENGTH(text) AS visible_chars,  -- 视觉字符数
+    SUBSTRING(text BY GRAPHEME CLUSTERS FROM 1 FOR 3) AS first_3_clusters
+FROM complex_texts;
+```
+
+**5. 性能优化与资源约束**
+
+**5.1 内存高效的数据结构**
+
+```rust
+// 紧凑的UTF-8字符串表示
+struct CompactUtf8Str {
+    // 内联存储短字符串（≤23字节）
+    inline_data: [u8; 23],
+    length: u8,  // 字符数（非字节数）
+    flags: u8,   // 编码提示：是否纯ASCII、是否需要规范化等
+}
+
+// 长字符串使用共享缓冲区
+struct LongUtf8Str {
+    buffer: Arc<[u8]>,  // 共享所有权的字节数组
+    char_count: u32,     // 缓存的字符数，避免重复计算
+}
+```
+
+**5.2 SIMD加速（ARM NEON / x86 AVX2）**
+
+```c
+// 使用SIMD快速扫描ASCII段落
+int count_utf8_chars_neon(const uint8_t* str, size_t len) {
+    // 使用NEON指令并行处理16字节，统计非ASCII起始字节
+    // 对嵌入式设备特别重要
+}
+```
+
+**5.3 编译时配置选项**
+
+```toml
+# Cargo.toml 特性配置
+[features]
+default = ["utf8-basic"]           # 基础UTF-8验证和存储
+utf8-full = ["unicode-normalization", "unicode-segmentation"]  # 完整支持
+utf8-lite = []                     # 最小支持，仅验证
+no-utf8 = []                       # 禁用UTF-8，仅处理ASCII
+```
+
+**6. 嵌入式特殊优化**
+
+**6.1 确定性内存使用**
+
+- 每个UTF-8操作的最大栈分配：256字节
+- 无堆分配的快速路径（字符串≤64字节时）
+- 可配置的最大字符串长度：默认16KB，适应嵌入式限制
+
+**6.2 低功耗模式**
+
+```rust
+// 在电池供电设备上，使用简化算法
+struct LowPowerUtf8Processor {
+    use_simple_validation: bool,      // 跳过完整验证
+    cache_normalized_forms: bool,     // 缓存规范化结果
+    max_complexity_level: u8,         // 限制复杂字符处理
+}
+```
+
+**7. 测试与验证**
+
+**7.1 正确性测试矩阵**
+
+| 测试类别           | 示例输入            | 预期行为          |
+| ------------------ | ------------------- | ----------------- |
+| **基本多语言平面** | "Hello 世界"        | 正确存储和检索    |
+| **辅助平面**       | "𠮷𠮷𠮷" (U+20BB7)  | 支持4字节字符     |
+| **组合字符**       | "café" (e + U+0301) | 规范化处理        |
+| **Emoji序列**      | "👨‍👩‍👧‍👦" (家庭emoji)  | 字素簇处理        |
+| **边缘案例**       | 无效UTF-8序列       | 根据配置拒绝/替换 |
+
+**7.2 性能基准**
+
+```rust
+// 性能测试套件
+benchmark_group!(utf8_benches,
+    bench_ascii_only,      // 纯ASCII性能
+    bench_mixed_text,      // 混合文本
+    bench_cjk_dense,       // 密集CJK文本
+    bench_emoji_heavy      // 大量emoji
+);
+
+// 目标：UTF-8操作相比ASCII操作的性能下降
+// - 存储/检索: < 20%
+// - 比较操作: < 50%
+// - LIKE匹配: < 100% (最坏情况)
+// - 索引构建: < 30%
+```
+
+**8. 集成点与依赖**
+
+**8.1 与现有功能集成**
+
+- **LIKE运算符**：扩展为UTF-8感知
+- **JSON支持**：JSON字符串值的UTF-8处理
+- **索引系统**：UTF-8感知的键比较和排序
+- **全文检索**（未来）：词素分析考虑Unicode属性
+
+**8.2 系统表扩展**
+
+```sql
+-- 新增系统视图，显示UTF-8相关状态
+CREATE VIEW remdb_unicode_status AS
+SELECT 
+    'utf8_support' AS feature,
+    normalization_form,
+    default_collation,
+    max_char_length
+FROM remdb_system_config;
+```
 
 
+
+**9. 总结**
+
+UTF-8支持是 `remdb` 成为国际化嵌入式数据库的关键特性。通过分层架构、性能优化和资源控制，本设计在提供完整Unicode功能的同时，坚守了嵌入式系统的核心原则：**确定性、高效性和可靠性**。
+
+**将此需求置于阶段二（核心优化），作为字符串处理、LIKE运算符和国际化支持的基础设施，与US-xxx（LIKE运算符）紧密协同实现。**
 
 ### **阶段三：高级功能**
 
@@ -839,6 +2744,269 @@
 3. 检查时间：1MB数据<200ms
 4. 提供修复建议（不自动修复）
 5. 检查结果可读性高
+
+---
+
+
+
+#### **US-306：Python原生绑定与高级API库**
+
+**作为** 嵌入式系统开发者、数据分析师或机器学习工程师，**我希望** 通过一个高性能、符合Python惯用法的原生库来访问remdb数据库，**以便于** 在开发调试、数据分析和AI应用集成等场景中，能够利用Python生态的强大工具链（如Pandas、NumPy、scikit-learn等）直接操作remdb中的数据，提高开发效率和系统集成能力。
+
+---
+
+**验收条件：**
+
+**1. 安装与部署便捷性**
+
+- 提供通过pip直接安装的Python包：`pip install remdb-python`
+- 包体积：核心包<2MB，无运行时动态依赖（如无需额外安装数据库客户端）
+- 支持Python 3.8+，兼容主流平台：Windows (x64)、Linux (x64/ARM)、macOS
+- 提供预编译二进制轮子（wheel），无需用户本地编译C/C++扩展
+
+**2. 核心API设计**
+
+- 提供直观的面向对象API，支持上下文管理器：
+  ```python
+  import remdb
+  
+  # 连接到本地或嵌入式数据库
+  with remdb.connect("file:///path/to/database.rdb") as db:
+      # 获取表对象
+      table = db.get_table("sensor_data")
+      
+      # 插入数据（支持字典或类型化对象）
+      table.insert({"id": 1, "value": 23.5, "timestamp": "2024-01-01 10:00:00"})
+      
+      # 查询数据
+      record = table.get_by_id(1)
+      print(record["value"])
+  ```
+
+- API与C/C++核心功能完全映射，至少支持：
+  - 表管理（创建、删除、列举）
+  - CRUD操作（insert、update、delete、get_by_id）
+  - 条件查询（US-206）
+  - 事务支持（US-103/US-205）
+  - 批量操作（US-301）
+  - 订阅发布（US-208的可选Python封装）
+
+**3. 零拷贝与高效数据交换**
+
+- 提供**两种数据访问模式**以满足不同场景：
+  - **安全拷贝模式**：默认方式，返回Python对象的深拷贝，确保内存安全
+  - **零拷贝视图模式**（可选）：通过`memoryview`或类似机制提供对数据库内存的直接只读访问，显著降低大型数据集传输开销，需在API中明确标注（如`table.get_by_id(1, zero_copy=True)`）
+- 与NumPy无缝集成：支持将查询结果**零拷贝转换为NumPy数组**：
+  ```python
+  # 将整列数据直接转换为NumPy数组（零拷贝或单次拷贝）
+  values = table.get_column_as_numpy("value", dtype=np.float32)
+  ```
+- 支持Pandas DataFrame双向高效转换：
+  ```python
+  # DataFrame -> 数据库表（批量插入）
+  df = pd.read_csv("sensor_data.csv")
+  table.insert_from_dataframe(df, batch_size=1000)
+  
+  # 数据库表 -> DataFrame
+  df = table.to_dataframe(columns=["id", "value", "timestamp"])
+  ```
+
+**4. 类型系统映射**
+
+- 完整映射remdb数据类型到Python类型：
+  - 整数 → `int`
+  - 浮点数 → `float`
+  - 定长字符串 → `str`（自动截断/填充）
+  - 布尔值 → `bool`
+  - 时间戳 → `datetime.datetime` 或 `int`（纳秒时间戳）
+  - 向量类型（US-601）→ `numpy.ndarray` 或Python `list`
+- 支持空值（NULL）映射为Python的`None`
+- 提供类型验证和自动转换，在类型不匹配时给出清晰错误信息
+
+**5. 异步与并发支持**
+
+- 提供异步IO接口（async/await），适用于服务器版remdb：
+  ```python
+  import asyncio
+  import remdb
+  
+  async def main():
+      async with remdb.AsyncConnection("tcp://localhost:9000") as db:
+          table = await db.get_table("metrics")
+          # 异步查询
+          result = await table.query_async("value > ?", params=[100.0])
+  ```
+- 线程安全：连接对象可在多线程环境下安全共享
+- 连接池支持（针对服务器版）：自动管理多个物理连接
+
+**6. 高级查询与AI集成**
+
+- 支持向量查询（US-601-602）的Python化表达：
+  ```python
+  # 向量相似度查询
+  results = table.vector_search(
+      query_vector=np.array([0.1, 0.2, 0.3]),
+      vector_column="embedding",
+      metric="cosine",
+      limit=10
+  )
+  
+  # 混合查询（向量+标量）
+  results = table.hybrid_search(
+      vector_query={"column": "embedding", "vector": query_vec, "k": 50},
+      filter_conditions="category == 'tech' AND price < 100.0"
+  )
+  ```
+- 支持查询构建器模式，避免SQL注入：
+  ```python
+  query = (table.query()
+           .filter("temperature > ?", 25.0)
+           .filter("humidity < ?", 80.0)
+           .order_by("timestamp", descending=True)
+           .limit(100))
+  results = query.execute()
+  ```
+
+**7. 性能要求**
+
+- 单次API调用开销（本地嵌入式模式）：
+  - 简单查询（get_by_id）：< 500μs（含Python-C边界开销）
+  - 批量插入（1000条记录）：< 50ms
+- 内存效率：
+  - 零拷贝视图模式下，处理1MB数据额外内存开销< 100KB
+  - 迭代器支持流式处理大型结果集，避免一次性加载所有数据
+- 服务器版网络性能：
+  - 使用高效二进制协议（如基于MessagePack或自定义）
+  - 支持连接复用和请求流水线
+  - 序列化/反序列化开销<数据大小的20%
+
+**8. 错误处理与调试**
+
+- 完整的异常层次结构：
+  ```python
+  try:
+      record = table.get_by_id(9999)
+  except remdb.NotFoundError:
+      print("记录不存在")
+  except remdb.TransactionError as e:
+      print(f"事务失败: {e}")
+  ```
+- 详细的错误消息，包含错误码和可能的解决方案
+- 支持查询性能分析：
+  ```python
+  # 获取查询执行计划
+  plan = table.explain_query("value > ?", params=[100.0])
+  print(plan.estimated_cost, plan.index_used)
+  
+  # 性能统计
+  stats = db.get_performance_stats()
+  print(stats.query_count, stats.avg_latency_ms)
+  ```
+
+**9. 工具与集成**
+
+- 命令行工具：提供`remdb-cli` Python包，用于交互式查询和数据管理
+- Jupyter Notebook支持：提供IPython魔法命令和可视化组件
+  ```python
+  %load_ext remdb
+  %remdb_connect localhost:9000
+  
+  # 直接渲染查询结果为表格
+  %remdb_query SELECT * FROM sensor_data LIMIT 10
+  ```
+- 与流行框架集成示例：
+  - FastAPI/Django集成示例
+  - 机器学习 pipeline 集成示例（scikit-learn, PyTorch数据加载器）
+  - 时序数据处理示例（Pandas, Dask）
+
+**10. 文档与测试**
+
+- 完整的API文档（Sphinx生成），包含详细示例
+- 交互式教程（Jupyter notebook格式）
+- 测试覆盖率>85%，包括：
+  - 单元测试（所有公共API）
+  - 集成测试（与嵌入式remdb和服务器remdb的交互）
+  - 性能基准测试（定期运行，防止性能回归）
+  - 跨平台兼容性测试
+
+---
+
+**技术约束：**
+
+1. **二进制兼容性**：
+   - Python扩展模块使用PyBind11或Cython实现，确保ABI稳定性
+   - 支持多个Python版本（3.8-3.12）无需重新编译
+
+2. **内存管理**：
+   - 严格管理Python对象与C++内存间的生命周期
+   - 零拷贝模式下，确保数据库内存不被提前释放
+   - 循环引用检测和避免
+
+3. **依赖最小化**：
+   - 核心包仅依赖标准库和NumPy（可选，但推荐）
+   - 高级功能（如Pandas集成）作为可选子模块
+
+4. **协议兼容性**：
+   - 与remdb核心版本保持向后兼容
+   - 版本号跟随核心数据库主版本
+
+---
+
+**测试场景：**
+
+1. **功能正确性测试**：
+   - 在嵌入式模式（STM32模拟器）和服务器模式下测试所有API
+   - 验证类型映射的往返一致性（Python→remdb→Python）
+   - 测试事务的原子性（批量操作中插入失败触发完全回滚）
+
+2. **性能基准测试**：
+   - 对比Python接口与C原生API的性能差异（目标：开销<2倍）
+   - 零拷贝模式vs安全拷贝模式的内存使用对比
+   - 大数据集（100万条记录）查询的流式处理能力
+
+3. **集成测试**：
+   - 与Pandas的DataFrame往返转换测试
+   - NumPy数组零拷贝访问的正确性和性能
+   - 在完整AI pipeline中的使用示例（数据加载→处理→存储）
+
+4. **长期稳定性测试**：
+   - 内存泄漏测试（24小时压力测试）
+   - 并发访问测试（多线程、多进程场景）
+   - 版本升级兼容性测试
+
+---
+
+**依赖与关联：**
+
+- **强依赖**：
+  - US-101（核心存储引擎）：Python接口的基础
+  - US-103/US-205（事务支持）：ACID操作的必要性
+  - US-210（编译期DDL）：Python中类型安全的基础
+  
+- **优化协同**：
+  - US-110（零拷贝访问）：Python零拷贝模式的底层支持
+  - US-208（UDP发布）：可选的Python异步订阅接口
+  - US-404（时序数据）：Python中时序操作的专门优化
+  
+- **可选增强**：
+  - US-601（AI向量）：Python中向量查询的自然表达
+  - US-505（百万QPS）：服务器版Python客户端的高性能要求
+
+---
+
+**成功指标（KPI）：**
+
+1. **开发者体验**：
+   - 新用户15分钟内完成第一个Python程序接入
+   - API直觉性评分>4.5/5（通过用户调研）
+   
+2. **性能指标**：
+   - Python接口额外开销<原生C API的200%
+   - 零拷贝模式下，10MB数据访问时间<100ms
+   
+3. **生态指标**：
+   - PyPI月下载量>1000（如果开源）
+   - 第三方库集成数量（1年内>5个）
 
 ---
 
@@ -1147,7 +3315,7 @@
 **技术约束：**
 
 - 向量维度必须在创建表时指定，不支持动态修改
-- 单向量最大维度：10000
+- 单向量最大维度：4096
 - 默认采用 NULL first 比较模式，所以对 NULL 值进行排序时会将其放至最前，建议查询的时候加上 NOT NULL 条件。
 
 **测试场景：**

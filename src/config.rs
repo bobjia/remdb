@@ -1,8 +1,65 @@
-use core::mem::size_of;
-use crate::types::TableDef;
-pub use crate::time_series::TimeSeriesConfig;
 #[cfg(feature = "ha")]
 pub use crate::ha::HAConfig;
+pub use crate::time_series::TimeSeriesConfig;
+use crate::types::TableDef;
+use core::mem::size_of;
+
+/// Model Worker 配置
+#[cfg(feature = "model-runtime")]
+#[derive(Clone, Debug)]
+pub struct ModelWorkerConfig {
+    /// 是否启用 Model Worker
+    pub enabled: bool,
+    /// 分配给 Worker 的 CPU 核心数
+    pub cpu_cores: usize,
+    /// 内存限制（MB）
+    pub memory_limit_mb: usize,
+    /// 最大模型数量
+    pub max_models: usize,
+    /// 请求超时时间（毫秒）
+    pub request_timeout_ms: u64,
+    /// Worker 崩溃时是否自动重启
+    pub restart_on_failure: bool,
+    /// 最大重启尝试次数
+    pub max_restart_attempts: u32,
+}
+
+#[cfg(feature = "model-runtime")]
+impl Default for ModelWorkerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            cpu_cores: 2,
+            memory_limit_mb: 2048,
+            max_models: 10,
+            request_timeout_ms: 5000,
+            restart_on_failure: true,
+            max_restart_attempts: 3,
+        }
+    }
+}
+
+#[cfg(feature = "model-runtime")]
+impl ModelWorkerConfig {
+    pub fn validate(&self) -> bool {
+        if self.cpu_cores == 0 || self.cpu_cores > 64 {
+            return false;
+        }
+        if self.memory_limit_mb < 256 || self.memory_limit_mb > 65536 {
+            return false;
+        }
+        if self.max_models == 0 || self.max_models > 100 {
+            return false;
+        }
+        if self.request_timeout_ms < 100 || self.request_timeout_ms > 60000 {
+            return false;
+        }
+        if self.max_restart_attempts > 10 {
+            return false;
+        }
+        true
+    }
+}
 
 /// 默认内存分配器实现
 pub struct DefaultMemoryAllocator;
@@ -10,25 +67,31 @@ pub struct DefaultMemoryAllocator;
 impl MemoryAllocator for DefaultMemoryAllocator {
     fn allocate(&self, size: usize) -> Option<core::ptr::NonNull<u8>> {
         // 实际分配内存
-        #[cfg(feature = "std")] {
-            let mut vec = vec![0u8; size];
+        #[cfg(feature = "std")]
+        {
+            // 使用with_capacity + resize确保capacity == size
+            let mut vec = Vec::with_capacity(size);
+            vec.resize(size, 0);
             let ptr = vec.as_mut_ptr();
             // 释放vec对内存的所有权，但不释放内存本身
             std::mem::forget(vec);
             Some(unsafe { core::ptr::NonNull::new_unchecked(ptr) })
         }
-        #[cfg(not(feature = "std"))] {
+        #[cfg(not(feature = "std"))]
+        {
             // 非std环境下返回None
             None
         }
     }
-    
+
     fn deallocate(&self, ptr: core::ptr::NonNull<u8>, size: usize) {
         // 释放内存
-        #[cfg(feature = "std")] {
+        #[cfg(feature = "std")]
+        {
             unsafe {
-                let slice = core::slice::from_raw_parts_mut(ptr.as_ptr(), size);
-                let vec = Vec::from_raw_parts(slice.as_mut_ptr(), 0, size);
+                // When recreating Vec for deallocation, len should match original allocation size
+                // because we initialized all bytes with vec![0u8; size]
+                let vec = Vec::from_raw_parts(ptr.as_ptr(), size, size);
                 drop(vec);
             }
         }
@@ -40,7 +103,7 @@ impl MemoryAllocator for DefaultMemoryAllocator {
 pub trait MemoryAllocator: Sync {
     /// 分配内存
     fn allocate(&self, size: usize) -> Option<core::ptr::NonNull<u8>>;
-    
+
     /// 释放内存
     fn deallocate(&self, ptr: core::ptr::NonNull<u8>, size: usize);
 }
@@ -52,6 +115,17 @@ pub enum LogMode {
     Sync,
     /// 异步模式：日志先写入缓冲区，后台批量写入
     Async,
+}
+
+/// WAL压缩类型
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum WALCompressionType {
+    /// 不压缩
+    None,
+    /// LZ4压缩
+    LZ4,
+    /// ZSTD压缩
+    ZSTD,
 }
 
 /// WAL日志配置
@@ -70,12 +144,24 @@ pub struct WALConfig {
     pub log_segment_size: usize,
     /// 保留的检查点数量
     pub retained_checkpoints: usize,
+    /// 恢复时最大连续无效记录数，达到此值后停止恢复
+    pub max_consecutive_invalid: u32,
+    /// 恢复时跳过预分配空间的阈值（连续无效记录数）
+    pub skip_threshold: u32,
+    /// 恢复时跳过的块大小（字节）
+    pub skip_block_size: usize,
+    /// 恢复时最大跳过尝试次数
+    pub max_skip_attempts: u32,
+    /// WAL压缩类型
+    pub compression_type: WALCompressionType,
+    /// 压缩级别（1-9）
+    pub compression_level: u8,
 }
 
 /// 数据库全局配置
 pub struct DbConfig {
     /// 表定义列表
-    pub tables: &'static [TableDef],
+    pub tables: Vec<TableDef>,
     /// 总内存大小
     pub total_memory: usize,
     /// 支持低功耗模式
@@ -90,138 +176,174 @@ pub struct DbConfig {
     pub wal_config: WALConfig,
     /// 时序数据默认配置
     pub time_series_defaults: TimeSeriesConfig,
-    
+
     /// PubSub配置
     #[cfg(feature = "pubsub")]
     pub pubsub_config: Option<crate::pubsub::PubSubConfig>,
-    
+
     /// HA配置
     #[cfg(feature = "ha")]
     pub ha_config: Option<HAConfig>,
+
+    /// Model Worker配置
+    #[cfg(feature = "model-runtime")]
+    pub model_worker_config: ModelWorkerConfig,
 }
 
-
-
 /// 编译时配置检查
-pub const fn validate_config(config: &DbConfig) -> bool {
+pub fn validate_config(config: &DbConfig) -> bool {
     // 检查表数量
     if config.tables.len() > 32 {
         return false;
     }
-    
+
     // 检查低功耗模式配置
     if let Some(low_power_max) = config.low_power_max_records {
         if low_power_max > 100000 {
             return false;
         }
     }
-    
+
     // 检查默认最大记录数
     if config.default_max_records > 500000 {
         return false;
     }
-    
+
     // 检查WAL和检查点配置
-    if config.wal_config.checkpoint_interval_ms > 3600000 { // 最大1小时
+    if config.wal_config.checkpoint_interval_ms > 3600000 {
+        // 最大1小时
         return false;
     }
-    
-    if config.wal_config.log_file_size_limit < 1024 * 1024 { // 最小1MB
+
+    if config.wal_config.log_file_size_limit < 1024 * 1024 {
+        // 最小1MB
         return false;
     }
-    
+
     if config.wal_config.log_prealloc_size > config.wal_config.log_file_size_limit {
         return false;
     }
-    
-    if config.wal_config.log_segment_size < 1024 * 1024 { // 最小1MB
+
+    if config.wal_config.log_segment_size < 1024 * 1024 {
+        // 最小1MB
         return false;
     }
-    
+
     if config.wal_config.retained_checkpoints > 10 {
         return false;
     }
-    
+
+    if config.wal_config.compression_level < 1 || config.wal_config.compression_level > 9 {
+        return false;
+    }
+
+    #[cfg(not(feature = "wal-compression-lz4"))]
+    {
+        if matches!(config.wal_config.compression_type, WALCompressionType::LZ4) {
+            return false;
+        }
+    }
+
+    #[cfg(not(feature = "wal-compression-zstd"))]
+    {
+        if matches!(config.wal_config.compression_type, WALCompressionType::ZSTD) {
+            return false;
+        }
+    }
+
     // 检查HA配置
-    #[cfg(feature = "ha")] {
+    #[cfg(feature = "ha")]
+    {
         if let Some(ha_config) = &config.ha_config {
-            if ha_config.heartbeat_interval_ms < 100 { // 最小100ms
+            if ha_config.heartbeat_interval_ms < 100 {
+                // 最小100ms
                 return false;
             }
-            
-            if ha_config.heartbeat_interval_ms > 60000 { // 最大60秒
+
+            if ha_config.heartbeat_interval_ms > 60000 {
+                // 最大60秒
                 return false;
             }
-            
-            if ha_config.failure_detection_ms < ha_config.heartbeat_interval_ms { // 故障检测时间必须大于等于心跳间隔
+
+            if ha_config.failure_detection_ms < ha_config.heartbeat_interval_ms {
+                // 故障检测时间必须大于等于心跳间隔
                 return false;
             }
-            
-            if ha_config.failure_detection_ms > 300000 { // 最大5分钟
+
+            if ha_config.failure_detection_ms > 300000 {
+                // 最大5分钟
                 return false;
             }
-            
-            if ha_config.sync_timeout_ms < 100 { // 最小100ms
+
+            if ha_config.sync_timeout_ms < 100 {
+                // 最小100ms
                 return false;
             }
-            
-            if ha_config.sync_timeout_ms > 10000 { // 最大10秒
+
+            if ha_config.sync_timeout_ms > 10000 {
+                // 最大10秒
                 return false;
             }
         }
     }
-    
-    // 检查每个表（使用常量兼容的方式）
-    let mut i = 0;
-    while i < config.tables.len() {
-        let table = &config.tables[i];
-        
+
+    // 检查Model Worker配置
+    #[cfg(feature = "model-runtime")]
+    {
+        if !config.model_worker_config.validate() {
+            return false;
+        }
+    }
+
+    // 检查每个表
+    for table in &config.tables {
         // 检查记录大小
         if table.record_size > 512 {
             return false;
         }
-        
+
         // 检查最大记录数
         if table.max_records > 500000 {
             return false;
         }
-        
+
         // 检查主键存在
-        if table.primary_key >= table.fields.len() {
-            return false;
-        }
-        
-        // 检查辅助索引（如果有）
-        let has_secondary = table.secondary_index.is_some();
-        if has_secondary {
-            let secondary_index = table.secondary_index.unwrap();
-            if secondary_index >= table.fields.len() {
+        for &pk_index in &table.primary_key {
+            if pk_index >= table.fields.len() {
                 return false;
             }
         }
-        
-        i += 1;
+
+        // 检查辅助索引（如果有）
+        if let Some(secondary_index) = &table.secondary_index {
+            for &index in secondary_index {
+                if index >= table.fields.len() {
+                    return false;
+                }
+            }
+        }
     }
-    
+
     true
 }
 
 /// 计算表的内存占用
-pub const fn table_memory_usage(table: &TableDef) -> usize {
+pub fn table_memory_usage(table: &TableDef) -> usize {
     // 记录内存
     let record_memory = table.record_size * table.max_records;
-    
+
     // 索引内存
     let index_memory = table.max_records * size_of::<u32>(); // 主键哈希表
-    
+
     // 辅助索引内存（如果有）
     let secondary_index_memory = if table.secondary_index.is_some() {
         match table.secondary_index_type {
             // 有序数组索引
             crate::types::IndexType::SortedArray => {
-                let primary_key_field = &table.fields[table.primary_key];
+                // 对于复合主键，使用第一个主键字段的大小
+                let primary_key_field = &table.fields[table.primary_key[0]];
                 table.max_records * (primary_key_field.size + size_of::<u16>())
-            },
+            }
             // B-Tree索引
             crate::types::IndexType::BTree => {
                 // B-Tree节点大小
@@ -229,7 +351,7 @@ pub const fn table_memory_usage(table: &TableDef) -> usize {
                 // 假设每个节点平均使用50%的空间，每个节点平均2个键
                 let max_nodes = table.max_records / 2;
                 max_nodes * BTREE_NODE_SIZE
-            },
+            }
             // T-Tree索引
             crate::types::IndexType::TTree => {
                 // T-Tree节点大小
@@ -237,22 +359,23 @@ pub const fn table_memory_usage(table: &TableDef) -> usize {
                 // 假设每个节点平均使用50%的空间，每个节点平均2个键
                 let max_nodes = table.max_records / 2;
                 max_nodes * TTREE_NODE_SIZE
-            },
+            }
             // 其他索引类型（默认）
             _ => {
-                let primary_key_field = &table.fields[table.primary_key];
+                // 对于复合主键，使用第一个主键字段的大小
+                let primary_key_field = &table.fields[table.primary_key[0]];
                 table.max_records * (primary_key_field.size + size_of::<u16>())
             }
         }
     } else {
         0
     };
-    
+
     record_memory + index_memory + secondary_index_memory
 }
 
 /// 计算数据库总内存占用
-pub const fn total_memory_usage(config: &DbConfig) -> usize {
+pub fn total_memory_usage(config: &DbConfig) -> usize {
     let mut total = 0;
     let mut i = 0;
     while i < config.tables.len() {
