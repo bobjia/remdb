@@ -553,10 +553,16 @@ dependencies = [
 [[package]]
 name = "remdb-platform-baremetal"
 version = "0.1.0"
+dependencies = [
+ "remdb",
+]
 
 [[package]]
 name = "remdb-platform-posix"
 version = "0.1.0"
+dependencies = [
+ "remdb",
+]
 
 [[package]]
 name = "rustversion"

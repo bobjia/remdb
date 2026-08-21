@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 // 低功耗模式示例
 extern crate alloc;
 
@@ -58,89 +59,55 @@ fn main() {
             DB_MEMORY.len()
         );
         
-        // 初始化平台
-        #[cfg(feature = "posix")]
-        remdb::platform::init_platform(remdb::platform::posix::get_posix_platform());
-        
-        #[cfg(not(feature = "posix"))]
-        {
-            // 使用一个简单的平台实现，只提供必要的方法
-            struct MinimalPlatform;
-            impl remdb::platform::Platform for MinimalPlatform {
-                fn get_timestamp(&self) -> u64 {
-                    0
-                }
-                fn get_timestamp_us(&self) -> u64 {
-                    0
-                }
-                fn spin_lock(&self, _lock: &mut u32) {
-                    // 简单的自旋锁实现
-                    unsafe {
-                        while core::sync::atomic::AtomicU32::from_ptr(_lock as *mut u32)
-                            .compare_exchange(0, 1, 
-                                            core::sync::atomic::Ordering::Acquire,
-                                            core::sync::atomic::Ordering::Relaxed)
-                            .is_err() {
-                            core::hint::spin_loop();
-                        }
-                    }
-                }
-                fn spin_unlock(&self, _lock: &mut u32) {
-                    unsafe {
-                        core::sync::atomic::AtomicU32::from_ptr(_lock as *mut u32)
-                            .store(0, core::sync::atomic::Ordering::Release);
-                    }
-                }
-                fn compiler_barrier(&self) {
-                    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-                }
-                fn full_memory_barrier(&self) {
-                    core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-                }
-                fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-                    unsafe {
-                        core::ptr::copy_nonoverlapping(src, dest, size);
-                    }
-                }
-                fn memset(&self, dest: *mut u8, val: u8, size: usize) {
-                    unsafe {
-                        core::ptr::write_bytes(dest, val, size);
-                    }
-                }
-                fn delay_ms(&self, _ms: u32) {
-                    // 空实现
-                }
-                fn delay_us(&self, _us: u32) {
-                    // 空实现
-                }
-                fn file_open(&self, _path: &str, _mode: remdb::platform::FileMode) -> std::result::Result<*const u8, ()> {
-                    Err(())
-                }
-                fn file_close(&self, _handle: *const u8) -> std::result::Result<(), ()> {
-                    Ok(())
-                }
-                fn file_write(&self, _handle: *const u8, _buf: *const u8, _size: usize) -> std::result::Result<usize, ()> {
-                    Ok(0)
-                }
-                fn file_read(&self, _handle: *const u8, _buf: *mut u8, _size: usize) -> std::result::Result<usize, ()> {
-                    Ok(0)
-                }
-                fn file_seek(&self, _handle: *const u8, _offset: i64, _whence: remdb::platform::SeekWhence) -> std::result::Result<u64, ()> {
-                    Ok(0)
-                }
-                fn file_remove(&self, _path: &str) -> std::result::Result<(), ()> {
-                    Ok(())
-                }
-                fn file_size(&self, _path: &str) -> std::result::Result<usize, ()> {
-                    Ok(0)
-                }
-                fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
-                    0
-                }
+        // 初始化平台 - 使用一个简单的平台实现，只提供必要的方法
+        struct MinimalPlatform;
+        impl remdb::platform::Platform for MinimalPlatform {
+            fn get_timestamp(&self) -> u64 {
+                0
             }
-            static MINIMAL_PLATFORM: MinimalPlatform = MinimalPlatform;
-            remdb::platform::init_platform(&MINIMAL_PLATFORM);
+            fn get_timestamp_us(&self) -> u64 {
+                0
+            }
+            fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+                let len = dest.len().min(src.len());
+                dest[..len].copy_from_slice(&src[..len]);
+            }
+            fn memset(&self, dest: &mut [u8], value: u8) {
+                dest.fill(value);
+            }
+            fn delay_ms(&self, _ms: u32) {
+                // 空实现
+            }
+            fn delay_us(&self, _us: u32) {
+                // 空实现
+            }
+            fn file_open(&self, _path: &str, _mode: remdb::platform::FileMode) -> remdb::platform::FileResult<remdb::platform::FileHandle> {
+                Err(())
+            }
+            fn file_close(&self, _handle: remdb::platform::FileHandle) -> remdb::platform::FileResult<()> {
+                Ok(())
+            }
+            fn file_write(&self, _handle: remdb::platform::FileHandle, _buf: &[u8]) -> remdb::platform::FileResult<usize> {
+                Ok(0)
+            }
+            fn file_read(&self, _handle: remdb::platform::FileHandle, _buf: &mut [u8]) -> remdb::platform::FileResult<usize> {
+                Ok(0)
+            }
+            fn file_seek(&self, _handle: remdb::platform::FileHandle, _offset: i64, _whence: remdb::platform::SeekWhence) -> remdb::platform::FileResult<u64> {
+                Ok(0)
+            }
+            fn file_remove(&self, _path: &str) -> remdb::platform::FileResult<()> {
+                Ok(())
+            }
+            fn file_size(&self, _path: &str) -> remdb::platform::FileResult<usize> {
+                Ok(0)
+            }
+            fn crc32(&self, _data: &[u8]) -> u32 {
+                0
+            }
         }
+        static MINIMAL_PLATFORM: MinimalPlatform = MinimalPlatform;
+        remdb::platform::init_platform(&MINIMAL_PLATFORM);
         
         // 初始化数据库
         let db = remdb::init_global_db(&TEST_DB).unwrap();
@@ -170,7 +137,8 @@ fn main() {
         // 插入记录（正常情况）
         println!("开始插入50条记录...");
         for i in 0..50 {
-            match db.get_table_mut(0).unwrap().insert(&records[i] as *const TestRecord as *const u8) {
+            let record_bytes = unsafe { core::slice::from_raw_parts(&records[i] as *const TestRecord as *const u8, core::mem::size_of::<TestRecord>()) };
+            match db.get_table_mut(0).unwrap().insert(record_bytes) {
                 Ok(id) => println!("插入成功，记录ID: {}", id),
                 Err(e) => println!("插入失败，错误: {:?}", e),
             }

@@ -1,5 +1,6 @@
 // remdbHA 从节点示例
 #![cfg(feature = "ha")]
+#![allow(unsafe_code)]
 
 #[macro_use]
 extern crate remdb;
@@ -101,7 +102,7 @@ fn slave_example() {
         
         // 尝试获取记录，get_by_id如果失败会返回错误
         let mut result_data = [0u8; 40];
-        match table.get_by_id(record_id, result_data.as_mut_ptr()) {
+        match table.get_by_id(record_id, &mut result_data) {
             Ok(_) => {
                 // 读取字段值
                 let result_id = core::ptr::read(result_data.as_ptr() as *const u32);

@@ -180,9 +180,9 @@ impl PubSub {
         Ok(())
     }
     
-    /// 启动接收线程（仅POSIX平台）
+    /// 启动接收线程
     /// 注意：该方法目前不可用，需要解决生命周期问题
-    #[cfg(feature = "posix")]
+    #[cfg(feature = "std")]
     pub fn start_receiver(&mut self) -> Result<()> {
         if !self.is_running {
             return Err(PubSubError::InitFailed);
@@ -450,7 +450,7 @@ pub fn publish(topic_id: u16, data: &[u8]) -> Result<()> {
 }
 
 /// 启动接收线程
-#[cfg(feature = "posix")]
+#[cfg(feature = "std")]
 pub fn start_receiver() -> Result<()> {
     with_pubsub(|pubsub| {
         if let Some(ref mut ps) = pubsub {

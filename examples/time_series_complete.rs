@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 use remdb::*;
 use remdb::time_series::*;
 use remdb::config::WALConfig;

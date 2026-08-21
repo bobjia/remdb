@@ -105,8 +105,8 @@ pub struct StaticAllocator {
     free_count: usize,
 }
 
-// 为StaticAllocator实现Send和Sync trait
-// 注意：这是安全的，因为StaticAllocator的所有操作都在锁保护下进行
+// StaticAllocator 包含 NonNull 指针，需要手动实现 Send/Sync
+// 因为 NonNull<T> 在 Rust 1.95.0 中不再自动实现 Send/Sync
 unsafe impl Send for StaticAllocator {}
 unsafe impl Sync for StaticAllocator {}
 

@@ -2874,9 +2874,8 @@ use std::sync::OnceLock;
 #[cfg(not(feature = "std"))]
 use crate::platform::OnceLock;
 
-// SAFETY: Transaction and TransactionManager hold only Send types (primitives and NonNull).
-// The NonNull fields point to external buffers, not internally owned memory.
-// This unsafe impl will be removed when the NonNull usage is eliminated.
+// Transaction 和 TransactionManager 包含 NonNull 指针，需要手动实现 Send
+// 因为 NonNull<T> 在 Rust 1.95.0 中不再自动实现 Send/Sync
 unsafe impl Send for Transaction {}
 unsafe impl Send for TransactionManager {}
 

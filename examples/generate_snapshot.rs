@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 extern crate alloc;
 
 use remdb::{database, table, Result};
@@ -30,7 +31,7 @@ database!(
 fn main() -> Result<()> 
 {
     // 初始化平台
-    // 由于posix模块被特性门控，我们使用一个简单的平台实现
+    // 使用一个简单的平台实现
     struct SimplePlatform;
     
     impl remdb::platform::Platform for SimplePlatform {
@@ -42,44 +43,13 @@ fn main() -> Result<()>
             0
         }
         
-        fn spin_lock(&self, lock: &mut u32) {
-            // 简单的自旋锁实现
-            while unsafe {
-                core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                    .compare_exchange(0, 1, 
-                                     core::sync::atomic::Ordering::Acquire,
-                                     core::sync::atomic::Ordering::Relaxed)
-                    .is_err()
-            } {
-                core::hint::spin_loop();
-            }
+        fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+            let len = dest.len().min(src.len());
+            dest[..len].copy_from_slice(&src[..len]);
         }
         
-        fn spin_unlock(&self, lock: &mut u32) {
-            unsafe {
-                core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                    .store(0, core::sync::atomic::Ordering::Release);
-            }
-        }
-        
-        fn compiler_barrier(&self) {
-            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-        }
-        
-        fn full_memory_barrier(&self) {
-            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-        }
-        
-        fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-            unsafe {
-                core::ptr::copy_nonoverlapping(src, dest, size);
-            }
-        }
-        
-        fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-            unsafe {
-                core::ptr::write_bytes(dest, value, size);
-            }
+        fn memset(&self, dest: &mut [u8], value: u8) {
+            dest.fill(value);
         }
         
         fn delay_ms(&self, ms: u32) {
@@ -124,27 +94,25 @@ fn main() -> Result<()>
             Ok(())
         }
         
-        fn file_write(&self, handle: remdb::platform::FileHandle, buffer: *const u8, size: usize) -> remdb::platform::FileResult<usize> {
+        fn file_write(&self, handle: remdb::platform::FileHandle, buf: &[u8]) -> remdb::platform::FileResult<usize> {
             // 使用std::fs::File实现文件写入
             use std::io::Write;
             
             let file = unsafe { &mut *(handle as *mut std::fs::File) };
-            let slice = unsafe { std::slice::from_raw_parts(buffer, size) };
             
-            match file.write(slice) {
+            match file.write(buf) {
                 Ok(n) => Ok(n),
                 Err(_) => Err(()),
             }
         }
         
-        fn file_read(&self, handle: remdb::platform::FileHandle, buffer: *mut u8, size: usize) -> remdb::platform::FileResult<usize> {
+        fn file_read(&self, handle: remdb::platform::FileHandle, buf: &mut [u8]) -> remdb::platform::FileResult<usize> {
             // 使用std::fs::File实现文件读取
             use std::io::Read;
             
             let file = unsafe { &mut *(handle as *mut std::fs::File) };
-            let slice = unsafe { std::slice::from_raw_parts_mut(buffer, size) };
             
-            match file.read(slice) {
+            match file.read(buf) {
                 Ok(n) => Ok(n),
                 Err(_) => Err(()),
             }
@@ -187,11 +155,10 @@ fn main() -> Result<()>
             }
         }
         
-        fn crc32(&self, data: *const u8, size: usize) -> u32 {
+        fn crc32(&self, data: &[u8]) -> u32 {
             // 简单的XOR校验和实现
-            let slice = unsafe { std::slice::from_raw_parts(data, size) };
             let mut checksum = 0u32;
-            for &byte in slice {
+            for &byte in data {
                 checksum ^= byte as u32;
             }
             checksum
@@ -225,11 +192,11 @@ fn main() -> Result<()>
             let table = db.get_table_mut(0)?;
             
             // 设置id字段为唯一值
-            let id_value = remdb::Value { u64: i as u64 };
-            table.set_field(record.0.as_mut_ptr(), 0, &id_value)?;
+            let id_value = remdb::Value::U64(i as u64);
+            table.set_field(&mut record.0, 0, &id_value)?;
             
             let name = format!("item_{}", i);
-            let name_value = remdb::Value { string: { 
+            let name_value = remdb::Value::String({ 
                 let mut s = [0u8; 64];
                 // 填充name，剩余空间用0填充
                 for (j, c) in name.as_bytes().iter().enumerate() {
@@ -240,14 +207,14 @@ fn main() -> Result<()>
                     }
                 }
                 s
-            } };
-            table.set_field(record.0.as_mut_ptr(), 1, &name_value)?;
+            } );
+            table.set_field(&mut record.0, 1, &name_value)?;
             
-            let value_value = remdb::Value { u32: (i * 100) as u32 };
-            table.set_field(record.0.as_mut_ptr(), 2, &value_value)?;
+            let value_value = remdb::Value::U32((i * 100) as u32);
+            table.set_field(&mut record.0, 2, &value_value)?;
             
             // 插入记录
-            let record_id = table.insert(record.0.as_ptr())?;
+            let record_id = table.insert(&record.0)?;
             println!("插入记录ID: {}", record_id);
         }
         
