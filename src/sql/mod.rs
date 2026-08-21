@@ -8,8 +8,8 @@ mod query_executor;
 mod result_set;
 
 pub use query_parser::{SqlQuery, QueryParseError, parse_sql_query, WhereClause, Condition, ComparisonCondition, ComparisonOperator, OrderByClause, OrderDirection, QueryType, Value, JoinType, JoinClause};
-pub use query_executor::{execute_query, QueryExecutionError};
-pub use result_set::{ResultSet, ResultRow, ResultRowIter};
+pub use query_executor::{execute_query, execute_query_raw, QueryExecutionError};
+pub use result_set::{CompactResultSet, ColumnInfo, ResultSet, ResultRow, ResultRowIter};
 
 /// SQL查询结果
 pub type SqlResult<T> = core::result::Result<T, SqlError>;

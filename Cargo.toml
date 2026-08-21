@@ -52,6 +52,10 @@ serial_test = "3.0.0"
 name = "database"
 harness = false
 
+[[bench]]
+name = "zero_copy_query"
+harness = false
+
 [features]
 default = ["std", "ha", "pubsub"]
 std = ["rand", "socket2", "remdb-alloc/std"]

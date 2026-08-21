@@ -105,6 +105,72 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
     }
 }
 
+/// Execute a SQL query using the zero-copy path, returning a `CompactResultSet`.
+///
+/// This is the zero-copy alternative to `execute_query`. Currently only SELECT
+/// queries are supported; other query types delegate to the legacy path and
+/// convert the result.
+pub fn execute_query_raw(
+    db: &mut RemDb,
+    query: &SqlQuery,
+) -> Result<CompactResultSet, QueryExecutionError> {
+    match query.query_type {
+        crate::sql::QueryType::Select => {
+            // Check if it's a timeseries table query
+            let is_timeseries = db.time_series_tables.iter().any(|table_opt| {
+                if let Some(table) = table_opt {
+                    table.def.base.name == query.table_name
+                } else {
+                    false
+                }
+            });
+            if is_timeseries {
+                // Fall back to legacy path for timeseries queries
+                let legacy = execute_select_timeseries_query(db, query)?;
+                Ok(convert_result_set_to_compact(&legacy))
+            } else {
+                execute_select_query_raw(db, query)
+            }
+        }
+        // For non-SELECT queries, fall back to legacy path and convert
+        _ => {
+            let legacy = execute_query(db, query)?;
+            Ok(convert_result_set_to_compact(&legacy))
+        }
+    }
+}
+
+/// Convert a legacy `ResultSet` to a `CompactResultSet`.
+fn convert_result_set_to_compact(legacy: &ResultSet) -> CompactResultSet {
+    let columns: Vec<ColumnInfo> = legacy
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(i, name)| ColumnInfo {
+            name: name.clone(),
+            offset: i * 8, // legacy columns are 8 bytes each (TypedValue)
+            data_type: DataType::Int64,
+            size: 8,
+        })
+        .collect();
+    let record_size = if legacy.columns.is_empty() {
+        8
+    } else {
+        legacy.columns.len() * 8
+    };
+    let mut compact = CompactResultSet::new(columns, record_size);
+    for row in &legacy.rows {
+        let mut buf = alloc::vec![0u8; record_size];
+        for (i, tv) in row.values.iter().enumerate() {
+            if i * 8 + 8 <= record_size {
+                set_value_at_offset(&mut buf, i * 8, tv);
+            }
+        }
+        let _ = compact.add_record(&buf);
+    }
+    compact
+}
+
 /// 查找时序表
 fn find_timeseries_table_by_name<'a>(db: &'a RemDb, table_name: &str) -> Result<&'a TimeSeriesTable, QueryExecutionError> {
     for table in db.time_series_tables.iter() {
@@ -801,6 +867,941 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     }
     
     Ok(result_set)
+}
+
+// ============================================================================
+// Zero-copy SELECT path (uses RawRecordView + CompactResultSet)
+// ============================================================================
+
+use crate::sql::{ColumnInfo, CompactResultSet};
+
+/// Execute a SELECT query using the zero-copy path (RawRecordView + CompactResultSet).
+///
+/// Returns a `CompactResultSet` instead of the legacy `ResultSet`, avoiding
+/// per-row `Vec<TypedValue>` allocations.
+pub fn execute_select_query_raw(
+    db: &mut RemDb,
+    query: &SqlQuery,
+) -> Result<CompactResultSet, QueryExecutionError> {
+    // 1. Find the table
+    let table = find_table_by_name(db, &query.table_name)?;
+
+    // 2. Determine column expressions
+    let columns = if query.select_all {
+        table.def
+            .fields
+            .iter()
+            .map(|field| Expression::Field {
+                name: field.name.to_string(),
+                alias: None,
+            })
+            .collect()
+    } else {
+        validate_columns(table, &query.columns)?;
+        query.columns.clone()
+    };
+
+    // 3. Build ColumnInfo list for the result set
+    let col_info = build_column_info(table, &columns)?;
+
+    // 4. Create result set
+    let mut result_set = CompactResultSet::new(col_info, table.record_size);
+
+    // 5. Collect matching record IDs (zero-copy filtering)
+    let mut matching_ids: Vec<usize> = Vec::new();
+    table
+        .iterate(|id, record_data| {
+            let view = crate::record_view::RawRecordView::new(record_data, &table.def);
+            let matches = if let Some(where_clause) = &query.where_clause {
+                evaluate_condition_raw(&view, &where_clause.condition, &table.def)
+            } else {
+                true
+            };
+            if matches {
+                matching_ids.push(id);
+            }
+            true // continue iteration
+        })
+        .map_err(|_| QueryExecutionError::InternalError)?;
+
+    // 6. ORDER BY (zero-copy sort)
+    if let Some(order_by) = &query.order_by {
+        sort_ids_by_raw(&mut matching_ids, table, order_by)?;
+    }
+
+    // 7. LIMIT
+    let limit = query.limit.unwrap_or(matching_ids.len());
+    let limit = core::cmp::min(matching_ids.len(), limit);
+
+    // 8. Check for aggregation
+    let has_aggregate = columns.iter().any(|expr| is_aggregate_function(expr));
+    let has_group_by = query.group_by.is_some();
+
+    if has_aggregate || has_group_by {
+        if has_group_by {
+            process_group_by_raw(
+                table,
+                &columns,
+                &matching_ids[..limit],
+                query.group_by.as_ref().unwrap(),
+                &mut result_set,
+            )?;
+        } else {
+            process_aggregate_raw(
+                table,
+                &columns,
+                &matching_ids[..limit],
+                &mut result_set,
+            )?;
+        }
+        return Ok(result_set);
+    }
+
+    // 9. Determine if we need to evaluate expressions
+    let needs_expression_eval = !query.select_all
+        || columns.iter().any(|expr| matches!(expr, Expression::FunctionCall { .. } | Expression::Constant { .. } | Expression::BinaryOp { .. }));
+
+    if needs_expression_eval {
+        // Evaluate expressions for each matching row
+        let mut typed_results = CompactResultSet::new(
+            build_column_info(table, &columns)?,
+            table.record_size,
+        );
+        for &id in matching_ids.iter().take(limit) {
+            if let Ok(record_slice) = table.get_record_slice_checked(id) {
+                let view = crate::record_view::RawRecordView::new(record_slice, &table.def);
+                let mut row_data = Vec::with_capacity(columns.len());
+                for expr in &columns {
+                    let tv = evaluate_expression_raw(&view, table, expr)?;
+                    row_data.push(tv);
+                }
+                // Convert row_data to raw bytes and add to result set
+                let mut buf = alloc::vec![0u8; table.record_size];
+                for (i, tv) in row_data.iter().enumerate() {
+                    if let Some(col) = typed_results.columns.get(i) {
+                        set_value_at_offset(&mut buf, col.offset, tv);
+                    }
+                }
+                let _ = typed_results.add_record(&buf);
+            }
+        }
+        return Ok(typed_results);
+    }
+
+    // 10. Simple SELECT *: bulk-copy matching records
+    for &id in matching_ids.iter().take(limit) {
+        if let Ok(record_slice) = table.get_record_slice_checked(id) {
+            let _ = result_set.add_record(record_slice);
+        }
+    }
+
+    Ok(result_set)
+}
+
+/// Build ColumnInfo list from field expressions.
+fn build_column_info(
+    table: &MemoryTable,
+    columns: &[Expression],
+) -> Result<Vec<ColumnInfo>, QueryExecutionError> {
+    let mut result = Vec::with_capacity(columns.len());
+    for expr in columns {
+        match expr {
+            Expression::Field { name, .. } => {
+                let actual_name = if let Some(dot) = name.find('.') {
+                    &name[dot + 1..]
+                } else {
+                    name
+                };
+                if let Some(field) = table.def.fields.iter().find(|f| f.name == actual_name) {
+                    result.push(ColumnInfo {
+                        name: name.clone(),
+                        offset: field.offset,
+                        data_type: field.data_type,
+                        size: field.size,
+                    });
+                } else {
+                    // Field not found, use placeholder
+                    result.push(ColumnInfo {
+                        name: name.clone(),
+                        offset: 0,
+                        data_type: DataType::Int64,
+                        size: 8,
+                    });
+                }
+            }
+            _ => {
+                // Non-field expressions use a placeholder
+                result.push(ColumnInfo {
+                    name: expr_name(expr),
+                    offset: 0,
+                    data_type: DataType::Int64,
+                    size: 8,
+                });
+            }
+        }
+    }
+    Ok(result)
+}
+
+/// Get the display name of an expression.
+fn expr_name(expr: &Expression) -> String {
+    match expr {
+        Expression::Field { name, alias } => alias.clone().unwrap_or_else(|| name.clone()),
+        Expression::FunctionCall { alias, name, .. } => {
+            alias.clone().unwrap_or_else(|| name.clone())
+        }
+        Expression::Constant { alias, .. } => alias.clone().unwrap_or_else(|| "constant".to_string()),
+        Expression::BinaryOp { alias, .. } => {
+            alias.clone().unwrap_or_else(|| "binary_op".to_string())
+        }
+    }
+}
+
+/// Check if an expression is an aggregate function.
+fn is_aggregate_function(expr: &Expression) -> bool {
+    match expr {
+        Expression::FunctionCall { name, .. } => {
+            matches!(
+                name.to_uppercase().as_str(),
+                "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" | "STDDEV" | "VAR" | "STDDEV_SAMP"
+                    | "VAR_SAMP" | "MOVING_AVERAGE" | "MOVING_SUM"
+            )
+        }
+        _ => false,
+    }
+}
+
+/// Sort record IDs by comparing raw record bytes (zero-copy sort).
+fn sort_ids_by_raw(
+    ids: &mut Vec<usize>,
+    table: &MemoryTable,
+    order_by: &OrderByClause,
+) -> Result<(), QueryExecutionError> {
+    // Handle positional index (e.g., ORDER BY 1)
+    if let Ok(col_index) = order_by.field.parse::<usize>() {
+        // For positional ORDER BY, we need to know the field index
+        // This is complex in the raw path - defer to the field-based approach
+        // by looking up the field at that position
+        if col_index > 0 && col_index <= table.def.fields.len() {
+            let field_idx = col_index - 1; // SQL position is 1-based
+            return sort_ids_by_field(ids, table, field_idx, &order_by.direction);
+        }
+        return Err(QueryExecutionError::FieldNotFound);
+    }
+
+    // Handle named field
+    let actual_field_name = if order_by.field.contains('.') {
+        order_by.field.split('.').last().unwrap()
+    } else {
+        &order_by.field
+    };
+
+    let field_idx = table
+        .def
+        .fields
+        .iter()
+        .position(|f| f.name == actual_field_name)
+        .ok_or(QueryExecutionError::FieldNotFound)?;
+
+    sort_ids_by_field(ids, table, field_idx, &order_by.direction)
+}
+
+/// Sort IDs by a specific field index (zero-copy).
+fn sort_ids_by_field(
+    ids: &mut Vec<usize>,
+    table: &MemoryTable,
+    field_idx: usize,
+    direction: &crate::sql::OrderDirection,
+) -> Result<(), QueryExecutionError> {
+    let field = table
+        .def
+        .fields
+        .get(field_idx)
+        .ok_or(QueryExecutionError::FieldNotFound)?;
+    let field_type = field.data_type;
+    let offset = field.offset;
+    let size = field.size;
+
+    ids.sort_by(|&a, &b| {
+        let a_slice = table
+            .data
+            .get(a * table.record_size + offset..)
+            .and_then(|s| s.get(..size))
+            .unwrap_or(&[]);
+        let b_slice = table
+            .data
+            .get(b * table.record_size + offset..)
+            .and_then(|s| s.get(..size))
+            .unwrap_or(&[]);
+        let cmp = compare_raw_bytes(a_slice, b_slice, field_type);
+        match direction {
+            crate::sql::OrderDirection::Ascending => cmp,
+            crate::sql::OrderDirection::Descending => cmp.reverse(),
+        }
+    });
+    Ok(())
+}
+
+/// Compare two raw byte slices as typed values.
+fn compare_raw_bytes(a: &[u8], b: &[u8], data_type: DataType) -> core::cmp::Ordering {
+    if a.is_empty() || b.is_empty() {
+        return core::cmp::Ordering::Equal;
+    }
+    match data_type {
+        DataType::UInt8 => a[0].cmp(&b[0]),
+        DataType::UInt16 => {
+            let av = u16::from_le_bytes(
+                [a.get(0).copied().unwrap_or(0), a.get(1).copied().unwrap_or(0)],
+            );
+            let bv = u16::from_le_bytes(
+                [b.get(0).copied().unwrap_or(0), b.get(1).copied().unwrap_or(0)],
+            );
+            av.cmp(&bv)
+        }
+        DataType::UInt32 => {
+            let av = u32::from_le_bytes([
+                a.get(0).copied().unwrap_or(0),
+                a.get(1).copied().unwrap_or(0),
+                a.get(2).copied().unwrap_or(0),
+                a.get(3).copied().unwrap_or(0),
+            ]);
+            let bv = u32::from_le_bytes([
+                b.get(0).copied().unwrap_or(0),
+                b.get(1).copied().unwrap_or(0),
+                b.get(2).copied().unwrap_or(0),
+                b.get(3).copied().unwrap_or(0),
+            ]);
+            av.cmp(&bv)
+        }
+        DataType::UInt64 => {
+            let av = u64::from_le_bytes([
+                a.get(0).copied().unwrap_or(0),
+                a.get(1).copied().unwrap_or(0),
+                a.get(2).copied().unwrap_or(0),
+                a.get(3).copied().unwrap_or(0),
+                a.get(4).copied().unwrap_or(0),
+                a.get(5).copied().unwrap_or(0),
+                a.get(6).copied().unwrap_or(0),
+                a.get(7).copied().unwrap_or(0),
+            ]);
+            let bv = u64::from_le_bytes([
+                b.get(0).copied().unwrap_or(0),
+                b.get(1).copied().unwrap_or(0),
+                b.get(2).copied().unwrap_or(0),
+                b.get(3).copied().unwrap_or(0),
+                b.get(4).copied().unwrap_or(0),
+                b.get(5).copied().unwrap_or(0),
+                b.get(6).copied().unwrap_or(0),
+                b.get(7).copied().unwrap_or(0),
+            ]);
+            av.cmp(&bv)
+        }
+        DataType::Int8 => (a[0] as i8).cmp(&(b[0] as i8)),
+        DataType::Int16 => {
+            let av = i16::from_le_bytes(
+                [a.get(0).copied().unwrap_or(0), a.get(1).copied().unwrap_or(0)],
+            );
+            let bv = i16::from_le_bytes(
+                [b.get(0).copied().unwrap_or(0), b.get(1).copied().unwrap_or(0)],
+            );
+            av.cmp(&bv)
+        }
+        DataType::Int32 => {
+            let av = i32::from_le_bytes([
+                a.get(0).copied().unwrap_or(0),
+                a.get(1).copied().unwrap_or(0),
+                a.get(2).copied().unwrap_or(0),
+                a.get(3).copied().unwrap_or(0),
+            ]);
+            let bv = i32::from_le_bytes([
+                b.get(0).copied().unwrap_or(0),
+                b.get(1).copied().unwrap_or(0),
+                b.get(2).copied().unwrap_or(0),
+                b.get(3).copied().unwrap_or(0),
+            ]);
+            av.cmp(&bv)
+        }
+        DataType::Int64 => {
+            let av = i64::from_le_bytes([
+                a.get(0).copied().unwrap_or(0),
+                a.get(1).copied().unwrap_or(0),
+                a.get(2).copied().unwrap_or(0),
+                a.get(3).copied().unwrap_or(0),
+                a.get(4).copied().unwrap_or(0),
+                a.get(5).copied().unwrap_or(0),
+                a.get(6).copied().unwrap_or(0),
+                a.get(7).copied().unwrap_or(0),
+            ]);
+            let bv = i64::from_le_bytes([
+                b.get(0).copied().unwrap_or(0),
+                b.get(1).copied().unwrap_or(0),
+                b.get(2).copied().unwrap_or(0),
+                b.get(3).copied().unwrap_or(0),
+                b.get(4).copied().unwrap_or(0),
+                b.get(5).copied().unwrap_or(0),
+                b.get(6).copied().unwrap_or(0),
+                b.get(7).copied().unwrap_or(0),
+            ]);
+            av.cmp(&bv)
+        }
+        DataType::Float32 => {
+            let av = f32::from_le_bytes([
+                a.get(0).copied().unwrap_or(0),
+                a.get(1).copied().unwrap_or(0),
+                a.get(2).copied().unwrap_or(0),
+                a.get(3).copied().unwrap_or(0),
+            ]);
+            let bv = f32::from_le_bytes([
+                b.get(0).copied().unwrap_or(0),
+                b.get(1).copied().unwrap_or(0),
+                b.get(2).copied().unwrap_or(0),
+                b.get(3).copied().unwrap_or(0),
+            ]);
+            av.partial_cmp(&bv).unwrap_or(core::cmp::Ordering::Equal)
+        }
+        DataType::Float64 => {
+            let av = f64::from_le_bytes([
+                a.get(0).copied().unwrap_or(0),
+                a.get(1).copied().unwrap_or(0),
+                a.get(2).copied().unwrap_or(0),
+                a.get(3).copied().unwrap_or(0),
+                a.get(4).copied().unwrap_or(0),
+                a.get(5).copied().unwrap_or(0),
+                a.get(6).copied().unwrap_or(0),
+                a.get(7).copied().unwrap_or(0),
+            ]);
+            let bv = f64::from_le_bytes([
+                b.get(0).copied().unwrap_or(0),
+                b.get(1).copied().unwrap_or(0),
+                b.get(2).copied().unwrap_or(0),
+                b.get(3).copied().unwrap_or(0),
+                b.get(4).copied().unwrap_or(0),
+                b.get(5).copied().unwrap_or(0),
+                b.get(6).copied().unwrap_or(0),
+                b.get(7).copied().unwrap_or(0),
+            ]);
+            av.partial_cmp(&bv).unwrap_or(core::cmp::Ordering::Equal)
+        }
+        DataType::Bool => a[0].cmp(&b[0]),
+        DataType::String => a.cmp(b),
+        DataType::Timestamp | DataType::TimestampTZ => {
+            let av = i64::from_le_bytes([
+                a.get(0).copied().unwrap_or(0),
+                a.get(1).copied().unwrap_or(0),
+                a.get(2).copied().unwrap_or(0),
+                a.get(3).copied().unwrap_or(0),
+                a.get(4).copied().unwrap_or(0),
+                a.get(5).copied().unwrap_or(0),
+                a.get(6).copied().unwrap_or(0),
+                a.get(7).copied().unwrap_or(0),
+            ]);
+            let bv = i64::from_le_bytes([
+                b.get(0).copied().unwrap_or(0),
+                b.get(1).copied().unwrap_or(0),
+                b.get(2).copied().unwrap_or(0),
+                b.get(3).copied().unwrap_or(0),
+                b.get(4).copied().unwrap_or(0),
+                b.get(5).copied().unwrap_or(0),
+                b.get(6).copied().unwrap_or(0),
+                b.get(7).copied().unwrap_or(0),
+            ]);
+            av.cmp(&bv)
+        }
+        DataType::Interval => {
+            let av = i64::from_le_bytes([
+                a.get(0).copied().unwrap_or(0),
+                a.get(1).copied().unwrap_or(0),
+                a.get(2).copied().unwrap_or(0),
+                a.get(3).copied().unwrap_or(0),
+                a.get(4).copied().unwrap_or(0),
+                a.get(5).copied().unwrap_or(0),
+                a.get(6).copied().unwrap_or(0),
+                a.get(7).copied().unwrap_or(0),
+            ]);
+            let bv = i64::from_le_bytes([
+                b.get(0).copied().unwrap_or(0),
+                b.get(1).copied().unwrap_or(0),
+                b.get(2).copied().unwrap_or(0),
+                b.get(3).copied().unwrap_or(0),
+                b.get(4).copied().unwrap_or(0),
+                b.get(5).copied().unwrap_or(0),
+                b.get(6).copied().unwrap_or(0),
+                b.get(7).copied().unwrap_or(0),
+            ]);
+            av.cmp(&bv)
+        }
+    }
+}
+
+/// Evaluate an expression using `RawRecordView` (zero-copy field access).
+fn evaluate_expression_raw<'a>(
+    view: &crate::record_view::RawRecordView<'a>,
+    table: &MemoryTable,
+    expr: &Expression,
+) -> Result<TypedValue, QueryExecutionError> {
+    match expr {
+        Expression::Field { name: field_name, .. } => {
+            if field_name == "*" {
+                // For COUNT(*), return a placeholder
+                return Ok(TypedValue {
+                    value_type: DataType::UInt64,
+                    value: Value::U64(1),
+                });
+            }
+            // Handle table.field aliases
+            let actual_field_name = if field_name.contains('.') {
+                field_name.split('.').last().unwrap()
+            } else {
+                field_name
+            };
+            let field_idx = table
+                .def
+                .fields
+                .iter()
+                .position(|f| f.name == actual_field_name)
+                .ok_or(QueryExecutionError::FieldNotFound)?;
+            let field = &table.def.fields[field_idx];
+            let value = view.to_typed_value(field_idx)
+                .map_err(|_| QueryExecutionError::TypeMismatch)?;
+            Ok(TypedValue {
+                value_type: field.data_type,
+                value,
+            })
+        }
+        Expression::FunctionCall { name, args, .. } => {
+            let mut arg_values = Vec::with_capacity(args.len());
+            for arg in args {
+                arg_values.push(evaluate_expression_raw(view, table, arg)?);
+            }
+            execute_function_call(name, &arg_values)
+        }
+        Expression::Constant { value: constant, .. } => convert_constant_to_typed_value(constant),
+        Expression::BinaryOp { left, op, right, .. } => {
+            let left_val = evaluate_expression_raw(view, table, left)?;
+            let right_val = evaluate_expression_raw(view, table, right)?;
+            evaluate_binary_op(left_val, *op, right_val)
+        }
+    }
+}
+
+/// Convert a SQL parser `Value` to a `TypedValue`.
+fn convert_constant_to_typed_value(
+    constant: &crate::sql::Value,
+) -> Result<TypedValue, QueryExecutionError> {
+    use crate::sql::Value as SqlValue;
+    let (value_type, value) = match constant {
+        SqlValue::Integer(i) => (DataType::Int64, Value::I64(*i)),
+        SqlValue::Float(f) => (DataType::Float64, Value::Float64(*f)),
+        SqlValue::String(s) => {
+            let mut buf = [0; MAX_STRING_LEN];
+            let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+            buf[..len].copy_from_slice(s.as_bytes());
+            (DataType::String, Value::String(buf))
+        }
+        SqlValue::Boolean(b) => (DataType::Bool, Value::Bool(*b)),
+        SqlValue::Null => (DataType::Int64, Value::I64(0)),
+        SqlValue::Identifier(s) => {
+            let mut buf = [0; MAX_STRING_LEN];
+            let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+            buf[..len].copy_from_slice(s.as_bytes());
+            (DataType::String, Value::String(buf))
+        }
+    };
+    Ok(TypedValue { value_type, value })
+}
+
+/// Helper: set a `TypedValue` at a specific byte offset in a buffer.
+fn set_value_at_offset(buf: &mut [u8], offset: usize, tv: &TypedValue) {
+    match tv.value_type {
+        DataType::UInt8 => {
+            if let Some(dst) = buf.get_mut(offset) {
+                *dst = tv.value.as_u8();
+            }
+        }
+        DataType::UInt16 => {
+            let bytes = tv.value.as_u16().to_le_bytes();
+            if let Some(dst) = buf.get_mut(offset..offset + 2) {
+                dst.copy_from_slice(&bytes);
+            }
+        }
+        DataType::UInt32 => {
+            let bytes = tv.value.as_u32().to_le_bytes();
+            if let Some(dst) = buf.get_mut(offset..offset + 4) {
+                dst.copy_from_slice(&bytes);
+            }
+        }
+        DataType::UInt64 => {
+            let bytes = tv.value.as_u64().to_le_bytes();
+            if let Some(dst) = buf.get_mut(offset..offset + 8) {
+                dst.copy_from_slice(&bytes);
+            }
+        }
+        DataType::Int8 => {
+            if let Some(dst) = buf.get_mut(offset) {
+                *dst = tv.value.as_i8() as u8;
+            }
+        }
+        DataType::Int16 => {
+            let bytes = tv.value.as_i16().to_le_bytes();
+            if let Some(dst) = buf.get_mut(offset..offset + 2) {
+                dst.copy_from_slice(&bytes);
+            }
+        }
+        DataType::Int32 => {
+            let bytes = tv.value.as_i32().to_le_bytes();
+            if let Some(dst) = buf.get_mut(offset..offset + 4) {
+                dst.copy_from_slice(&bytes);
+            }
+        }
+        DataType::Int64 => {
+            let bytes = tv.value.as_i64().to_le_bytes();
+            if let Some(dst) = buf.get_mut(offset..offset + 8) {
+                dst.copy_from_slice(&bytes);
+            }
+        }
+        DataType::Float32 => {
+            let bytes = tv.value.as_float32().to_le_bytes();
+            if let Some(dst) = buf.get_mut(offset..offset + 4) {
+                dst.copy_from_slice(&bytes);
+            }
+        }
+        DataType::Float64 => {
+            let bytes = tv.value.as_float64().to_le_bytes();
+            if let Some(dst) = buf.get_mut(offset..offset + 8) {
+                dst.copy_from_slice(&bytes);
+            }
+        }
+        DataType::Bool => {
+            if let Some(dst) = buf.get_mut(offset) {
+                *dst = if tv.value.as_bool() { 1 } else { 0 };
+            }
+        }
+        DataType::String => {
+            let src = tv.value.as_string();
+            let copy_size = core::cmp::min(src.len(), 64);
+            if let Some(dst) = buf.get_mut(offset..offset + copy_size) {
+                dst.copy_from_slice(&src[..copy_size]);
+            }
+        }
+        _ => {}
+    }
+}
+
+// ============================================================================
+// Zero-copy aggregation and GROUP BY
+// ============================================================================
+
+/// Read a numeric value from a `RawRecordView` as `f64`.
+fn read_numeric_from_view(
+    view: &crate::record_view::RawRecordView,
+    field_idx: usize,
+    data_type: DataType,
+) -> Result<f64, QueryExecutionError> {
+    match data_type {
+        DataType::UInt8 => Ok(view.read_u8(field_idx).map_err(|_| QueryExecutionError::TypeMismatch)? as f64),
+        DataType::UInt16 => Ok(view.read_u16(field_idx).map_err(|_| QueryExecutionError::TypeMismatch)? as f64),
+        DataType::UInt32 => Ok(view.read_u32(field_idx).map_err(|_| QueryExecutionError::TypeMismatch)? as f64),
+        DataType::UInt64 => Ok(view.read_u64(field_idx).map_err(|_| QueryExecutionError::TypeMismatch)? as f64),
+        DataType::Int8 => Ok(view.read_i8(field_idx).map_err(|_| QueryExecutionError::TypeMismatch)? as f64),
+        DataType::Int16 => Ok(view.read_i16(field_idx).map_err(|_| QueryExecutionError::TypeMismatch)? as f64),
+        DataType::Int32 => Ok(view.read_i32(field_idx).map_err(|_| QueryExecutionError::TypeMismatch)? as f64),
+        DataType::Int64 => Ok(view.read_i64(field_idx).map_err(|_| QueryExecutionError::TypeMismatch)? as f64),
+        DataType::Float32 => Ok(view.read_f32(field_idx).map_err(|_| QueryExecutionError::TypeMismatch)? as f64),
+        DataType::Float64 => Ok(view.read_f64(field_idx).map_err(|_| QueryExecutionError::TypeMismatch)?),
+        _ => Err(QueryExecutionError::TypeMismatch),
+    }
+}
+
+/// Process aggregate functions using `RawRecordView` (zero-copy accumulation).
+fn process_aggregate_raw(
+    table: &MemoryTable,
+    columns: &[Expression],
+    matching_ids: &[usize],
+    result_set: &mut CompactResultSet,
+) -> Result<(), QueryExecutionError> {
+    // Initialize aggregate values for each column expression
+    let mut agg_values: Vec<TypedValue> = Vec::with_capacity(columns.len());
+    let mut var_states: Vec<(f64, f64, usize)> = Vec::with_capacity(columns.len());
+
+    for expr in columns {
+        match expr {
+            Expression::FunctionCall { name, .. } => {
+                match name.to_uppercase().as_str() {
+                    "COUNT" => {
+                        agg_values.push(TypedValue {
+                            value_type: DataType::UInt64,
+                            value: Value::U64(0),
+                        });
+                        var_states.push((0.0, 0.0, 0));
+                    }
+                    "SUM" => {
+                        agg_values.push(TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value::Float64(0.0),
+                        });
+                        var_states.push((0.0, 0.0, 0));
+                    }
+                    "AVG" => {
+                        agg_values.push(TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value::Float64(0.0),
+                        });
+                        var_states.push((0.0, 0.0, 0));
+                    }
+                    "MIN" => {
+                        agg_values.push(TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value::Float64(f64::MAX),
+                        });
+                        var_states.push((0.0, 0.0, 0));
+                    }
+                    "MAX" => {
+                        agg_values.push(TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value::Float64(f64::MIN),
+                        });
+                        var_states.push((0.0, 0.0, 0));
+                    }
+                    _ => {
+                        agg_values.push(TypedValue {
+                            value_type: DataType::UInt64,
+                            value: Value::U64(0),
+                        });
+                        var_states.push((0.0, 0.0, 0));
+                    }
+                }
+            }
+            _ => {
+                // Non-aggregate expressions in aggregate query (shouldn't happen without GROUP BY)
+                return Err(QueryExecutionError::InternalError);
+            }
+        }
+    }
+
+    // Accumulate from each matching record
+    for &id in matching_ids {
+        let record_slice = table
+            .get_record_slice_checked(id)
+            .map_err(|_| QueryExecutionError::InternalError)?;
+        let view = crate::record_view::RawRecordView::new(record_slice, &table.def);
+
+        for (i, expr) in columns.iter().enumerate() {
+            if let Expression::FunctionCall { name, args, .. } = expr {
+                match name.to_uppercase().as_str() {
+                    "COUNT" => {
+                        if let Some(agg) = agg_values.get_mut(i) {
+                            if let Value::U64(count) = &mut agg.value {
+                                *count += 1;
+                            }
+                        }
+                    }
+                    "SUM" | "AVG" => {
+                        if let Some(arg) = args.first() {
+                            if let Expression::Field {
+                                name: field_name, ..
+                            } = arg
+                            {
+                                let actual_name = if let Some(dot) = field_name.find('.') {
+                                    &field_name[dot + 1..]
+                                } else {
+                                    field_name
+                                };
+                                if let Some(field_idx) = table
+                                    .def
+                                    .fields
+                                    .iter()
+                                    .position(|f| f.name == actual_name)
+                                {
+                                    let field_type = table.def.fields[field_idx].data_type;
+                                    if let Ok(val) =
+                                        read_numeric_from_view(&view, field_idx, field_type)
+                                    {
+                                        let (sum, _, count) = &mut var_states[i];
+                                        *sum += val;
+                                        *count += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "MIN" => {
+                        if let Some(arg) = args.first() {
+                            if let Expression::Field {
+                                name: field_name, ..
+                            } = arg
+                            {
+                                let actual_name = if let Some(dot) = field_name.find('.') {
+                                    &field_name[dot + 1..]
+                                } else {
+                                    field_name
+                                };
+                                if let Some(field_idx) = table
+                                    .def
+                                    .fields
+                                    .iter()
+                                    .position(|f| f.name == actual_name)
+                                {
+                                    let field_type = table.def.fields[field_idx].data_type;
+                                    if let Ok(val) =
+                                        read_numeric_from_view(&view, field_idx, field_type)
+                                    {
+                                        if let Some(agg) = agg_values.get_mut(i) {
+                                            let current = agg.value.as_float64();
+                                            if val < current {
+                                                agg.value = Value::Float64(val);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "MAX" => {
+                        if let Some(arg) = args.first() {
+                            if let Expression::Field {
+                                name: field_name, ..
+                            } = arg
+                            {
+                                let actual_name = if let Some(dot) = field_name.find('.') {
+                                    &field_name[dot + 1..]
+                                } else {
+                                    field_name
+                                };
+                                if let Some(field_idx) = table
+                                    .def
+                                    .fields
+                                    .iter()
+                                    .position(|f| f.name == actual_name)
+                                {
+                                    let field_type = table.def.fields[field_idx].data_type;
+                                    if let Ok(val) =
+                                        read_numeric_from_view(&view, field_idx, field_type)
+                                    {
+                                        if let Some(agg) = agg_values.get_mut(i) {
+                                            let current = agg.value.as_float64();
+                                            if val > current {
+                                                agg.value = Value::Float64(val);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // Finalize aggregate values (e.g., AVG = sum / count)
+    for (i, expr) in columns.iter().enumerate() {
+        if let Expression::FunctionCall { name, .. } = expr {
+            match name.to_uppercase().as_str() {
+                "AVG" => {
+                    let (sum, _, count) = var_states[i];
+                    if count > 0 {
+                        agg_values[i] = TypedValue {
+                            value_type: DataType::Float64,
+                            value: Value::Float64(sum / count as f64),
+                        };
+                    }
+                }
+                "SUM" => {
+                    let (sum, _, _) = var_states[i];
+                    agg_values[i] = TypedValue {
+                        value_type: DataType::Float64,
+                        value: Value::Float64(sum),
+                    };
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Write aggregate results to result_set
+    let mut buf = alloc::vec![0u8; result_set.record_size];
+    for (i, tv) in agg_values.iter().enumerate() {
+        if let Some(col) = result_set.columns.get(i) {
+            set_value_at_offset(&mut buf, col.offset, tv);
+        }
+    }
+    let _ = result_set.add_record(&buf);
+
+    Ok(())
+}
+
+/// Process GROUP BY queries using `RawRecordView`.
+fn process_group_by_raw(
+    table: &MemoryTable,
+    columns: &[Expression],
+    matching_ids: &[usize],
+    group_by: &GroupByClause,
+    result_set: &mut CompactResultSet,
+) -> Result<(), QueryExecutionError> {
+    // Use the first group-by expression for grouping
+    let group_expr = group_by
+        .expressions
+        .first()
+        .ok_or(QueryExecutionError::InternalError)?;
+
+    // Resolve group-by field
+    let group_field_name = match group_expr {
+        Expression::Field { name, .. } => {
+            if let Some(dot) = name.find('.') {
+                &name[dot + 1..]
+            } else {
+                name
+            }
+        }
+        _ => return Err(QueryExecutionError::InternalError),
+    };
+
+    let group_field_idx = table
+        .def
+        .fields
+        .iter()
+        .position(|f| f.name == group_field_name)
+        .ok_or(QueryExecutionError::FieldNotFound)?;
+    let group_field = &table.def.fields[group_field_idx];
+
+    // Group matching_ids by their group key (raw bytes)
+    let mut id_group_key: Vec<(usize, Vec<u8>)> = Vec::with_capacity(matching_ids.len());
+    for &id in matching_ids {
+        if let Ok(slice) = table.get_record_slice_checked(id) {
+            if let Some(key_slice) = slice.get(
+                group_field.offset..group_field.offset + group_field.size,
+            ) {
+                id_group_key.push((id, key_slice.to_vec()));
+            }
+        }
+    }
+    // Sort by group key
+    id_group_key.sort_by(|a, b| a.1.cmp(&b.1));
+
+    // Scan sorted groups and aggregate
+    let mut i = 0;
+    while i < id_group_key.len() {
+        let current_key = &id_group_key[i].1;
+        let mut group_ids = Vec::new();
+        while i < id_group_key.len() && id_group_key[i].1 == *current_key {
+            group_ids.push(id_group_key[i].0);
+            i += 1;
+        }
+        // Aggregate values for this group
+        let mut group_result = CompactResultSet::new(result_set.columns.clone(), result_set.record_size);
+        process_aggregate_raw(table, columns, &group_ids, &mut group_result)?;
+
+        // Write group key + aggregate values to result_set
+        if group_result.record_count > 0 {
+            // Copy the aggregate row from group_result into our result_set
+            if let Ok(row_slice) = group_result.get_row_slice(0) {
+                let _ = result_set.add_record(row_slice);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// 辅助函数：添加连接行到结果集
@@ -4894,6 +5895,296 @@ fn compare_strings(f: &str, c: &str, operator: &ComparisonOperator) -> bool {
         ComparisonOperator::GreaterThanOrEqual => f >= c,
         ComparisonOperator::LessThan => f < c,
         ComparisonOperator::LessThanOrEqual => f <= c,
+        _ => false,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Zero-copy condition evaluation on RawRecordView
+// ---------------------------------------------------------------------------
+
+/// Evaluate a WHERE condition directly on raw record bytes (zero-copy).
+///
+/// Returns `true` if the record matches the condition.  No `TypedValue` or
+/// `Value` allocation occurs during evaluation.
+fn evaluate_condition_raw(
+    record: &crate::record_view::RawRecordView,
+    condition: &Condition,
+    table_def: &TableDef,
+) -> bool {
+    match condition {
+        Condition::Comparison(comp) => evaluate_comparison_raw(record, comp, table_def),
+        Condition::Between(between) => evaluate_between_raw(record, between, table_def),
+        Condition::And(left, right) => {
+            evaluate_condition_raw(record, left, table_def)
+                && evaluate_condition_raw(record, right, table_def)
+        }
+        Condition::Or(left, right) => {
+            evaluate_condition_raw(record, left, table_def)
+                || evaluate_condition_raw(record, right, table_def)
+        }
+    }
+}
+
+/// Evaluate a comparison condition on raw bytes.
+fn evaluate_comparison_raw(
+    record: &crate::record_view::RawRecordView,
+    comp: &ComparisonCondition,
+    table_def: &TableDef,
+) -> bool {
+    let field_idx = match resolve_field_index_for_condition(&comp.field, table_def) {
+        Some(idx) => idx,
+        None => return false,
+    };
+    let field_type = match table_def.fields.get(field_idx) {
+        Some(f) => f.data_type,
+        None => return false,
+    };
+    match record.read_raw(field_idx) {
+        Ok(raw_bytes) => {
+            compare_raw_with_condition(raw_bytes, field_type, &comp.operator, &comp.value)
+        }
+        Err(_) => false,
+    }
+}
+
+/// Evaluate a BETWEEN condition on raw bytes.
+fn evaluate_between_raw(
+    record: &crate::record_view::RawRecordView,
+    between: &BetweenCondition,
+    table_def: &TableDef,
+) -> bool {
+    let field_idx = match resolve_field_index_for_condition(&between.field, table_def) {
+        Some(idx) => idx,
+        None => return false,
+    };
+    let field_type = match table_def.fields.get(field_idx) {
+        Some(f) => f.data_type,
+        None => return false,
+    };
+    match record.read_raw(field_idx) {
+        Ok(raw_bytes) => {
+            let ge = compare_raw_with_condition(
+                raw_bytes,
+                field_type,
+                &ComparisonOperator::GreaterThanOrEqual,
+                &between.min_value,
+            );
+            let le = compare_raw_with_condition(
+                raw_bytes,
+                field_type,
+                &ComparisonOperator::LessThanOrEqual,
+                &between.max_value,
+            );
+            ge && le
+        }
+        Err(_) => false,
+    }
+}
+
+/// Resolve a field name (handling `table.field` aliases) to a field index.
+fn resolve_field_index_for_condition(field_name: &str, table_def: &TableDef) -> Option<usize> {
+    let actual_name = if let Some(dot_pos) = field_name.find('.') {
+        &field_name[dot_pos + 1..]
+    } else {
+        field_name
+    };
+    table_def.fields.iter().position(|f| f.name == actual_name)
+}
+
+/// Compare raw field bytes with a condition value (no `TypedValue` allocation).
+fn compare_raw_with_condition(
+    raw_bytes: &[u8],
+    field_type: DataType,
+    operator: &ComparisonOperator,
+    condition_value: &crate::sql::Value,
+) -> bool {
+    match field_type {
+        DataType::UInt8 => {
+            if raw_bytes.is_empty() {
+                return false;
+            }
+            let f_val = raw_bytes[0];
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => compare_numbers(f_val, *c_int as u8, operator),
+                _ => false,
+            }
+        }
+        DataType::UInt16 => {
+            if raw_bytes.len() < 2 {
+                return false;
+            }
+            let f_val = u16::from_le_bytes([raw_bytes[0], raw_bytes[1]]);
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => compare_numbers(f_val, *c_int as u16, operator),
+                _ => false,
+            }
+        }
+        DataType::UInt32 => {
+            if raw_bytes.len() < 4 {
+                return false;
+            }
+            let f_val = u32::from_le_bytes([
+                raw_bytes[0], raw_bytes[1], raw_bytes[2], raw_bytes[3],
+            ]);
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => compare_numbers(f_val, *c_int as u32, operator),
+                _ => false,
+            }
+        }
+        DataType::UInt64 => {
+            if raw_bytes.len() < 8 {
+                return false;
+            }
+            let f_val = u64::from_le_bytes([
+                raw_bytes[0], raw_bytes[1], raw_bytes[2], raw_bytes[3],
+                raw_bytes[4], raw_bytes[5], raw_bytes[6], raw_bytes[7],
+            ]);
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => compare_numbers(f_val, *c_int as u64, operator),
+                _ => false,
+            }
+        }
+        DataType::Int8 => {
+            if raw_bytes.is_empty() {
+                return false;
+            }
+            let f_val = raw_bytes[0] as i8;
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => compare_numbers(f_val, *c_int as i8, operator),
+                _ => false,
+            }
+        }
+        DataType::Int16 => {
+            if raw_bytes.len() < 2 {
+                return false;
+            }
+            let f_val = i16::from_le_bytes([raw_bytes[0], raw_bytes[1]]);
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => compare_numbers(f_val, *c_int as i16, operator),
+                _ => false,
+            }
+        }
+        DataType::Int32 => {
+            if raw_bytes.len() < 4 {
+                return false;
+            }
+            let f_val = i32::from_le_bytes([
+                raw_bytes[0], raw_bytes[1], raw_bytes[2], raw_bytes[3],
+            ]);
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => compare_numbers(f_val, *c_int as i32, operator),
+                _ => false,
+            }
+        }
+        DataType::Int64 => {
+            if raw_bytes.len() < 8 {
+                return false;
+            }
+            let f_val = i64::from_le_bytes([
+                raw_bytes[0], raw_bytes[1], raw_bytes[2], raw_bytes[3],
+                raw_bytes[4], raw_bytes[5], raw_bytes[6], raw_bytes[7],
+            ]);
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => compare_numbers(f_val, *c_int, operator),
+                _ => false,
+            }
+        }
+        DataType::Float32 => {
+            if raw_bytes.len() < 4 {
+                return false;
+            }
+            let f_val =
+                f32::from_le_bytes([raw_bytes[0], raw_bytes[1], raw_bytes[2], raw_bytes[3]]);
+            match condition_value {
+                crate::sql::Value::Float(c_float) => {
+                    compare_numbers(f_val, *c_float as f32, operator)
+                }
+                crate::sql::Value::Integer(c_int) => {
+                    compare_numbers(f_val, *c_int as f32, operator)
+                }
+                _ => false,
+            }
+        }
+        DataType::Float64 => {
+            if raw_bytes.len() < 8 {
+                return false;
+            }
+            let f_val = f64::from_le_bytes([
+                raw_bytes[0], raw_bytes[1], raw_bytes[2], raw_bytes[3],
+                raw_bytes[4], raw_bytes[5], raw_bytes[6], raw_bytes[7],
+            ]);
+            match condition_value {
+                crate::sql::Value::Float(c_float) => {
+                    compare_numbers(f_val, *c_float as f64, operator)
+                }
+                crate::sql::Value::Integer(c_int) => {
+                    compare_numbers(f_val, *c_int as f64, operator)
+                }
+                _ => false,
+            }
+        }
+        DataType::Bool => {
+            if raw_bytes.is_empty() {
+                return false;
+            }
+            let f_val = raw_bytes[0] != 0;
+            match condition_value {
+                crate::sql::Value::Boolean(c_bool) => compare_numbers(f_val, *c_bool, operator),
+                _ => false,
+            }
+        }
+        DataType::String => {
+            let trimmed_end = raw_bytes
+                .iter()
+                .position(|&b| b == 0)
+                .unwrap_or(raw_bytes.len());
+            let f_str = &raw_bytes[..trimmed_end];
+            match condition_value {
+                crate::sql::Value::String(c_str) => {
+                    compare_strings_raw(f_str, c_str.as_bytes(), operator)
+                }
+                _ => false,
+            }
+        }
+        DataType::Timestamp | DataType::TimestampTZ => {
+            if raw_bytes.len() < 8 {
+                return false;
+            }
+            let f_val = i64::from_le_bytes([
+                raw_bytes[0], raw_bytes[1], raw_bytes[2], raw_bytes[3],
+                raw_bytes[4], raw_bytes[5], raw_bytes[6], raw_bytes[7],
+            ]);
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => compare_numbers(f_val, *c_int, operator),
+                _ => false,
+            }
+        }
+        DataType::Interval => {
+            if raw_bytes.len() < 8 {
+                return false;
+            }
+            let f_val = i64::from_le_bytes([
+                raw_bytes[0], raw_bytes[1], raw_bytes[2], raw_bytes[3],
+                raw_bytes[4], raw_bytes[5], raw_bytes[6], raw_bytes[7],
+            ]);
+            match condition_value {
+                crate::sql::Value::Integer(c_int) => compare_numbers(f_val, *c_int, operator),
+                _ => false,
+            }
+        }
+    }
+}
+
+/// Compare two raw byte slices as strings (zero-copy, no allocation).
+fn compare_strings_raw(a: &[u8], b: &[u8], operator: &ComparisonOperator) -> bool {
+    match operator {
+        ComparisonOperator::Equal => a == b,
+        ComparisonOperator::NotEqual => a != b,
+        ComparisonOperator::LessThan => a < b,
+        ComparisonOperator::LessThanOrEqual => a <= b,
+        ComparisonOperator::GreaterThan => a > b,
+        ComparisonOperator::GreaterThanOrEqual => a >= b,
         _ => false,
     }
 }
