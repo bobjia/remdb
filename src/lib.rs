@@ -520,7 +520,7 @@ impl RemDb {
             unsafe {
                 // 先检查平台是否能正常打开文件且返回有效的句柄
                 match crate::platform::file_open(wal_file_path.as_str(), crate::platform::FileMode::ReadWrite) {
-                    Ok(handle) if !handle.is_null() => {
+                    Ok(handle) if handle != 0 => {
                         // 文件打开成功且句柄有效，关闭并继续初始化日志管理器
                         let _ = crate::platform::file_close(handle);
                         let log_manager = LogManager::new(self.config)?;
@@ -559,7 +559,7 @@ impl RemDb {
         
         // 写入魔数
         let magic = Self::SNAPSHOT_MAGIC.to_le_bytes();
-        let written = crate::platform::file_write(handle, magic.as_ptr(), magic.len())
+        let written = crate::platform::file_write(handle, &magic)
             .map_err(|_| RemDbError::FileIoError)?;
         if written != magic.len() {
             return Err(RemDbError::FileIoError);
@@ -567,7 +567,7 @@ impl RemDb {
         
         // 写入版本号
         let version = Self::SNAPSHOT_VERSION.to_le_bytes();
-        let written = crate::platform::file_write(handle, version.as_ptr(), version.len())
+        let written = crate::platform::file_write(handle, &version)
             .map_err(|_| RemDbError::FileIoError)?;
         if written != version.len() {
             return Err(RemDbError::FileIoError);
@@ -575,7 +575,7 @@ impl RemDb {
         
         // 写入快照类型：0=完整快照
         let snapshot_type = 0u8;
-        let written = crate::platform::file_write(handle, &snapshot_type as *const u8, 1)
+        let written = crate::platform::file_write(handle, core::slice::from_ref(&snapshot_type))
             .map_err(|_| RemDbError::FileIoError)?;
         if written != 1 {
             return Err(RemDbError::FileIoError);
@@ -583,7 +583,7 @@ impl RemDb {
         
         // 写入全局快照版本号
         let version_bytes = self.snapshot_version.to_le_bytes();
-        let written = crate::platform::file_write(handle, version_bytes.as_ptr(), version_bytes.len())
+        let written = crate::platform::file_write(handle, &version_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         if written != version_bytes.len() {
             return Err(RemDbError::FileIoError);
@@ -592,7 +592,7 @@ impl RemDb {
         // 写入表数量
         let table_count = self.config.tables.len() as u32;
         let table_count_bytes = table_count.to_le_bytes();
-        let written = crate::platform::file_write(handle, table_count_bytes.as_ptr(), table_count_bytes.len())
+        let written = crate::platform::file_write(handle, &table_count_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         if written != table_count_bytes.len() {
             return Err(RemDbError::FileIoError);
@@ -607,7 +607,7 @@ impl RemDb {
                 // 写入表ID（4字节）
                 let table_id_u32 = table_id as u32;
                 let table_id_bytes = table_id_u32.to_le_bytes();
-                let written = crate::platform::file_write(handle, table_id_bytes.as_ptr(), table_id_bytes.len())
+                let written = crate::platform::file_write(handle, &table_id_bytes)
                     .map_err(|_| RemDbError::FileIoError)?;
                 if written != table_id_bytes.len() {
                     return Err(RemDbError::FileIoError);
@@ -616,7 +616,7 @@ impl RemDb {
                 // 写入已使用的记录数（4字节）
                 let used_count_u32 = table.record_count() as u32;
                 let used_count_bytes = used_count_u32.to_le_bytes();
-                let written = crate::platform::file_write(handle, used_count_bytes.as_ptr(), used_count_bytes.len())
+                let written = crate::platform::file_write(handle, &used_count_bytes)
                     .map_err(|_| RemDbError::FileIoError)?;
                 if written != used_count_bytes.len() {
                     return Err(RemDbError::FileIoError);
@@ -635,7 +635,7 @@ impl RemDb {
                         // 写入记录索引（4字节）
                         let index_u32 = i as u32;
                         let index_bytes = index_u32.to_le_bytes();
-                        let written = crate::platform::file_write(handle, index_bytes.as_ptr(), index_bytes.len())
+                        let written = crate::platform::file_write(handle, &index_bytes)
                             .map_err(|_| RemDbError::FileIoError)?;
                         if written != index_bytes.len() {
                             return Err(RemDbError::FileIoError);
@@ -643,7 +643,7 @@ impl RemDb {
                         
                         // 写入记录数据
                         let record_slice = table.get_record_slice(i);
-                        let written = crate::platform::file_write(handle, record_slice.as_ptr(), record_slice.len())
+                        let written = crate::platform::file_write(handle, record_slice)
                             .map_err(|_| RemDbError::FileIoError)?;
                         if written != record_size {
                             return Err(RemDbError::FileIoError);
@@ -670,7 +670,7 @@ impl RemDb {
         
         // 读取魔数
         let mut magic_bytes = [0u8; 4];
-        let read = crate::platform::file_read(handle, magic_bytes.as_mut_ptr(), magic_bytes.len())
+        let read = crate::platform::file_read(handle, &mut magic_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         if read != magic_bytes.len() {
             return Err(RemDbError::FileIoError);
@@ -682,7 +682,7 @@ impl RemDb {
         
         // 读取版本号
         let mut version_bytes = [0u8; 4];
-        let read = crate::platform::file_read(handle, version_bytes.as_mut_ptr(), version_bytes.len())
+        let read = crate::platform::file_read(handle, &mut version_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         if read != version_bytes.len() {
             return Err(RemDbError::FileIoError);
@@ -694,7 +694,7 @@ impl RemDb {
         
         // 读取快照类型
         let mut snapshot_type_bytes = [0u8; 1];
-        let read = crate::platform::file_read(handle, snapshot_type_bytes.as_mut_ptr(), snapshot_type_bytes.len())
+        let read = crate::platform::file_read(handle, &mut snapshot_type_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         if read != snapshot_type_bytes.len() {
             return Err(RemDbError::FileIoError);
@@ -703,7 +703,7 @@ impl RemDb {
         
         // 读取基础版本号
         let mut base_version_bytes = [0u8; 4];
-        let read = crate::platform::file_read(handle, base_version_bytes.as_mut_ptr(), base_version_bytes.len())
+        let read = crate::platform::file_read(handle, &mut base_version_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         if read != base_version_bytes.len() {
             return Err(RemDbError::FileIoError);
@@ -712,7 +712,7 @@ impl RemDb {
         
         // 读取表数量
         let mut table_count_bytes = [0u8; 4];
-        let read = crate::platform::file_read(handle, table_count_bytes.as_mut_ptr(), table_count_bytes.len())
+        let read = crate::platform::file_read(handle, &mut table_count_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         if read != table_count_bytes.len() {
             return Err(RemDbError::FileIoError);
@@ -728,7 +728,7 @@ impl RemDb {
         for _ in 0..table_count {
             // 读取表ID（4字节）
             let mut table_id_bytes = [0u8; 4];
-            let read = crate::platform::file_read(handle, table_id_bytes.as_mut_ptr(), table_id_bytes.len())
+            let read = crate::platform::file_read(handle, &mut table_id_bytes)
                 .map_err(|_| RemDbError::FileIoError)?;
             if read != table_id_bytes.len() {
                 return Err(RemDbError::FileIoError);
@@ -748,7 +748,7 @@ impl RemDb {
             
             // 读取记录数
             let mut record_count_bytes = [0u8; 4];
-            let read = crate::platform::file_read(handle, record_count_bytes.as_mut_ptr(), record_count_bytes.len())
+            let read = crate::platform::file_read(handle, &mut record_count_bytes)
                 .map_err(|_| RemDbError::FileIoError)?;
             if read != record_count_bytes.len() {
                 return Err(RemDbError::FileIoError);
@@ -780,7 +780,7 @@ impl RemDb {
             for _ in 0..record_count {
                 // 读取记录索引（4字节）
                 let mut index_bytes = [0u8; 4];
-                let read = crate::platform::file_read(handle, index_bytes.as_mut_ptr(), index_bytes.len())
+                let read = crate::platform::file_read(handle, &mut index_bytes)
                     .map_err(|_| RemDbError::FileIoError)?;
                 if read != index_bytes.len() {
                     return Err(RemDbError::FileIoError);
@@ -794,7 +794,7 @@ impl RemDb {
                 
                 // 读取记录数据
                 let record_slice = table.get_record_slice_mut(i);
-                let read = crate::platform::file_read(handle, record_slice.as_mut_ptr(), record_size)
+                let read = crate::platform::file_read(handle, &mut record_slice[..record_size])
                     .map_err(|_| RemDbError::FileIoError)?;
                 if read != record_size {
                     return Err(RemDbError::FileIoError);
@@ -2020,7 +2020,7 @@ impl RemDb {
         
         // 写入魔数
         let magic = Self::SNAPSHOT_MAGIC.to_le_bytes();
-        let written = crate::platform::file_write(handle, magic.as_ptr(), magic.len())
+        let written = crate::platform::file_write(handle, &magic)
             .map_err(|_| RemDbError::FileIoError)?;
         if written != magic.len() {
             return Err(RemDbError::FileIoError);
@@ -2028,7 +2028,7 @@ impl RemDb {
         
         // 写入版本号
         let version = Self::SNAPSHOT_VERSION.to_le_bytes();
-        let written = crate::platform::file_write(handle, version.as_ptr(), version.len())
+        let written = crate::platform::file_write(handle, &version)
             .map_err(|_| RemDbError::FileIoError)?;
         if written != version.len() {
             return Err(RemDbError::FileIoError);
@@ -2036,7 +2036,7 @@ impl RemDb {
         
         // 写入快照类型：1=增量快照
         let snapshot_type = 1u8;
-        let written = crate::platform::file_write(handle, &snapshot_type as *const u8, 1)
+        let written = crate::platform::file_write(handle, core::slice::from_ref(&snapshot_type))
             .map_err(|_| RemDbError::FileIoError)?;
         if written != 1 {
             return Err(RemDbError::FileIoError);
@@ -2044,7 +2044,7 @@ impl RemDb {
         
         // 写入基础版本号（当前全局快照版本号）
         let base_version_bytes = self.snapshot_version.to_le_bytes();
-        let written = crate::platform::file_write(handle, base_version_bytes.as_ptr(), base_version_bytes.len())
+        let written = crate::platform::file_write(handle, &base_version_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         if written != base_version_bytes.len() {
             return Err(RemDbError::FileIoError);
@@ -2053,7 +2053,7 @@ impl RemDb {
         // 写入表数量
         let table_count = self.config.tables.len() as u32;
         let table_count_bytes = table_count.to_le_bytes();
-        let written = crate::platform::file_write(handle, table_count_bytes.as_ptr(), table_count_bytes.len())
+        let written = crate::platform::file_write(handle, &table_count_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         if written != table_count_bytes.len() {
             return Err(RemDbError::FileIoError);
@@ -2080,7 +2080,7 @@ impl RemDb {
                 // 写入表ID（4字节）
                 let table_id_u32 = table_id as u32;
                 let table_id_bytes = table_id_u32.to_le_bytes();
-                let written = crate::platform::file_write(handle, table_id_bytes.as_ptr(), table_id_bytes.len())
+                let written = crate::platform::file_write(handle, &table_id_bytes)
                     .map_err(|_| RemDbError::FileIoError)?;
                 if written != table_id_bytes.len() {
                     return Err(RemDbError::FileIoError);
@@ -2089,7 +2089,7 @@ impl RemDb {
                 // 写入变化的记录数（4字节）
                 let changed_count_u32 = changed_records as u32;
                 let changed_count_bytes = changed_count_u32.to_le_bytes();
-                let written = crate::platform::file_write(handle, changed_count_bytes.as_ptr(), changed_count_bytes.len())
+                let written = crate::platform::file_write(handle, &changed_count_bytes)
                     .map_err(|_| RemDbError::FileIoError)?;
                 if written != changed_count_bytes.len() {
                     return Err(RemDbError::FileIoError);
@@ -2106,7 +2106,7 @@ impl RemDb {
                     // 写入记录索引（4字节）
                     let index_u32 = i as u32;
                     let index_bytes = index_u32.to_le_bytes();
-                    let written = crate::platform::file_write(handle, index_bytes.as_ptr(), index_bytes.len())
+                    let written = crate::platform::file_write(handle, &index_bytes)
                         .map_err(|_| RemDbError::FileIoError)?;
                     if written != index_bytes.len() {
                         return Err(RemDbError::FileIoError);
@@ -2114,7 +2114,7 @@ impl RemDb {
                     
                     // 写入记录数据
                     let record_slice = table.get_record_slice(i);
-                    let written = crate::platform::file_write(handle, record_slice.as_ptr(), record_slice.len())
+                    let written = crate::platform::file_write(handle, record_slice)
                         .map_err(|_| RemDbError::FileIoError)?;
                     if written != record_size {
                         return Err(RemDbError::FileIoError);

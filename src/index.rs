@@ -72,7 +72,7 @@ pub struct BTreeIndex {
     /// 索引统计信息
     pub stats: IndexStats,
     /// 自旋锁
-    pub lock: u32,
+    pub lock: parking_lot::Mutex<()>,
 }
 
 /// T-Tree节点结构
@@ -98,7 +98,7 @@ pub struct TTreeIndex {
     /// 索引统计信息
     pub stats: IndexStats,
     /// 自旋锁
-    pub lock: u32,
+    pub lock: parking_lot::Mutex<()>,
 }
 
 /// 主键哈希索引
@@ -110,7 +110,7 @@ pub struct PrimaryIndex {
     /// 索引统计信息
     stats: IndexStats,
     /// 自旋锁
-    lock: u32,
+    lock: parking_lot::Mutex<()>,
 }
 
 impl PrimaryIndex {
@@ -131,7 +131,7 @@ impl PrimaryIndex {
                 size: 0, // Vec管理自己的内存
                 item_count: 0,
             },
-            lock: 0,
+            lock: parking_lot::Mutex::new(()),
         }
     }
     
@@ -156,11 +156,11 @@ impl PrimaryIndex {
         // 增加索引插入计数
         crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
+        let _lock = self.lock.lock();
         
         // 检查键大小
         if key_size > 64 {
-            crate::platform::spin_unlock(&mut self.lock);
+            // 锁会自动释放
             return Err(RemDbError::UnsupportedOperation);
         }
         
@@ -183,7 +183,7 @@ impl PrimaryIndex {
         // 更新统计信息
         self.stats.item_count += 1;
         
-        crate::platform::spin_unlock(&mut self.lock);
+        // 锁会自动释放
         Ok(())
     }
     
@@ -223,7 +223,7 @@ impl PrimaryIndex {
         // 增加索引删除计数
         crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
+        let _lock = self.lock.lock();
         
         // 计算哈希值
         let hash = self.hash_key(key, key_size);
@@ -250,13 +250,13 @@ impl PrimaryIndex {
                     // 更新统计信息
                     self.stats.item_count -= 1;
                     
-                    crate::platform::spin_unlock(&mut self.lock);
+                    // 锁会自动释放
                     return Ok(());
                 }
             }
         }
         
-        crate::platform::spin_unlock(&mut self.lock);
+        // 锁会自动释放
         Err(RemDbError::RecordNotFound)
     }
     
@@ -399,7 +399,7 @@ pub struct SecondaryIndex {
     /// 索引统计信息
     stats: IndexStats,
     /// 自旋锁
-    lock: u32,
+    lock: parking_lot::Mutex<()>,
 }
 
 impl SecondaryIndex {
@@ -418,7 +418,7 @@ impl SecondaryIndex {
                 size: 0, // Vec管理自己的内存
                 item_count: 0,
             },
-            lock: 0,
+            lock: parking_lot::Mutex::new(()),
         }
     }
     
@@ -510,17 +510,17 @@ impl SecondaryIndex {
         // 增加索引插入计数
         crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
+        let _lock = self.lock.lock();
         
         // 检查是否已满
         if self.items.len() >= self.max_items {
-            crate::platform::spin_unlock(&mut self.lock);
+            // 锁会自动释放
             return Err(RemDbError::OutOfMemory);
         }
         
         // 检查键大小
         if key_size > 64 {
-            crate::platform::spin_unlock(&mut self.lock);
+            // 锁会自动释放
             return Err(RemDbError::UnsupportedOperation);
         }
         
@@ -569,7 +569,7 @@ impl SecondaryIndex {
         // 更新统计信息
         self.stats.item_count = self.items.len();
         
-        crate::platform::spin_unlock(&mut self.lock);
+        // 锁会自动释放
         Ok(())
     }
     
@@ -593,7 +593,7 @@ impl SecondaryIndex {
         // 增加索引删除计数
         crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
+        let _lock = self.lock.lock();
         
         let result = match self.binary_search(key, key_size) {
             Ok(index) => {
@@ -604,7 +604,7 @@ impl SecondaryIndex {
             Err(e) => Err(e),
         };
         
-        crate::platform::spin_unlock(&mut self.lock);
+        // 锁会自动释放
         result
     }
     
@@ -944,7 +944,7 @@ impl BTreeIndex {
                 size: 0, // Box管理自己的内存
                 item_count: 0,
             },
-            lock: 0,
+            lock: parking_lot::Mutex::new(()),
         }
     }
     
@@ -953,11 +953,11 @@ impl BTreeIndex {
         // 增加索引插入计数
         crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
+        let _lock = self.lock.lock();
         
         // 检查键大小
         if key_size > 64 {
-            crate::platform::spin_unlock(&mut self.lock);
+            // 锁会自动释放
             return Err(RemDbError::UnsupportedOperation);
         }
         
@@ -1005,7 +1005,7 @@ impl BTreeIndex {
             }
         }
         
-        crate::platform::spin_unlock(&mut self.lock);
+        // 锁会自动释放
         Ok(())
     }
     
@@ -1306,13 +1306,13 @@ impl BTreeIndex {
         // 增加索引删除计数
         crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
+        let _lock = self.lock.lock();
         
         // 简化实现：暂不支持删除操作
         // 完整的B-Tree删除实现比较复杂，需要处理多种情况
         // 包括合并节点、借键等
         
-        crate::platform::spin_unlock(&mut self.lock);
+        // 锁会自动释放
         Err(RemDbError::UnsupportedOperation)
     }
     
@@ -1754,7 +1754,7 @@ impl TTreeIndex {
                 size: 0, // Box管理自己的内存
                 item_count: 0,
             },
-            lock: 0,
+            lock: parking_lot::Mutex::new(()),
         }
     }
     
@@ -1763,11 +1763,11 @@ impl TTreeIndex {
         // 增加索引插入计数
         crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
+        let _lock = self.lock.lock();
         
         // 检查键大小
         if key_size > 64 {
-            crate::platform::spin_unlock(&mut self.lock);
+            // 锁会自动释放
             return Err(RemDbError::UnsupportedOperation);
         }
         
@@ -1865,7 +1865,7 @@ impl TTreeIndex {
             }
         }
         
-        crate::platform::spin_unlock(&mut self.lock);
+        // 锁会自动释放
         Ok(())
     }
     
@@ -2088,12 +2088,12 @@ impl TTreeIndex {
         // 增加索引删除计数
         crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
+        let _lock = self.lock.lock();
         
         // 简化实现：暂不支持删除操作
         // 完整的T-Tree删除实现比较复杂，需要处理多种情况
         
-        crate::platform::spin_unlock(&mut self.lock);
+        // 锁会自动释放
         Err(RemDbError::UnsupportedOperation)
     }
     

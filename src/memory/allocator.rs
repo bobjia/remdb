@@ -2,7 +2,6 @@ use core::ptr::NonNull;
 use crate::memory::{MemoryBlock, MemoryStats};
 use crate::types::Result;
 
-// 使用条件编译，在std环境下使用std::sync::OnceLock，在no_std环境下使用platform::OnceLock
 #[cfg(feature = "std")]
 use std::sync::OnceLock;
 
