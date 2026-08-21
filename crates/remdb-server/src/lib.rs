@@ -6,4 +6,5 @@ pub mod pb {
 pub mod protocol;
 pub mod buffer;
 pub mod serialize;
+pub mod handler;
 pub mod server;
