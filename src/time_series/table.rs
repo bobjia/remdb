@@ -9,7 +9,7 @@ use super::{CompressionType, TimeSeriesIndex, PartitionManager, LifecycleManager
 use std::sync::Mutex;
 
 #[cfg(not(feature = "std"))]
-use crate::memory::allocator::Mutex;
+use remdb_alloc::Mutex;
 
 /// 时序数据配置
 #[derive(Debug, Clone, Copy)]

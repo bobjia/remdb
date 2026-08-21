@@ -192,7 +192,7 @@ fn test_time_series_integration() {
     unsafe {
         // 初始化内存分配器
         static mut DB_MEMORY: [u8; 1048576] = [0u8; 1048576];
-        let _ = memory::allocator::init_global_allocator(
+        let _ = remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         );
@@ -227,7 +227,7 @@ fn test_time_series_batch_performance() {
     unsafe {
         // 初始化内存分配器
         static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152];
-        let _ = memory::allocator::init_global_allocator(
+        let _ = remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         );

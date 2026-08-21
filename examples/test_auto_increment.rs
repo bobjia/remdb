@@ -10,7 +10,7 @@ static mut DB_MEMORY: [u8; 1024 * 1024] = [0; 1024 * 1024];
 fn main() {
     unsafe {
         // 初始化内存分配器
-        memory::allocator::init_global_allocator(
+        memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         ).expect("Failed to initialize allocator");

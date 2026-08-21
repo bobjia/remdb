@@ -1,6 +1,6 @@
 #![allow(unsafe_code)]
 use remdb::{RemDb, config::{DbConfig, WALConfig}, time_series::TimeSeriesConfig, DdlExecutor};
-use remdb::memory::allocator::init_global_allocator;
+use remdb::memory::init_global_allocator;
 
 // 示例1：使用derive(MemdbTable)宏定义时序表
 #[derive(Debug, Clone, remdb::MemdbTable)]

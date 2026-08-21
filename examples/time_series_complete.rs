@@ -9,7 +9,7 @@ fn main() {
     println!("1. 初始化内存分配器...");
     let memory_size = 64 * 1024 * 1024; // 64MB
     let mut memory = vec![0u8; memory_size];
-    memory::allocator::init_global_allocator(memory.as_mut_ptr(), memory_size)
+    memory::init_global_allocator(memory.as_mut_ptr(), memory_size)
         .expect("Failed to initialize memory allocator");
     
     // 2. 创建数据库配置

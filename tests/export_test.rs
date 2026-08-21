@@ -46,7 +46,7 @@ fn test_export_ddl() {
     
     // 初始化全局内存分配器，使用静态内存缓冲区
     unsafe {
-        crate::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
+        crate::memory::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
     }
     
     // 使用init_global_db函数初始化数据库
@@ -97,7 +97,7 @@ fn test_export_data() {
     
     // 初始化全局内存分配器，使用静态内存缓冲区
     unsafe {
-        crate::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
+        crate::memory::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
     }
     
     // 使用init_global_db函数初始化数据库
@@ -199,7 +199,7 @@ fn test_export_empty_table() {
     
     // 初始化全局内存分配器，使用静态内存缓冲区
     unsafe {
-        crate::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
+        crate::memory::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
     }
     
     // 使用init_global_db函数初始化数据库

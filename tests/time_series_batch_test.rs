@@ -38,7 +38,7 @@ unsafe fn init_test_env() -> &'static mut RemDb {
     core::ptr::write_bytes(DB_MEMORY.as_mut_ptr(), 0, DB_MEMORY.len());
     
     // 重新初始化内存分配器（每次测试都重置）
-    let _ = memory::allocator::init_global_allocator(
+    let _ = remdb::memory::init_global_allocator(
         DB_MEMORY.as_mut_ptr(),
         DB_MEMORY.len()
     );

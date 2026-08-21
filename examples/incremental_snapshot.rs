@@ -165,7 +165,7 @@ fn main() -> Result<()>
     
     unsafe {
         // 初始化内存分配器
-        let _ = remdb::memory::allocator::init_global_allocator(
+        let _ = remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         );

@@ -528,6 +528,7 @@ dependencies = [
  "criterion",
  "parking_lot",
  "rand",
+ "remdb-alloc",
  "remdb-macros",
  "serial_test",
  "socket2",

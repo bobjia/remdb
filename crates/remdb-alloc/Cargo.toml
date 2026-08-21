@@ -2,3 +2,15 @@
 name = "remdb-alloc"
 version = "0.1.0"
 edition = "2021"
+description = "Memory allocator for remdb (no_std compatible)"
+
+# no_std compatible, no dependencies
+# This crate contains inherently unsafe memory allocation code:
+# unsafe impl GlobalAlloc, no_std UnsafeCell Mutex, raw pointer MemoryBlock
+# The unsafe code is confined to this crate and documented.
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = ["std"]
+std = []

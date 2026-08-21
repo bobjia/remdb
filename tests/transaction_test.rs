@@ -191,7 +191,7 @@ fn test_transaction_begin_commit() {
         // 预分配内存缓冲区并初始化全局分配器
         let mut memory_buffer = Vec::with_capacity(1024 * 1024); // 1MB
         memory_buffer.set_len(1024 * 1024);
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             memory_buffer.as_mut_ptr(), 
             1024 * 1024
         ).unwrap();
@@ -290,7 +290,7 @@ fn test_mvcc_snapshot_isolation() {
         // 预分配内存缓冲区并初始化全局分配器
         let mut memory_buffer = Vec::with_capacity(1024 * 1024); // 1MB
         memory_buffer.set_len(1024 * 1024);
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             memory_buffer.as_mut_ptr(), 
             1024 * 1024
         ).unwrap();
@@ -487,7 +487,7 @@ fn test_mvcc_version_chain() {
         // 预分配内存缓冲区并初始化全局分配器
         let mut memory_buffer = Vec::with_capacity(1024 * 1024); // 1MB
         memory_buffer.set_len(1024 * 1024);
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             memory_buffer.as_mut_ptr(), 
             1024 * 1024
         ).unwrap();
@@ -611,7 +611,7 @@ fn test_mvcc_gc() {
         // 预分配内存缓冲区并初始化全局分配器
         let mut memory_buffer = Vec::with_capacity(1024 * 1024); // 1MB
         memory_buffer.set_len(1024 * 1024);
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             memory_buffer.as_mut_ptr(), 
             1024 * 1024
         ).unwrap();
@@ -733,7 +733,7 @@ fn test_mvcc_visibility() {
         // 预分配内存缓冲区并初始化全局分配器
         let mut memory_buffer = Vec::with_capacity(1024 * 1024); // 1MB
         memory_buffer.set_len(1024 * 1024);
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             memory_buffer.as_mut_ptr(), 
             1024 * 1024
         ).unwrap();
@@ -877,7 +877,7 @@ fn test_transaction_rollback() {
         // 预分配内存缓冲区并初始化全局分配器
         let mut memory_buffer = Vec::with_capacity(1024 * 1024); // 1MB
         memory_buffer.set_len(1024 * 1024);
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             memory_buffer.as_mut_ptr(), 
             1024 * 1024
         ).unwrap();
@@ -975,7 +975,7 @@ fn test_transaction_update_rollback() {
         // 预分配内存缓冲区并初始化全局分配器
         let mut memory_buffer = Vec::with_capacity(1024 * 1024); // 1MB
         memory_buffer.set_len(1024 * 1024);
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             memory_buffer.as_mut_ptr(), 
             1024 * 1024
         ).unwrap();
@@ -1097,7 +1097,7 @@ fn test_transaction_delete_rollback() {
         // 预分配内存缓冲区并初始化全局分配器
         let mut memory_buffer = Vec::with_capacity(1024 * 1024); // 1MB
         memory_buffer.set_len(1024 * 1024);
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             memory_buffer.as_mut_ptr(), 
             1024 * 1024
         ).unwrap();

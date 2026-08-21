@@ -149,7 +149,7 @@ fn test_create_table() {
     platform::init_platform(&TEST_PLATFORM);
     
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result = memory::allocator::init_global_allocator(
+    let result = remdb::memory::init_global_allocator(
         unsafe { DB_MEMORY.as_mut_ptr() },
         unsafe { DB_MEMORY.len() }
     );
@@ -201,7 +201,7 @@ fn test_create_index() {
     platform::init_platform(&TEST_PLATFORM);
     
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result = memory::allocator::init_global_allocator(
+    let result = remdb::memory::init_global_allocator(
         unsafe { DB_MEMORY.as_mut_ptr() },
         unsafe { DB_MEMORY.len() }
     );
@@ -283,7 +283,7 @@ fn test_describe_table() {
     platform::init_platform(&TEST_PLATFORM);
     
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result = memory::allocator::init_global_allocator(
+    let result = remdb::memory::init_global_allocator(
         unsafe { DB_MEMORY.as_mut_ptr() },
         unsafe { DB_MEMORY.len() }
     );
@@ -412,7 +412,7 @@ fn test_create_time_series_table() {
     platform::init_platform(&TEST_PLATFORM);
     
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result = memory::allocator::init_global_allocator(
+    let result = remdb::memory::init_global_allocator(
         unsafe { DB_MEMORY.as_mut_ptr() },
         unsafe { DB_MEMORY.len() }
     );
@@ -484,7 +484,7 @@ fn test_ddl_export_with_time_series() {
     platform::init_platform(&TEST_PLATFORM);
     
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result = memory::allocator::init_global_allocator(
+    let result = remdb::memory::init_global_allocator(
         unsafe { DB_MEMORY.as_mut_ptr() },
         unsafe { DB_MEMORY.len() }
     );
@@ -535,7 +535,7 @@ fn test_describe_time_series_table() {
     platform::init_platform(&TEST_PLATFORM);
     
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result = memory::allocator::init_global_allocator(
+    let result = remdb::memory::init_global_allocator(
         unsafe { DB_MEMORY.as_mut_ptr() },
         unsafe { DB_MEMORY.len() }
     );

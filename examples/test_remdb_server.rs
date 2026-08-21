@@ -117,7 +117,7 @@ fn main() {
     
     // 初始化全局内存分配器 - 必须在创建数据库实例之前执行 
     let ptr = mem_buffer.as_mut_ptr(); 
-    remdb::memory::allocator::init_global_allocator(ptr, mem_buffer.len()).expect("Failed to initialize global allocator"); 
+    remdb::memory::init_global_allocator(ptr, mem_buffer.len()).expect("Failed to initialize global allocator"); 
     
     // 定义数据库配置
     let config = Box::leak(Box::new(DbConfig {

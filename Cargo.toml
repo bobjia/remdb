@@ -41,6 +41,7 @@ workspace = true
 parking_lot = { version = "0.12", default-features = false }
 rand = { version = "0.8.5", optional = true }
 remdb-macros = { path = "./remdb-macros", version = "0.2.9" }
+remdb-alloc = { path = "./crates/remdb-alloc", default-features = false }
 socket2 = { version = "0.5.5", optional = true }
 
 [dev-dependencies]
@@ -53,7 +54,7 @@ harness = false
 
 [features]
 default = ["std", "ha", "pubsub"]
-std = ["rand", "socket2"]
+std = ["rand", "socket2", "remdb-alloc/std"]
 debug = []
 c-api = []
 pubsub = ["std"]

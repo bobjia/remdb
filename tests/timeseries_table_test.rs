@@ -228,7 +228,7 @@ fn test_write_timeseries_batch_acid() {
     
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         ).unwrap();
@@ -315,7 +315,7 @@ fn test_write_timeseries_batch_performance() {
     
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         ).unwrap();
@@ -389,7 +389,7 @@ fn test_write_timeseries_batch_rollback() {
     
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         ).unwrap();
@@ -443,7 +443,7 @@ fn test_time_type_support() {
     
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         ).unwrap();
@@ -523,7 +523,7 @@ fn test_time_arithmetic() {
     
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         ).unwrap();
@@ -613,7 +613,7 @@ fn test_time_precision_support() {
     
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         ).unwrap();

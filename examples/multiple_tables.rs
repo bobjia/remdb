@@ -269,7 +269,7 @@ fn main() {
         let config = &DB_CONFIG;
         
         // 初始化内存分配器
-        memory::allocator::init_global_allocator(
+        memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         );

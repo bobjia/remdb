@@ -4,7 +4,7 @@
 // 运行时DDL配置示例
 use remdb::{RemDb, DdlExecutor, types::{DataType, IndexType}};
 use remdb::config::{DbConfig, MemoryAllocator, LogMode, WALConfig}; 
-use remdb::memory::allocator::init_global_allocator;
+use remdb::memory::init_global_allocator;
 use core::ptr::NonNull;
 #[cfg(feature = "ha")]
 use remdb::ha::{HAConfig, HARole, ReplicationMode};

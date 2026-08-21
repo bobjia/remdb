@@ -5,7 +5,7 @@
 extern crate alloc;
 
 use remdb::{RemDb, config::{DbConfig, LogMode, HAConfig, WALConfig}}; use remdb::ha::{HARole, ReplicationMode};
-use remdb::memory::allocator::init_global_allocator;
+use remdb::memory::init_global_allocator;
 use remdb::config::DefaultMemoryAllocator;
 
 // 创建静态的默认内存分配器

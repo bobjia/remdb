@@ -151,7 +151,7 @@ fn test_sql_query() {
     
     // 初始化内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             db_memory.as_mut_ptr(),
             db_memory.len()
         ).unwrap();
@@ -415,7 +415,7 @@ fn test_sql_join() {
     
     // 初始化内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             db_memory.as_mut_ptr(),
             db_memory.len()
         ).unwrap();
@@ -560,7 +560,7 @@ fn test_sql_distinct() {
     
     // 初始化内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             db_memory.as_mut_ptr(),
             db_memory.len()
         ).unwrap();
@@ -644,7 +644,7 @@ fn test_sql_aliases() {
     
     // 初始化内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             db_memory.as_mut_ptr(),
             db_memory.len()
         ).unwrap();
@@ -700,7 +700,7 @@ fn test_sql_functions() {
     
     // 初始化内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             db_memory.as_mut_ptr(),
             db_memory.len()
         ).unwrap();
@@ -791,7 +791,7 @@ fn test_sql_statistical_functions() {
     
     // 初始化内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             db_memory.as_mut_ptr(),
             db_memory.len()
         ).unwrap();
@@ -858,7 +858,7 @@ fn test_sql_aggregate_functions() {
     
     // 初始化内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             db_memory.as_mut_ptr(),
             db_memory.len()
         ).unwrap();
@@ -927,7 +927,7 @@ fn test_sql_group_by() {
     
     // 初始化内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             db_memory.as_mut_ptr(),
             db_memory.len()
         ).unwrap();
