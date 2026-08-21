@@ -733,6 +733,7 @@ dependencies = [
 name = "remdb-server"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "prost",
  "prost-build",
  "remdb",

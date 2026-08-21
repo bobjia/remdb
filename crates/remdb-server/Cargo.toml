@@ -11,3 +11,10 @@ prost = "0.12"
 
 [build-dependencies]
 prost-build = "0.12"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "zero_copy_server"
+harness = false
