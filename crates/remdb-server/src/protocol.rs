@@ -14,9 +14,14 @@ pub fn encode_frame(payload: &[u8]) -> Vec<u8> {
 /// Frame decode state: accumulate bytes until one complete frame is available.
 #[derive(Default)]
 pub struct FrameDecoder {
-    // prefix stores the 4 length bytes; once filled it fixes payload_len
+    /// The 4 length-prefix bytes, accumulated across reads if split.
     pending: Vec<u8>,
+    /// The declared payload length once the prefix is known.
     payload_len: Option<usize>,
+    /// A partial payload that arrived before its trailing bytes: only used when
+    /// a frame spans multiple reads (single-read, full-frame fast path stays
+    /// zero-copy / borrowed).
+    stash: Vec<u8>,
 }
 
 impl FrameDecoder {
@@ -24,60 +29,102 @@ impl FrameDecoder {
         Self::default()
     }
 
-    /// Push incoming bytes. When a full frame is ready, return its protobuf
-    /// payload (borrowed slice) as `Ok(Some((payload, next_slice)))`. With a
-    /// **single** input chunk this returns at most one frame; call repeatedly
-    /// with remaining bytes to drain the rest.
+    /// Push incoming bytes. When a full frame is ready, return its payload as
+    /// `Ok(Some((payload, next_slice)))`. `next_slice` is the unconsumed tail of
+    /// the input chunk (call repeatedly to drain coalesced/multiple frames).
+    ///
+    /// The whole frame arriving in one chunk is returned **borrowed** with no
+    /// copy. A frame that spans multiple reads is buffered internally and
+    /// returned as `FrameRef::Owned`.
     pub fn next<'a>(
         &mut self,
         buf: &'a [u8],
     ) -> io::Result<Option<(FrameRef<'a>, &'a [u8])>> {
-        // `remaining` advances past any length-prefix bytes consumed from the
-        // current chunk, so the payload is split from the correct offset.
-        let mut remaining = buf;
-
         if self.payload_len.is_none() {
-            // Accumulate the 4 length bytes. If a previous chunk carried a
-            // partial prefix, `pending` already holds some of them (and `need`
-            // shrinks accordingly). After the prefix is complete, `remaining`
-            // points at the start of the payload within this chunk.
-            if self.pending.len() < 4 {
-                let need = 4 - self.pending.len();
-                self.pending
-                    .extend_from_slice(buf.get(..need).unwrap_or(buf));
-                if self.pending.len() < 4 {
-                    return Ok(None);
-                }
-                remaining = buf.get(need..).unwrap_or(&[]);
-            }
-            let bytes: [u8; 4] = self
-                .pending
-                .get(..4)
-                .and_then(|s| s.try_into().ok())
-                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "bad prefix"))?;
-            let l = u32::from_be_bytes(bytes) as usize;
-            if l > MAX_FRAME_LEN {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "frame too large"));
-            }
-            self.pending.clear();
+            return self.read_prefix_and_payload(buf);
+        }
+        self.consume_payload(buf)
+    }
+
+    /// Determine the 4-byte prefix length, then attempt to read the payload
+    /// that may already be present in `buf`.
+    fn read_prefix_and_payload<'a>(
+        &mut self,
+        buf: &'a [u8],
+    ) -> io::Result<Option<(FrameRef<'a>, &'a [u8])>> {
+        // Fast path: the whole 4-byte prefix is in this chunk.
+        if self.pending.is_empty() && buf.len() >= 4 {
+            let l = prefix_len(buf)?;
             self.payload_len = Some(l);
+            return self.consume_payload(buf.get(4..).unwrap_or(&[]));
         }
 
-        // We have payload_len. `remaining` holds the payload bytes from the
-        // current chunk (this decoder is used with buffers that start a fresh
-        // frame, so the full payload is expected to arrive in one chunk).
-        let payload_len = self.payload_len.expect("payload_len set above");
-        if remaining.len() < payload_len {
+        // Slow path: prefix is split across reads (or pending carried bytes).
+        let need = 4 - self.pending.len();
+        let take = need.min(buf.len());
+        self.pending.extend_from_slice(buf.get(..take).unwrap_or(&[]));
+        if self.pending.len() < 4 {
             return Ok(None);
         }
-        let (payload, rest) = remaining.split_at(payload_len);
-        self.payload_len = None;
-        Ok(Some((FrameRef::Borrowed(payload), rest)))
+        let l = prefix_len(&self.pending)?;
+        self.pending.clear();
+        self.payload_len = Some(l);
+        // Payload bytes (if any) follow the prefix in this chunk.
+        self.consume_payload(buf.get(take..).unwrap_or(&[]))
+    }
+
+    /// Read the payload for the currently-established frame from `payload_view`
+    /// (the portion of the current chunk that holds payload bytes).
+    fn consume_payload<'a>(
+        &mut self,
+        payload_view: &'a [u8],
+    ) -> io::Result<Option<(FrameRef<'a>, &'a [u8])>> {
+        let l = self
+            .payload_len
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no frame in progress"))?;
+
+        if self.stash.is_empty() {
+            if payload_view.len() < l {
+                // Frame spans reads: buffer what we have for the next chunk.
+                self.stash.extend_from_slice(payload_view);
+                return Ok(None);
+            }
+            // Full frame in one chunk — borrow with no copy.
+            let (payload, rest) = payload_view.split_at(l);
+            self.payload_len = None;
+            Ok(Some((FrameRef::Borrowed(payload), rest)))
+        } else {
+            // Completing a previously-buffered partial payload.
+            let have = self.stash.len();
+            let need = l - have;
+            if payload_view.len() < need {
+                self.stash.extend_from_slice(payload_view);
+                return Ok(None);
+            }
+            self.stash.extend_from_slice(payload_view.get(..need).unwrap_or(&[]));
+            let payload = std::mem::take(&mut self.stash);
+            self.payload_len = None;
+            let rest = payload_view.get(need..).unwrap_or(&[]);
+            Ok(Some((FrameRef::Owned(payload), rest)))
+        }
     }
 
     pub fn is_idle(&self) -> bool {
         self.pending.is_empty() && self.payload_len.is_none()
     }
+}
+
+/// Parse and validate the big-endian length prefix in `bytes`.
+fn prefix_len(bytes: &[u8]) -> io::Result<usize> {
+    let arr: [u8; 4] = bytes
+        .get(..4)
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "bad prefix"))?;
+    let l = u32::from_be_bytes(arr) as usize;
+    if l > MAX_FRAME_LEN {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "frame too large"));
+    }
+    Ok(l)
 }
 
 /// A frame payload that is either borrowed from the socket buffer or owned.
@@ -156,5 +203,68 @@ mod tests {
         let mut out = Vec::new();
         let res = read_frame(&mut reader, &mut out);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn single_chunk_full_frame_is_borrowed() {
+        let frame = encode_frame(&[9u8, 9, 9]);
+        let mut decoder = FrameDecoder::new();
+        let got = decoder.next(&frame).expect("ok").expect("frame");
+        match got.0 {
+            FrameRef::Borrowed(b) => assert_eq!(b, &[9, 9, 9]),
+            FrameRef::Owned(_) => panic!("expected borrowed payload"),
+        }
+        assert!(got.1.is_empty());
+        assert!(decoder.is_idle());
+    }
+
+    #[test]
+    fn frame_split_across_two_reads_is_buffered() {
+        let frame = encode_frame(&[9u8, 9, 9]);
+        let mut decoder = FrameDecoder::new();
+        // First chunk: 2 prefix bytes + 1 payload byte; buffer must retain it.
+        let a = decoder.next(&frame[..3]).expect("ok");
+        assert!(a.is_none()); // prefix incomplete
+        // Second chunk completes the prefix and part of the payload.
+        let b = decoder.next(&frame[3..5]).expect("ok");
+        assert!(b.is_none()); // payload still incomplete; stashed
+        // Third chunk completes the frame; must be Owned (was split).
+        let c = decoder.next(&frame[5..]).expect("ok").expect("frame done");
+        match c.0 {
+            FrameRef::Owned(p) => assert_eq!(p.as_slice(), &[9, 9, 9]),
+            FrameRef::Borrowed(_) => panic!("expected owned payload for split frame"),
+        }
+        assert!(c.1.is_empty());
+        assert!(decoder.is_idle());
+    }
+
+    #[test]
+    fn prefix_split_then_payload_split() {
+        let frame = encode_frame(&[1u8, 2, 3, 4, 5]);
+        let mut decoder = FrameDecoder::new();
+        assert!(decoder.next(&frame[..2]).expect("ok").is_none()); // half prefix
+        assert!(decoder.next(&frame[2..4]).expect("ok").is_none()); // prefix done, 0 payload
+        assert!(decoder.next(&frame[4..6]).expect("ok").is_none()); // 2/5 payload
+        let done = decoder.next(&frame[6..]).expect("ok").expect("done");
+        assert_eq!(done.0.as_ref(), &[1, 2, 3, 4, 5]);
+        assert!(done.1.is_empty());
+        assert!(decoder.is_idle());
+    }
+
+    #[test]
+    fn multiple_frames_in_one_chunk_drained() {
+        let f1 = encode_frame(&[1u8]);
+        let f2 = encode_frame(&[2u8, 2]);
+        let mut chunk = Vec::new();
+        chunk.extend_from_slice(&f1);
+        chunk.extend_from_slice(&f2);
+
+        let mut decoder = FrameDecoder::new();
+        let (p1, rest) = decoder.next(&chunk).expect("ok").expect("f1");
+        assert_eq!(p1.as_ref(), &[1]);
+        let (p2, rest2) = decoder.next(rest).expect("ok").expect("f2");
+        assert_eq!(p2.as_ref(), &[2, 2]);
+        assert!(rest2.is_empty());
+        assert!(decoder.is_idle());
     }
 }

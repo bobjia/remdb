@@ -54,7 +54,10 @@ pub fn handle_request(db: &SharedDb, request: &crate::pb::Request) -> crate::pb:
             }
         }
         crate::pb::request::Op::Crud(c) => {
-            let sql = crud_to_sql(&c);
+            let sql = match crud_to_sql(&c) {
+                Ok(sql) => sql,
+                Err(msg) => return build(err_status(&msg), None),
+            };
             match run_sql(&mut db, &sql) {
                 Ok(affected) => {
                     let crud = crate::pb::CrudResponse { affected: affected as u32 };
@@ -105,24 +108,18 @@ fn run_sql(db: &mut RemDb, sql: &str) -> Result<usize, String> {
 
 /// Translate a structured CRUD request into a SQL statement.
 /// String values are single-quoted; numeric/bool values are bare literals.
-fn crud_to_sql(c: &crate::pb::CrudRequest) -> String {
+fn crud_to_sql(c: &crate::pb::CrudRequest) -> Result<String, String> {
     match &c.op {
         Some(crate::pb::crud_request::Op::Insert(ins)) => {
-            let cols: Vec<String> = ins
-                .values
-                .iter()
-                .enumerate()
-                .map(|(i, _)| format!("c{}", i))
-                .collect();
+            // Positional full-row insert: remdb maps VALUES to all table columns
+            // in definition order when the column list is omitted.
             let vals: Vec<String> = ins.values.iter().map(value_to_literal).collect();
-            format!(
-                "INSERT INTO {} ({}) VALUES ({})",
-                c.table,
-                cols.join(", "),
-                vals.join(", ")
-            )
+            Ok(format!("INSERT INTO {} VALUES ({})", c.table, vals.join(", ")))
         }
         Some(crate::pb::crud_request::Op::Update(up)) => {
+            if up.cols.len() != up.values.len() {
+                return Err("update: cols and values lengths differ".to_string());
+            }
             let sets: Vec<String> = up
                 .cols
                 .iter()
@@ -135,7 +132,7 @@ fn crud_to_sql(c: &crate::pb::CrudRequest) -> String {
             } else {
                 format!(" WHERE {}", where_sql)
             };
-            format!("UPDATE {} SET {}{}", c.table, sets.join(", "), suffix)
+            Ok(format!("UPDATE {} SET {}{}", c.table, sets.join(", "), suffix))
         }
         Some(crate::pb::crud_request::Op::Delete(del)) => {
             let where_sql = conditions_to_sql(&del.r#where);
@@ -144,9 +141,9 @@ fn crud_to_sql(c: &crate::pb::CrudRequest) -> String {
             } else {
                 format!(" WHERE {}", where_sql)
             };
-            format!("DELETE FROM {}{}", c.table, suffix)
+            Ok(format!("DELETE FROM {}{}", c.table, suffix))
         }
-        None => format!("SELECT 1 FROM {} WHERE 1=0", c.table),
+        None => Ok(format!("SELECT 1 FROM {} WHERE 1=0", c.table)),
     }
 }
 

@@ -143,7 +143,32 @@ fn ddl_insert_select_and_error_flow() {
         ins_status.message
     );
 
-    // c) SELECT via raw Query SQL and validate the payload.
+    // b2) INSERT via structured Crud op (positional full-row VALUES).
+    let strutt = client.round_trip(pb::Request {
+        request_id: 5,
+        op: Some(pb::request::Op::Crud(pb::CrudRequest {
+            table: "users".into(),
+            op: Some(pb::crud_request::Op::Insert(pb::Insert {
+                values: vec![
+                    pb::Value {
+                        v: Some(pb::value::V::VInt(2)),
+                    },
+                    pb::Value {
+                        v: Some(pb::value::V::VStr("bob".into())),
+                    },
+                ],
+            })),
+        })),
+    });
+    let strutt_status = strutt.status.expect("struct insert status present");
+    assert_eq!(
+        strutt_status.code,
+        0,
+        "structured INSERT should succeed, got message: {:?}",
+        strutt_status.message
+    );
+
+    // c) SELECT via raw Query SQL and validate the payload (2 rows now).
     let sel = client.round_trip(pb::Request {
         request_id: 3,
         op: Some(pb::request::Op::Query(pb::QueryRequest {
