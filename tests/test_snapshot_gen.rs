@@ -240,7 +240,7 @@ fn test_snapshot_gen() -> Result<()> {
         ).unwrap();
         
         // 重置事务管理器
-        transaction::TX_MANAGER.reset();
+        transaction::reset_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -282,7 +282,7 @@ fn test_snapshot_gen() -> Result<()> {
                 4
             );
             
-            db.get_table_mut(0).unwrap().insert(record_data.as_ptr()).unwrap();
+            db.get_table_mut(0).unwrap().insert(&record_data).unwrap();
         }
         
         // 保存快照到文件

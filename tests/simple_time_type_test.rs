@@ -41,8 +41,113 @@ static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     }),
 };
 
+/// 基于std的真实文件I/O平台实现，用于WAL初始化和NOW()等时间函数
+struct SimpleTestPlatform;
+
+impl remdb::platform::Platform for SimpleTestPlatform {
+    fn get_timestamp(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+    }
+
+    fn get_timestamp_us(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_micros() as u64)
+            .unwrap_or(0)
+    }
+
+    fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+        let len = core::cmp::min(dest.len(), src.len());
+        dest[..len].copy_from_slice(&src[..len]);
+    }
+
+    fn memset(&self, dest: &mut [u8], value: u8) {
+        dest.fill(value);
+    }
+
+    fn delay_ms(&self, ms: u32) {
+        std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+    }
+
+    fn delay_us(&self, us: u32) {
+        std::thread::sleep(std::time::Duration::from_micros(us as u64));
+    }
+
+    fn file_open(&self, path: &str, mode: remdb::platform::FileMode) -> remdb::platform::FileResult<remdb::platform::FileHandle> {
+        use std::fs::OpenOptions;
+        let mut options = OpenOptions::new();
+        match mode {
+            remdb::platform::FileMode::Read => { options.read(true); }
+            remdb::platform::FileMode::Write => { options.write(true).create(true).truncate(true); }
+            remdb::platform::FileMode::ReadWrite => { options.read(true).write(true).create(true); }
+            remdb::platform::FileMode::Append => { options.write(true).create(true).append(true); }
+        }
+        match options.open(path) {
+            Ok(file) => Ok(Box::into_raw(Box::new(file)) as remdb::platform::FileHandle),
+            Err(_) => Err(()),
+        }
+    }
+
+    fn file_close(&self, handle: remdb::platform::FileHandle) -> remdb::platform::FileResult<()> {
+        unsafe { drop(Box::from_raw(handle as *mut std::fs::File)); }
+        Ok(())
+    }
+
+    fn file_write(&self, handle: remdb::platform::FileHandle, buf: &[u8]) -> remdb::platform::FileResult<usize> {
+        use std::io::Write;
+        unsafe {
+            let file = &mut *(handle as *mut std::fs::File);
+            file.write_all(buf).map_err(|_| ())?;
+            file.flush().map_err(|_| ())?;
+        }
+        Ok(buf.len())
+    }
+
+    fn file_read(&self, handle: remdb::platform::FileHandle, buf: &mut [u8]) -> remdb::platform::FileResult<usize> {
+        use std::io::Read;
+        unsafe { (&mut *(handle as *mut std::fs::File)).read(buf).map_err(|_| ()) }
+    }
+
+    fn file_seek(&self, handle: remdb::platform::FileHandle, offset: i64, whence: remdb::platform::SeekWhence) -> remdb::platform::FileResult<u64> {
+        use std::io::{Seek, SeekFrom};
+        let seek_from = match whence {
+            remdb::platform::SeekWhence::SeekSet => SeekFrom::Start(offset as u64),
+            remdb::platform::SeekWhence::SeekCur => SeekFrom::Current(offset),
+            remdb::platform::SeekWhence::SeekEnd => SeekFrom::End(offset),
+        };
+        unsafe { (&mut *(handle as *mut std::fs::File)).seek(seek_from).map_err(|_| ()) }
+    }
+
+    fn file_remove(&self, path: &str) -> remdb::platform::FileResult<()> {
+        std::fs::remove_file(path).map_err(|_| ())
+    }
+
+    fn file_size(&self, path: &str) -> remdb::platform::FileResult<usize> {
+        std::fs::metadata(path).map(|m| m.len() as usize).map_err(|_| ())
+    }
+
+    fn crc32(&self, data: &[u8]) -> u32 {
+        const CRC32_POLY: u32 = 0xEDB88320;
+        let mut crc = 0xFFFFFFFFu32;
+        for &byte in data {
+            crc ^= byte as u32;
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 { (crc >> 1) ^ CRC32_POLY } else { crc >> 1 };
+            }
+        }
+        crc ^ 0xFFFFFFFF
+    }
+}
+
 #[test]
 fn test_create_table_with_time_types() {
+    // 注册基于std的真实文件I/O平台（db.init()初始化WAL需要，NOW()等需要时间戳）
+    static TEST_PLATFORM: SimpleTestPlatform = SimpleTestPlatform;
+    remdb::platform::init_platform(&TEST_PLATFORM);
+
     // 使用静态内存缓冲区，确保它不会在函数返回时被释放
     static mut DB_MEMORY: [u8; 262144] = [0u8; 262144];
     

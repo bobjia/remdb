@@ -218,7 +218,7 @@ fn test_large_table_performance() {
             );
             
             // 插入记录
-            let result = table.insert(record_data.as_ptr());
+            let result = table.insert(&record_data);
             assert!(result.is_ok(), "插入记录 {} 失败: {:?}", i, result);
             inserted_ids.push(result.unwrap());
         }
@@ -251,7 +251,7 @@ fn test_large_table_performance() {
             
             // 读取记录数据
             let mut result_data = [0u8; 40];
-            let get_result = table.get_by_id(record_id, result_data.as_mut_ptr());
+            let get_result = table.get_by_id(record_id, &mut result_data);
             if get_result.is_ok() {
                 query_success += 1;
             }
@@ -336,7 +336,7 @@ fn test_large_table_performance() {
             );
             
             // 插入记录
-            let result = table.insert(record_data.as_ptr());
+            let result = table.insert(&record_data);
             if result.is_ok() {
                 insert_success += 1;
             }
@@ -368,7 +368,7 @@ fn test_large_table_performance() {
             
             // 读取记录数据
             let mut result_data = [0u8; 40];
-            let get_result = table.get_by_id(record_id, result_data.as_mut_ptr());
+            let get_result = table.get_by_id(record_id, &mut result_data);
             if get_result.is_ok() {
                 batch_query_success += 1;
             }

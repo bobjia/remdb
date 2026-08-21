@@ -293,15 +293,15 @@ fn test_describe_table() {
     // execute_describe_query函数直接将字段信息作为字符串写入结果集
     
     // 辅助函数：将Value中的string转换为&str
-    unsafe fn value_to_str(value: &crate::Value) -> &str {
-        core::str::from_utf8(&value.string).unwrap().trim_end_matches(char::from(0))
+    fn value_to_str(value: &crate::Value) -> &str {
+        core::str::from_utf8(&value.as_string()[..]).unwrap().trim_end_matches(char::from(0))
     }
     
     // 辅助函数：查找指定字段名的行
     fn find_row_by_field_name<'a>(result_set: &'a crate::sql::ResultSet, field_name: &str) -> Option<&'a crate::sql::ResultRow> {
         for i in 0..result_set.row_count() {
             if let Some(row) = result_set.get_row(i) {
-                let current_field_name = unsafe { value_to_str(&row.values[0].value) };
+                let current_field_name = value_to_str(&row.values[0].value);
                 if current_field_name == field_name {
                     return Some(row);
                 }
@@ -312,50 +312,50 @@ fn test_describe_table() {
     
     // 验证id字段
     if let Some(row) = find_row_by_field_name(&result_set, "id") {
-        assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "int", "Expected UInt32 type to be int");
-        assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "PRI", "Expected id to be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "NO", "Expected id to be NOT NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "", "Expected id default to be empty string");
+        assert_eq!(value_to_str(&row.values[1].value), "int", "Expected UInt32 type to be int");
+        assert_eq!(value_to_str(&row.values[2].value), "PRI", "Expected id to be primary key");
+        assert_eq!(value_to_str(&row.values[3].value), "NO", "Expected id to be NOT NULL");
+        assert_eq!(value_to_str(&row.values[4].value), "", "Expected id default to be empty string");
     } else {
         panic!("Could not find id field in describe result");
     }
     
     // 验证name字段
     if let Some(row) = find_row_by_field_name(&result_set, "name") {
-        assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "varchar(64)", "Expected name type to be varchar(64)");
-        assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected name to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "YES", "Expected name to allow NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "", "Expected name default to be empty string");
+        assert_eq!(value_to_str(&row.values[1].value), "varchar(64)", "Expected name type to be varchar(64)");
+        assert_eq!(value_to_str(&row.values[2].value), "", "Expected name to not be primary key");
+        assert_eq!(value_to_str(&row.values[3].value), "YES", "Expected name to allow NULL");
+        assert_eq!(value_to_str(&row.values[4].value), "", "Expected name default to be empty string");
     } else {
         panic!("Could not find name field in describe result");
     }
     
     // 验证salary字段
     if let Some(row) = find_row_by_field_name(&result_set, "salary") {
-        assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "double", "Expected salary type to be double");
-        assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected salary to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "YES", "Expected salary to allow NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "", "Expected salary default to be empty string");
+        assert_eq!(value_to_str(&row.values[1].value), "double", "Expected salary type to be double");
+        assert_eq!(value_to_str(&row.values[2].value), "", "Expected salary to not be primary key");
+        assert_eq!(value_to_str(&row.values[3].value), "YES", "Expected salary to allow NULL");
+        assert_eq!(value_to_str(&row.values[4].value), "", "Expected salary default to be empty string");
     } else {
         panic!("Could not find salary field in describe result");
     }
     
     // 验证active字段
     if let Some(row) = find_row_by_field_name(&result_set, "active") {
-        assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "bool", "Expected active type to be bool");
-        assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected active to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "YES", "Expected active to allow NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "", "Expected active default to be empty string");
+        assert_eq!(value_to_str(&row.values[1].value), "bool", "Expected active type to be bool");
+        assert_eq!(value_to_str(&row.values[2].value), "", "Expected active to not be primary key");
+        assert_eq!(value_to_str(&row.values[3].value), "YES", "Expected active to allow NULL");
+        assert_eq!(value_to_str(&row.values[4].value), "", "Expected active default to be empty string");
     } else {
         panic!("Could not find active field in describe result");
     }
     
     // 验证department字段
     if let Some(row) = find_row_by_field_name(&result_set, "department") {
-        assert_eq!(unsafe { value_to_str(&row.values[1].value) }, "varchar(64)", "Expected department type to be varchar(64)");
-        assert_eq!(unsafe { value_to_str(&row.values[2].value) }, "", "Expected department to not be primary key");
-        assert_eq!(unsafe { value_to_str(&row.values[3].value) }, "YES", "Expected department to allow NULL");
-        assert_eq!(unsafe { value_to_str(&row.values[4].value) }, "", "Expected department default to be empty string");
+        assert_eq!(value_to_str(&row.values[1].value), "varchar(64)", "Expected department type to be varchar(64)");
+        assert_eq!(value_to_str(&row.values[2].value), "", "Expected department to not be primary key");
+        assert_eq!(value_to_str(&row.values[3].value), "YES", "Expected department to allow NULL");
+        assert_eq!(value_to_str(&row.values[4].value), "", "Expected department default to be empty string");
     } else {
         panic!("Could not find department field in describe result");
     }

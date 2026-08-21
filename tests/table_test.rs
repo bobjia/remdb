@@ -148,13 +148,13 @@ fn test_table_insert_delete() {
         );
         
         // 测试插入记录
-        let record_id = table.insert(record_data.as_ptr()).unwrap();
+        let record_id = table.insert(&record_data).unwrap();
         assert_eq!(record_id, 0);
         assert_eq!(table.record_count(), 1);
         
         // 测试获取记录
         let mut result_data = [0u8; 8];
-        table.get_by_id(record_id, result_data.as_mut_ptr()).unwrap();
+        table.get_by_id(record_id, &mut result_data).unwrap();
         
         let result_id = core::ptr::read(result_data.as_ptr() as *const u32);
         let result_value = core::ptr::read(result_data.as_ptr().add(4) as *const f32);
@@ -211,21 +211,21 @@ fn test_table_get_field() {
         );
         
         // 插入记录
-        let record_id = table.insert(record_data.as_ptr()).unwrap();
+        let record_id = table.insert(&record_data).unwrap();
         
         // 获取记录数据
         let mut result_data = [0u8; 8];
-        table.get_by_id(record_id, result_data.as_mut_ptr()).unwrap();
+        table.get_by_id(record_id, &mut result_data).unwrap();
         
         // 测试获取字段值
-        let id_value = table.get_field(result_data.as_ptr(), 0).unwrap();
-        assert_eq!(id_value.u32, id);
+        let id_value = table.get_field(&result_data, 0).unwrap();
+        assert_eq!(id_value.as_u32(), id);
         
-        let value_value = table.get_field(result_data.as_ptr(), 1).unwrap();
-        assert_eq!(value_value.float32, value);
+        let value_value = table.get_field(&result_data, 1).unwrap();
+        assert_eq!(value_value.as_float32(), value);
         
         // 测试获取不存在的字段
-        let result = table.get_field(result_data.as_ptr(), 2);
+        let result = table.get_field(&result_data, 2);
         assert!(result.is_err());
         assert!(result.is_err());
     }
@@ -269,22 +269,22 @@ fn test_table_set_field() {
         );
         
         // 插入记录
-        let record_id = table.insert(record_data.as_ptr()).unwrap();
+        let record_id = table.insert(&record_data).unwrap();
         
         // 获取记录数据
         let mut result_data = [0u8; 8];
-        table.get_by_id(record_id, result_data.as_mut_ptr()).unwrap();
+        table.get_by_id(record_id, &mut result_data).unwrap();
         
         // 测试更新字段值
-        let new_value = Value { float32: 6.28 };
-        table.set_field(result_data.as_mut_ptr(), 1, &new_value).unwrap();
+        let new_value = Value::Float32(6.28);
+        table.set_field(&mut result_data, 1, &new_value).unwrap();
         
         // 验证更新
-        let updated_value = table.get_field(result_data.as_ptr(), 1).unwrap();
-        assert_eq!(updated_value.float32, 6.28);
+        let updated_value = table.get_field(&result_data, 1).unwrap();
+        assert_eq!(updated_value.as_float32(), 6.28);
         
         // 测试更新不存在的字段
-        let result = table.set_field(result_data.as_mut_ptr(), 2, &new_value);
+        let result = table.set_field(&mut result_data, 2, &new_value);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), RemDbError::FieldNotFound);
     }
@@ -328,16 +328,16 @@ fn test_table_iterate() {
                 4
             );
             
-            table.insert(record_data.as_ptr()).unwrap();
+            table.insert(&record_data).unwrap();
         }
         
         // 测试遍历记录
         let mut count = 0;
         let mut sum = 0.0;
         
-        table.iterate(|_id, data_ptr| {
-            let id = core::ptr::read(data_ptr as *const u32);
-            let value = core::ptr::read(data_ptr.add(4) as *const f32);
+        table.iterate(|_id, data| {
+            let id = u32::from_le_bytes(data[0..4].try_into().unwrap());
+            let value = f32::from_le_bytes(data[4..8].try_into().unwrap());
             
             count += 1;
             sum += value;
@@ -406,7 +406,7 @@ fn test_table_full() {
             );
         
         // 插入两条记录（表满）
-        let record_id1 = table.insert(record_data.as_ptr()).unwrap();
+        let record_id1 = table.insert(&record_data).unwrap();
         assert_eq!(record_id1, 0);
         
         // 创建第二条记录，使用不同的id
@@ -418,7 +418,7 @@ fn test_table_full() {
                 4
             );
         
-        let record_id2 = table.insert(record_data2.as_ptr()).unwrap();
+        let record_id2 = table.insert(&record_data2).unwrap();
         assert_eq!(record_id2, 1);
         
         // 尝试插入第三条记录（应该失败）
@@ -430,7 +430,7 @@ fn test_table_full() {
                 record_data3.as_mut_ptr(),
                 4
             );
-        let result = table.insert(record_data3.as_ptr());
+        let result = table.insert(&record_data3);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), RemDbError::OutOfMemory);
         
@@ -476,7 +476,7 @@ fn test_not_null_constraint() {
             4
         );
         
-        let record_id = table.insert(zero_id_record.as_ptr()).unwrap();
+        let record_id = table.insert(&zero_id_record).unwrap();
         assert_eq!(record_id, 0);
         assert_eq!(table.record_count(), 1);
         
@@ -558,7 +558,7 @@ fn test_not_null_constraint() {
                 4
             );
         
-        let result2 = table2.insert(null_string_record.as_ptr());
+        let result2 = table2.insert(&null_string_record);
         assert!(result2.is_err());
         assert_eq!(result2.unwrap_err(), RemDbError::NotNullViolation);
         
@@ -592,7 +592,7 @@ fn test_not_null_constraint() {
                 4
             );
         
-        let result3 = table2.insert(nan_float_record.as_ptr());
+        let result3 = table2.insert(&nan_float_record);
         assert!(result3.is_err());
         assert_eq!(result3.unwrap_err(), RemDbError::TypeMismatch);
         
@@ -627,7 +627,7 @@ fn test_not_null_constraint() {
                 4
             );
         
-        let record_id4 = table2.insert(valid_record.as_ptr()).unwrap();
+        let record_id4 = table2.insert(&valid_record).unwrap();
         assert_eq!(record_id4, 0);
         assert_eq!(table2.record_count(), 1);
     }
