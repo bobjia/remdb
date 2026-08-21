@@ -207,9 +207,9 @@ fn test_sql_query() {
         let name_bytes = name.as_bytes();
         record.name[..name_bytes.len()].copy_from_slice(name_bytes);
         
-        let insert_id = unsafe {
-            db.get_table_mut(0).unwrap().insert(&record as *const _ as *const u8).unwrap()
-        };
+        let record_ptr = &record as *const _ as *const u8;
+        let record_slice = unsafe { core::slice::from_raw_parts(record_ptr, core::mem::size_of_val(&record)) };
+        let insert_id = db.get_table_mut(0).unwrap().insert(record_slice).unwrap();
         // insert返回的是槽位索引，不是记录的id字段值
         assert!(insert_id < config.tables[0].max_records);
     }
@@ -943,9 +943,9 @@ fn test_sql_group_by() {
         let name_bytes = name.as_bytes();
         record.name[..name_bytes.len()].copy_from_slice(name_bytes);
 
-        let insert_id = unsafe {
-            db.get_table_mut(0).unwrap().insert(&record as *const _ as *const u8).unwrap()
-        };
+        let record_ptr = &record as *const _ as *const u8;
+        let record_slice = unsafe { core::slice::from_raw_parts(record_ptr, core::mem::size_of_val(&record)) };
+        let insert_id = db.get_table_mut(0).unwrap().insert(record_slice).unwrap();
         assert!(insert_id < config.tables[0].max_records);
     }
 
@@ -995,5 +995,83 @@ fn test_sql_group_by() {
     println!("单列GROUP BY查询结果行数: {}", result.row_count());
     
     // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+}
+
+#[test]
+#[serial]
+fn test_zero_copy_select_path() {
+    // Test the zero-copy SELECT path (execute_query_raw)
+    let mut db_memory = [0u8; 1048576]; // 1MB memory buffer
+
+    // Reset global database
+    remdb::reset_global_db();
+
+    // Initialize platform abstraction
+    remdb::platform::init_platform(&TEST_PLATFORM);
+
+    // Initialize memory allocator
+    unsafe {
+        remdb::memory::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len()).unwrap();
+    }
+
+    // Initialize database
+    let config = &TEST_DB;
+    let db = unsafe { remdb::init_global_db(config).unwrap() };
+
+    // Insert test data using SQL
+    let insert_queries = [
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (1, 'Alice', 30, true, 1000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (2, 'Bob', 25, false, 2000)",
+        "INSERT INTO TEST_TABLE (id, name, age, active, created_at) VALUES (3, 'Charlie', 35, true, 3000)",
+    ];
+    for q in &insert_queries {
+        db.sql_query(q).unwrap();
+    }
+
+    // Test 1: SELECT * via zero-copy path
+    let query = remdb::sql::parse_sql_query("SELECT * FROM TEST_TABLE").unwrap();
+    let result = remdb::sql::execute_query_raw(db, &query).unwrap();
+    assert_eq!(result.row_count(), 3, "SELECT * should return 3 rows");
+    assert_eq!(result.column_count(), 5, "SELECT * should return 5 columns");
+
+    // Verify first row using typed accessors
+    // Note: column ordering from TEST_TABLE: id (Int32), name (str[32]), age (Int8), active (Bool), created_at (U64)
+    assert_eq!(result.get_field_i32(0, 0).unwrap(), 1);
+
+    // Test 2: SELECT with WHERE clause via zero-copy path
+    let query = remdb::sql::parse_sql_query("SELECT * FROM TEST_TABLE WHERE age > 25").unwrap();
+    let result = remdb::sql::execute_query_raw(db, &query).unwrap();
+    assert_eq!(result.row_count(), 2, "WHERE age > 25 should return 2 rows");
+
+    // Test 3: SELECT with LIMIT via zero-copy path
+    let query = remdb::sql::parse_sql_query("SELECT * FROM TEST_TABLE LIMIT 1").unwrap();
+    let result = remdb::sql::execute_query_raw(db, &query).unwrap();
+    assert_eq!(result.row_count(), 1, "LIMIT 1 should return 1 row");
+
+    // Test 4: SELECT with ORDER BY via zero-copy path
+    let query = remdb::sql::parse_sql_query("SELECT * FROM TEST_TABLE ORDER BY age ASC").unwrap();
+    let result = remdb::sql::execute_query_raw(db, &query).unwrap();
+    assert_eq!(result.row_count(), 3, "ORDER BY should return 3 rows");
+    // First row should be Bob (age 25)
+    assert_eq!(result.get_field_i32(0, 0).unwrap(), 2);
+
+    // Test 5: SELECT with specific columns via zero-copy path
+    let query = remdb::sql::parse_sql_query("SELECT id, name FROM TEST_TABLE").unwrap();
+    let result = remdb::sql::execute_query_raw(db, &query).unwrap();
+    assert_eq!(result.row_count(), 3, "SELECT columns should return 3 rows");
+    assert_eq!(result.column_count(), 2, "SELECT columns should return 2 columns");
+
+    // Test 6: SELECT with aggregate COUNT via zero-copy path
+    let query = remdb::sql::parse_sql_query("SELECT COUNT(*) FROM TEST_TABLE").unwrap();
+    let result = remdb::sql::execute_query_raw(db, &query).unwrap();
+    assert_eq!(result.row_count(), 1, "COUNT should return 1 row");
+
+    // Test 7: Empty result set
+    let query = remdb::sql::parse_sql_query("SELECT * FROM TEST_TABLE WHERE age > 100").unwrap();
+    let result = remdb::sql::execute_query_raw(db, &query).unwrap();
+    assert_eq!(result.row_count(), 0, "No matching records should return 0 rows");
+
+    // Reset global database
     remdb::reset_global_db();
 }

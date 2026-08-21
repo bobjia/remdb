@@ -42,6 +42,7 @@ pub mod memory;
 pub mod platform;
 pub mod monitor;
 pub mod sql;
+pub mod record_view;
 #[cfg(feature = "pubsub")]
 pub mod pubsub;
 #[cfg(feature = "ha")]
@@ -56,6 +57,9 @@ pub use index::{PrimaryIndex, SecondaryIndex, BTreeIndex, TTreeIndex, IndexStats
 pub use transaction::{Transaction, TransactionType};
 pub use monitor::{DbMetrics, DbMetricsSnapshot, HealthStatus, HealthCheckResult};
 pub use time_series::{TimeSeriesTable, TimeSeriesTableDef, TimeSeriesRecord, TimeSeriesConfig, TimeSeriesIndex, CompressionType};
+
+pub use record_view::RawRecordView;
+pub use sql::{CompactResultSet, ColumnInfo};
 
 // 重新导出宏
 pub use remdb_macros::table;

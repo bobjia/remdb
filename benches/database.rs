@@ -9,6 +9,9 @@ use remdb::TimeSeriesRecord;
 use remdb::types::*;
 use remdb::platform::*;
 use remdb::memory::allocator;
+use remdb::RawRecordView;
+use remdb::CompactResultSet;
+use remdb::sql::ColumnInfo;
 use alloc::sync::Arc;
 
 // 测试用Platform实现

@@ -1102,6 +1102,39 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
     pub fn set_record_count(&mut self, count: usize) {
         self.record_count = count;
     }
+
+    /// Create a zero-copy record view for a given record index.
+    ///
+    /// Returns a `RawRecordView` that borrows directly from the table's storage,
+    /// enabling typed field access without `Value` allocation.
+    pub fn get_record_view(&self, index: usize) -> crate::Result<crate::record_view::RawRecordView<'_>> {
+        if index >= self.def.max_records {
+            return Err(crate::RemDbError::RecordNotFound);
+        }
+        if self.status_array.get(index).map(|s| s.status) != Some(crate::types::RecordStatus::Used) {
+            return Err(crate::RemDbError::RecordNotFound);
+        }
+        let start = index * self.record_size;
+        let end = start + self.record_size;
+        let data = self.data.get(start..end).ok_or(crate::RemDbError::RecordNotFound)?;
+        Ok(crate::record_view::RawRecordView::new(data, &self.def))
+    }
+
+    /// Get record data slice with full bounds checking (safe version).
+    ///
+    /// Returns a borrowed slice of the record's raw bytes, or an error if the
+    /// index is out of bounds or the record is not in `Used` status.
+    pub fn get_record_slice_checked(&self, index: usize) -> crate::Result<&[u8]> {
+        if index >= self.def.max_records {
+            return Err(crate::RemDbError::RecordNotFound);
+        }
+        if self.status_array.get(index).map(|s| s.status) != Some(crate::types::RecordStatus::Used) {
+            return Err(crate::RemDbError::RecordNotFound);
+        }
+        let start = index * self.record_size;
+        let end = start + self.record_size;
+        self.data.get(start..end).ok_or(crate::RemDbError::RecordNotFound)
+    }
     
     /// 增加记录数（仅用于快照恢复）
     pub fn inc_record_count(&mut self) {
