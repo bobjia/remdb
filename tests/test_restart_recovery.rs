@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 use remdb::*;
 use remdb::platform::*;
 use remdb::config::*;
@@ -99,43 +100,16 @@ impl Platform for TestPlatform {
         0
     }
     
-    fn spin_lock(&self, lock: &mut u32) {
-        // 简单的自旋锁实现
+    fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+        let n = core::cmp::min(dest.len(), src.len());
         unsafe {
-            while core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .compare_exchange(0, 1, 
-                                 core::sync::atomic::Ordering::Acquire,
-                                 core::sync::atomic::Ordering::Relaxed)
-                .is_err() {
-                core::hint::spin_loop();
-            }
+            core::ptr::copy_nonoverlapping(src.as_ptr(), dest.as_mut_ptr(), n);
         }
     }
     
-    fn spin_unlock(&self, lock: &mut u32) {
+    fn memset(&self, dest: &mut [u8], value: u8) {
         unsafe {
-            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .store(0, core::sync::atomic::Ordering::Release);
-        }
-    }
-    
-    fn compiler_barrier(&self) {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    fn full_memory_barrier(&self) {
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-        unsafe {
-            core::ptr::copy_nonoverlapping(src, dest, size);
-        }
-    }
-    
-    fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-        unsafe {
-            core::ptr::write_bytes(dest, value, size);
+            core::ptr::write_bytes(dest.as_mut_ptr(), value, dest.len());
         }
     }
     
@@ -190,30 +164,20 @@ impl Platform for TestPlatform {
         Ok(())
     }
     
-    fn file_write(&self, handle: FileHandle, buffer: *const u8, size: usize) -> FileResult<usize> {
+    fn file_write(&self, handle: FileHandle, buffer: &[u8]) -> FileResult<usize> {
         // 使用std::fs::File实现文件写入
         use std::io::Write;
         
         let file = unsafe { &mut *(handle as *mut std::fs::File) };
-        let slice = unsafe { std::slice::from_raw_parts(buffer, size) };
-        
-        match file.write(slice) {
-            Ok(n) => Ok(n),
-            Err(_) => Err(()),
-        }
+        file.write(buffer).map_err(|_| ())
     }
     
-    fn file_read(&self, handle: FileHandle, buffer: *mut u8, size: usize) -> FileResult<usize> {
+    fn file_read(&self, handle: FileHandle, buffer: &mut [u8]) -> FileResult<usize> {
         // 使用std::fs::File实现文件读取
         use std::io::Read;
         
         let file = unsafe { &mut *(handle as *mut std::fs::File) };
-        let slice = unsafe { std::slice::from_raw_parts_mut(buffer, size) };
-        
-        match file.read(slice) {
-            Ok(n) => Ok(n),
-            Err(_) => Err(()),
-        }
+        file.read(buffer).map_err(|_| ())
     }
     
     fn file_seek(&self, handle: FileHandle, offset: i64, whence: SeekWhence) -> FileResult<u64> {
@@ -253,11 +217,10 @@ impl Platform for TestPlatform {
         }
     }
     
-    fn crc32(&self, data: *const u8, size: usize) -> u32 {
+    fn crc32(&self, data: &[u8]) -> u32 {
         // 简单的XOR校验和实现
-        let slice = unsafe { std::slice::from_raw_parts(data, size) };
         let mut checksum = 0u32;
-        for &byte in slice {
+        for &byte in data {
             checksum ^= byte as u32;
         }
         checksum
@@ -326,7 +289,7 @@ fn test_restart_recovery() -> Result<()> {
                 4
             );
             
-            db.get_table_mut(0).unwrap().insert(record_data.as_ptr()).unwrap();
+            db.get_table_mut(0).unwrap().insert(&record_data).unwrap();
         }
         
         // 保存全量快照
@@ -352,11 +315,10 @@ fn test_restart_recovery() -> Result<()> {
         let mut count = 0;
         
         // 使用iterate方法遍历表中的所有记录
-        table.iterate(|_id, record_ptr| {
+        table.iterate(|_id, record_data| {
             count += 1;
             
             // 读取记录数据
-            let record_data = unsafe { core::slice::from_raw_parts(record_ptr, 40) };
             let id = unsafe { core::ptr::read_unaligned(record_data.as_ptr() as *const u32) };
             let name_bytes = &record_data[4..36];
             let name = std::str::from_utf8(name_bytes)

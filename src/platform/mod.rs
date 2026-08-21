@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 #[cfg(feature = "std")]
 use std::sync::OnceLock;
 
@@ -169,12 +171,26 @@ pub fn memcpy(dest: &mut [u8], src: &[u8]) {
     }
 }
 
-/// 内存设置
+/// 内存拷贝（原始指针版本）——从 src 拷贝 count 字节到 dest
+pub fn memcpy_ptr(dest: *mut u8, src: *const u8, count: usize) {
+    unsafe {
+        core::ptr::copy_nonoverlapping(src as *const u8, dest, count);
+    }
+}
+
+/// 内存设置（安全版本）
 pub fn memset(dest: &mut [u8], value: u8) {
     if let Some(platform) = PLATFORM.get() {
         platform.memset(dest, value)
     } else {
         panic!("Platform not initialized")
+    }
+}
+
+/// 内存设置（原始指针版本）——设置 dest 起始 count 字节为 value
+pub fn memset_ptr(dest: *mut u8, value: u8, count: usize) {
+    unsafe {
+        core::ptr::write_bytes(dest, value, count);
     }
 }
 

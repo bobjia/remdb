@@ -696,14 +696,14 @@ fn test_table_record_ref_and_scan_ref() {
         core::ptr::copy_nonoverlapping(&id1 as *const u32 as *const u8, record1.as_mut_ptr(), 4);
         let name1 = b"alice";
         core::ptr::copy_nonoverlapping(name1.as_ptr(), record1.as_mut_ptr().add(4), name1.len());
-        table.insert(record1.as_ptr()).unwrap();
+        table.insert(&record1).unwrap();
 
         let mut record2 = [0u8; 12];
         let id2: u32 = 2;
         core::ptr::copy_nonoverlapping(&id2 as *const u32 as *const u8, record2.as_mut_ptr(), 4);
         let name2 = b"bob";
         core::ptr::copy_nonoverlapping(name2.as_ptr(), record2.as_mut_ptr().add(4), name2.len());
-        table.insert(record2.as_ptr()).unwrap();
+        table.insert(&record2).unwrap();
 
         let record_ref = table.get_by_id_ref(0).expect("record not found");
         assert_eq!(record_ref.get_u32(0).unwrap(), 1);
