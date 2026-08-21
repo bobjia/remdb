@@ -5,11 +5,11 @@ use alloc::{sync::Arc, collections::BTreeMap, vec::Vec, string::String, string::
 use std::{sync::RwLock, collections::HashMap, sync::Mutex};
 
 #[cfg(not(feature = "std"))]
-use crate::memory::allocator::Mutex;
+use remdb_alloc::Mutex;
 
 // For no-std mode, we don't have RwLock, so we'll use Mutex instead
 #[cfg(not(feature = "std"))]
-use crate::memory::allocator::Mutex as RwLock;
+use remdb_alloc::Mutex as RwLock;
 
 
 /// 时序索引

@@ -14,7 +14,7 @@ fn main() {
     
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(MEMORY.as_mut_ptr(), MEMORY_SIZE)
+        remdb::memory::init_global_allocator(MEMORY.as_mut_ptr(), MEMORY_SIZE)
             .expect("Failed to initialize memory allocator");
         println!("Memory allocator initialized with {} MB", MEMORY_SIZE / 1024 / 1024);
     }

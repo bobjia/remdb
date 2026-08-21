@@ -110,7 +110,7 @@ fn test_index_recovery() -> Result<()> {
     
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         )?;

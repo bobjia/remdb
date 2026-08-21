@@ -54,7 +54,7 @@ const TABLE_MEM_SIZE: usize = TABLE_DATA_SIZE + STATUS_ARRAY_SIZE + FREE_SLOTS_S
 fn main() {
     unsafe {
         // 初始化内存分配器
-        let _ = memory::allocator::init_global_allocator(
+        let _ = memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         );

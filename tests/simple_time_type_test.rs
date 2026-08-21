@@ -47,7 +47,7 @@ fn test_create_table_with_time_types() {
     
     // 初始化内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         ).unwrap();

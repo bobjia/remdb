@@ -34,7 +34,7 @@ fn main() {
         let memory_size = 128 * 1024 * 1024; // 128MB
         static mut DB_MEMORY: [u8; 128 * 1024 * 1024] = [0u8; 128 * 1024 * 1024];
         
-        let _ = memory::allocator::init_global_allocator(
+        let _ = memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         );

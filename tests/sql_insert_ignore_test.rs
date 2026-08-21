@@ -140,7 +140,7 @@ fn test_insert_ignore_functionality() {
     
     // 初始化内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
         ).unwrap();

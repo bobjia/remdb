@@ -7,7 +7,7 @@ use super::TimeSeriesRecord;
 use std::sync::Mutex;
 
 #[cfg(not(feature = "std"))]
-use crate::memory::allocator::Mutex;
+use remdb_alloc::Mutex;
 
 /// 分区统计信息
 #[derive(Debug, Clone, Default)]

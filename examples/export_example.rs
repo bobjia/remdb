@@ -38,7 +38,7 @@ fn main() {
     // 1. 初始化内存分配器
     println!("1. 初始化内存分配器...");
     let mut memory = [0u8; 65536];
-    crate::memory::allocator::init_global_allocator(memory.as_mut_ptr(), memory.len()).unwrap();
+    crate::memory::init_global_allocator(memory.as_mut_ptr(), memory.len()).unwrap();
     println!("   内存分配器初始化成功");
     
     // 2. 初始化数据库

@@ -150,7 +150,7 @@ fn test_table_insert_delete() {
     
     unsafe {
         // 使用静态内存缓冲区初始化全局分配器
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(), 
             DB_MEMORY.len()
         ).unwrap();
@@ -213,7 +213,7 @@ fn test_table_get_field() {
     
     unsafe {
         // 使用静态内存缓冲区初始化全局分配器
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(), 
             DB_MEMORY.len()
         ).unwrap();
@@ -271,7 +271,7 @@ fn test_table_set_field() {
     
     unsafe {
         // 使用静态内存缓冲区初始化全局分配器
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(), 
             DB_MEMORY.len()
         ).unwrap();
@@ -330,7 +330,7 @@ fn test_table_iterate() {
     
     unsafe {
         // 使用静态内存缓冲区初始化全局分配器
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(), 
             DB_MEMORY.len()
         ).unwrap();
@@ -414,7 +414,7 @@ fn test_table_full() {
     
     unsafe {
         // 使用静态内存缓冲区初始化全局分配器
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(), 
             DB_MEMORY.len()
         ).unwrap();
@@ -479,7 +479,7 @@ fn test_not_null_constraint() {
     
     unsafe {
         // 使用静态内存缓冲区初始化全局分配器
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(), 
             DB_MEMORY.len()
         ).unwrap();

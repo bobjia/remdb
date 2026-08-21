@@ -201,7 +201,7 @@ fn test_large_table_performance() {
         // 预分配内存缓冲区并初始化全局分配器
         let mut memory_buffer = Vec::with_capacity(DB_CONFIG.total_memory);
         memory_buffer.set_len(DB_CONFIG.total_memory);
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             memory_buffer.as_mut_ptr(), 
             DB_CONFIG.total_memory
         ).unwrap();

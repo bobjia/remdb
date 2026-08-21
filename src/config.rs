@@ -7,7 +7,7 @@ pub use crate::ha::HAConfig;
 /// 默认内存分配器实现
 pub struct DefaultMemoryAllocator;
 
-impl MemoryAllocator for DefaultMemoryAllocator {
+impl remdb_alloc::MemoryAllocator for DefaultMemoryAllocator {
     fn allocate(&self, size: usize) -> Option<core::ptr::NonNull<u8>> {
         // 实际分配内存
         #[cfg(feature = "std")] {
@@ -15,7 +15,7 @@ impl MemoryAllocator for DefaultMemoryAllocator {
             let ptr = vec.as_mut_ptr();
             // 释放vec对内存的所有权，但不释放内存本身
             std::mem::forget(vec);
-            Some(unsafe { core::ptr::NonNull::new_unchecked(ptr) })
+            core::ptr::NonNull::new(ptr)
         }
         #[cfg(not(feature = "std"))] {
             // 非std环境下返回None
@@ -37,13 +37,7 @@ impl MemoryAllocator for DefaultMemoryAllocator {
 }
 
 /// 内存分配器接口
-pub trait MemoryAllocator: Sync {
-    /// 分配内存
-    fn allocate(&self, size: usize) -> Option<core::ptr::NonNull<u8>>;
-    
-    /// 释放内存
-    fn deallocate(&self, ptr: core::ptr::NonNull<u8>, size: usize);
-}
+pub use remdb_alloc::MemoryAllocator;
 
 /// 日志模式
 #[derive(Copy, Clone, PartialEq)]

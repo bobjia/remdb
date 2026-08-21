@@ -268,7 +268,7 @@ fn test_snapshot_gen() -> Result<()> {
         // 预分配内存缓冲区并初始化全局分配器
         let mut memory_buffer = Vec::with_capacity(1000000); // 1MB
         memory_buffer.set_len(1000000);
-        remdb::memory::allocator::init_global_allocator(
+        remdb::memory::init_global_allocator(
             memory_buffer.as_mut_ptr(), 
             1000000
         ).unwrap();
