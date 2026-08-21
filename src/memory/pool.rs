@@ -136,17 +136,17 @@ impl<'a> MultiPoolManager<'a> {
     }
 
     /// 释放内存块
-    pub unsafe fn free(&mut self, ptr: NonNull<u8>) {
+    pub unsafe fn free(&mut self, ptr: NonNull<u8>) -> Result<(), crate::types::RemDbError> {
         // 找到包含该指针的内存池
         for pool in &mut self.pools[..self.pool_count] {
             if pool.contains(ptr) {
                 pool.free(ptr);
-                return;
+                return Ok(());
             }
         }
 
-        // 如果没有找到，panic
-        panic!("Pointer not found in any memory pool");
+        // 如果没有找到，返回错误
+        Err(crate::types::RemDbError::InvalidPointer)
     }
 
     /// 获取总内存使用情况

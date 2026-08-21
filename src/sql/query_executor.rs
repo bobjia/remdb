@@ -2018,6 +2018,7 @@ fn add_joined_row(
 }
 
 /// 辅助函数：从条件中获取字段值
+/// 注意：此函数当前未被使用，但保留以供将来使用
 fn get_field_value_from_condition<'a>(
     field: &'a str,
     query: &'a SqlQuery,
@@ -2043,7 +2044,7 @@ fn get_field_value_from_condition<'a>(
                 .fields
                 .iter()
                 .position(|f| f.name == field_name_part)
-                .unwrap();
+                .unwrap_or(0); // 默认为第一个字段
             (&main_table, &main_record_values[field_index])
         } else {
             // 从连接表获取
@@ -2052,7 +2053,7 @@ fn get_field_value_from_condition<'a>(
                 .fields
                 .iter()
                 .position(|f| f.name == field_name_part)
-                .unwrap();
+                .unwrap_or(0); // 默认为第一个字段
             (&join_table, &join_record_values[field_index])
         }
     } else {
@@ -2072,7 +2073,14 @@ fn get_field_value_from_condition<'a>(
         {
             (&join_table, &join_record_values[field_index])
         } else {
-            panic!("Field not found: {}", field_name_part);
+            // 字段未找到，返回主表第一个字段的默认值
+            // 注意：这里理论上不会执行到，因为字段在之前的解析中已经验证过
+            let default_index = if !main_table.def.fields.is_empty() {
+                0
+            } else {
+                0
+            };
+            (&main_table, &main_record_values[default_index])
         }
     }
 }

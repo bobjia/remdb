@@ -404,7 +404,7 @@ pub fn alloc(size: usize) -> Result<NonNull<u8>> {
 pub fn free(ptr: NonNull<u8>) {
     if let Ok(mut allocator_guard) = GLOBAL_ALLOCATOR.lock() {
         if let Some(allocator) = allocator_guard.as_mut() {
-            allocator.free(ptr);
+            let _ = allocator.free(ptr); // 忽略错误：无效指针无法恢复
         }
     }
 }

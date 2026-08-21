@@ -2340,7 +2340,7 @@ impl DdlExecutor for RemDb {
                     // 向量类型：根据压缩配置计算大小
                     crate::system_tables::get_vector_field_size(*dimension)
                 }
-                _ => data_type.size(),
+                _ => data_type.size().unwrap_or(0),
             };
 
             // 将字段名转换为静态字符串
@@ -3025,7 +3025,7 @@ impl DdlExecutor for RemDb {
                         // 向量类型：维度 * 4字节（f32）
                         size as usize * 4
                     },
-                    _ => data_type.size(),
+                    _ => data_type.size().unwrap_or(0),
                 };
 
                 // 解析约束条件
@@ -3115,7 +3115,7 @@ impl DdlExecutor for RemDb {
                         // 向量类型：维度 * 4字节（f32）
                         size as usize * 4
                     },
-                    _ => data_type.size(),
+                    _ => data_type.size().unwrap_or(0),
                 };
 
                 // 更新字段定义
@@ -3751,7 +3751,7 @@ impl RemDb {
 
         // 添加时间字段（TIMESTAMP）
         let time_field_name = time_field.to_string();
-        let time_field_size = DataType::Timestamp.size();
+        let time_field_size = DataType::Timestamp.size_unwrap();
         field_defs.push(FieldDef {
             name: time_field_name.clone(),
             data_type: DataType::Timestamp,
@@ -3773,7 +3773,7 @@ impl RemDb {
 
         // 添加值字段（FLOAT64）
         let value_field_name = value_field.to_string();
-        let value_field_size = DataType::Float64.size();
+        let value_field_size = DataType::Float64.size_unwrap();
         field_defs.push(FieldDef {
             name: value_field_name.clone(),
             data_type: DataType::Float64,

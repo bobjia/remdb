@@ -368,27 +368,36 @@ impl DataType {
     /// - 精度 6-8: 8字节（微秒级，默认）
     /// - 精度 9: 10字节（纳秒级）
     /// 向量类型：维度 * 4字节（float32）
-    pub const fn size(&self) -> usize {
+    pub const fn size(&self) -> Option<usize> {
         match self {
-            DataType::UInt8 => 1,
-            DataType::UInt16 => 2,
-            DataType::UInt32 => 4,
-            DataType::UInt64 => 8,
-            DataType::Int8 => 1,
-            DataType::Int16 => 2,
-            DataType::Int32 => 4,
-            DataType::Int64 => 8,
-            DataType::Float32 => 4,
-            DataType::Float64 => 8,
-            DataType::Bool => 1,
-            DataType::Timestamp => core::mem::size_of::<db_timestamp>(), // 实际大小，包括精度和标志
-            DataType::TimestampTZ => core::mem::size_of::<db_timestamp>(), // 实际大小，包括精度和时区偏移
-            DataType::Interval => core::mem::size_of::<db_interval>(), // 实际大小，包括精度和标志
-            DataType::VarChar => panic!("VarChar size is variable at compile time"),
-            DataType::Char => panic!("Char size is variable at compile time"),
-            DataType::Text => panic!("Text size is variable at compile time"),
-            DataType::Vector => panic!("Vector size depends on dimension at runtime"),
-            DataType::Json => panic!("Json size is variable at runtime"),
+            DataType::UInt8 => Some(1),
+            DataType::UInt16 => Some(2),
+            DataType::UInt32 => Some(4),
+            DataType::UInt64 => Some(8),
+            DataType::Int8 => Some(1),
+            DataType::Int16 => Some(2),
+            DataType::Int32 => Some(4),
+            DataType::Int64 => Some(8),
+            DataType::Float32 => Some(4),
+            DataType::Float64 => Some(8),
+            DataType::Bool => Some(1),
+            DataType::Timestamp => Some(core::mem::size_of::<db_timestamp>()), // 实际大小，包括精度和标志
+            DataType::TimestampTZ => Some(core::mem::size_of::<db_timestamp>()), // 实际大小，包括精度和时区偏移
+            DataType::Interval => Some(core::mem::size_of::<db_interval>()), // 实际大小，包括精度和标志
+            DataType::VarChar => None, // VarChar size is variable at compile time
+            DataType::Char => None, // Char size is variable at compile time
+            DataType::Text => None, // Text size is variable at compile time
+            DataType::Vector => None, // Vector size depends on dimension at runtime
+            DataType::Json => None, // Json size is variable at runtime
+        }
+    }
+
+    /// 返回固定大小类型的大小，如果是可变大小类型则 panic
+    /// 仅用于确定已知是固定大小的类型
+    pub const fn size_unwrap(&self) -> usize {
+        match self.size() {
+            Some(s) => s,
+            None => panic!("size_unwrap called on variable-size type"),
         }
     }
 
@@ -1500,6 +1509,21 @@ pub enum RemDbError {
     InvalidState,
     /// 内部错误
     InternalError,
+    // =========== 新增的 panic-free 错误变体 ===========
+    /// 平台未初始化
+    PlatformNotInitialized,
+    /// 锁错误（锁中毒等）
+    LockError,
+    /// 无效指针
+    InvalidPointer,
+    /// 无效数据（带描述）
+    InvalidData(&'static str),
+    /// 可变大小类型
+    VariableSizeType,
+    /// 协议错误
+    ProtocolError(String),
+    /// 意外的 None 值（带描述）
+    UnexpectedNone(&'static str),
 }
 
 impl fmt::Display for RemDbError {
@@ -1537,6 +1561,14 @@ impl fmt::Display for RemDbError {
             RemDbError::DatabaseClosed => write!(f, "Database closed"),
             RemDbError::MaxDatabasesReached => write!(f, "Maximum databases reached"),
             RemDbError::InternalError => write!(f, "Internal error"),
+            // 新增的恐慌安全错误变体
+            RemDbError::PlatformNotInitialized => write!(f, "Platform not initialized"),
+            RemDbError::LockError => write!(f, "Lock error"),
+            RemDbError::InvalidPointer => write!(f, "Invalid pointer"),
+            RemDbError::InvalidData(msg) => write!(f, "Invalid data: {}", msg),
+            RemDbError::VariableSizeType => write!(f, "Variable size type"),
+            RemDbError::ProtocolError(msg) => write!(f, "Protocol error: {}", msg),
+            RemDbError::UnexpectedNone(msg) => write!(f, "Unexpected None: {}", msg),
         }
     }
 }
