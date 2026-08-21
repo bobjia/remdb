@@ -52,9 +52,10 @@ fn main() {
     db.init().expect("failed to init database");
 
     let db = Arc::new(Mutex::new(db));
+    let pubsub = Arc::new(remdb_server::pubsub::PubSubManager::new());
 
     let listener = TcpListener::bind(&bind).expect("failed to bind");
     println!("listening on {}", bind);
 
-    let _ = remdb_server::server::serve(listener, db);
+    let _ = remdb_server::server::serve(listener, db, pubsub);
 }

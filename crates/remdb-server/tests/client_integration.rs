@@ -9,6 +9,7 @@ use prost::Message as _;
 
 use remdb_server::handler::SharedDb;
 use remdb_server::pb;
+use remdb_server::pubsub::PubSubManager;
 use remdb_server::server::serve;
 
 static PLATFORM_INIT: std::sync::Once = std::sync::Once::new();
@@ -49,9 +50,10 @@ fn start_server(port: u16, wal_dir: &'static str) -> std::thread::JoinHandle<()>
     let mut db = remdb::RemDb::new(config);
     db.init().expect("init");
     let db: SharedDb = Arc::new(Mutex::new(db));
+    let pubsub = Arc::new(PubSubManager::new());
     let listener = std::net::TcpListener::bind(("127.0.0.1", port)).expect("bind");
     std::thread::spawn(move || {
-        serve(listener, db).expect("serve");
+        serve(listener, db, pubsub).expect("serve");
     })
 }
 
@@ -220,4 +222,86 @@ fn ddl_insert_select_and_error_flow() {
         "querying a missing table should produce a non-zero error code"
     );
     eprintln!("error-path status code: {}", err_status.code);
+}
+
+#[test]
+fn pubsub_subscribe_publish_event() {
+    let port = ephemeral_port();
+    let _h = start_server(port, "/tmp/remdb-srv-test-pubsub");
+
+    // Subscriber client
+    let mut sub = Client::connect(port);
+    let sub_resp = sub.round_trip(pb::Request {
+        request_id: 1,
+        op: Some(pb::request::Op::Subscribe(pb::SubscribeRequest {
+            topic: "sensors".into(),
+        })),
+    });
+    let sub_status = sub_resp.status.expect("subscribe status present");
+    assert_eq!(sub_status.code, 0, "subscribe should succeed");
+    let sub_id = match sub_resp.payload {
+        Some(pb::response::Payload::Subscribe(ref s)) => s.subscription_id,
+        other => panic!("expected Subscribe payload, got {:?}", other),
+    };
+    assert!(sub_id > 0, "subscription id should be non-zero");
+
+    // Publisher client
+    let mut pub_ = Client::connect(port);
+    let pub_resp = pub_.round_trip(pb::Request {
+        request_id: 2,
+        op: Some(pb::request::Op::Publish(pb::PublishRequest {
+            topic: "sensors".into(),
+            payload: vec![10, 20, 30],
+        })),
+    });
+    let pub_status = pub_resp.status.expect("publish status present");
+    assert_eq!(pub_status.code, 0, "publish should succeed");
+    let count = match pub_resp.payload {
+        Some(pb::response::Payload::Publish(ref p)) => p.subscriber_count,
+        other => panic!("expected Publish payload, got {:?}", other),
+    };
+    assert_eq!(count, 1, "expected 1 subscriber");
+
+    // Subscriber reads the pushed event (request_id=0, Payload::PubSubEvent).
+    let mut prefix = [0u8; 4];
+    sub.stream.read_exact(&mut prefix).expect("read event prefix");
+    let len = u32::from_be_bytes(prefix) as usize;
+    let mut body = vec![0u8; len];
+    sub.stream.read_exact(&mut body).expect("read event body");
+    let event_resp = pb::Response::decode(body.as_slice()).expect("decode event");
+    assert_eq!(event_resp.request_id, 0, "push events have request_id=0");
+    let event = match event_resp.payload {
+        Some(pb::response::Payload::PubsubEvent(ref e)) => e.clone(),
+        other => panic!("expected PubSubEvent payload, got {:?}", other),
+    };
+    assert_eq!(event.topic, "sensors");
+    assert_eq!(event.payload, vec![10, 20, 30]);
+
+    // Unsubscribe
+    let unsub_resp = sub.round_trip(pb::Request {
+        request_id: 3,
+        op: Some(pb::request::Op::Unsubscribe(pb::UnsubscribeRequest {
+            topic: "sensors".into(),
+            subscription_id: sub_id,
+        })),
+    });
+    let unsub_status = unsub_resp.status.expect("unsubscribe status present");
+    assert_eq!(unsub_status.code, 0, "unsubscribe should succeed");
+
+    // Publish again — subscriber should NOT receive event (count=0 for this
+    // publisher's view, but the subscriber is already unsubscribed).
+    let pub2_resp = pub_.round_trip(pb::Request {
+        request_id: 4,
+        op: Some(pb::request::Op::Publish(pb::PublishRequest {
+            topic: "sensors".into(),
+            payload: vec![99],
+        })),
+    });
+    let pub2_status = pub2_resp.status.expect("publish status present");
+    assert_eq!(pub2_status.code, 0);
+    let count2 = match pub2_resp.payload {
+        Some(pb::response::Payload::Publish(ref p)) => p.subscriber_count,
+        other => panic!("expected Publish payload, got {:?}", other),
+    };
+    assert_eq!(count2, 0, "expected 0 subscribers after unsubscribe");
 }

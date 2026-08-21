@@ -65,6 +65,13 @@ message FieldSchema { string name = 1; string type = 2; }
 message PingRequest { string client_version = 1; }
 message PingResponse { string server_version = 1; }
 
+message SubscribeRequest { string topic = 1; }
+message SubscribeResponse { uint64 subscription_id = 1; }
+message UnsubscribeRequest { string topic = 1; uint64 subscription_id = 2; }
+message PublishRequest { string topic = 1; bytes payload = 2; }
+message PublishResponse { uint32 subscriber_count = 1; }
+message PubSubEvent { string topic = 1; bytes payload = 2; }
+
 message Request {
   uint64 request_id = 1;
   oneof op {
@@ -73,6 +80,9 @@ message Request {
     CrudRequest   crud   = 4;
     SchemaRequest schema = 5;
     PingRequest   ping   = 6;
+    SubscribeRequest   subscribe   = 7;
+    UnsubscribeRequest unsubscribe = 8;
+    PublishRequest     publish     = 9;
   }
 }
 
@@ -80,10 +90,13 @@ message Response {
   uint64 request_id = 1;
   Status status = 2;
   oneof payload {
-    QueryResponse  query  = 3;
-    DdlResponse    ddl    = 4;
-    CrudResponse   crud   = 5;
-    SchemaResponse schema = 6;
-    PingResponse   ping   = 7;
+    QueryResponse     query         = 3;
+    DdlResponse       ddl           = 4;
+    CrudResponse      crud          = 5;
+    SchemaResponse    schema        = 6;
+    PingResponse      ping          = 7;
+    PubSubEvent       pubsub_event  = 8;
+    SubscribeResponse subscribe     = 9;
+    PublishResponse   publish       = 10;
   }
 }

@@ -2,6 +2,7 @@
 
 use crate::pb::response::Payload;
 use crate::pb::status::Code;
+use crate::pubsub::{Event, PubSubManager};
 use crate::serialize::build_query_response;
 use remdb::RemDb;
 
@@ -10,7 +11,12 @@ pub type SharedDb = std::sync::Arc<std::sync::Mutex<RemDb>>;
 
 /// Execute a decoded protobuf `Request` against the shared DB and produce a
 /// `Response` with the same `request_id`.
-pub fn handle_request(db: &SharedDb, request: &crate::pb::Request) -> crate::pb::Response {
+pub fn handle_request(
+    db: &SharedDb,
+    pubsub: &PubSubManager,
+    event_tx: &std::sync::mpsc::Sender<Event>,
+    request: &crate::pb::Request,
+) -> crate::pb::Response {
     let request_id = request.request_id;
     let build = |status: crate::pb::Status, payload: Option<Payload>| crate::pb::Response {
         request_id,
@@ -85,6 +91,23 @@ pub fn handle_request(db: &SharedDb, request: &crate::pb::Request) -> crate::pb:
                 },
                 Err(e) => build(err_status(&format!("schema parse error: {:?}", e)), None),
             }
+        }
+        crate::pb::request::Op::Subscribe(s) => {
+            let tx = event_tx.clone();
+            let sub_id = pubsub.subscribe(&s.topic, tx);
+            let sub_resp = crate::pb::SubscribeResponse { subscription_id: sub_id };
+            build(ok_status(), Some(Payload::Subscribe(sub_resp)))
+        }
+        crate::pb::request::Op::Unsubscribe(u) => {
+            pubsub.unsubscribe(&u.topic, u.subscription_id);
+            build(ok_status(), None)
+        }
+        crate::pb::request::Op::Publish(p) => {
+            let count = pubsub.publish(&p.topic, p.payload.clone());
+            let pub_resp = crate::pb::PublishResponse {
+                subscriber_count: count as u32,
+            };
+            build(ok_status(), Some(Payload::Publish(pub_resp)))
         }
     }
 }

@@ -8,3 +8,4 @@ pub mod buffer;
 pub mod serialize;
 pub mod handler;
 pub mod server;
+pub mod pubsub;
