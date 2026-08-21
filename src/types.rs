@@ -717,7 +717,7 @@ pub mod time_utils {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
+            .unwrap_or(std::time::Duration::ZERO)
             .as_millis() as u64
     }
 
@@ -728,7 +728,7 @@ pub mod time_utils {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
+            .unwrap_or(std::time::Duration::ZERO)
             .as_micros() as u64
     }
 }

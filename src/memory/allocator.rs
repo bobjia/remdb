@@ -170,7 +170,12 @@ impl StaticAllocator {
         let aligned_size = size - (aligned_addr - start_addr);
 
         // 更新内存池信息
-        self.start_ptr = NonNull::new(aligned_ptr).expect("Failed to update memory pool");
+        // SAFETY: aligned_ptr is always non-null because start_ptr is non-null
+        // and alignment only increases the address.
+        if let Some(ptr) = NonNull::new(aligned_ptr) {
+            self.start_ptr = ptr;
+        }
+        // If aligned_ptr is null (should not happen), keep the old pointer.
         self.size = aligned_size;
 
         // 重置分配器

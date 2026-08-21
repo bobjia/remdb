@@ -136,7 +136,7 @@ impl<'a> MultiPoolManager<'a> {
     }
 
     /// 释放内存块
-    pub unsafe fn free(&mut self, ptr: NonNull<u8>) -> Result<(), crate::types::RemDbError> {
+    pub unsafe fn free(&mut self, ptr: NonNull<u8>) -> Result<()> {
         // 找到包含该指针的内存池
         for pool in &mut self.pools[..self.pool_count] {
             if pool.contains(ptr) {

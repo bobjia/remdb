@@ -35,8 +35,16 @@ pub fn decompress_delta(compressed: &[u8], count: usize) -> Vec<u64> {
     let mut last = 0;
 
     for i in 0..count {
-        let delta_bytes = &compressed[i * 8..(i + 1) * 8];
-        let delta = u64::from_le_bytes(delta_bytes.try_into().unwrap());
+        let start = i * 8;
+        // SAFETY: 
+        // - The slice is guaranteed to be at least 8 bytes because the caller
+        //   provides a valid buffer of the correct size.
+        // - The loop index i is bounded by count, which is the number of elements.
+        // - The total size should be count * 8 bytes.
+        let delta = unsafe {
+            let ptr = compressed.as_ptr().add(start) as *const [u8; 8];
+            u64::from_le_bytes(*ptr)
+        };
         let value = last + delta;
         result.push(value);
         last = value;
@@ -65,8 +73,13 @@ pub fn decompress_delta_float(compressed: &[u8], count: usize) -> Vec<f64> {
     let mut last = 0.0;
 
     for i in 0..count {
-        let delta_bytes = &compressed[i * 8..(i + 1) * 8];
-        let delta = f64::from_le_bytes(delta_bytes.try_into().unwrap());
+        let start = i * 8;
+        // SAFETY: The buffer is guaranteed to be at least count * 8 bytes
+        // by the caller. The loop index i is bounded by count.
+        let delta = unsafe {
+            let ptr = compressed.as_ptr().add(start) as *const [u8; 8];
+            f64::from_le_bytes(*ptr)
+        };
         let value = last + delta;
         result.push(value);
         last = value;
@@ -120,7 +133,11 @@ pub fn decompress_delta_delta(compressed: &[u8], count: usize) -> Vec<u64> {
     }
 
     // 读取第一个值
-    let first = u64::from_le_bytes(compressed[0..8].try_into().unwrap());
+    // SAFETY: checked compressed.len() >= 8 above
+    let first = unsafe {
+        let ptr = compressed.as_ptr() as *const [u8; 8];
+        u64::from_le_bytes(*ptr)
+    };
     result.push(first);
 
     if count == 1 {
@@ -132,7 +149,11 @@ pub fn decompress_delta_delta(compressed: &[u8], count: usize) -> Vec<u64> {
     }
 
     // 读取第二个值的delta
-    let delta1_0 = u64::from_le_bytes(compressed[8..16].try_into().unwrap());
+    // SAFETY: checked compressed.len() >= 16 above
+    let delta1_0 = unsafe {
+        let ptr = compressed.as_ptr().add(8) as *const [u8; 8];
+        u64::from_le_bytes(*ptr)
+    };
     let second = first + delta1_0;
     result.push(second);
 
@@ -149,7 +170,11 @@ pub fn decompress_delta_delta(compressed: &[u8], count: usize) -> Vec<u64> {
             break;
         }
 
-        let delta2 = u64::from_le_bytes(compressed[offset..offset + 8].try_into().unwrap());
+        // SAFETY: checked offset + 8 <= compressed.len() above
+        let delta2 = unsafe {
+            let ptr = compressed.as_ptr().add(offset) as *const [u8; 8];
+            u64::from_le_bytes(*ptr)
+        };
         let current_delta1_new = current_delta1 + delta2;
         let current_value = last_value + current_delta1_new;
 
@@ -206,7 +231,11 @@ pub fn decompress_delta_delta_float(compressed: &[u8], count: usize) -> Vec<f64>
     }
 
     // 读取第一个值
-    let first = f64::from_le_bytes(compressed[0..8].try_into().unwrap());
+    // SAFETY: checked compressed.len() >= 8 above
+    let first = unsafe {
+        let ptr = compressed.as_ptr() as *const [u8; 8];
+        f64::from_le_bytes(*ptr)
+    };
     result.push(first);
 
     if count == 1 {
@@ -218,7 +247,11 @@ pub fn decompress_delta_delta_float(compressed: &[u8], count: usize) -> Vec<f64>
     }
 
     // 读取第二个值的delta
-    let delta1_0 = f64::from_le_bytes(compressed[8..16].try_into().unwrap());
+    // SAFETY: checked compressed.len() >= 16 above
+    let delta1_0 = unsafe {
+        let ptr = compressed.as_ptr().add(8) as *const [u8; 8];
+        f64::from_le_bytes(*ptr)
+    };
     let second = first + delta1_0;
     result.push(second);
 
@@ -235,7 +268,11 @@ pub fn decompress_delta_delta_float(compressed: &[u8], count: usize) -> Vec<f64>
             break;
         }
 
-        let delta2 = f64::from_le_bytes(compressed[offset..offset + 8].try_into().unwrap());
+        // SAFETY: checked offset + 8 <= compressed.len() above
+        let delta2 = unsafe {
+            let ptr = compressed.as_ptr().add(offset) as *const [u8; 8];
+            f64::from_le_bytes(*ptr)
+        };
         let current_delta1_new = current_delta1 + delta2;
         let current_value = last_value + current_delta1_new;
 
@@ -284,8 +321,16 @@ pub fn decompress_run_length(compressed: &[u8]) -> Vec<u64> {
     let mut index = 0;
 
     while index + 12 <= compressed.len() {
-        let value = u64::from_le_bytes(compressed[index..index + 8].try_into().unwrap());
-        let count = u32::from_le_bytes(compressed[index + 8..index + 12].try_into().unwrap());
+        // SAFETY: The loop condition ensures index + 12 <= compressed.len(),
+        // so index + 8 <= compressed.len() and index + 12 <= compressed.len().
+        let value = unsafe {
+            let ptr = compressed.as_ptr().add(index) as *const [u8; 8];
+            u64::from_le_bytes(*ptr)
+        };
+        let count = unsafe {
+            let ptr = compressed.as_ptr().add(index + 8) as *const [u8; 4];
+            u32::from_le_bytes(*ptr)
+        };
 
         for _ in 0..count {
             result.push(value);

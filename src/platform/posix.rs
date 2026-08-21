@@ -14,7 +14,7 @@ impl Platform for PosixPlatform {
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("Time went backwards");
+            .unwrap_or(std::time::Duration::ZERO);
 
         now.as_millis() as u64
     }
@@ -25,7 +25,7 @@ impl Platform for PosixPlatform {
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("Time went backwards");
+            .unwrap_or(std::time::Duration::ZERO);
 
         now.as_micros() as u64
     }

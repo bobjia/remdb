@@ -2430,8 +2430,8 @@ impl BTreeIndex {
     }
 
     /// 从空闲列表获取一个节�?
-    unsafe fn allocate_node(&mut self) -> Option<NonNull<BTreeNode>> {
-        let node_ptr = self.free_nodes?;
+    unsafe fn allocate_node(&mut self) -> Result<NonNull<BTreeNode>> {
+        let node_ptr = self.free_nodes.ok_or(RemDbError::OutOfMemory)?;
         let node_mut = &mut *node_ptr.as_ptr();
 
         // 从节点的key_data字段获取下一个空闲节点的指针
@@ -2464,7 +2464,7 @@ impl BTreeIndex {
             node_mut.children[j] = None;
         }
 
-        Some(node_ptr)
+        Ok(node_ptr)
     }
 
     /// 释放节点到空闲列�?
@@ -2544,12 +2544,12 @@ impl BTreeIndex {
         mut parent: NonNull<BTreeNode>,
         child_idx: usize,
         mut child: NonNull<BTreeNode>,
-    ) {
+    ) -> Result<()> {
         let parent_mut = parent.as_mut();
         let child_mut = child.as_mut();
 
         // 创建新节�?
-        let mut new_node = self.allocate_node().expect("Out of memory for B-Tree node");
+        let mut new_node = self.allocate_node()?;
         let new_node_mut = new_node.as_mut();
 
         new_node_mut.is_leaf = child_mut.is_leaf;
@@ -2580,10 +2580,11 @@ impl BTreeIndex {
         parent_mut.keys[child_idx] = child_mut.keys[BTREE_ORDER / 2];
         parent_mut.children[child_idx + 1] = Some(new_node);
         parent_mut.key_count += 1;
+        Ok(())
     }
 
     /// 插入键到非满节点
-    unsafe fn insert_non_full(&mut self, mut node: NonNull<BTreeNode>, key: SecondaryIndexItem) {
+    unsafe fn insert_non_full(&mut self, mut node: NonNull<BTreeNode>, key: SecondaryIndexItem) -> Result<()> {
         let node_mut = node.as_mut();
         let mut pos = self.find_key_position(node_mut, &key);
 
@@ -2597,11 +2598,11 @@ impl BTreeIndex {
             self.stats.item_count += 1;
         } else {
             // 内部节点，递归插入
-            let child = node_mut.children[pos].expect("Child node not found");
+            let child = node_mut.children[pos].ok_or(RemDbError::InvalidData("Child node not found"))?;
 
             // 如果子节点已满，先分�?
             if child.as_ref().key_count == BTREE_ORDER as u8 {
-                self.split_child(node, pos, child);
+                self.split_child(node, pos, child)?;
 
                 // 检查中间键是否大于当前�?
                 if self.compare_items(&node_mut.keys[pos], &key) == core::cmp::Ordering::Less {
@@ -2610,10 +2611,11 @@ impl BTreeIndex {
             }
 
             self.insert_non_full(
-                node_mut.children[pos].expect("Child node not found after split"),
+                node_mut.children[pos].ok_or(RemDbError::InvalidData("Child node not found after split"))?,
                 key,
-            );
+            )?;
         }
+        Ok(())
     }
 
     /// 插入索引�?
@@ -2640,21 +2642,19 @@ impl BTreeIndex {
         if self.root.is_none() {
             // 空树，创建根节点
             let mut root_node = self
-                .allocate_node()
-                .expect("Out of memory for B-Tree root node");
+                .allocate_node()?;
             let root_mut = root_node.as_mut();
 
             root_mut.keys[0] = new_item;
             root_mut.key_count = 1;
             self.root = Some(root_node);
         } else {
-            let root = self.root.expect("Root node unexpectedly None");
+            let root = self.root.ok_or(RemDbError::InvalidData("Root node missing"))?;
 
             // 如果根节点已满，分裂根节�?
             if root.as_ref().key_count == BTREE_ORDER as u8 {
                 let mut new_root = self
-                    .allocate_node()
-                    .expect("Out of memory for new B-Tree root");
+                    .allocate_node()?;
                 let new_root_mut = new_root.as_mut();
 
                 new_root_mut.is_leaf = false;
@@ -2786,7 +2786,7 @@ impl BTreeIndex {
         // 从栈中回溯，查找匹配�?
         while stack_size > 0 {
             stack_size -= 1;
-            let node = stack[stack_size].expect("Stack underflow");
+            let node = stack[stack_size].ok_or(RemDbError::InvalidData("Stack underflow"))?;
             let node_ref = node.as_ref();
 
             // 查找起始位置
@@ -2910,7 +2910,7 @@ impl BTreeIndex {
         // 从栈中回溯，收集所有匹配项
         while stack_size > 0 && match_count < max_records {
             stack_size -= 1;
-            let node = stack[stack_size].expect("Stack underflow");
+            let node = stack[stack_size].ok_or(RemDbError::InvalidData("Stack underflow"))?;
             let node_ref = node.as_ref();
 
             // 查找起始位置
@@ -3084,8 +3084,8 @@ impl TTreeIndex {
     }
 
     /// 从空闲列表获取一个节�?
-    unsafe fn allocate_node(&mut self) -> Option<NonNull<TTreeNode>> {
-        let node_ptr = self.free_nodes?;
+    unsafe fn allocate_node(&mut self) -> Result<NonNull<TTreeNode>> {
+        let node_ptr = self.free_nodes.ok_or(RemDbError::OutOfMemory)?;
         let node_mut = &mut *node_ptr.as_ptr();
 
         // 从节点的key_data字段获取下一个空闲节点的指针
@@ -3117,7 +3117,7 @@ impl TTreeIndex {
         node_mut.middle = None;
         node_mut.right = None;
 
-        Some(node_ptr)
+        Ok(node_ptr)
     }
 
     /// 释放节点到空闲列�?
@@ -3218,22 +3218,20 @@ impl TTreeIndex {
         if self.root.is_none() {
             // 空树，创建根节点
             let mut root_node = self
-                .allocate_node()
-                .expect("Out of memory for T-Tree root node");
+                .allocate_node()?;
             let root_mut = root_node.as_mut();
 
             root_mut.keys[0] = new_item;
             root_mut.key_count = 1;
             self.root = Some(root_node);
         } else {
-            let mut root = self.root.expect("Root node unexpectedly None");
+            let mut root = self.root.ok_or(RemDbError::InvalidData("Root node missing"))?;
 
             // 如果根节点已满，需要分�?
             if root.as_ref().key_count == TTREE_ORDER as u8 {
                 // 简化实现：创建新根节点，将原根节点作为左子节点
                 let mut new_root = self
-                    .allocate_node()
-                    .expect("Out of memory for new T-Tree root");
+                    .allocate_node()?;
                 let new_root_mut = new_root.as_mut();
 
                 // 将新键插入到适当的位�?
@@ -3264,8 +3262,7 @@ impl TTreeIndex {
 
                 // 创建右子节点
                 let mut right_node = self
-                    .allocate_node()
-                    .expect("Out of memory for T-Tree right node");
+                    .allocate_node()?;
                 let right_mut = right_node.as_mut();
 
                 // 分配键到左右子节�?
@@ -3362,8 +3359,7 @@ impl TTreeIndex {
 
                 // 创建新的右子节点
                 let mut new_right = self
-                    .allocate_node()
-                    .expect("Out of memory for T-Tree new right node");
+                    .allocate_node()?;
                 let new_right_mut = new_right.as_mut();
 
                 // 分配键到左右子节�?
@@ -3413,8 +3409,7 @@ impl TTreeIndex {
                 // 节点已满，需要分�?
                 // 简化实现：创建新节�?
                 let mut new_node = self
-                    .allocate_node()
-                    .expect("Out of memory for T-Tree new node");
+                    .allocate_node()?;
                 let new_node_mut = new_node.as_mut();
 
                 // 将当前节点的键和新键合并
@@ -3555,7 +3550,7 @@ impl TTreeIndex {
         // 中序遍历树，查找第一个匹配项
         while stack_size > 0 {
             stack_size -= 1;
-            let node = stack[stack_size].expect("Stack underflow");
+            let node = stack[stack_size].ok_or(RemDbError::InvalidData("Stack underflow"))?;
             let node_ref = node.as_ref();
 
             // 检查当前节点的�?
@@ -3637,7 +3632,7 @@ impl TTreeIndex {
         // 中序遍历树，收集所有匹配项
         while stack_size > 0 && match_count < max_records {
             stack_size -= 1;
-            let node = stack[stack_size].expect("Stack underflow");
+            let node = stack[stack_size].ok_or(RemDbError::InvalidData("Stack underflow"))?;
             let node_ref = node.as_ref();
 
             // 检查当前节点的�?
