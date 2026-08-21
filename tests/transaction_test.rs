@@ -168,6 +168,8 @@ fn test_transaction_begin_commit() {
         // 重置全局数据库实例和事务管理器
         remdb::reset_global_db();
         crate::transaction::init_tx_manager();
+
+        reset_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -235,7 +237,7 @@ fn test_transaction_begin_commit() {
         
         // 插入记录
         let mut table_mut = db.get_table_mut(0).unwrap();
-        let record_id = table_mut.insert(record_data.as_ptr()).unwrap();
+        let record_id = table_mut.insert(&record_data).unwrap();
         
         // 提交事务
         db.commit_transaction().unwrap();
@@ -266,6 +268,8 @@ fn test_mvcc_snapshot_isolation() {
         
         // 重置事务管理器
         crate::transaction::init_tx_manager();
+
+        reset_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -328,7 +332,7 @@ fn test_mvcc_snapshot_isolation() {
             4
         );
         
-        let record_id = db.get_table_mut(0).unwrap().insert(record_data.as_ptr()).unwrap();
+        let record_id = db.get_table_mut(0).unwrap().insert(&record_data).unwrap();
         
         // 提交事务1
         db.commit_transaction().unwrap();
@@ -359,7 +363,7 @@ fn test_mvcc_snapshot_isolation() {
         let mut result_data = [0u8; 8];
         {
             let table = db.get_table(0).unwrap();
-            table.get_by_id(record_id, result_data.as_mut_ptr()).unwrap();
+            table.get_by_id(record_id, &mut result_data).unwrap();
         }
         let result_value1 = core::ptr::read(result_data.as_ptr().add(4) as *const f32);
         assert_eq!(result_value1, value); // 应该读取到初始值
@@ -404,7 +408,7 @@ fn test_mvcc_snapshot_isolation() {
             4
         );
         
-        db.get_table_mut(0).unwrap().update(record_id, update_data.as_ptr()).unwrap();
+        db.get_table_mut(0).unwrap().update(record_id, &update_data).unwrap();
         
         // 提交事务3
         db.commit_transaction().unwrap();
@@ -433,7 +437,7 @@ fn test_mvcc_snapshot_isolation() {
         
         {
             let table = db.get_table(0).unwrap();
-            table.get_by_id(record_id, result_data.as_mut_ptr()).unwrap();
+            table.get_by_id(record_id, &mut result_data).unwrap();
         }
         let result_value3 = core::ptr::read(result_data.as_ptr().add(4) as *const f32);
         assert_eq!(result_value3, new_value); // 应该读取到更新后的值
@@ -463,6 +467,8 @@ fn test_mvcc_version_chain() {
         
         // 重置事务管理器
         crate::transaction::init_tx_manager();
+
+        reset_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -503,7 +509,7 @@ fn test_mvcc_version_chain() {
             4
         );
         
-        let record_id = db.get_table_mut(0).unwrap().insert(record_data.as_ptr()).unwrap();
+        let record_id = db.get_table_mut(0).unwrap().insert(&record_data).unwrap();
         
         // 多次更新记录，创建版本链
         let values = [2.0f32, 3.0f32, 4.0f32];
@@ -547,7 +553,7 @@ fn test_mvcc_version_chain() {
                 4
             );
             
-            db.get_table_mut(0).unwrap().update(record_id, update_data.as_ptr()).unwrap();
+            db.get_table_mut(0).unwrap().update(record_id, &update_data).unwrap();
             
             // 提交事务
             db.commit_transaction().unwrap();
@@ -556,7 +562,7 @@ fn test_mvcc_version_chain() {
         // 验证最新值
         let mut result_data = [0u8; 8];
         let table = db.get_table(0).unwrap();
-        table.get_by_id(record_id, result_data.as_mut_ptr()).unwrap();
+        table.get_by_id(record_id, &mut result_data).unwrap();
         let result_value = core::ptr::read(result_data.as_ptr().add(4) as *const f32);
         assert_eq!(result_value, 4.0); // 应该是最后一次更新的值
         
@@ -587,6 +593,8 @@ fn test_mvcc_gc() {
         
         // 重置事务管理器
         crate::transaction::init_tx_manager();
+
+        reset_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -627,7 +635,7 @@ fn test_mvcc_gc() {
             4
         );
         
-        let record_id = db.get_table_mut(0).unwrap().insert(record_data.as_ptr()).unwrap();
+        let record_id = db.get_table_mut(0).unwrap().insert(&record_data).unwrap();
         
         // 多次更新记录，创建版本链
         for i in 0..5 {
@@ -669,7 +677,7 @@ fn test_mvcc_gc() {
                 4
             );
             
-            db.get_table_mut(0).unwrap().update(record_id, update_data.as_ptr()).unwrap();
+            db.get_table_mut(0).unwrap().update(record_id, &update_data).unwrap();
             
             // 提交事务
             db.commit_transaction().unwrap();
@@ -682,7 +690,7 @@ fn test_mvcc_gc() {
         let mut result_data = [0u8; 8];
         {
             let table = db.get_table(0).unwrap();
-            table.get_by_id(record_id, result_data.as_mut_ptr()).unwrap();
+            table.get_by_id(record_id, &mut result_data).unwrap();
         }
         let result_value = core::ptr::read(result_data.as_ptr().add(4) as *const f32);
         assert_eq!(result_value, 6.0); // 应该是最后一次更新的值
@@ -709,6 +717,8 @@ fn test_mvcc_visibility() {
         
         // 重置事务管理器
         crate::transaction::init_tx_manager();
+
+        reset_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -749,7 +759,7 @@ fn test_mvcc_visibility() {
             4
         );
         
-        let record_id = db.get_table_mut(0).unwrap().insert(record_data.as_ptr()).unwrap();
+        let record_id = db.get_table_mut(0).unwrap().insert(&record_data).unwrap();
         
         // 事务1：更新记录
         {
@@ -789,7 +799,7 @@ fn test_mvcc_visibility() {
                 4
             );
             
-            db.get_table_mut(0).unwrap().update(record_id, update_data.as_ptr()).unwrap();
+            db.get_table_mut(0).unwrap().update(record_id, &update_data).unwrap();
             
             // 提交事务1
             db.commit_transaction().unwrap();
@@ -822,7 +832,7 @@ fn test_mvcc_visibility() {
             let mut result_data = [0u8; 8];
             {
                 let table = db.get_table(0).unwrap();
-                table.get_by_id(record_id, result_data.as_mut_ptr()).unwrap();
+                table.get_by_id(record_id, &mut result_data).unwrap();
             }
             let result_value1 = core::ptr::read(result_data.as_ptr().add(4) as *const f32);
             assert_eq!(result_value1, 2.0); // 应该能看到已提交的更新
@@ -853,6 +863,8 @@ fn test_transaction_rollback() {
         
         // 重置事务管理器
         crate::transaction::init_tx_manager();
+
+        reset_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -920,7 +932,7 @@ fn test_transaction_rollback() {
         
         // 插入记录
         let mut table_mut = db.get_table_mut(0).unwrap();
-        let _record_id = table_mut.insert(record_data.as_ptr()).unwrap();
+        let _record_id = table_mut.insert(&record_data).unwrap();
         
         // 回滚事务
         db.rollback_transaction().unwrap();
@@ -951,6 +963,8 @@ fn test_transaction_update_rollback() {
         
         // 重置事务管理器
         crate::transaction::init_tx_manager();
+
+        reset_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -991,7 +1005,7 @@ fn test_transaction_update_rollback() {
             4
         );
         
-        let record_id = db.get_table_mut(0).unwrap().insert(record_data.as_ptr()).unwrap();
+        let record_id = db.get_table_mut(0).unwrap().insert(&record_data).unwrap();
         
         // 事务缓冲区
         #[allow(invalid_value)]
@@ -1035,7 +1049,7 @@ fn test_transaction_update_rollback() {
         );
         
         let mut table_mut = db.get_table_mut(0).unwrap();
-        table_mut.update(record_id, update_data.as_ptr()).unwrap();
+        table_mut.update(record_id, &update_data).unwrap();
         
         // 回滚事务
         db.rollback_transaction().unwrap();
@@ -1043,7 +1057,7 @@ fn test_transaction_update_rollback() {
         // 验证记录已回滚到原始值
         let table = db.get_table(0).unwrap();
         let mut result_data = [0u8; 8];
-        table.get_by_id(record_id, result_data.as_mut_ptr()).unwrap();
+        table.get_by_id(record_id, &mut result_data).unwrap();
         
         let result_id = core::ptr::read(result_data.as_ptr() as *const i32);
         let result_value = core::ptr::read(result_data.as_ptr().add(4) as *const f32);
@@ -1073,6 +1087,8 @@ fn test_transaction_delete_rollback() {
         
         // 重置事务管理器
         crate::transaction::init_tx_manager();
+
+        reset_tx_manager();
         
         // 重置缓冲区
         TABLES_BUFFER[0] = None;
@@ -1113,7 +1129,7 @@ fn test_transaction_delete_rollback() {
             4
         );
         
-        let record_id = db.get_table_mut(0).unwrap().insert(record_data.as_ptr()).unwrap();
+        let record_id = db.get_table_mut(0).unwrap().insert(&record_data).unwrap();
         
         // 事务缓冲区
         #[allow(invalid_value)]
@@ -1152,7 +1168,7 @@ fn test_transaction_delete_rollback() {
         assert_eq!(table.record_count(), 1);
         
         let mut result_data = [0u8; 8];
-        let result = table.get_by_id(record_id, result_data.as_mut_ptr());
+        let result = table.get_by_id(record_id, &mut result_data);
         assert!(result.is_ok());
         
         // 显式重置数据库实例，确保所有资源被正确释放

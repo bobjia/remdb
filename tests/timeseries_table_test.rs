@@ -115,6 +115,129 @@ static TEST_MUTEX: Mutex<()> = Mutex::new(());
 // 静态内存缓冲区，用于测试
 static mut DB_MEMORY: [u8; 1024 * 1024] = [0u8; 1024 * 1024]; // 1MB内存
 
+/// 基于std的真实文件I/O平台实现，用于WAL初始化和NOW()等时间函数
+struct TestPlatform;
+
+impl remdb::platform::Platform for TestPlatform {
+    fn get_timestamp(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+    }
+
+    fn get_timestamp_us(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_micros() as u64)
+            .unwrap_or(0)
+    }
+
+    fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+        let len = core::cmp::min(dest.len(), src.len());
+        dest[..len].copy_from_slice(&src[..len]);
+    }
+
+    fn memset(&self, dest: &mut [u8], value: u8) {
+        dest.fill(value);
+    }
+
+    fn delay_ms(&self, ms: u32) {
+        std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+    }
+
+    fn delay_us(&self, us: u32) {
+        std::thread::sleep(std::time::Duration::from_micros(us as u64));
+    }
+
+    fn file_open(
+        &self,
+        path: &str,
+        mode: remdb::platform::FileMode,
+    ) -> remdb::platform::FileResult<remdb::platform::FileHandle> {
+        use std::fs::OpenOptions;
+        let mut options = OpenOptions::new();
+        match mode {
+            remdb::platform::FileMode::Read => {
+                options.read(true);
+            }
+            remdb::platform::FileMode::Write => {
+                options.write(true).create(true).truncate(true);
+            }
+            remdb::platform::FileMode::ReadWrite => {
+                options.read(true).write(true).create(true);
+            }
+            remdb::platform::FileMode::Append => {
+                options.write(true).create(true).append(true);
+            }
+        }
+        match options.open(path) {
+            Ok(file) => Ok(Box::into_raw(Box::new(file)) as remdb::platform::FileHandle),
+            Err(_) => Err(()),
+        }
+    }
+
+    fn file_close(&self, handle: remdb::platform::FileHandle) -> remdb::platform::FileResult<()> {
+        unsafe {
+            drop(Box::from_raw(handle as *mut std::fs::File));
+        }
+        Ok(())
+    }
+
+    fn file_write(&self, handle: remdb::platform::FileHandle, buf: &[u8]) -> remdb::platform::FileResult<usize> {
+        use std::io::Write;
+        unsafe {
+            let file = &mut *(handle as *mut std::fs::File);
+            file.write_all(buf).map_err(|_| ())?;
+            file.flush().map_err(|_| ())?;
+        }
+        Ok(buf.len())
+    }
+
+    fn file_read(&self, handle: remdb::platform::FileHandle, buf: &mut [u8]) -> remdb::platform::FileResult<usize> {
+        use std::io::Read;
+        unsafe {
+            let file = &mut *(handle as *mut std::fs::File);
+            file.read(buf).map_err(|_| ())
+        }
+    }
+
+    fn file_seek(&self, handle: remdb::platform::FileHandle, offset: i64, whence: remdb::platform::SeekWhence) -> remdb::platform::FileResult<u64> {
+        use std::io::{Seek, SeekFrom};
+        let seek_from = match whence {
+            remdb::platform::SeekWhence::SeekSet => SeekFrom::Start(offset as u64),
+            remdb::platform::SeekWhence::SeekCur => SeekFrom::Current(offset),
+            remdb::platform::SeekWhence::SeekEnd => SeekFrom::End(offset),
+        };
+        unsafe {
+            let file = &mut *(handle as *mut std::fs::File);
+            file.seek(seek_from).map_err(|_| ())
+        }
+    }
+
+    fn file_remove(&self, path: &str) -> remdb::platform::FileResult<()> {
+        std::fs::remove_file(path).map_err(|_| ())
+    }
+
+    fn file_size(&self, path: &str) -> remdb::platform::FileResult<usize> {
+        std::fs::metadata(path).map(|m| m.len() as usize).map_err(|_| ())
+    }
+
+    fn crc32(&self, data: &[u8]) -> u32 {
+        const CRC32_POLY: u32 = 0xEDB88320;
+        let mut crc = 0xFFFFFFFFu32;
+        for &byte in data {
+            crc ^= byte as u32;
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 { (crc >> 1) ^ CRC32_POLY } else { crc >> 1 };
+            }
+        }
+        crc ^ 0xFFFFFFFF
+    }
+}
+
+static TEST_PLATFORM: TestPlatform = TestPlatform;
+
 /// 创建测试用的DbConfig
 static TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
     tables: &[],
@@ -223,6 +346,9 @@ static ROLLBACK_TEST_DB_CONFIG: config::DbConfig = config::DbConfig {
 #[test]
 fn test_write_timeseries_batch_acid() {
     let _guard = TEST_MUTEX.lock().unwrap();
+
+    // 初始化平台（注册基于std的真实文件I/O）
+    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -310,6 +436,9 @@ fn test_write_timeseries_batch_acid() {
 #[test]
 fn test_write_timeseries_batch_performance() {
     let _guard = TEST_MUTEX.lock().unwrap();
+
+    // 初始化平台（注册基于std的真实文件I/O）
+    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -384,6 +513,9 @@ fn test_write_timeseries_batch_performance() {
 #[test]
 fn test_write_timeseries_batch_rollback() {
     let _guard = TEST_MUTEX.lock().unwrap();
+
+    // 初始化平台（注册基于std的真实文件I/O）
+    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -438,6 +570,9 @@ fn test_write_timeseries_batch_rollback() {
 #[test]
 fn test_time_type_support() {
     let _guard = TEST_MUTEX.lock().unwrap();
+
+    // 初始化平台（注册基于std的真实文件I/O）
+    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -518,6 +653,9 @@ fn test_time_type_support() {
 #[test]
 fn test_time_arithmetic() {
     let _guard = TEST_MUTEX.lock().unwrap();
+
+    // 初始化平台（注册基于std的真实文件I/O）
+    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -608,6 +746,9 @@ fn test_time_arithmetic() {
 #[test]
 fn test_time_precision_support() {
     let _guard = TEST_MUTEX.lock().unwrap();
+
+    // 初始化平台（注册基于std的真实文件I/O）
+    remdb::platform::init_platform(&TEST_PLATFORM);
     
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);

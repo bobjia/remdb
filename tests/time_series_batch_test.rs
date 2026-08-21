@@ -192,9 +192,9 @@ fn test_time_series_batch_insert() {
         
         // 使用时间序列批量插入优化
         let inserted_count = table_mut.time_series_batch_insert(
-            records_buffer.as_ptr(),
+            &records_buffer,
             100,
-            record_ids.as_mut_ptr()
+            &mut record_ids
         ).unwrap();
         
         assert_eq!(inserted_count, 100, "批量插入失败，预期插入100条，实际插入{}", inserted_count);
@@ -272,9 +272,9 @@ fn test_time_range_query() {
         
         // 插入测试数据
         table_mut.time_series_batch_insert(
-            records_buffer.as_ptr(),
+            &records_buffer,
             100,
-            record_ids.as_mut_ptr()
+            &mut record_ids
         ).unwrap();
         
         // 测试时间范围查询
@@ -286,7 +286,7 @@ fn test_time_range_query() {
             timestamp_field_index, // 使用正确的timestamp字段索引
             start_time,
             end_time,
-            result_buffer.as_mut_ptr(),
+            &mut result_buffer,
             50
         ).unwrap();
         
@@ -374,9 +374,9 @@ fn test_aggregation_functions() {
         
         // 插入测试数据
         table_mut.time_series_batch_insert(
-            records_buffer.as_ptr(),
+            &records_buffer,
             10,
-            record_ids.as_mut_ptr()
+            &mut record_ids
         ).unwrap();
         
         // 测试聚合功能
@@ -475,9 +475,9 @@ fn test_get_latest_records() {
         
         // 插入测试数据
         table_mut.time_series_batch_insert(
-            records_buffer.as_ptr(),
+            &records_buffer,
             50,
-            record_ids.as_mut_ptr()
+            &mut record_ids
         ).unwrap();
         
         // 测试获取最新记录
@@ -485,7 +485,7 @@ fn test_get_latest_records() {
         let latest_count = table_mut.get_latest_records(
             timestamp_field_index, // 使用正确的timestamp字段索引
             10,
-            latest_buffer.as_mut_ptr()
+            &mut latest_buffer
         ).unwrap();
         
         assert_eq!(latest_count, 10, "获取最新记录失败，预期10条，实际{}", latest_count);
@@ -582,9 +582,9 @@ fn test_time_window_aggregation() {
         
         // 插入测试数据
         table_mut.time_series_batch_insert(
-            records_buffer.as_ptr(),
+            &records_buffer,
             60,
-            record_ids.as_mut_ptr()
+            &mut record_ids
         ).unwrap();
         
         // 测试时间窗口聚合

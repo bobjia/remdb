@@ -83,7 +83,7 @@ fn test_index_recovery() -> Result<()> {
         remdb::memory::init_global_allocator(
             DB_MEMORY.as_mut_ptr(),
             DB_MEMORY.len()
-        )?;
+        ).expect("init_global_allocator failed");
     }
     
     // 使用全局初始化函数初始化数据库
