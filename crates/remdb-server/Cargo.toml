@@ -6,6 +6,7 @@ description = "Lean TCP query server for remdb (protobuf, zero-copy)"
 
 [dependencies]
 remdb = { path = "../..", default-features = false, features = ["std"] }
+remdb-platform-posix = { path = "../remdb-platform-posix" }
 prost = "0.12"
 
 [build-dependencies]
