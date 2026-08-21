@@ -32,39 +32,46 @@ impl FrameDecoder {
         &mut self,
         buf: &'a [u8],
     ) -> io::Result<Option<(FrameRef<'a>, &'a [u8])>> {
-        let payload_len = match self.payload_len {
-            Some(l) => l,
-            None => {
-                if self.pending.len() < 4 {
-                    let need = 4 - self.pending.len();
-                    self.pending.extend_from_slice(buf.get(..need).unwrap_or(buf));
-                    if self.pending.len() < 4 {
-                        return Ok(None);
-                    }
-                }
-                let bytes: [u8; 4] = self
-                    .pending
-                    .get(..4)
-                    .and_then(|s| s.try_into().ok())
-                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "bad prefix"))?;
-                let l = u32::from_be_bytes(bytes) as usize;
-                if l > MAX_FRAME_LEN {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "frame too large"));
-                }
-                self.pending.clear();
-                self.payload_len = Some(l);
-                l
-            }
-        };
+        // `remaining` advances past any length-prefix bytes consumed from the
+        // current chunk, so the payload is split from the correct offset.
+        let mut remaining = buf;
 
-        // We have payload_len. All payload bytes are in `buf` (this decoder is
-        // used with pooled buffers that always start a fresh frame).
-        if buf.len() < payload_len {
+        if self.payload_len.is_none() {
+            // Accumulate the 4 length bytes. If a previous chunk carried a
+            // partial prefix, `pending` already holds some of them (and `need`
+            // shrinks accordingly). After the prefix is complete, `remaining`
+            // points at the start of the payload within this chunk.
+            if self.pending.len() < 4 {
+                let need = 4 - self.pending.len();
+                self.pending
+                    .extend_from_slice(buf.get(..need).unwrap_or(buf));
+                if self.pending.len() < 4 {
+                    return Ok(None);
+                }
+                remaining = buf.get(need..).unwrap_or(&[]);
+            }
+            let bytes: [u8; 4] = self
+                .pending
+                .get(..4)
+                .and_then(|s| s.try_into().ok())
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "bad prefix"))?;
+            let l = u32::from_be_bytes(bytes) as usize;
+            if l > MAX_FRAME_LEN {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "frame too large"));
+            }
+            self.pending.clear();
+            self.payload_len = Some(l);
+        }
+
+        // We have payload_len. `remaining` holds the payload bytes from the
+        // current chunk (this decoder is used with buffers that start a fresh
+        // frame, so the full payload is expected to arrive in one chunk).
+        let payload_len = self.payload_len.expect("payload_len set above");
+        if remaining.len() < payload_len {
             return Ok(None);
         }
-        let (payload, rest) = buf.split_at(payload_len);
+        let (payload, rest) = remaining.split_at(payload_len);
         self.payload_len = None;
-        self.pending.clear();
         Ok(Some((FrameRef::Borrowed(payload), rest)))
     }
 
