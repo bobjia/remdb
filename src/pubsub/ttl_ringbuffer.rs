@@ -79,7 +79,7 @@ impl TTLCircularBuffer {
         // 使用SystemTime获取绝对时间戳（毫秒）
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or(std::time::Duration::ZERO)
             .as_millis() as u64;
         let expire_time = now + ttl_ms;
 
@@ -147,7 +147,7 @@ impl TTLCircularBuffer {
         // 使用SystemTime获取绝对时间戳（毫秒）
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or(std::time::Duration::ZERO)
             .as_millis() as u64;
 
         // 先清理过期数据
@@ -189,7 +189,7 @@ impl TTLCircularBuffer {
             core::ptr::copy_nonoverlapping(slot.data.as_ptr(), buffer.as_mut_ptr(), data_len);
 
             // 释放内存
-            let layout = Layout::from_size_align(slot.data_len, 1).unwrap();
+            let layout = Layout::from_size_align(slot.data_len, 1).expect("failed to create layout");
             dealloc(slot.data.as_ptr(), layout);
         }
 

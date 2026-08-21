@@ -486,7 +486,7 @@ impl ReplicationManager {
                                         let interval_value_bytes = log_data
                                             [offset..offset + 8]
                                             .try_into()
-                                            .unwrap();
+                                            .expect("type conversion should not fail");
                                         let interval_value =
                                             i64::from_le_bytes(interval_value_bytes);
                                         offset += 8;

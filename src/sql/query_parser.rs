@@ -3,6 +3,7 @@
 //! 该模块负责将SQL查询字符串解析为结构化的查询对象。
 
 use alloc::boxed::Box;
+use crate::RemDbError;
 use std::collections::HashMap;
 use alloc::string::String;
 use alloc::string::ToString;

@@ -227,7 +227,7 @@ impl IndexBuildThreadPool {
             error!("Database not initialized");
             return;
         }
-        let db = db.ok_or(RemDbError::InvalidArgument)?;
+        let db = db.unwrap();
         
         // 查找表ID
         let mut table_id = None;
@@ -245,7 +245,7 @@ impl IndexBuildThreadPool {
             error!("Table {} not found", task.table_name);
             return;
         }
-        let table_id = table_id.ok_or(RemDbError::InvalidArgument)?;
+        let table_id = table_id.unwrap();
 
         // 获取表引用
         let _table = match db.get_table(table_id) {

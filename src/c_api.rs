@@ -1910,7 +1910,7 @@ pub unsafe extern "C" fn remdb_sql_query(
                         let col = *columns.offset(j as isize);
                         alloc::alloc::dealloc(
                             col as *mut u8,
-                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap(),
+                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
                         );
                     }
                     alloc::alloc::dealloc(
@@ -1966,7 +1966,7 @@ pub unsafe extern "C" fn remdb_free_result_set(result_set: *mut RemDbResultSet) 
         if !col.is_null() {
             alloc::alloc::dealloc(
                 col as *mut u8,
-                alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap(),
+                alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
             );
         }
     }
@@ -2158,7 +2158,7 @@ pub unsafe extern "C" fn remdb_execute_query(
             // 转换列名
             for (i, column) in rust_result_set.columns.iter().enumerate() {
                 let column_str = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<u8>(column.len() + 1).unwrap(),
+                    alloc::alloc::Layout::array::<u8>(column.len() + 1).expect("failed to allocate memory"),
                 ) as *mut u8;
                 if column_str.is_null() {
                     // 释放已分配的内存
@@ -2166,7 +2166,7 @@ pub unsafe extern "C" fn remdb_execute_query(
                         let col = *columns_ptr.offset(j as isize);
                         alloc::alloc::dealloc(
                             col as *mut u8,
-                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap(),
+                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
                         );
                     }
                     alloc::alloc::dealloc(
@@ -2189,7 +2189,7 @@ pub unsafe extern "C" fn remdb_execute_query(
 
             // 分配内存存储行
             let rows_ptr = alloc::alloc::alloc(
-                alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len()).unwrap(),
+                alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len()).expect("failed to allocate memory"),
             ) as *mut RemDbResultRow;
             if rows_ptr.is_null() {
                 // 释放已分配的内存
@@ -2197,7 +2197,7 @@ pub unsafe extern "C" fn remdb_execute_query(
                     let col = *columns_ptr.offset(i as isize);
                     alloc::alloc::dealloc(
                         col as *mut u8,
-                        alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap(),
+                        alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
                     );
                 }
                 alloc::alloc::dealloc(
@@ -2216,7 +2216,7 @@ pub unsafe extern "C" fn remdb_execute_query(
             for (i, row) in rust_result_set.rows.iter().enumerate() {
                 // 分配内存存储值
                 let values_ptr = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<RemDbTypedValue>(row.values.len()).unwrap(),
+                    alloc::alloc::Layout::array::<RemDbTypedValue>(row.values.len()).expect("failed to allocate memory"),
                 ) as *mut RemDbTypedValue;
                 if values_ptr.is_null() {
                     // 释放已分配的内存
@@ -2239,7 +2239,7 @@ pub unsafe extern "C" fn remdb_execute_query(
                         let col = *columns_ptr.offset(j as isize);
                         alloc::alloc::dealloc(
                             col as *mut u8,
-                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap(),
+                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
                         );
                     }
                     alloc::alloc::dealloc(
@@ -2432,13 +2432,13 @@ pub unsafe extern "C" fn remdb_vector_search(
                     if !result_ids.is_null() {
                         alloc::alloc::dealloc(
                             result_ids as *mut u8,
-                            alloc::alloc::Layout::array::<u32>(actual_count).unwrap(),
+                            alloc::alloc::Layout::array::<u32>(actual_count).expect("failed to allocate memory"),
                         );
                     }
                     if !result_distances.is_null() {
                         alloc::alloc::dealloc(
                             result_distances as *mut u8,
-                            alloc::alloc::Layout::array::<f32>(actual_count).unwrap(),
+                            alloc::alloc::Layout::array::<f32>(actual_count).expect("failed to allocate memory"),
                         );
                     }
                     return RemDbError::OutOfMemory;

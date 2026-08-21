@@ -1,3 +1,4 @@
+use crate::RemDbError;
 use crate::memory::{MemoryBlock, MemoryStats};
 use crate::types::Result;
 use core::ptr::NonNull;

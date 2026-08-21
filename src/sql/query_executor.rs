@@ -2242,7 +2242,7 @@ fn execute_select_join_query(
             // 7. 对于每个主表记录，遍历所有连接表
             for join_clause in &query.joins {
                 // 查找连接表
-                let join_table = find_table_by_name(db, &join_clause.table_name).map_err(|_| RemDbError::TableNotFound)?;
+                let join_table = find_table_by_name(db, &join_clause.table_name).unwrap();
 
                 // 标记是否有匹配的连接记录
                 let mut has_matching_join = false;
@@ -2357,7 +2357,7 @@ fn execute_select_join_query(
                                             (DataType::VarChar | DataType::Char | DataType::Text, crate::sql::Value::String(v)) => {
                                                 let field_str =
                                                     core::str::from_utf8(&field_value.value.string)
-                                                        .unwrap()
+                                                        .expect("invalid UTF-8 in field value")
                                                         .trim_end_matches(char::from(0));
                                                 field_str == v
                                             }
@@ -2500,7 +2500,7 @@ fn execute_select_join_query(
 
                         true // 继续遍历连接表
                     })
-                    .unwrap();
+                    .expect("iterator should not fail");
 
                 // 左连接和全连接处理：如果没有匹配的连接记录，仍然需要添加主表记录
                 if (join_clause.join_type == JoinType::Left
@@ -2598,7 +2598,7 @@ fn execute_select_join_query(
                         &join_table,
                         &join_default_values,
                     )
-                    .unwrap();
+                    .expect("get_field_value should not fail")
                 }
             }
 
@@ -2742,7 +2742,7 @@ fn execute_select_join_query(
                                             (DataType::VarChar | DataType::Char | DataType::Text, crate::sql::Value::String(v)) => {
                                                 let field_str =
                                                     core::str::from_utf8(&field_value.value.string)
-                                                        .unwrap()
+                                                        .expect("invalid UTF-8 in field value")
                                                         .trim_end_matches(char::from(0));
                                                 field_str == v
                                             }
@@ -2827,7 +2827,7 @@ fn execute_select_join_query(
 
                             true // 继续遍历主表
                         })
-                        .unwrap();
+                        .expect("iterator should not fail");
 
                     // 如果没有匹配的主表记录，添加右连接或全连接的默认记录
                     if !has_matching_main {
@@ -3437,7 +3437,7 @@ fn execute_create_table_query(
                             DataType::Interval => Value {
                                 interval: crate::types::db_interval::new(
                                     s.parse().unwrap_or(0) as i64,
-                                    precision.try_into().unwrap(),
+                                    precision as u8,
                                     0,
                                 ),
                             },
@@ -3467,7 +3467,7 @@ fn execute_create_table_query(
                                 time: crate::types::db_timestamp::new(
                                     0,
                                     0,
-                                    precision.try_into().unwrap(),
+                                    precision as u8,
                                     0,
                                 ),
                             },
@@ -3475,7 +3475,7 @@ fn execute_create_table_query(
                                 time: crate::types::db_timestamp::new(
                                     0,
                                     0,
-                                    precision.try_into().unwrap(),
+                                    precision as u8,
                                     0,
                                 ),
                             },
@@ -3485,7 +3485,7 @@ fn execute_create_table_query(
                             DataType::Interval => Value {
                                 interval: crate::types::db_interval::new(
                                     0,
-                                    precision.try_into().unwrap(),
+                                    precision as u8,
                                     0,
                                 ),
                             },
@@ -7055,7 +7055,7 @@ unsafe fn get_field_value(
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if field_name.contains('.') {
         // 提取点号后面的部分作为实际字段名
-        field_name.split('.').last().unwrap()
+        field_name.split('.').last().expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
         field_name

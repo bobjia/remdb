@@ -1,5 +1,6 @@
 // HA管理器实现
 
+use crate::RemDbError;
 use crate::config::DbConfig;
 use crate::ha::heartbeat::HeartbeatMonitor;
 use crate::ha::replication::ReplicationManager;
@@ -353,8 +354,8 @@ impl HAManager {
             return Ok(());
         }
 
-        let master_address = ha_config.master_address.ok_or(RemDbError::InvalidConfig("master_address not set"))?;
-        let master_port = ha_config.master_port.ok_or(RemDbError::InvalidConfig("master_port not set"))?;
+        let master_address = ha_config.master_address.expect("master_address must be set");
+        let master_port = ha_config.master_port.expect("master_port must be set");
 
         #[cfg(feature = "log")]
         debug!("connect_to_master: Connecting to master at {}:{}", master_address, master_port);

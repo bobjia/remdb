@@ -86,7 +86,7 @@ pub fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
                         .ok_or(RemDbError::InvalidData("string comparison failed"))?
                         .trim_end_matches(char::from(0));
                     let right_str = core::str::from_utf8(&right.value.string)
-                        .unwrap()
+                        .expect("invalid UTF-8 in field value")
                         .trim_end_matches(char::from(0));
                     left_str == right_str
                 }

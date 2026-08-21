@@ -4505,7 +4505,7 @@ impl RemDb {
                             // 继续遍历
                             true
                         })
-                        .unwrap();
+                        .expect("iterator should not fail")?;
                 }
             }
         }
