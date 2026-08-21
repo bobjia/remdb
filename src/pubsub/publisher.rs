@@ -163,7 +163,7 @@ impl Publisher {
         {
             // POSIX平台使用系统时间
             let now = std::time::SystemTime::now();
-            let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+            let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::ZERO);
             return duration.as_millis() as u64;
         }
         #[cfg(feature = "baremetal")]

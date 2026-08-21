@@ -46,7 +46,7 @@ impl TTLCircularBuffer {
 
         // 分配槽位数组
         let buffer = unsafe {
-            let layout = Layout::array::<Slot>(actual_capacity).unwrap();
+            let layout = Layout::array::<Slot>(actual_capacity).expect("failed to create layout");
             let ptr = alloc(layout) as *mut Slot;
             // 初始化所有槽位
             for i in 0..actual_capacity {
@@ -113,7 +113,7 @@ impl TTLCircularBuffer {
 
         // 为数据分配内存
         let data_len = data.len();
-        let layout = Layout::from_size_align(data_len, 1).unwrap();
+        let layout = Layout::from_size_align(data_len, 1).expect("failed to create layout");
         let data_ptr = unsafe {
             let ptr = alloc(layout) as *mut u8;
             // 复制数据到分配的内存中
@@ -175,7 +175,7 @@ impl TTLCircularBuffer {
             // 过期，释放内存并标记为删除
             unsafe {
                 let data_len = slot.data_len;
-                let layout = Layout::from_size_align(data_len, 1).unwrap();
+                let layout = Layout::from_size_align(data_len, 1).expect("failed to create layout");
                 dealloc(slot.data.as_ptr(), layout);
                 slot.state.store(SLOT_DELETED, Ordering::Release);
             }
@@ -234,7 +234,7 @@ impl TTLCircularBuffer {
                     // 匹配，释放内存并标记为删除
                     unsafe {
                         let data_len = slot.data_len;
-                        let layout = Layout::from_size_align(data_len, 1).unwrap();
+                        let layout = Layout::from_size_align(data_len, 1).expect("failed to create layout");
                         dealloc(slot.data.as_ptr(), layout);
                         slot.state.store(SLOT_DELETED, Ordering::Release);
                     }
@@ -289,7 +289,7 @@ impl TTLCircularBuffer {
                 let slot = &mut *self.buffer.add(slot_idx);
                 // 释放内存
                 let data_len = slot.data_len;
-                let layout = Layout::from_size_align(data_len, 1).unwrap();
+                let layout = Layout::from_size_align(data_len, 1).expect("failed to create layout");
                 dealloc(slot.data.as_ptr(), layout);
                 // 标记为删除
                 slot.state.store(SLOT_DELETED, Ordering::Release);
@@ -331,7 +331,7 @@ impl TTLCircularBuffer {
                 let slot = &mut *self.buffer.add(slot_idx);
                 // 释放内存
                 let data_len = slot.data_len;
-                let layout = Layout::from_size_align(data_len, 1).unwrap();
+                let layout = Layout::from_size_align(data_len, 1).expect("failed to create layout");
                 dealloc(slot.data.as_ptr(), layout);
                 // 标记为删除
                 slot.state.store(SLOT_DELETED, Ordering::Release);
@@ -364,14 +364,14 @@ impl Drop for TTLCircularBuffer {
                 if state == SLOT_ACTIVE {
                     // 释放数据内存
                     let data_len = slot.data_len;
-                    let layout = Layout::from_size_align(data_len, 1).unwrap();
+                    let layout = Layout::from_size_align(data_len, 1).expect("failed to create layout");
                     dealloc(slot.data.as_ptr(), layout);
                 }
                 // 释放槽位本身
                 std::ptr::drop_in_place(self.buffer.add(i));
             }
             // 释放缓冲区内存
-            let layout = Layout::array::<Slot>(self.capacity).unwrap();
+            let layout = Layout::array::<Slot>(self.capacity).expect("failed to create layout");
             dealloc(self.buffer as *mut u8, layout);
         }
     }

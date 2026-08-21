@@ -105,7 +105,7 @@ pub fn evaluate_expression_with_depth(
                 Ok(record_values[0].clone())
             } else {
                 let actual_field_name = if field_name.contains('.') {
-                    field_name.split('.').last().unwrap()
+                    field_name.split('.').last().expect("field name must contain '.'")
                 } else {
                     field_name
                 };

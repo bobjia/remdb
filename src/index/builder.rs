@@ -185,7 +185,7 @@ impl IndexBuildThreadPool {
         for _ in 0..thread_count {
             let task_queue_clone = task_queue.clone();
             let stop = stop_flag.clone();
-            let handle = thread::Builder::new().stack_size(8 * 1024 * 1024).spawn(move || Self::worker_loop(task_queue_clone, stop)).unwrap();
+            let handle = thread::Builder::new().stack_size(8 * 1024 * 1024).spawn(move || Self::worker_loop(task_queue_clone, stop)).expect("Failed to spawn builder thread");
             workers.push(handle);
         }
         
@@ -227,7 +227,7 @@ impl IndexBuildThreadPool {
             error!("Database not initialized");
             return;
         }
-        let db = db.unwrap();
+        let db = db.ok_or(RemDbError::InvalidArgument)?;
         
         // 查找表ID
         let mut table_id = None;
@@ -245,7 +245,7 @@ impl IndexBuildThreadPool {
             error!("Table {} not found", task.table_name);
             return;
         }
-        let table_id = table_id.unwrap();
+        let table_id = table_id.ok_or(RemDbError::InvalidArgument)?;
 
         // 获取表引用
         let _table = match db.get_table(table_id) {
@@ -324,7 +324,7 @@ impl IndexBuildThreadPool {
     pub fn stop(&mut self) {
         self.stop_flag.store(true, Ordering::SeqCst);
         for worker in self.workers.drain(..) {
-            worker.join().unwrap();
+            worker.join().expect("Failed to join builder thread");
         }
     }
 }

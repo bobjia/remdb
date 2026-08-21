@@ -1002,7 +1002,7 @@ impl PartialOrd for TypedValue {
                             if a.is_nan() || b.is_nan() {
                                 None // NaN 无法比较
                             } else {
-                                Some(a.partial_cmp(&b).unwrap())
+                                Some(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
                             }
                         }
                         DataType::Float64 => {

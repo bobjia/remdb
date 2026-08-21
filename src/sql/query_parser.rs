@@ -3431,7 +3431,7 @@ impl SqlParser {
 
         if self.peek_char() == Some('"') || self.peek_char() == Some('\'') {
             // 字符串值
-            let quote_char = self.next_char().unwrap();
+            let quote_char = self.next_char().ok_or(RemDbError::InvalidSqlQuery)?;
             let mut string_value = String::new();
 
             while let Some(c) = self.next_char() {
@@ -3572,7 +3572,7 @@ impl SqlParser {
                     return Err(QueryParseError::InvalidSyntax);
                 }
 
-                let c = self.next_char().unwrap();
+                let c = self.next_char().ok_or(RemDbError::InvalidSqlQuery)?;
                 end_pos += 1;
 
                 // 处理字符串中的括号
@@ -3617,7 +3617,7 @@ impl SqlParser {
                     return Err(QueryParseError::InvalidSyntax);
                 }
 
-                let c = self.next_char().unwrap();
+                let c = self.next_char().ok_or(RemDbError::InvalidSqlQuery)?;
                 end_pos += 1;
 
                 // 处理字符串中的大括号
@@ -3750,7 +3750,7 @@ impl SqlParser {
                 // 检查是否是完整的关键字（后面跟着非字母数字字符）
                 let next_char = self.input.as_bytes().get(end).map(|&b| b as char);
                 eprintln!("DEBUG match_keyword: next_char='{:?}'", next_char);
-                if next_char.is_none() || !next_char.unwrap().is_ascii_alphanumeric() {
+                if next_char.is_none() || !next_char.ok_or(RemDbError::InvalidSqlQuery)?.is_ascii_alphanumeric() {
                     self.position = end;
                     self.column += keyword.len();
                     eprintln!("DEBUG match_keyword returning true for '{}'", keyword);
@@ -3899,7 +3899,7 @@ impl SqlParser {
             }
 
             // 检查是否是修饰符（字母或下划线开头）
-            let c = self.peek_char().unwrap();
+            let c = self.peek_char().ok_or(RemDbError::InvalidSqlQuery)?;
             if c.is_ascii_alphabetic() || c == '_' {
                 // 解析修饰符
                 let modifier = self.parse_identifier()?;
@@ -3924,7 +3924,7 @@ impl SqlParser {
                             ]
                             .contains(&token_upper.as_str()) {
                                 // 检查下一个字符是否是标识符的开始（字母或下划线）
-                                let next_char = self.peek_char().unwrap();
+                                let next_char = self.peek_char().ok_or(RemDbError::InvalidSqlQuery)?;
                                 if next_char.is_ascii_alphabetic() || next_char == '_' {
                                     // 解析 WITH 后的修饰符
                                     let with_modifier = self.parse_identifier()?;

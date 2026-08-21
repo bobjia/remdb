@@ -588,7 +588,7 @@ impl JsonDocument {
                                 if !c.is_ascii_hexdigit() {
                                     return Err("Invalid Unicode escape");
                                 }
-                                code = code * 16 + c.to_digit(16).unwrap() as u32;
+                                code = code * 16 + c.to_digit(16).expect("invalid hex digit") as u32;
                                 *index += 1;
                             }
                             if let Some(c) = char::from_u32(code) {

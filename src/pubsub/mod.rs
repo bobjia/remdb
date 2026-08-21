@@ -565,7 +565,8 @@ pub fn shutdown() -> Result<()> {
         // Only shutdown if we have an instance
         if (*pubsub_ptr).is_some() {
             // First get a mutable reference to the instance
-            let pubsub = (*pubsub_ptr).as_mut().unwrap();
+            // SAFETY: pubsub_ptr is valid and non-null
+        let pubsub = unsafe { &mut *pubsub_ptr };
             // Call shutdown on the instance
             let result = pubsub.shutdown();
             // Always clear the instance after shutdown, regardless of result

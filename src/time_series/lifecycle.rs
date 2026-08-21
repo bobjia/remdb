@@ -56,7 +56,7 @@ impl LifecycleManager {
             use std::time::SystemTime;
             SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or(std::time::Duration::ZERO)
                 .as_secs()
         }
         #[cfg(not(feature = "std"))]

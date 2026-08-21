@@ -1475,7 +1475,7 @@ impl MemoryTable {
             }
             crate::types::DataType::Vector => {
                 // 获取向量维度
-                let vector_metadata = field.vector_metadata.as_ref().unwrap();
+                let vector_metadata = field.vector_metadata.as_ref().ok_or(RemDbError::InvalidData("vector_metadata not set"))?;
                 let dimension = vector_metadata.dimension as usize;
                 
                 // 压缩向量数据后写入

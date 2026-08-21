@@ -83,7 +83,7 @@ pub fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
                 DataType::Bool => left.value.bool == right.value.bool,
                 DataType::VarChar | DataType::Char | DataType::Text => {
                     let left_str = core::str::from_utf8(&left.value.string)
-                        .unwrap()
+                        .ok_or(RemDbError::InvalidData("string comparison failed"))?
                         .trim_end_matches(char::from(0));
                     let right_str = core::str::from_utf8(&right.value.string)
                         .unwrap()
@@ -757,7 +757,7 @@ pub unsafe fn evaluate_comparison_with_alias(
     }
 
     let field_value = if alias_map.contains_key(&comp.field) {
-        let expr = alias_map.get(&comp.field).unwrap();
+        let expr = alias_map.get(&comp.field).ok_or(RemDbError::FieldNotFound)?;
         let field_index = columns.iter().position(|e| {
             if let Expression::Field { name, .. } = e {
                 name == &comp.field
@@ -929,7 +929,7 @@ pub unsafe fn evaluate_between_with_alias(
     use crate::sql::operations::expression::evaluate_expression;
 
     let field_value = if alias_map.contains_key(&between.field) {
-        let expr = alias_map.get(&between.field).unwrap();
+        let expr = alias_map.get(&between.field).ok_or(RemDbError::FieldNotFound)?;
         let field_index = columns.iter().position(|e| {
             if let Expression::Field { name, .. } = e {
                 name == &between.field

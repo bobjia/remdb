@@ -1454,7 +1454,7 @@ impl LogManager {
                             header.old_data_size as usize,
                         );
 
-                        if old_data_read.is_err() || old_data_read.unwrap() != header.old_data_size as usize {
+                        if old_data_read.map(|v| v != header.old_data_size as usize).unwrap_or(true) {
                             read_success = false;
                         } else {
                             data_offset += header.old_data_size as usize;
@@ -1467,7 +1467,7 @@ impl LogManager {
                             4,
                         );
                         
-                        if size_read.is_err() || size_read.unwrap() != 4 {
+                        if size_read.map(|v| v != 4).unwrap_or(true) {
                             read_success = false;
                         } else {
                             let compressed_size = u32::from_le_bytes(compressed_size_bytes) as usize;
@@ -1478,7 +1478,7 @@ impl LogManager {
                                 compressed_size,
                             );
 
-                            if old_data_read.is_err() || old_data_read.unwrap() != compressed_size {
+                            if old_data_read.map(|v| v != compressed_size).unwrap_or(true) {
                                 read_success = false;
                             } else {
                                 // Decompress the data
@@ -1514,7 +1514,7 @@ impl LogManager {
                             header.new_data_size as usize,
                         );
 
-                        if new_data_read.is_err() || new_data_read.unwrap() != header.new_data_size as usize {
+                        if new_data_read.map(|v| v != header.new_data_size as usize).unwrap_or(true) {
                             read_success = false;
                         } else {
                             data_offset += header.new_data_size as usize;
@@ -1527,7 +1527,7 @@ impl LogManager {
                             4,
                         );
                         
-                        if size_read.is_err() || size_read.unwrap() != 4 {
+                        if size_read.map(|v| v != 4).unwrap_or(true) {
                             read_success = false;
                         } else {
                             let compressed_size = u32::from_le_bytes(compressed_size_bytes) as usize;
@@ -1538,7 +1538,7 @@ impl LogManager {
                                 compressed_size,
                             );
 
-                            if new_data_read.is_err() || new_data_read.unwrap() != compressed_size {
+                            if new_data_read.map(|v| v != compressed_size).unwrap_or(true) {
                                 read_success = false;
                             } else {
                                 // Decompress the data
@@ -2996,7 +2996,7 @@ impl TransactionManager {
         }
 
         // 初始化事务
-        let tx = tx_buffer.as_mut().unwrap();
+        let tx = tx_buffer.as_mut().ok_or(RemDbError::InternalError("Transaction buffer not initialized"))?;
         *tx = Transaction {
             id: tx_id,
             tx_type,
@@ -3078,7 +3078,8 @@ impl TransactionManager {
 
         // 执行实际的回滚操作：遍历日志项，按相反顺序撤销操作
         for i in (0..tx_ptr.as_mut().log_item_count).rev() {
-            let log_item = &tx_ptr.as_mut().log_items.as_ptr().add(i).as_ref().unwrap();
+            // SAFETY: log_items pointer is valid and within bounds
+            let log_item = unsafe { &*tx_ptr.as_mut().log_items.as_ptr().add(i) };
 
             // 获取数据库实例
             let db = crate::get_global_db().ok_or(RemDbError::InternalError)?;
@@ -3307,7 +3308,8 @@ impl Transaction {
 
         // 遍历所有日志项
         for i in 0..self.log_item_count {
-            let log_item = &self.log_items.as_ptr().add(i).as_ref().unwrap();
+            // SAFETY: log_items pointer is valid and within bounds
+            let log_item = unsafe { &*self.log_items.as_ptr().add(i) };
 
             // 写入日志项到日志管理器
             if let Some(log_manager) = crate::transaction::TX_MANAGER.get_log_manager_mut() {
@@ -3380,7 +3382,8 @@ impl Transaction {
             return None;
         }
         let log_item_ptr = self.log_items.as_ptr().add(self.log_item_count);
-        let log_item = log_item_ptr.as_mut().unwrap();
+        // SAFETY: log_item_ptr is valid and non-null
+        let log_item = unsafe { log_item_ptr.as_mut() };
         
         // 初始化日志项头部
         log_item.header.op_type = op_type;
@@ -3539,8 +3542,8 @@ pub unsafe fn begin_transaction() {
     let _ = TX_MANAGER.begin(
         TransactionType::ReadWrite,
         IsolationLevel::RepeatableRead,
-        &mut **TX_BUFFER.as_mut().unwrap(),
-        LOG_BUFFER.as_mut().unwrap().as_mut_ptr(),
+        &mut **TX_BUFFER.as_mut().ok_or(RemDbError::InternalError("TX buffer not initialized"))?,
+        LOG_BUFFER.as_mut().ok_or(RemDbError::InternalError("Log buffer not initialized"))?.as_mut_ptr(),
         1024,
     );
 }

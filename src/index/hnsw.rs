@@ -508,7 +508,7 @@ impl HNSWIndex {
             }
             
             // 更新结果列表
-            if results.len() < ef || current_dist < results.last().unwrap().0 {
+            if results.len() < ef || current_dist < results.last().map(|r| r.0).unwrap_or(f64::MAX) {
                 // 获取当前节点的邻居
                 let neighbors = current_node.as_ref().get_neighbors_at_level(level);                
                 for &neighbor in neighbors {
@@ -517,7 +517,7 @@ impl HNSWIndex {
                         let neighbor_node = neighbor.as_ref();
                         let neighbor_vec = self.vectors.add(neighbor_node.vector_offset);
                         let neighbor_dist = self.calculate_distance(query_vec, neighbor_vec);                        
-                        if results.len() < ef || neighbor_dist < results.last().unwrap().0 {
+                        if results.len() < ef || neighbor_dist < results.last().map(|r| r.0).unwrap_or(f64::MAX) {
                             candidates.push((neighbor_dist, neighbor));
                             results.push((neighbor_dist, neighbor));                            
                             // 按距离排序并限制结果数量
@@ -544,7 +544,7 @@ impl HNSWIndex {
             return Err(RemDbError::RecordNotFound);
         }
         
-        let mut current_point = self.enter_point.unwrap();
+        let mut current_point = self.enter_point.ok_or(RemDbError::InvalidState)?;
         let mut current_level = self.max_level;
         
         // 从上到下遍历各层        
@@ -654,7 +654,8 @@ impl HNSWIndex {
         let mut target_node_idx = None;
         for i in 0..self.node_count {
             let node_ptr = self.nodes.as_ptr().add(i);            
-            let node = node_ptr.as_ref().unwrap();
+            // SAFETY: node_ptr is NonNull, guaranteed by caller
+            let node = unsafe { node_ptr.as_ref() };
             if node.vector_offset == vector_offset {
                 target_node = Some(NonNull::new_unchecked(node_ptr));                
                 target_node_idx = Some(i);
@@ -667,7 +668,8 @@ impl HNSWIndex {
             // 遍历所有节点，移除对目标节点的引用
             for i in 0..self.node_count {
                 let node_ptr = self.nodes.as_ptr().add(i);
-                let node = node_ptr.as_mut().unwrap();
+                // SAFETY: node_ptr is NonNull, guaranteed by caller
+                let node = unsafe { node_ptr.as_mut() };
                 
                 // 遍历每层
                 for level in 0..=self.max_level {

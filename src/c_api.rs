@@ -1819,7 +1819,7 @@ pub unsafe extern "C" fn remdb_sql_query(
 
             // 分配内存存储列名
             let columns = alloc::alloc::alloc(
-                alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).unwrap(),
+                alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).expect("failed to allocate memory"),
             ) as *mut *const u8;
             if columns.is_null() {
                 alloc::alloc::dealloc(
@@ -1832,7 +1832,7 @@ pub unsafe extern "C" fn remdb_sql_query(
             // 转换列名
             for (i, column) in rust_result_set.columns.iter().enumerate() {
                 let column_str = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<u8>(column.len() + 1).unwrap(),
+                    alloc::alloc::Layout::array::<u8>(column.len() + 1).expect("failed to allocate memory"),
                 ) as *mut u8;
                 if column_str.is_null() {
                     // 释放已分配的内存
@@ -1840,13 +1840,13 @@ pub unsafe extern "C" fn remdb_sql_query(
                         let col = *columns.offset(j as isize);
                         alloc::alloc::dealloc(
                             col as *mut u8,
-                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap(),
+                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
                         );
                     }
                     alloc::alloc::dealloc(
                         columns as *mut u8,
                         alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len())
-                            .unwrap(),
+                            .expect("failed to allocate memory"),
                     );
                     alloc::alloc::dealloc(
                         c_result_set as *mut u8,
@@ -1863,7 +1863,7 @@ pub unsafe extern "C" fn remdb_sql_query(
 
             // 分配内存存储行
             let rows = alloc::alloc::alloc(
-                alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len()).unwrap(),
+                alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len()).expect("failed to allocate memory"),
             ) as *mut RemDbResultRow;
             if rows.is_null() {
                 // 释放已分配的内存
@@ -1871,13 +1871,13 @@ pub unsafe extern "C" fn remdb_sql_query(
                     let col = *columns.offset(i as isize);
                     alloc::alloc::dealloc(
                         col as *mut u8,
-                        alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).unwrap(),
+                        alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
                     );
                 }
                 alloc::alloc::dealloc(
                     columns as *mut u8,
                     alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len())
-                        .unwrap(),
+                        .expect("failed to allocate memory"),
                 );
                 alloc::alloc::dealloc(
                     c_result_set as *mut u8,
@@ -1890,7 +1890,7 @@ pub unsafe extern "C" fn remdb_sql_query(
             for (i, row) in rust_result_set.rows.iter().enumerate() {
                 // 分配内存存储值
                 let values = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<RemDbTypedValue>(row.values.len()).unwrap(),
+                    alloc::alloc::Layout::array::<RemDbTypedValue>(row.values.len()).expect("failed to allocate memory"),
                 ) as *mut RemDbTypedValue;
                 if values.is_null() {
                     // 释放已分配的内存
@@ -1898,13 +1898,13 @@ pub unsafe extern "C" fn remdb_sql_query(
                         let r = &*rows.offset(j as isize);
                         alloc::alloc::dealloc(
                             r.values as *mut u8,
-                            alloc::alloc::Layout::array::<RemDbTypedValue>(r.values_count).unwrap(),
+                            alloc::alloc::Layout::array::<RemDbTypedValue>(r.values_count).expect("failed to allocate memory"),
                         );
                     }
                     alloc::alloc::dealloc(
                         rows as *mut u8,
                         alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len())
-                            .unwrap(),
+                            .expect("failed to allocate memory"),
                     );
                     for j in 0..rust_result_set.columns.len() {
                         let col = *columns.offset(j as isize);
@@ -1916,7 +1916,7 @@ pub unsafe extern "C" fn remdb_sql_query(
                     alloc::alloc::dealloc(
                         columns as *mut u8,
                         alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len())
-                            .unwrap(),
+                            .expect("failed to allocate memory"),
                     );
                     alloc::alloc::dealloc(
                         c_result_set as *mut u8,
@@ -1972,7 +1972,7 @@ pub unsafe extern "C" fn remdb_free_result_set(result_set: *mut RemDbResultSet) 
     }
     alloc::alloc::dealloc(
         rs.columns as *mut u8,
-        alloc::alloc::Layout::array::<*const u8>(rs.columns_count).unwrap(),
+        alloc::alloc::Layout::array::<*const u8>(rs.columns_count).expect("failed to allocate memory"),
     );
 
     // 释放行数据
@@ -1981,13 +1981,13 @@ pub unsafe extern "C" fn remdb_free_result_set(result_set: *mut RemDbResultSet) 
         if !row.values.is_null() {
             alloc::alloc::dealloc(
                 row.values as *mut u8,
-                alloc::alloc::Layout::array::<RemDbTypedValue>(row.values_count).unwrap(),
+                alloc::alloc::Layout::array::<RemDbTypedValue>(row.values_count).expect("failed to allocate memory"),
             );
         }
     }
     alloc::alloc::dealloc(
         rs.rows as *mut u8,
-        alloc::alloc::Layout::array::<RemDbResultRow>(rs.rows_count).unwrap(),
+        alloc::alloc::Layout::array::<RemDbResultRow>(rs.rows_count).expect("failed to allocate memory"),
     );
 
     // 释放结果集本身
@@ -2047,7 +2047,7 @@ pub unsafe extern "C" fn remdb_get_json_string(
                 
                 // 分配内存存储JSON字符串
                 let json_c_str = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<u8>(json_str.len() + 1).unwrap(),
+                    alloc::alloc::Layout::array::<u8>(json_str.len() + 1).expect("failed to allocate memory"),
                 ) as *mut u8;
                 
                 if json_c_str.is_null() {
@@ -2079,7 +2079,7 @@ pub unsafe extern "C" fn remdb_free_string(s: *const u8) -> RemDbError {
     
     alloc::alloc::dealloc(
         s as *mut u8,
-        alloc::alloc::Layout::array::<u8>(_c_strlen(s) + 1).unwrap(),
+        alloc::alloc::Layout::array::<u8>(_c_strlen(s) + 1).expect("failed to allocate memory"),
     );
     
     RemDbError::Success
@@ -2145,7 +2145,7 @@ pub unsafe extern "C" fn remdb_execute_query(
 
             // 分配内存存储列名
             let columns_ptr = alloc::alloc::alloc(
-                alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).unwrap(),
+                alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).expect("failed to allocate memory"),
             ) as *mut *const u8;
             if columns_ptr.is_null() {
                 alloc::alloc::dealloc(
@@ -2172,7 +2172,7 @@ pub unsafe extern "C" fn remdb_execute_query(
                     alloc::alloc::dealloc(
                         columns_ptr as *mut u8,
                         alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len())
-                            .unwrap(),
+                            .expect("failed to allocate memory"),
                     );
                     alloc::alloc::dealloc(
                         c_result_set as *mut u8,
@@ -2203,7 +2203,7 @@ pub unsafe extern "C" fn remdb_execute_query(
                 alloc::alloc::dealloc(
                     columns_ptr as *mut u8,
                     alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len())
-                        .unwrap(),
+                        .expect("failed to allocate memory"),
                 );
                 alloc::alloc::dealloc(
                     c_result_set as *mut u8,
@@ -2226,14 +2226,14 @@ pub unsafe extern "C" fn remdb_execute_query(
                             alloc::alloc::dealloc(
                                 r.values as *mut u8,
                                 alloc::alloc::Layout::array::<RemDbTypedValue>(r.values_count)
-                                    .unwrap(),
+                                    .expect("failed to allocate memory"),
                             );
                         }
                     }
                     alloc::alloc::dealloc(
                         rows_ptr as *mut u8,
                         alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len())
-                            .unwrap(),
+                            .expect("failed to allocate memory"),
                     );
                     for j in 0..rust_result_set.columns.len() {
                         let col = *columns_ptr.offset(j as isize);
@@ -2245,7 +2245,7 @@ pub unsafe extern "C" fn remdb_execute_query(
                     alloc::alloc::dealloc(
                         columns_ptr as *mut u8,
                         alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len())
-                            .unwrap(),
+                            .expect("failed to allocate memory"),
                     );
                     alloc::alloc::dealloc(
                         c_result_set as *mut u8,
@@ -2422,10 +2422,10 @@ pub unsafe extern "C" fn remdb_vector_search(
             if actual_count > 0 {
                 // 分配内存存储结果
                 let result_ids = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<u32>(actual_count).unwrap(),
+                    alloc::alloc::Layout::array::<u32>(actual_count).expect("failed to allocate memory"),
                 ) as *mut u32;
                 let result_distances = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<f32>(actual_count).unwrap(),
+                    alloc::alloc::Layout::array::<f32>(actual_count).expect("failed to allocate memory"),
                 ) as *mut f32;
 
                 if result_ids.is_null() || result_distances.is_null() {
@@ -2492,14 +2492,14 @@ pub unsafe extern "C" fn remdb_free_vector_search_results(
     if !results.is_null() {
         alloc::alloc::dealloc(
             results as *mut u8,
-            alloc::alloc::Layout::array::<u32>(count as usize).unwrap(),
+            alloc::alloc::Layout::array::<u32>(count as usize).expect("failed to allocate memory"),
         );
     }
 
     if !distances.is_null() {
         alloc::alloc::dealloc(
             distances as *mut u8,
-            alloc::alloc::Layout::array::<f32>(count as usize).unwrap(),
+            alloc::alloc::Layout::array::<f32>(count as usize).expect("failed to allocate memory"),
         );
     }
 
@@ -2989,7 +2989,7 @@ pub unsafe extern "C" fn remdb_get_databases(
         Ok(rust_databases) => {
             // 分配内存存储数据库信息
             let c_databases = alloc::alloc::alloc(
-                alloc::alloc::Layout::array::<RemDbDatabaseInfo>(rust_databases.len()).unwrap(),
+                alloc::alloc::Layout::array::<RemDbDatabaseInfo>(rust_databases.len()).expect("failed to allocate memory"),
             ) as *mut RemDbDatabaseInfo;
 
             if c_databases.is_null() {
@@ -3019,7 +3019,7 @@ pub unsafe extern "C" fn remdb_free_databases(
     if !databases.is_null() {
         alloc::alloc::dealloc(
             databases as *mut u8,
-            alloc::alloc::Layout::array::<RemDbDatabaseInfo>(count).unwrap(),
+            alloc::alloc::Layout::array::<RemDbDatabaseInfo>(count).expect("failed to allocate memory"),
         );
     }
     RemDbError::Success

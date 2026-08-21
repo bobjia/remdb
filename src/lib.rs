@@ -1977,7 +1977,7 @@ impl RemDb {
                     .map_err(|_| RemDbError::OutOfMemory)?;
 
                 self.tables[table_id] = Some(table);
-                self.tables[table_id].as_mut().unwrap()
+                self.tables[table_id].as_mut().ok_or(RemDbError::TableNotFound)?
             };
 
             // 读取记录数
@@ -2212,7 +2212,7 @@ impl RemDb {
             }
         }
 
-        let table_index = table_index.unwrap();
+        let table_index = table_index.ok_or(RemDbError::TableNotFound)?;
 
         // 防御性检查：确保索引在有效范围内
         if table_index >= self.tables.len() {
@@ -4690,7 +4690,7 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
         
         // 将新的数据库实例赋值给 DB_INSTANCE
         DB_INSTANCE = Some(db);
-        Ok(DB_INSTANCE.as_mut().unwrap())
+        Ok(DB_INSTANCE.as_mut().ok_or(RemDbError::InternalError("DB not initialized"))?)
     }
 }
 

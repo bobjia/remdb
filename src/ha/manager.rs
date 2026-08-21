@@ -353,8 +353,8 @@ impl HAManager {
             return Ok(());
         }
 
-        let master_address = ha_config.master_address.unwrap();
-        let master_port = ha_config.master_port.unwrap();
+        let master_address = ha_config.master_address.ok_or(RemDbError::InvalidConfig("master_address not set"))?;
+        let master_port = ha_config.master_port.ok_or(RemDbError::InvalidConfig("master_port not set"))?;
 
         #[cfg(feature = "log")]
         debug!("connect_to_master: Connecting to master at {}:{}", master_address, master_port);

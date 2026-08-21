@@ -637,8 +637,8 @@ fn downsample_records(
     let interval_nanos = interval_seconds * 1_000_000_000u64;
     
     // 找到最小和最大时间戳
-    let min_timestamp = records.iter().map(|r| r.timestamp).min().unwrap();
-    let max_timestamp = records.iter().map(|r| r.timestamp).max().unwrap();
+    let min_timestamp = records.iter().map(|r| r.timestamp).min().expect("records must not be empty");
+    let max_timestamp = records.iter().map(|r| r.timestamp).max().expect("records must not be empty");
     
     // 按时间窗口分组
     let mut windows: std::collections::BTreeMap<u64, Vec<&crate::time_series::TimeSeriesRecord>> = 
@@ -663,7 +663,7 @@ fn downsample_records(
         if let Some((&window_start, _window_records)) = next_window_iter.peek() {
             if window_start == current_window {
                 // 当前窗口有数据
-                let window_records = next_window_iter.next().unwrap().1;
+                let window_records = next_window_iter.next().expect("window iterator must have elements").1;
                 
                 // 计算窗口内记录的平均值（优化版本，减少迭代次数）
                 let (sum, count) = window_records.iter()
@@ -868,7 +868,7 @@ where
         return operation();
     }
     
-    let timeout = Duration::from_millis(timeout_ms.unwrap());
+    let timeout = Duration::from_millis(timeout_ms.expect("timeout_ms must be set"));
     
     // 创建通道用于接收操作结果
     let (tx, rx) = mpsc::channel();
@@ -885,7 +885,7 @@ where
         Ok(result) => result,
         Err(_) => {
             Err(QueryExecutionError::ResourceLimitExceeded(
-                format!("Query timeout after {}ms for {}", timeout_ms.unwrap(), operation_name)
+                format!("Query timeout after {}ms for {}", timeout_ms.expect("timeout_ms must be set"), operation_name)
             ))
         }
     }
@@ -1910,7 +1910,7 @@ fn execute_select_query(
                 table,
                 &columns,
                 &records_for_aggregation,
-                query.group_by.as_ref().unwrap(),
+                query.group_by.as_ref().expect("group_by must be set"),
                 &mut result_set,
             )?;
         } else {
@@ -2242,7 +2242,7 @@ fn execute_select_join_query(
             // 7. 对于每个主表记录，遍历所有连接表
             for join_clause in &query.joins {
                 // 查找连接表
-                let join_table = find_table_by_name(db, &join_clause.table_name).unwrap();
+                let join_table = find_table_by_name(db, &join_clause.table_name).map_err(|_| RemDbError::TableNotFound)?;
 
                 // 标记是否有匹配的连接记录
                 let mut has_matching_join = false;
@@ -3152,7 +3152,7 @@ fn execute_create_table_query(
                                 time: crate::types::db_timestamp::new(
                                     actual_value,
                                     0,
-                                    precision.try_into().unwrap(),
+                                    precision as u8,
                                     0,
                                 ),
                             },
@@ -3160,7 +3160,7 @@ fn execute_create_table_query(
                                 time: crate::types::db_timestamp::new(
                                     actual_value,
                                     0,
-                                    precision.try_into().unwrap(),
+                                    precision as u8,
                                     0,
                                 ),
                             },
@@ -3174,7 +3174,7 @@ fn execute_create_table_query(
                             DataType::Interval => Value {
                                 interval: crate::types::db_interval::new(
                                     actual_value,
-                                    precision.try_into().unwrap(),
+                                    precision as u8,
                                     0,
                                 ),
                             },
@@ -3211,7 +3211,7 @@ fn execute_create_table_query(
                             time: crate::types::db_timestamp::new(
                                 *f as i64,
                                 0,
-                                precision.try_into().unwrap(),
+                                precision as u8,
                                 0,
                             ),
                         },
@@ -3219,7 +3219,7 @@ fn execute_create_table_query(
                             time: crate::types::db_timestamp::new(
                                 *f as i64,
                                 0,
-                                precision.try_into().unwrap(),
+                                precision as u8,
                                 0,
                             ),
                         },
@@ -3233,7 +3233,7 @@ fn execute_create_table_query(
                         DataType::Interval => Value {
                             interval: crate::types::db_interval::new(
                                 *f as i64,
-                                precision.try_into().unwrap(),
+                                precision as u8,
                                 0,
                             ),
                         },
@@ -3273,7 +3273,7 @@ fn execute_create_table_query(
                             time: crate::types::db_timestamp::new(
                                 *b as i64,
                                 0,
-                                precision.try_into().unwrap(),
+                                precision as u8,
                                 0,
                             ),
                         },
@@ -3281,7 +3281,7 @@ fn execute_create_table_query(
                             time: crate::types::db_timestamp::new(
                                 *b as i64,
                                 0,
-                                precision.try_into().unwrap(),
+                                precision as u8,
                                 0,
                             ),
                         },
@@ -3295,7 +3295,7 @@ fn execute_create_table_query(
                         DataType::Interval => Value {
                             interval: crate::types::db_interval::new(
                                 *b as i64,
-                                precision.try_into().unwrap(),
+                                precision as u8,
                                 0,
                             ),
                         },
@@ -3344,7 +3344,7 @@ fn execute_create_table_query(
                             time: crate::types::db_timestamp::new(
                                 s.parse().unwrap_or(0) as i64,
                                 0,
-                                precision.try_into().unwrap(),
+                                precision as u8,
                                 0,
                             ),
                         },
@@ -3352,7 +3352,7 @@ fn execute_create_table_query(
                             time: crate::types::db_timestamp::new(
                                 s.parse().unwrap_or(0) as i64,
                                 0,
-                                precision.try_into().unwrap(),
+                                precision as u8,
                                 0,
                             ),
                         },
@@ -3365,7 +3365,7 @@ fn execute_create_table_query(
                         DataType::Interval => Value {
                             interval: crate::types::db_interval::new(
                                 s.parse().unwrap_or(0) as i64,
-                                precision.try_into().unwrap(),
+                                precision as u8,
                                 0,
                             ),
                         },
@@ -3416,7 +3416,7 @@ fn execute_create_table_query(
                                 time: crate::types::db_timestamp::new(
                                     s.parse().unwrap_or(0) as i64,
                                     0,
-                                    precision.try_into().unwrap(),
+                                    precision as u8,
                                     0,
                                 ),
                             },
@@ -3424,7 +3424,7 @@ fn execute_create_table_query(
                                 time: crate::types::db_timestamp::new(
                                     s.parse().unwrap_or(0) as i64,
                                     0,
-                                    precision.try_into().unwrap(),
+                                    precision as u8,
                                     0,
                                 ),
                             },
@@ -4469,7 +4469,7 @@ fn validate_expression(table: &MemoryTable, expr: &Expression) -> Result<(), Que
                 // 处理带表别名的字段名，如 "t.id"
                 let actual_field_name = if field_name.contains('.') {
                     // 提取点号后面的部分作为实际字段名
-                    field_name.split('.').last().unwrap()
+                    field_name.split('.').last().expect("field name must contain '.'")
                 } else {
                     // 没有表别名，直接使用字段名
                     field_name
@@ -5181,7 +5181,7 @@ fn execute_insert_query(
                         }
                         DataType::Vector => {
                             // 写入向量数据（考虑压缩）
-                            let vector_metadata = field.vector_metadata.as_ref().unwrap();
+                            let vector_metadata = field.vector_metadata.as_ref().expect("vector_metadata must be set for vector fields");
                             let dimension = vector_metadata.dimension as usize;
                             
                             // 压缩向量数据后写入
@@ -6373,7 +6373,7 @@ unsafe fn evaluate_between(
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if between.field.contains('.') {
         // 提取点号后面的部分作为实际字段名
-        between.field.split('.').last().unwrap()
+        between.field.split('.').last().expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
         &between.field
@@ -6489,7 +6489,7 @@ unsafe fn evaluate_comparison(
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if comp.field.contains('.') {
         // 提取点号后面的部分作为实际字段名
-        comp.field.split('.').last().unwrap()
+        comp.field.split('.').last().expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
         &comp.field
@@ -6612,7 +6612,7 @@ fn sort_rows_with_alias(
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if order_by.field.contains('.') {
         // 提取点号后面的部分作为实际字段名
-        order_by.field.split('.').last().unwrap()
+        order_by.field.split('.').last().expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
         &order_by.field
@@ -6884,7 +6884,7 @@ fn sort_rows(
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if order_by.field.contains('.') {
         // 提取点号后面的部分作为实际字段名
-        order_by.field.split('.').last().unwrap()
+        order_by.field.split('.').last().expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
         &order_by.field

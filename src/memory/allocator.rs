@@ -226,7 +226,7 @@ impl StaticAllocator {
 
                 // 返回块数据指针
                 let data_ptr = (block.as_ptr() as usize + MemoryBlock::SIZE) as *mut u8;
-                return Ok(NonNull::new(data_ptr).unwrap());
+                return Ok(NonNull::new(data_ptr).ok_or(RemDbError::InvalidPointer)?);
             }
 
             current = &mut unsafe { block.as_mut() }.next;
