@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 use remdb::{RemDb, config::{DbConfig, WALConfig}, time_series::TimeSeriesConfig, DdlExecutor};
 use remdb::memory::allocator::init_global_allocator;
 

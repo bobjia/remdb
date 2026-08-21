@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 // 运行时DDL配置示例
 
 // 运行时DDL配置示例

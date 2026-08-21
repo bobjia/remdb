@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 // 示例：验证VARCHAR类型支持
 
 extern crate alloc;

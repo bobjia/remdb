@@ -113,8 +113,8 @@ pub struct RemDb {
     pub metrics: monitor::DbMetrics,
 }
 
-// 为RemDb实现Send和Sync trait
-// 注意：这是安全的，因为RemDb的所有字段都是线程安全的
+// RemDb 包含 Vec<Option<MemoryTable>> 等类型，需要手动实现 Send/Sync
+// 因为内部类型可能包含 NonNull 指针（如 RecordHeader.next_version）
 unsafe impl Send for RemDb {}
 unsafe impl Sync for RemDb {}
 
@@ -372,16 +372,9 @@ impl RemDb {
     
     /// 初始化数据库
     pub fn init(&mut self) -> Result<()> {
-        // 只有当平台尚未初始化时，才使用默认平台
-        if crate::platform::PLATFORM.get().is_none() {
-            // 默认使用POSIX平台（如果可用）
-            #[cfg(feature = "posix")]
-            crate::platform::init_platform(crate::platform::posix::get_posix_platform());
-            
-            // 如果POSIX平台不可用（例如在Windows上），使用裸机平台作为备选
-            #[cfg(not(feature = "posix"))]
-            #[cfg(feature = "baremetal")] crate::platform::init_platform(crate::platform::baremetal::get_baremetal_platform());
-        }
+        // 平台初始化由用户通过平台特定的卫星 crate 完成
+        // 例如: remdb_platform_posix::get_posix_platform()
+        // 并通过 remdb::platform::init_platform() 注册
         
         // 初始化日志管理器（如果配置了日志）
         // 这里使用默认的日志文件路径，实际应用中可以从配置中获取

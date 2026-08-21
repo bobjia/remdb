@@ -269,5 +269,3 @@ pub fn crc32(data: &[u8]) -> u32 {
 }
 
 // 重新导出子模块
-pub mod posix;
-pub mod baremetal;

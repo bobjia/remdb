@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 extern crate alloc;
 
 use core::ptr::NonNull;
@@ -46,40 +47,29 @@ fn main() {
             fn get_timestamp_us(&self) -> u64 {
                 0
             }
-            fn spin_lock(&self, _lock: &mut u32) {
+            fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+                let len = dest.len().min(src.len());
+                dest[..len].copy_from_slice(&src[..len]);
             }
-            fn spin_unlock(&self, _lock: &mut u32) {
-            }
-            fn compiler_barrier(&self) {
-            }
-            fn full_memory_barrier(&self) {
-            }
-            fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-                unsafe {
-                    core::ptr::copy_nonoverlapping(src, dest, size);
-                }
-            }
-            fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-                unsafe {
-                    core::ptr::write_bytes(dest, value, size);
-                }
+            fn memset(&self, dest: &mut [u8], value: u8) {
+                dest.fill(value);
             }
             fn delay_ms(&self, _ms: u32) {
             }
             fn delay_us(&self, _us: u32) {
             }
             fn file_open(&self, _path: &str, _mode: platform::FileMode) -> platform::FileResult<platform::FileHandle> {
-                // 返回一个非空指针作为有效的FileHandle
-                Ok(1 as *const u8)
+                // 返回一个有效的FileHandle
+                Ok(1)
             }
             fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
                 Ok(())
             }
-            fn file_write(&self, _handle: platform::FileHandle, _buffer: *const u8, size: usize) -> platform::FileResult<usize> {
+            fn file_write(&self, _handle: platform::FileHandle, _buf: &[u8]) -> platform::FileResult<usize> {
                 // 模拟写入成功，返回写入的字节数
-                Ok(size)
+                Ok(_buf.len())
             }
-            fn file_read(&self, _handle: platform::FileHandle, _buffer: *mut u8, _size: usize) -> platform::FileResult<usize> {
+            fn file_read(&self, _handle: platform::FileHandle, _buf: &mut [u8]) -> platform::FileResult<usize> {
                 // 模拟读取成功，返回0表示文件为空
                 Ok(0)
             }
@@ -93,7 +83,7 @@ fn main() {
             fn file_size(&self, _path: &str) -> platform::FileResult<usize> {
                 Ok(0)
             }
-            fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+            fn crc32(&self, _data: &[u8]) -> u32 {
                 0
             }
         }

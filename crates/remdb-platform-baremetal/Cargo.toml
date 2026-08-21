@@ -2,3 +2,7 @@
 name = "remdb-platform-baremetal"
 version = "0.1.0"
 edition = "2021"
+description = "Baremetal platform implementation for remdb"
+
+[dependencies]
+remdb = { path = "../.." }

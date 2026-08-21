@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 // 测试默认值功能
 #![cfg(feature = "ha")]
 

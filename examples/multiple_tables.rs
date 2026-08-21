@@ -1,3 +1,4 @@
+#![allow(unsafe_code)]
 extern crate alloc;
 
 use core::ptr::NonNull;

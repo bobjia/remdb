@@ -1,4 +1,5 @@
 #![cfg(all(feature = "pubsub", feature = "ha"))]
+#![allow(unsafe_code)]
 
 use std::sync::{Arc, Mutex}; 
 use std::thread; 

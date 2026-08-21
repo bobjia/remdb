@@ -280,17 +280,13 @@ impl SubscriberManager {
     /// 获取当前时间（毫秒）
     /// 注意：在baremetal平台上，需要用户提供时间实现
     fn get_current_time() -> u64 {
-        #[cfg(feature = "posix")] {
-            // POSIX平台使用系统时间
+        #[cfg(feature = "std")] {
+            // 使用系统时间
             let now = std::time::SystemTime::now();
             let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
             duration.as_millis() as u64
         }
-        #[cfg(feature = "baremetal")] {
-            // baremetal平台返回0（需要用户实现）
-            0
-        }
-        #[cfg(not(any(feature = "posix", feature = "baremetal")))] {
+        #[cfg(not(feature = "std"))] {
             0
         }
     }

@@ -1,6 +1,7 @@
 // remdbHA 主从复制示例
 
 #![cfg(feature = "ha")]
+#![allow(unsafe_code)]
 
 #[macro_use]
 extern crate remdb;
@@ -39,6 +40,53 @@ remdb::database!(
     low_power: false
 );
 
+// 定义平台实现
+struct DummyPlatform;
+impl remdb::platform::Platform for DummyPlatform {
+    fn get_timestamp(&self) -> u64 {
+        0
+    }
+    fn get_timestamp_us(&self) -> u64 {
+        0
+    }
+    fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+        let len = dest.len().min(src.len());
+        dest[..len].copy_from_slice(&src[..len]);
+    }
+    fn memset(&self, dest: &mut [u8], value: u8) {
+        dest.fill(value);
+    }
+    fn delay_ms(&self, _ms: u32) {
+    }
+    fn delay_us(&self, _us: u32) {
+    }
+    fn file_open(&self, _path: &str, _mode: remdb::platform::FileMode) -> remdb::platform::FileResult<remdb::platform::FileHandle> {
+        Err(())
+    }
+    fn file_close(&self, _handle: remdb::platform::FileHandle) -> remdb::platform::FileResult<()> {
+        Err(())
+    }
+    fn file_write(&self, _handle: remdb::platform::FileHandle, _buf: &[u8]) -> remdb::platform::FileResult<usize> {
+        Err(())
+    }
+    fn file_read(&self, _handle: remdb::platform::FileHandle, _buf: &mut [u8]) -> remdb::platform::FileResult<usize> {
+        Err(())
+    }
+    fn file_seek(&self, _handle: remdb::platform::FileHandle, _offset: i64, _whence: remdb::platform::SeekWhence) -> remdb::platform::FileResult<u64> {
+        Err(())
+    }
+    fn file_remove(&self, _path: &str) -> remdb::platform::FileResult<()> {
+        Err(())
+    }
+    fn file_size(&self, _path: &str) -> remdb::platform::FileResult<usize> {
+        Err(())
+    }
+    fn crc32(&self, _data: &[u8]) -> u32 {
+        0
+    }
+}
+static DUMMY_PLATFORM: DummyPlatform = DummyPlatform;
+
 // 主节点示例
 fn master_example() {
     println!("=== 主节点示例 ===");
@@ -51,9 +99,7 @@ fn master_example() {
         );
         
         // 初始化平台抽象层
-        #[cfg(feature = "posix")]
-        platform::init_platform(platform::posix::get_posix_platform());
-        
+        platform::init_platform(&DUMMY_PLATFORM);
         // 初始化全局数据库
         let db = init_global_db(&MASTER_DB_CONFIG).expect("Failed to initialize database");
         
@@ -107,7 +153,7 @@ fn master_example() {
         
         // 插入记录
         let table_mut = db.get_table_mut(0).expect("Failed to get table");
-        let record_id = table_mut.insert(record_data.as_ptr()).expect("Failed to insert record");
+        let record_id = table_mut.insert(&record_data).expect("Failed to insert record");
         
         // 提交事务
         transaction::commit().expect("Failed to commit transaction");
@@ -134,9 +180,7 @@ fn slave_example() {
         );
         
         // 初始化平台抽象层
-        #[cfg(feature = "posix")]
-        platform::init_platform(platform::posix::get_posix_platform());
-        
+        platform::init_platform(&DUMMY_PLATFORM);
         // 初始化全局数据库
         let db = init_global_db(&SLAVE_DB_CONFIG).expect("Failed to initialize database");
         
@@ -149,7 +193,7 @@ fn slave_example() {
         
         // 尝试获取记录，get_by_id如果失败会返回错误
         let mut result_data = [0u8; 40];
-        match table.get_by_id(record_id, result_data.as_mut_ptr()) {
+        match table.get_by_id(record_id, &mut result_data) {
             Ok(_) => {
                 // 读取字段值
                 let result_id = core::ptr::read(result_data.as_ptr() as *const u32);

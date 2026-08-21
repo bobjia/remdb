@@ -1,5 +1,6 @@
 // remdbHA 主节点示例
 #![cfg(feature = "ha")]
+#![allow(unsafe_code)]
 
 #[macro_use]
 extern crate remdb;
@@ -129,7 +130,7 @@ fn master_example() {
         
         // 插入记录
         let table_mut = db.get_table_mut(0).expect("Failed to get table");
-        let record_id = table_mut.insert(record_data.as_ptr()).expect("Failed to insert record");
+        let record_id = table_mut.insert(&record_data).expect("Failed to insert record");
         
         // 提交事务
         transaction::commit().expect("Failed to commit transaction");
