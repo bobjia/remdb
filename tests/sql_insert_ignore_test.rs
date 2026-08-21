@@ -1,4 +1,5 @@
 #![cfg(feature = "std")]
+#![allow(unsafe_code)]
 extern crate alloc;
 
 use remdb::*;
@@ -16,44 +17,12 @@ impl platform::Platform for TestPlatform {
         0
     }
     
-    fn spin_lock(&self, lock: &mut u32) {
-        // 简单的自旋锁实现
-        unsafe {
-            while core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .compare_exchange(0, 1, 
-                                 core::sync::atomic::Ordering::Acquire,
-                                 core::sync::atomic::Ordering::Relaxed)
-                .is_err() {
-                core::hint::spin_loop();
-            }
-        }
+    fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+        dest.copy_from_slice(src);
     }
     
-    fn spin_unlock(&self, lock: &mut u32) {
-        unsafe {
-            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .store(0, core::sync::atomic::Ordering::Release);
-        }
-    }
-    
-    fn compiler_barrier(&self) {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    fn full_memory_barrier(&self) {
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
-        unsafe {
-            core::ptr::copy_nonoverlapping(src, dest, size);
-        }
-    }
-    
-    fn memset(&self, dest: *mut u8, value: u8, size: usize) {
-        unsafe {
-            core::ptr::write_bytes(dest, value, size);
-        }
+    fn memset(&self, dest: &mut [u8], value: u8) {
+        dest.fill(value);
     }
     
     fn delay_ms(&self, _ms: u32) {
@@ -65,18 +34,18 @@ impl platform::Platform for TestPlatform {
     }
     
     fn file_open(&self, _path: &str, _mode: platform::FileMode) -> platform::FileResult<platform::FileHandle> {
-        Ok(core::ptr::null())
+        Ok(0)
     }
     
     fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
         Ok(())
     }
     
-    fn file_write(&self, _handle: platform::FileHandle, _buffer: *const u8, _size: usize) -> platform::FileResult<usize> {
+    fn file_write(&self, _handle: platform::FileHandle, _buf: &[u8]) -> platform::FileResult<usize> {
         Ok(0)
     }
     
-    fn file_read(&self, _handle: platform::FileHandle, _buffer: *mut u8, _size: usize) -> platform::FileResult<usize> {
+    fn file_read(&self, _handle: platform::FileHandle, _buf: &mut [u8]) -> platform::FileResult<usize> {
         Ok(0)
     }
     
@@ -92,7 +61,7 @@ impl platform::Platform for TestPlatform {
         Ok(0)
     }
     
-    fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+    fn crc32(&self, _data: &[u8]) -> u32 {
         0
     }
 }

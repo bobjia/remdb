@@ -1,5 +1,6 @@
 // HA功能测试
 #![cfg(feature = "ha")]
+#![allow(unsafe_code)]
 
 use remdb::*;
 use remdb::config::{LogMode, TimeSeriesConfig, WALConfig}; use remdb::ha::{HARole, ReplicationMode, HAConfig};
@@ -21,34 +22,12 @@ impl crate::platform::Platform for TestPlatform {
         123456789
     }
     
-    fn spin_lock(&self, _lock: &mut u32) {
-        // 简单实现，不做实际锁定
+    fn memcpy(&self, dst: &mut [u8], src: &[u8]) {
+        dst.copy_from_slice(src);
     }
     
-    fn spin_unlock(&self, _lock: &mut u32) {
-        // 简单实现，不做实际锁定
-    }
-    
-    fn memcpy(&self, dst: *mut u8, src: *const u8, size: usize) {
-        // 使用标准库的内存拷贝
-        unsafe {
-            std::ptr::copy(src, dst, size);
-        }
-    }
-    
-    fn memset(&self, ptr: *mut u8, value: u8, size: usize) {
-        // 使用标准库的内存设置
-        unsafe {
-            std::ptr::write_bytes(ptr, value, size);
-        }
-    }
-    
-    fn compiler_barrier(&self) {
-        // 不执行任何操作
-    }
-    
-    fn full_memory_barrier(&self) {
-        // 不执行任何操作
+    fn memset(&self, ptr: &mut [u8], value: u8) {
+        ptr.fill(value);
     }
     
     fn delay_ms(&self, _ms: u32) {
@@ -59,35 +38,35 @@ impl crate::platform::Platform for TestPlatform {
         // 不执行任何操作
     }
     
-    fn file_open(&self, _path: &str, _mode: crate::platform::FileMode) -> std::result::Result<*const u8, ()> {
-        Ok(std::ptr::null())
+    fn file_open(&self, _path: &str, _mode: crate::platform::FileMode) -> crate::platform::FileResult<crate::platform::FileHandle> {
+        Ok(0)
     }
     
-    fn file_close(&self, _handle: *const u8) -> std::result::Result<(), ()> {
+    fn file_close(&self, _handle: crate::platform::FileHandle) -> crate::platform::FileResult<()> {
         Ok(())
     }
     
-    fn file_write(&self, _handle: *const u8, _data: *const u8, _size: usize) -> std::result::Result<usize, ()> {
+    fn file_write(&self, _handle: crate::platform::FileHandle, _buf: &[u8]) -> crate::platform::FileResult<usize> {
         Ok(0)
     }
     
-    fn file_read(&self, _handle: *const u8, _data: *mut u8, _size: usize) -> std::result::Result<usize, ()> {
+    fn file_read(&self, _handle: crate::platform::FileHandle, _buf: &mut [u8]) -> crate::platform::FileResult<usize> {
         Ok(0)
     }
     
-    fn file_seek(&self, _handle: *const u8, _offset: i64, _whence: crate::platform::SeekWhence) -> std::result::Result<u64, ()> {
+    fn file_seek(&self, _handle: crate::platform::FileHandle, _offset: i64, _whence: crate::platform::SeekWhence) -> crate::platform::FileResult<u64> {
         Ok(0)
     }
     
-    fn file_remove(&self, _path: &str) -> std::result::Result<(), ()> {
+    fn file_remove(&self, _path: &str) -> crate::platform::FileResult<()> {
         Ok(())
     }
     
-    fn file_size(&self, _path: &str) -> std::result::Result<usize, ()> {
+    fn file_size(&self, _path: &str) -> crate::platform::FileResult<usize> {
         Ok(0)
     }
     
-    fn crc32(&self, _data: *const u8, _size: usize) -> u32 {
+    fn crc32(&self, _data: &[u8]) -> u32 {
         0
     }
 }
