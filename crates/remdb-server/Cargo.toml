@@ -1,0 +1,12 @@
+[package]
+name = "remdb-server"
+version = "0.1.0"
+edition = "2021"
+description = "Lean TCP query server for remdb (protobuf, zero-copy)"
+
+[dependencies]
+remdb = { path = "../..", default-features = false, features = ["std"] }
+prost = "0.12"
+
+[build-dependencies]
+prost-build = "0.12"

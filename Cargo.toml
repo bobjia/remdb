@@ -6,6 +6,7 @@ members = [
     "crates/remdb-alloc",
     "crates/remdb-platform-posix",
     "crates/remdb-platform-baremetal",
+    "crates/remdb-server",
 ]
 
 [workspace.lints.rust]

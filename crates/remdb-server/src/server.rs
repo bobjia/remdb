@@ -1,0 +1,1 @@
+//! Placeholder stub for the TCP server module (implemented in a later task).

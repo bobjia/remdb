@@ -1,0 +1,1 @@
+//! Placeholder stub for the buffer-pool module (implemented in a later task).

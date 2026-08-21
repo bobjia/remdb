@@ -1,0 +1,1 @@
+//! Placeholder stub for the frame-codec module (implemented in a later task).

@@ -1,0 +1,89 @@
+syntax = "proto3";
+package remdb;
+
+message Status {
+  enum Code { OK = 0; ERROR = 1; NOT_FOUND = 2; }
+  Code code = 1;
+  string message = 2;
+}
+
+message Value {
+  oneof v {
+    uint64   v_uint   = 1;
+    int64    v_int    = 2;
+    double   v_double = 3;
+    bool     v_bool   = 4;
+    string   v_str    = 5;
+    bytes    v_bytes  = 6;
+  }
+}
+
+message QueryRequest { string sql = 1; }
+message QueryResponse {
+  repeated ColumnInfo columns = 3;
+  bytes   raw_data = 9;
+  uint32  record_size = 10;
+  uint32  record_count = 11;
+}
+message ColumnInfo {
+  enum Type {
+    UINT8 = 0; UINT16 = 1; UINT32 = 2; UINT64 = 3;
+    INT8 = 4;  INT16 = 5;  INT32 = 6;  INT64 = 7;
+    FLOAT32 = 8; FLOAT64 = 9; BOOL = 10; TIMESTAMP = 11;
+    STRING = 12; INTERVAL = 13;
+  }
+  string name = 1;
+  Type type = 2;
+  uint32 offset = 3;
+}
+
+message DdlRequest { string sql = 1; }
+message DdlResponse { string message = 1; }
+
+message CrudRequest {
+  string table = 1;
+  oneof op {
+    Insert insert = 2;
+    Update update = 3;
+    Delete delete = 4;
+  }
+}
+message Insert { repeated Value values = 1; }
+message Update { repeated string cols = 1; repeated Value values = 2;
+                 repeated Condition where = 3; }
+message Delete { repeated Condition where = 1; }
+message Condition { string column = 1; string op = 2; Value value = 3; }
+message CrudResponse { uint32 affected = 1; }
+
+message SchemaRequest { oneof op { string describe = 1; bool list = 2; } }
+message SchemaResponse {
+  repeated TableSchema tables = 1;
+}
+message TableSchema { string name = 1; repeated FieldSchema fields = 2; }
+message FieldSchema { string name = 1; string type = 2; }
+
+message PingRequest { string client_version = 1; }
+message PingResponse { string server_version = 1; }
+
+message Request {
+  uint64 request_id = 1;
+  oneof op {
+    QueryRequest  query  = 2;
+    DdlRequest    ddl    = 3;
+    CrudRequest   crud   = 4;
+    SchemaRequest schema = 5;
+    PingRequest   ping   = 6;
+  }
+}
+
+message Response {
+  uint64 request_id = 1;
+  Status status = 2;
+  oneof payload {
+    QueryResponse  query  = 3;
+    DdlResponse    ddl    = 4;
+    CrudResponse   crud   = 5;
+    SchemaResponse schema = 6;
+    PingResponse   ping   = 7;
+  }
+}

@@ -1,0 +1,1 @@
+//! Placeholder stub for the result-serialization module (implemented in a later task).
