@@ -142,7 +142,7 @@ pub struct Transaction {
     /// 嵌套深度（不支持嵌套事务，固定为1）
     pub depth: u8,
     /// 自旋锁
-    lock: u32,
+    lock: parking_lot::Mutex<()>,
 }
 
 /// 日志缓冲区配置
@@ -165,7 +165,7 @@ pub struct LogManager {
     /// 检查点
     checkpoint: LogCheckpoint,
     /// 自旋锁
-    lock: u32,
+    lock: parking_lot::Mutex<()>,
     /// 日志模式
     log_mode: crate::config::LogMode,
     /// 日志缓冲区
@@ -231,7 +231,7 @@ impl LogManager {
                 processed_records: 0,
                 checksum: 0,
             },
-            lock: 0,
+            lock: parking_lot::Mutex::new(()),
             log_mode: config.wal_config.log_mode,
             log_buffer: alloc::vec::Vec::new(), // 默认缓冲区大小1024
             buffer_config: LogBufferConfig {
@@ -252,8 +252,7 @@ impl LogManager {
         let mut header_buffer = [0u8; core::mem::size_of::<LogHeader>()];
         let read = crate::platform::file_read(
             log_handle,
-            header_buffer.as_mut_ptr(),
-            header_buffer.len()
+            &mut header_buffer
         ).map_err(|_| RemDbError::FileIoError)?;
         
         let mut header_valid = false;
@@ -293,8 +292,7 @@ impl LogManager {
                 let zero_byte = [0u8; 1];
                 crate::platform::file_write(
                     log_handle,
-                    zero_byte.as_ptr(),
-                    1
+                    &zero_byte
                 ).map_err(|_| RemDbError::FileIoError)?;
                 
                 // 回到文件开头
@@ -344,8 +342,7 @@ impl LogManager {
         // 写入日志头
         let written = crate::platform::file_write(
             self.log_handle,
-            header_bytes.as_ptr(),
-            header_bytes.len()
+            &header_bytes
         ).map_err(|_| RemDbError::FileIoError)?;
         
         if written != header_bytes.len() {
@@ -369,8 +366,7 @@ impl LogManager {
         let mut checkpoint_buffer = [0u8; core::mem::size_of::<LogCheckpoint>()];
         let read = crate::platform::file_read(
             self.log_handle,
-            checkpoint_buffer.as_mut_ptr(),
-            checkpoint_buffer.len()
+            &mut checkpoint_buffer
         ).map_err(|_| RemDbError::FileIoError)?;
         
         if read == 0 {
@@ -421,8 +417,7 @@ impl LogManager {
         // 写入检查点
         let written = crate::platform::file_write(
             self.log_handle,
-            checkpoint_bytes.as_ptr(),
-            checkpoint_bytes.len()
+            &checkpoint_bytes
         ).map_err(|_| RemDbError::FileIoError)?;
         
         if written != checkpoint_bytes.len() {
@@ -439,7 +434,7 @@ impl LogManager {
         }
         
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
+        let _lock = self.lock.lock();
         
         // 定位到日志记录区域的末尾
         let log_offset = core::mem::size_of::<LogHeader>() + 
@@ -464,12 +459,11 @@ impl LogManager {
             
             let written = crate::platform::file_write(
                 self.log_handle,
-                log_bytes.as_ptr(),
-                log_bytes.len()
+                &log_bytes
             ).map_err(|_| RemDbError::FileIoError)?;
             
             if written != log_bytes.len() {
-                crate::platform::spin_unlock(&mut self.lock);
+                // 锁会自动释放
                 return Err(RemDbError::FileIoError);
             }
             
@@ -484,7 +478,7 @@ impl LogManager {
         self.header.checksum = 0; // 会在write_header中重新计算
         
         // 释放锁，避免在write_header中再次借用冲突
-        crate::platform::spin_unlock(&mut self.lock);
+        drop(_lock);
         
         self.write_header()?;
         
@@ -502,7 +496,7 @@ impl LogManager {
         match self.log_mode {
             crate::config::LogMode::Sync => {
                 // 自旋锁保护
-                crate::platform::spin_lock(&mut self.lock);
+                let _lock = self.lock.lock();
                 
                 // 定位到日志记录区域的末尾
                 let log_offset = core::mem::size_of::<LogHeader>() + 
@@ -524,12 +518,11 @@ impl LogManager {
                 
                 let written = crate::platform::file_write(
                     self.log_handle,
-                    log_bytes.as_ptr(),
-                    log_bytes.len()
+                    &log_bytes
                 ).map_err(|_| RemDbError::FileIoError)?;
                 
                 if written != log_bytes.len() {
-                    crate::platform::spin_unlock(&mut self.lock);
+                    // 锁会自动释放
                     return Err(RemDbError::FileIoError);
                 }
                 
@@ -538,7 +531,7 @@ impl LogManager {
                 self.header.checksum = 0; // 会在write_header中重新计算
                 
                 // 释放锁，避免在write_header中再次借用冲突
-                crate::platform::spin_unlock(&mut self.lock);
+                drop(_lock);
                 
                 self.write_header()?;
                 
@@ -663,8 +656,7 @@ impl LogManager {
         let mut log_bytes = [0u8; core::mem::size_of::<LogItem>()];
         let read = crate::platform::file_read(
             handle,
-            log_bytes.as_mut_ptr(),
-            log_bytes.len()
+            &mut log_bytes
         ).map_err(|_| RemDbError::FileIoError)?;
         
         if read != log_bytes.len() {
@@ -689,7 +681,7 @@ impl LogManager {
     /// 创建检查点
     pub unsafe fn create_checkpoint(&mut self) -> Result<()> {
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
+        let _lock = self.lock.lock();
         
         // 更新检查点
         let now = crate::platform::get_timestamp_us();
@@ -743,12 +735,11 @@ impl LogManager {
         
         let written = crate::platform::file_write(
             self.log_handle,
-            log_bytes.as_ptr(),
-            log_bytes.len()
+            &log_bytes
         ).map_err(|_| RemDbError::FileIoError)?;
         
         if written != log_bytes.len() {
-            crate::platform::spin_unlock(&mut self.lock);
+            // 锁会自动释放
             return Err(RemDbError::FileIoError);
         }
         
@@ -757,7 +748,7 @@ impl LogManager {
         self.header.checksum = 0; // 会在write_header中重新计算
         
         // 释放锁，避免在write_checkpoint中再次借用冲突
-        crate::platform::spin_unlock(&mut self.lock);
+        drop(_lock);
         
         // 写入检查点
         self.write_checkpoint()?;
@@ -806,10 +797,10 @@ impl LogManager {
                         if status != crate::types::RecordStatus::Used {
                             // 记录不存在，执行插入
                             let record_slice = table.get_record_slice_mut(record_id);
+                            let data_size = log_item.data_size as usize;
                             crate::platform::memcpy(
-                                record_slice.as_mut_ptr(),
-                                log_item.new_data.as_ptr(),
-                                log_item.data_size as usize
+                                &mut record_slice[..data_size],
+                                &log_item.new_data[..data_size]
                             );
                             
                             table.status_array[record_id].status = crate::types::RecordStatus::Used;
@@ -849,10 +840,10 @@ impl LogManager {
                         if table.status_array[record_id].status == crate::types::RecordStatus::Used {
                             // 记录存在，执行更新
                             let record_slice = table.get_record_slice_mut(record_id);
+                            let data_size = log_item.data_size as usize;
                             crate::platform::memcpy(
-                                record_slice.as_mut_ptr(),
-                                log_item.new_data.as_ptr(),
-                                log_item.data_size as usize
+                                &mut record_slice[..data_size],
+                                &log_item.new_data[..data_size]
                             );
                             drop(record_slice);
                             
@@ -874,10 +865,16 @@ impl LogManager {
                             tag_count: 0,
                             tags: [0; 8],
                         };
+                        let size = core::mem::size_of::<crate::time_series::TimeSeriesRecord>();
+                        let record_bytes = unsafe {
+                            core::slice::from_raw_parts_mut(
+                                &mut record as *mut _ as *mut u8,
+                                size
+                            )
+                        };
                         crate::platform::memcpy(
-                            &mut record as *mut _ as *mut u8,
-                            log_item.new_data.as_ptr(),
-                            core::mem::size_of::<crate::time_series::TimeSeriesRecord>()
+                            record_bytes,
+                            &log_item.new_data[..size]
                         );
                         
                         // 获取或创建分区
@@ -1089,7 +1086,7 @@ pub struct TransactionManager {
     /// 活跃事务快照列表
     active_snapshots: alloc::vec::Vec<ActiveSnapshot>,
     /// 自旋锁
-    lock: u32,
+    lock: parking_lot::Mutex<()>,
     /// 日志管理器
     log_manager: Option<LogManager>,
     /// 是否处于低功耗模式
@@ -1104,7 +1101,7 @@ impl TransactionManager {
             tx_id_counter: 0,
             snapshot_version: 0,
             active_snapshots: alloc::vec::Vec::new(),
-            lock: 0,
+            lock: parking_lot::Mutex::new(()),
             log_manager: None,
             low_power_mode: false,
         }
@@ -1161,8 +1158,8 @@ impl TransactionManager {
         // 增加事务计数
         crate::get_global_db().map(|db| db.metrics.inc_transactions());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
-        defer! { crate::platform::spin_unlock(&mut self.lock); }
+        let _lock = self.lock.lock();
+        // 锁在函数结束时自动释放
         
         // 检查是否已经有活跃事务（不支持嵌套事务）
         if self.current_tx.is_some() {
@@ -1189,7 +1186,7 @@ impl TransactionManager {
             (*tx_buffer).max_log_items = max_log_items;
             (*tx_buffer).log_item_count = 0;
             (*tx_buffer).depth = 1;
-            (*tx_buffer).lock = 0;
+            (*tx_buffer).lock = parking_lot::Mutex::new(());
             
             // 保存当前事务引用
             self.current_tx = Some(NonNull::new_unchecked(tx_buffer));
@@ -1222,8 +1219,8 @@ impl TransactionManager {
         // 增加已提交事务计数
         crate::get_global_db().map(|db| db.metrics.inc_committed_transactions());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
-        defer! { crate::platform::spin_unlock(&mut self.lock); }
+        let _lock = self.lock.lock();
+        // 锁在函数结束时自动释放
         
         // 检查是否有活跃事务
         let tx_ptr = match self.current_tx.take() {
@@ -1290,8 +1287,8 @@ impl TransactionManager {
         // 增加已回滚事务计数
         crate::get_global_db().map(|db| db.metrics.inc_rolled_back_transactions());
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
-        defer! { crate::platform::spin_unlock(&mut self.lock); }
+        let _lock = self.lock.lock();
+        // 锁在函数结束时自动释放
         
         // 检查是否有活跃事务
         let tx_ptr = match self.current_tx.take() {
@@ -1326,7 +1323,8 @@ impl TransactionManager {
                             table.status_array[record_id].version += 1;
                             
                             let record_slice = table.get_record_slice_mut(record_id);
-                            crate::platform::memset(record_slice.as_mut_ptr(), 0, log_item.data_size as usize);
+                            let data_size = log_item.data_size as usize;
+                            crate::platform::memset(&mut record_slice[..data_size], 0);
                             drop(record_slice);
                             
                             // 将空闲槽压回栈中
@@ -1349,10 +1347,10 @@ impl TransactionManager {
                             table.status_array[record_id].version += 1;
                             
                             let record_slice = table.get_record_slice_mut(record_id);
+                            let data_size = log_item.data_size as usize;
                             crate::platform::memcpy(
-                                record_slice.as_mut_ptr(),
-                                log_item.old_data.as_ptr(),
-                                log_item.data_size as usize
+                                &mut record_slice[..data_size],
+                                &log_item.old_data[..data_size]
                             );
                             drop(record_slice);
                             
@@ -1370,10 +1368,10 @@ impl TransactionManager {
                         if table.status_array[record_id].status == crate::types::RecordStatus::Used {
                             // 执行恢复操作
                             let record_slice = table.get_record_slice_mut(record_id);
+                            let data_size = log_item.data_size as usize;
                             crate::platform::memcpy(
-                                record_slice.as_mut_ptr(),
-                                log_item.old_data.as_ptr(),
-                                log_item.data_size as usize
+                                &mut record_slice[..data_size],
+                                &log_item.old_data[..data_size]
                             );
                             drop(record_slice);
                             
@@ -1394,10 +1392,16 @@ impl TransactionManager {
                             tag_count: 0,
                             tags: [0; 8],
                         };
+                        let size = core::mem::size_of::<crate::time_series::TimeSeriesRecord>();
+                        let record_bytes = unsafe {
+                            core::slice::from_raw_parts_mut(
+                                &mut record as *mut _ as *mut u8,
+                                size
+                            )
+                        };
                         crate::platform::memcpy(
-                            &mut record as *mut _ as *mut u8,
-                            log_item.new_data.as_ptr(),
-                            core::mem::size_of::<crate::time_series::TimeSeriesRecord>()
+                            record_bytes,
+                            &log_item.new_data[..size]
                         );
                         
                         // 获取分区
@@ -1542,8 +1546,8 @@ impl Transaction {
         data_size: usize
     ) -> Result<()> {
         // 自旋锁保护
-        crate::platform::spin_lock(&mut self.lock);
-        defer! { crate::platform::spin_unlock(&mut self.lock); }
+        let _lock = self.lock.lock();
+        // 锁在函数结束时自动释放
         
         // 检查事务状态
         if self.status != TransactionStatus::Active {
@@ -1573,16 +1577,18 @@ impl Transaction {
         
         // 拷贝旧数据
         if old_data.is_null() {
-            memset((*log_ptr).old_data.as_mut_ptr(), 0, data_size);
+            memset(&mut (&mut (*log_ptr).old_data)[..data_size], 0);
         } else {
-            memcpy((*log_ptr).old_data.as_mut_ptr(), old_data, data_size);
+            let old_slice = unsafe { core::slice::from_raw_parts(old_data, data_size) };
+            memcpy(&mut (&mut (*log_ptr).old_data)[..data_size], old_slice);
         }
         
         // 拷贝新数据
         if new_data.is_null() {
-            memset((*log_ptr).new_data.as_mut_ptr(), 0, data_size);
+            memset(&mut (&mut (*log_ptr).new_data)[..data_size], 0);
         } else {
-            memcpy((*log_ptr).new_data.as_mut_ptr(), new_data, data_size);
+            let new_slice = unsafe { core::slice::from_raw_parts(new_data, data_size) };
+            memcpy(&mut (&mut (*log_ptr).new_data)[..data_size], new_slice);
         }
         
         // 计算校验和

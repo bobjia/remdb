@@ -30,50 +30,18 @@ impl Platform for PosixPlatform {
         now.as_micros() as u64
     }
     
-    /// 自旋锁实现
-    fn spin_lock(&self, lock: &mut u32) {
-        // 使用原子比较交换实现自旋锁
-        while unsafe {
-            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .compare_exchange(0, 1, 
-                                 core::sync::atomic::Ordering::Acquire,
-                                 core::sync::atomic::Ordering::Relaxed)
-                .is_err()
-        } {
-            // 自旋等待
-            core::hint::spin_loop();
-        }
-    }
-    
-    /// 自旋锁释放
-    fn spin_unlock(&self, lock: &mut u32) {
-        unsafe {
-            core::sync::atomic::AtomicU32::from_ptr(lock as *mut u32)
-                .store(0, core::sync::atomic::Ordering::Release);
-        }
-    }
-    
-    /// 内存屏障 - 编译器屏障
-    fn compiler_barrier(&self) {
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
-    /// 内存屏障 - 读写屏障
-    fn full_memory_barrier(&self) {
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-    }
-    
     /// 内存拷贝（安全版本）
-    fn memcpy(&self, dest: *mut u8, src: *const u8, size: usize) {
+    fn memcpy(&self, dest: &mut [u8], src: &[u8]) {
+        let len = core::cmp::min(dest.len(), src.len());
         unsafe {
-            ptr::copy_nonoverlapping(src, dest, size);
+            ptr::copy_nonoverlapping(src.as_ptr(), dest.as_mut_ptr(), len);
         }
     }
     
     /// 内存设置
-    fn memset(&self, dest: *mut u8, value: u8, size: usize) {
+    fn memset(&self, dest: &mut [u8], value: u8) {
         unsafe {
-            ptr::write_bytes(dest, value, size);
+            ptr::write_bytes(dest.as_mut_ptr(), value, dest.len());
         }
     }
     
@@ -129,11 +97,10 @@ impl Platform for PosixPlatform {
     }
     
     /// 写入文件
-    fn file_write(&self, handle: super::FileHandle, buffer: *const u8, size: usize) -> super::FileResult<usize> {
+    fn file_write(&self, handle: super::FileHandle, buf: &[u8]) -> super::FileResult<usize> {
         unsafe {
             let file = &mut *(handle as *mut std::fs::File);
-            let slice = core::slice::from_raw_parts(buffer, size);
-            match file.write(slice) {
+            match file.write(buf) {
                 Ok(bytes_written) => {
                     // 写入后立即刷新，确保数据写入磁盘
                     file.flush().map_err(|_| ())?;
@@ -145,11 +112,10 @@ impl Platform for PosixPlatform {
     }
     
     /// 读取文件
-    fn file_read(&self, handle: super::FileHandle, buffer: *mut u8, size: usize) -> super::FileResult<usize> {
+    fn file_read(&self, handle: super::FileHandle, buf: &mut [u8]) -> super::FileResult<usize> {
         unsafe {
             let file = &mut *(handle as *mut std::fs::File);
-            let slice = core::slice::from_raw_parts_mut(buffer, size);
-            match file.read(slice) {
+            match file.read(buf) {
                 Ok(bytes_read) => Ok(bytes_read),
                 Err(_) => Err(()),
             }
@@ -195,7 +161,7 @@ impl Platform for PosixPlatform {
     }
     
     /// 计算CRC32校验和
-    fn crc32(&self, data: *const u8, size: usize) -> u32 {
+    fn crc32(&self, data: &[u8]) -> u32 {
         // CRC32标准多项式：0xEDB88320
         const CRC32_POLY: u32 = 0xEDB88320;
         
@@ -215,9 +181,7 @@ impl Platform for PosixPlatform {
         
         // 计算CRC32值
         let mut crc = 0xFFFFFFFFu32;
-        let data_slice = unsafe { core::slice::from_raw_parts(data, size) };
-        
-        for &byte in data_slice {
+        for &byte in data {
             let index = ((crc ^ byte as u32) & 0xFF) as usize;
             crc = (crc >> 8) ^ crc_table[index];
         }
