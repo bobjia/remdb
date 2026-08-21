@@ -323,6 +323,11 @@ impl HAManager {
         self.role_manager.get_role()
     }
     
+    /// 获取复制管理器（可变引用）
+    pub fn get_replication_manager_mut(&mut self) -> &mut ReplicationManager {
+        &mut self.replication_manager
+    }
+    
     /// 获取复制模式
     pub fn get_replication_mode(&self) -> ReplicationMode {
         self.replication_manager.get_replication_mode()

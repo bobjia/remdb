@@ -1,0 +1,1 @@
+// Allocator stub — populated in Phase 8

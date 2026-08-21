@@ -7,6 +7,8 @@ pub mod role;
 
 use core::fmt;
 use alloc::vec::Vec;
+use parking_lot::Mutex;
+use std::sync::OnceLock;
 
 // HA角色
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -107,103 +109,103 @@ impl fmt::Display for HAError {
 pub type Result<T> = core::result::Result<T, HAError>;
 
 // 全局HA管理器实例
-static mut HA_MANAGER: Option<manager::HAManager> = None;
+static HA_MANAGER: OnceLock<Mutex<Option<manager::HAManager>>> = OnceLock::new();
+
+/// 通过回调访问全局HA管理器
+pub fn with_ha_manager<F, R>(f: F) -> R
+where
+    F: FnOnce(Option<&mut manager::HAManager>) -> R,
+{
+    let mut guard = HA_MANAGER.get_or_init(|| Mutex::new(None)).lock();
+    f(guard.as_mut())
+}
 
 /// 初始化全局HA管理器
 pub fn init(config: &'static crate::config::DbConfig) -> Result<()> {
-    unsafe {
-        if HA_MANAGER.is_some() {
-            return Err(HAError::InitFailed);
-        }
-        
-        #[cfg(feature = "std")]
-        println!("[DEBUG] {}:{}: ha::init: Creating HAManager instance", file!(), line!());
-        let mut ha_manager = manager::HAManager::new(config)?;
-        
-        #[cfg(feature = "std")]
-        println!("[DEBUG] {}:{}: ha::init: Calling ha_manager.init()", file!(), line!());
-        ha_manager.init()?;
-        
-        #[cfg(feature = "std")]
-        println!("[DEBUG] {}:{}: ha::init: Storing HAManager to global static", file!(), line!());
-        HA_MANAGER = Some(ha_manager);
-        
-        #[cfg(feature = "std")]
-        println!("[DEBUG] {}:{}: ha::init: HA initialization completed", file!(), line!());
-        
-        Ok(())
+    let mut guard = HA_MANAGER.get_or_init(|| Mutex::new(None)).lock();
+    if guard.is_some() {
+        return Err(HAError::InitFailed);
     }
-}
 
-/// 获取全局HA管理器
-pub fn get_ha_manager() -> Option<&'static mut manager::HAManager> {
-    unsafe {
-        HA_MANAGER.as_mut()
-    }
+    #[cfg(feature = "std")]
+    println!("[DEBUG] {}:{}: ha::init: Creating HAManager instance", file!(), line!());
+    let mut ha_manager = manager::HAManager::new(config)?;
+
+    #[cfg(feature = "std")]
+    println!("[DEBUG] {}:{}: ha::init: Calling ha_manager.init()", file!(), line!());
+    ha_manager.init()?;
+
+    #[cfg(feature = "std")]
+    println!("[DEBUG] {}:{}: ha::init: Storing HAManager to global static", file!(), line!());
+    *guard = Some(ha_manager);
+
+    #[cfg(feature = "std")]
+    println!("[DEBUG] {}:{}: ha::init: HA initialization completed", file!(), line!());
+
+    Ok(())
 }
 
 /// 关闭全局HA管理器
 pub fn shutdown() -> Result<()> {
-    unsafe {
-        if let Some(ref mut manager) = HA_MANAGER {
-            manager.shutdown()?;
-            HA_MANAGER = None;
-        }
-        Ok(())
+    let mut guard = HA_MANAGER.get_or_init(|| Mutex::new(None)).lock();
+    if let Some(ref mut manager) = *guard {
+        manager.shutdown()?;
     }
+    *guard = None;
+    Ok(())
 }
 
 /// 获取当前HA角色
 pub fn get_role() -> Result<HARole> {
-    unsafe {
-        if let Some(manager) = &HA_MANAGER {
+    with_ha_manager(|ha_manager| {
+        if let Some(manager) = ha_manager {
             Ok(manager.get_role())
         } else {
             Err(HAError::InitFailed)
         }
-    }
+    })
 }
 
 /// 获取当前复制模式
 pub fn get_replication_mode() -> Result<ReplicationMode> {
-    unsafe {
-        if let Some(manager) = &HA_MANAGER {
+    with_ha_manager(|ha_manager| {
+        if let Some(manager) = ha_manager {
             Ok(manager.get_replication_mode())
         } else {
             Err(HAError::InitFailed)
         }
-    }
+    })
 }
 
 /// 提升为Master节点
 pub fn promote_to_master() -> Result<()> {
-    unsafe {
-        if let Some(manager) = HA_MANAGER.as_mut() {
+    with_ha_manager(|ha_manager| {
+        if let Some(manager) = ha_manager {
             manager.promote_to_master()
         } else {
             Err(HAError::InitFailed)
         }
-    }
+    })
 }
 
 /// 降级为Slave节点
 pub fn demote_to_slave() -> Result<()> {
-    unsafe {
-        if let Some(manager) = HA_MANAGER.as_mut() {
+    with_ha_manager(|ha_manager| {
+        if let Some(manager) = ha_manager {
             manager.demote_to_slave()
         } else {
             Err(HAError::InitFailed)
         }
-    }
+    })
 }
 
 /// 检查HA状态
 pub fn check_status() -> Result<()> {
-    unsafe {
-        if let Some(manager) = &HA_MANAGER {
+    with_ha_manager(|ha_manager| {
+        if let Some(manager) = ha_manager {
             manager.check_status()
         } else {
             Err(HAError::InitFailed)
         }
-    }
+    })
 }

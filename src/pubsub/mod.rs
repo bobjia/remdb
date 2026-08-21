@@ -117,7 +117,10 @@ impl Default for PubSubConfig {
 }
 
 // 全局发布/订阅实例
-static mut PUB_SUB_INSTANCE: Option<PubSub> = None;
+use parking_lot::Mutex;
+use std::sync::OnceLock;
+
+static PUB_SUB_INSTANCE: OnceLock<Mutex<Option<PubSub>>> = OnceLock::new();
 
 // 发布/订阅系统核心结构体
 pub struct PubSub {
@@ -370,22 +373,21 @@ impl PubSub {
 
 /// 初始化全局发布/订阅实例
 pub fn init(config: PubSubConfig) -> Result<()> {
-    unsafe {
-        if PUB_SUB_INSTANCE.is_some() {
-            // 如果已经初始化，直接返回成功
-            return Ok(());
-        }
-        
-        let mut pubsub = PubSub::new(config)?;
-        pubsub.init()?;
-        
-        // Register all predefined topics
-        register_predefined_topics(&mut pubsub)?;
-        
-        PUB_SUB_INSTANCE = Some(pubsub);
-        
-        Ok(())
+    let mut guard = PUB_SUB_INSTANCE.get_or_init(|| Mutex::new(None)).lock();
+    if guard.is_some() {
+        // 如果已经初始化，直接返回成功
+        return Ok(());
     }
+    
+    let mut pubsub = PubSub::new(config)?;
+    pubsub.init()?;
+    
+    // Register all predefined topics
+    register_predefined_topics(&mut pubsub)?;
+    
+    *guard = Some(pubsub);
+    
+    Ok(())
 }
 
 /// Register all predefined topics
@@ -405,102 +407,104 @@ fn register_predefined_topics(pubsub: &mut PubSub) -> Result<()> {
     Ok(())
 }
 
+/// 获取全局pubsub实例的锁守卫
+fn with_pubsub<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Option<PubSub>) -> R,
+{
+    let mut guard = PUB_SUB_INSTANCE.get_or_init(|| Mutex::new(None)).lock();
+    f(&mut *guard)
+}
+
 /// 订阅主题
 pub fn subscribe(topic_id: u16, callback: PubSubCallback) -> Result<SubscriptionId> {
-    unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
-            pubsub.subscribe(topic_id, callback)
+    with_pubsub(|pubsub| {
+        if let Some(ref mut ps) = pubsub {
+            ps.subscribe(topic_id, callback)
         } else {
             Err(PubSubError::InitFailed)
         }
-    }
+    })
 }
 
 /// 取消订阅
 pub fn unsubscribe(subscription_id: SubscriptionId) -> Result<()> {
-    unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
-            pubsub.unsubscribe(subscription_id)
+    with_pubsub(|pubsub| {
+        if let Some(ref mut ps) = pubsub {
+            ps.unsubscribe(subscription_id)
         } else {
             Err(PubSubError::InitFailed)
         }
-    }
+    })
 }
 
 /// 发布数据
 pub fn publish(topic_id: u16, data: &[u8]) -> Result<()> {
-    unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
-            pubsub.publish(topic_id, data)
+    with_pubsub(|pubsub| {
+        if let Some(ref mut ps) = pubsub {
+            ps.publish(topic_id, data)
         } else {
             Err(PubSubError::InitFailed)
         }
-    }
+    })
 }
 
 /// 启动接收线程
 #[cfg(feature = "posix")]
 pub fn start_receiver() -> Result<()> {
-    unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
-            pubsub.start_receiver()
+    with_pubsub(|pubsub| {
+        if let Some(ref mut ps) = pubsub {
+            ps.start_receiver()
         } else {
             Err(PubSubError::InitFailed)
         }
-    }
+    })
 }
 
 /// 注册主题名称到ID的映射（全局实例）
 pub fn register_topic(topic_name: &'static str, topic_id: u16) -> Result<()> {
-    unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
-            pubsub.register_topic(topic_name, topic_id)
+    with_pubsub(|pubsub| {
+        if let Some(ref mut ps) = pubsub {
+            ps.register_topic(topic_name, topic_id)
         } else {
             Err(PubSubError::InitFailed)
         }
-    }
+    })
 }
 
 /// 根据主题名称获取ID（全局实例）
 pub fn get_topic_id(topic_name: &str) -> Option<u16> {
-    unsafe {
-        if let Some(ref pubsub) = PUB_SUB_INSTANCE {
-            pubsub.get_topic_id(topic_name)
+    with_pubsub(|pubsub| {
+        if let Some(ref ps) = pubsub {
+            ps.get_topic_id(topic_name)
         } else {
             None
         }
-    }
+    })
 }
 
 /// 根据ID获取主题名称（全局实例）
 pub fn get_topic_name(topic_id: u16) -> Option<&'static str> {
-    unsafe {
-        if let Some(ref pubsub) = PUB_SUB_INSTANCE {
-            pubsub.get_topic_name(topic_id)
+    with_pubsub(|pubsub| {
+        if let Some(ref ps) = pubsub {
+            ps.get_topic_name(topic_id)
         } else {
             None
         }
-    }
-}
-
-/// 获取全局pubsub实例（用于内部使用）
-pub(crate) fn get_global_pubsub() -> Option<&'static mut PubSub> {
-    unsafe {
-        PUB_SUB_INSTANCE.as_mut()
-    }
+    })
 }
 
 /// 停止发布/订阅系统
 pub fn shutdown() -> Result<()> {
-    unsafe {
-        if let Some(ref mut pubsub) = PUB_SUB_INSTANCE {
-            let result = pubsub.shutdown();
+    with_pubsub(|pubsub| {
+        if let Some(ref mut ps) = pubsub {
+            let result = ps.shutdown();
             // Clear the global instance to allow reinitialization
-            PUB_SUB_INSTANCE = None;
+            *pubsub = None;
             result
         } else {
             // If instance is already None, return Ok to avoid errors in tests
             Ok(())
         }
-    }
+    })
 }

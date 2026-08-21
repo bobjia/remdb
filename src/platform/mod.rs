@@ -46,6 +46,22 @@ impl<T> OnceLock<T> {
             Ok(())
         }
     }
+    
+    pub fn get_or_init<F>(&self, f: F) -> &T
+    where
+        F: FnOnce() -> T,
+    {
+        match self.get() {
+            Some(v) => v,
+            None => {
+                let _ = self.set(f());
+                // SAFETY: Just set the value, so it's initialized
+                unsafe {
+                    (*self.data.get()).as_ref().unwrap()
+                }
+            }
+        }
+    }
 }
 
 /// 文件操作结果类型

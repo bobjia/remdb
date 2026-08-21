@@ -4,3 +4,4 @@ target/*
 *.wal
 wal/*
 *.log
+docs/superpowers/

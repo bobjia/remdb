@@ -13,6 +13,9 @@ repository = "https://github.com/bobjia/remdb"
 proc-macro = true
 path = "src/lib.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 quote = "1.0"
 syn = { version = "2.0", features = ["full"] }

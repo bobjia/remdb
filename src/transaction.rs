@@ -593,19 +593,21 @@ impl LogManager {
     }
     
     /// 复制WAL日志到从节点
-    unsafe fn replicate_wal(&self, log_item: &LogItem) -> Result<()> {
+    fn replicate_wal(&self, log_item: &LogItem) -> Result<()> {
         // 尝试获取HA管理器
         #[cfg(feature = "ha")]
         {
-            if let Some(ha_manager) = crate::ha::get_ha_manager() {
-                // 调用HA管理器复制WAL日志
-                match ha_manager.replicate_wal(log_item) {
-                    Ok(_) => Ok(()),
-                    Err(_) => Ok(()), // 复制失败不影响主节点操作
+            return crate::ha::with_ha_manager(|ha_manager| {
+                if let Some(manager) = ha_manager {
+                    // 调用HA管理器复制WAL日志
+                    match manager.replicate_wal(log_item) {
+                        Ok(_) => Ok(()),
+                        Err(_) => Ok(()), // 复制失败不影响主节点操作
+                    }
+                } else {
+                    Ok(()) // HA管理器未初始化，跳过复制
                 }
-            } else {
-                Ok(()) // HA管理器未初始化，跳过复制
-            }
+            });
         }
         
         #[cfg(not(feature = "ha"))]
@@ -799,21 +801,22 @@ impl LogManager {
                         };
                         
                         // 检查记录是否已存在
-                        let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                        if (*status_ptr).status != crate::types::RecordStatus::Used {
+                        let record_id = log_item.record_id as usize;
+                        let status = table.status_array[record_id].status;
+                        if status != crate::types::RecordStatus::Used {
                             // 记录不存在，执行插入
-                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                            let record_slice = table.get_record_slice_mut(record_id);
                             crate::platform::memcpy(
-                                record_ptr,
+                                record_slice.as_mut_ptr(),
                                 log_item.new_data.as_ptr(),
                                 log_item.data_size as usize
                             );
                             
-                            (*status_ptr).status = crate::types::RecordStatus::Used;
-                            (*status_ptr).version += 1;
-                            (*status_ptr).create_tx_id = log_item.tx_id;
-                            (*status_ptr).delete_tx_id = 0;
-                            (*status_ptr).next_version_ptr = 0;
+                            table.status_array[record_id].status = crate::types::RecordStatus::Used;
+                            table.status_array[record_id].version += 1;
+                            table.status_array[record_id].create_tx_id = log_item.tx_id;
+                            table.status_array[record_id].delete_tx_id = 0;
+                            table.status_array[record_id].next_version_ptr = 0;
                             table.inc_record_count();
                         }
                     },
@@ -825,11 +828,12 @@ impl LogManager {
                         };
                         
                         // 检查记录是否存在
-                        let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                        if (*status_ptr).status == crate::types::RecordStatus::Used {
+                        let record_id = log_item.record_id as usize;
+                        let status = table.status_array[record_id].status;
+                        if status == crate::types::RecordStatus::Used {
                             // MVCC：标记删除，设置delete_tx_id
-                            (*status_ptr).delete_tx_id = log_item.tx_id;
-                            (*status_ptr).version += 1;
+                            table.status_array[record_id].delete_tx_id = log_item.tx_id;
+                            table.status_array[record_id].version += 1;
                             // 不直接删除记录，保留供垃圾回收处理
                         }
                     },
@@ -841,18 +845,19 @@ impl LogManager {
                         };
                         
                         // 检查记录是否存在
-                        let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                        if (*status_ptr).status == crate::types::RecordStatus::Used {
+                        let record_id = log_item.record_id as usize;
+                        if table.status_array[record_id].status == crate::types::RecordStatus::Used {
                             // 记录存在，执行更新
-                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                            let record_slice = table.get_record_slice_mut(record_id);
                             crate::platform::memcpy(
-                                record_ptr,
+                                record_slice.as_mut_ptr(),
                                 log_item.new_data.as_ptr(),
                                 log_item.data_size as usize
                             );
+                            drop(record_slice);
                             
-                            (*status_ptr).version += 1;
-                            (*status_ptr).create_tx_id = log_item.tx_id;
+                            table.status_array[record_id].version += 1;
+                            table.status_array[record_id].create_tx_id = log_item.tx_id;
                         }
                     },
                     LogOperation::TimeSeriesInsert => {
@@ -929,62 +934,61 @@ impl LogManager {
                             // 解析默认值（如果有）
                             let default_value = if has_default {
                                 // 根据数据类型解析默认值
-                                let mut value = crate::types::Value { u64: 0 };
-                                match data_type {
+                                let value = match data_type {
                                     crate::types::DataType::Bool => {
                                         let bool_value = log_item.new_data[offset] != 0;
                                         offset += 1;
-                                        unsafe { value.bool = bool_value; }
+                                        crate::types::Value { bool: bool_value }
                                     },
                                     crate::types::DataType::Int8 => {
                                         let i8_value = i8::from_le_bytes([log_item.new_data[offset]]);
                                         offset += 1;
-                                        unsafe { value.i8 = i8_value; }
+                                        crate::types::Value { i8: i8_value }
                                     },
                                     crate::types::DataType::UInt8 => {
                                         let u8_value = log_item.new_data[offset];
                                         offset += 1;
-                                        unsafe { value.u8 = u8_value; }
+                                        crate::types::Value { u8: u8_value }
                                     },
                                     crate::types::DataType::Int16 => {
                                         let i16_value = i16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
                                         offset += 2;
-                                        unsafe { value.i16 = i16_value; }
+                                        crate::types::Value { i16: i16_value }
                                     },
                                     crate::types::DataType::UInt16 => {
                                         let u16_value = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
                                         offset += 2;
-                                        unsafe { value.u16 = u16_value; }
+                                        crate::types::Value { u16: u16_value }
                                     },
                                     crate::types::DataType::Int32 => {
                                         let i32_value = i32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                         offset += 4;
-                                        unsafe { value.i32 = i32_value; }
+                                        crate::types::Value { i32: i32_value }
                                     },
                                     crate::types::DataType::UInt32 => {
                                         let u32_value = u32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                         offset += 4;
-                                        unsafe { value.u32 = u32_value; }
+                                        crate::types::Value { u32: u32_value }
                                     },
                                     crate::types::DataType::Int64 => {
                                         let i64_value = i64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        unsafe { value.i64 = i64_value; }
+                                        crate::types::Value { i64: i64_value }
                                     },
                                     crate::types::DataType::UInt64 => {
                                         let u64_value = u64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        unsafe { value.u64 = u64_value; }
+                                        crate::types::Value { u64: u64_value }
                                     },
                                     crate::types::DataType::Float32 => {
                                         let float32_value = f32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                         offset += 4;
-                                        unsafe { value.float32 = float32_value; }
+                                        crate::types::Value { float32: float32_value }
                                     },
                                     crate::types::DataType::Float64 => {
                                         let float64_value = f64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        unsafe { value.float64 = float64_value; }
+                                        crate::types::Value { float64: float64_value }
                                     },
                                     crate::types::DataType::String => {
                                         let string_len = log_item.new_data[offset] as usize;
@@ -992,12 +996,12 @@ impl LogManager {
                                         let mut string_data = [0u8; 64];
                                         string_data[..string_len].copy_from_slice(&log_item.new_data[offset..offset+string_len]);
                                         offset += 64; // 跳过固定64字节字符串空间
-                                        unsafe { value.string = string_data; }
+                                        crate::types::Value { string: string_data }
                                     },
                                     crate::types::DataType::Timestamp | crate::types::DataType::TimestampTZ => {
                                         let timestamp_value = u64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        unsafe { value.timestamp = timestamp_value; }
+                                        crate::types::Value { time: crate::types::db_timestamp::new(timestamp_value as i64, 0, 0, 0) }
                                     },
                                     crate::types::DataType::Interval => {
                                         // 解析Interval类型，读取value、precision和flags
@@ -1008,15 +1012,9 @@ impl LogManager {
                                         offset += 1;
                                         let flags = log_item.new_data[offset];
                                         offset += 1;
-                                        unsafe {
-                                            value.interval = crate::types::db_interval {
-                                                value: interval_value,
-                                                precision,
-                                                flags
-                                            };
-                                        }
+                                        crate::types::Value { interval: crate::types::db_interval::new(interval_value, precision, flags) }
                                     },
-                                }
+                                };
                                 Some(value)
                             } else {
                                 None
@@ -1321,18 +1319,18 @@ impl TransactionManager {
                             None => continue,
                         };
                         
-                        let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                        if (*status_ptr).status == crate::types::RecordStatus::Used {
+                        let record_id = log_item.record_id as usize;
+                        if table.status_array[record_id].status == crate::types::RecordStatus::Used {
                             // 执行删除操作
-                            (*status_ptr).status = crate::types::RecordStatus::Free;
-                            (*status_ptr).version += 1;
+                            table.status_array[record_id].status = crate::types::RecordStatus::Free;
+                            table.status_array[record_id].version += 1;
                             
-                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                            crate::platform::memset(record_ptr, 0, log_item.data_size as usize);
+                            let record_slice = table.get_record_slice_mut(record_id);
+                            crate::platform::memset(record_slice.as_mut_ptr(), 0, log_item.data_size as usize);
+                            drop(record_slice);
                             
                             // 将空闲槽压回栈中
-                            *table.free_slots.as_ptr().add(table.free_slot_count) = log_item.record_id as usize;
-                            table.free_slot_count += 1;
+                            table.free_slots.push(log_item.record_id as usize);
                             
                             table.record_count -= 1;
                         }
@@ -1344,18 +1342,19 @@ impl TransactionManager {
                             None => continue,
                         };
                         
-                        let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                        if (*status_ptr).status == crate::types::RecordStatus::Free {
+                        let record_id = log_item.record_id as usize;
+                        if table.status_array[record_id].status == crate::types::RecordStatus::Free {
                             // 执行恢复操作
-                            (*status_ptr).status = crate::types::RecordStatus::Used;
-                            (*status_ptr).version += 1;
+                            table.status_array[record_id].status = crate::types::RecordStatus::Used;
+                            table.status_array[record_id].version += 1;
                             
-                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                            let record_slice = table.get_record_slice_mut(record_id);
                             crate::platform::memcpy(
-                                record_ptr,
+                                record_slice.as_mut_ptr(),
                                 log_item.old_data.as_ptr(),
                                 log_item.data_size as usize
                             );
+                            drop(record_slice);
                             
                             table.record_count += 1;
                         }
@@ -1367,17 +1366,18 @@ impl TransactionManager {
                             None => continue,
                         };
                         
-                        let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                        if (*status_ptr).status == crate::types::RecordStatus::Used {
+                        let record_id = log_item.record_id as usize;
+                        if table.status_array[record_id].status == crate::types::RecordStatus::Used {
                             // 执行恢复操作
-                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                            let record_slice = table.get_record_slice_mut(record_id);
                             crate::platform::memcpy(
-                                record_ptr,
+                                record_slice.as_mut_ptr(),
                                 log_item.old_data.as_ptr(),
                                 log_item.data_size as usize
                             );
+                            drop(record_slice);
                             
-                            (*status_ptr).version += 1;
+                            table.status_array[record_id].version += 1;
                         }
                     },
                     LogOperation::TimeSeriesInsert => {
@@ -1637,45 +1637,128 @@ impl Transaction {
 }
 
 /// 全局事务管理器
-pub static mut TX_MANAGER: TransactionManager = TransactionManager::new();
+use parking_lot::Mutex;
+#[cfg(feature = "std")]
+use std::sync::OnceLock;
+#[cfg(not(feature = "std"))]
+use crate::platform::OnceLock;
+
+// SAFETY: Transaction and TransactionManager hold only Send types (primitives and NonNull).
+// The NonNull fields point to external buffers, not internally owned memory.
+// This unsafe impl will be removed when the NonNull usage is eliminated.
+unsafe impl Send for Transaction {}
+unsafe impl Send for TransactionManager {}
+
+static TX_MANAGER: OnceLock<Mutex<TransactionManager>> = OnceLock::new();
+
+/// 获取事务管理器并执行操作
+fn with_tx_manager<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut TransactionManager) -> R,
+{
+    let mut guard = TX_MANAGER.get_or_init(|| Mutex::new(TransactionManager::new())).lock();
+    f(&mut *guard)
+}
 
 /// 开始事务
-pub unsafe fn begin(
+pub fn begin(
     tx_type: TransactionType,
     isolation_level: IsolationLevel,
     tx_buffer: *mut Transaction,
     log_buffer: *mut LogItem,
     max_log_items: usize
 ) -> Result<NonNull<Transaction>> {
-    TX_MANAGER.begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items)
+    with_tx_manager(|tx_manager| {
+        // SAFETY: TransactionManager::begin() is unsafe due to raw pointer parameters.
+        // These will be made safe in a later phase (T2: MemoryTable).
+        unsafe { tx_manager.begin(tx_type, isolation_level, tx_buffer, log_buffer, max_log_items) }
+    })
 }
 
 /// 提交事务
-pub unsafe fn commit() -> Result<()> {
-    TX_MANAGER.commit()
+pub fn commit() -> Result<()> {
+    with_tx_manager(|tx_manager| {
+        // SAFETY: TransactionManager::commit() is unsafe due to static mut access.
+        // The static mut access is now managed by the Mutex.
+        unsafe { tx_manager.commit() }
+    })
 }
 
 /// 回滚事务
-pub unsafe fn rollback(db: &mut crate::RemDb) -> Result<()> {
-    TX_MANAGER.rollback(db)
+pub fn rollback(db: &mut crate::RemDb) -> Result<()> {
+    with_tx_manager(|tx_manager| {
+        // SAFETY: TransactionManager::rollback() is unsafe due to static mut access.
+        // The static mut access is now managed by the Mutex.
+        unsafe { tx_manager.rollback(db) }
+    })
 }
 
 /// 获取当前事务
 pub fn get_current_tx() -> Option<NonNull<Transaction>> {
-    unsafe { TX_MANAGER.get_current_tx() }
+    with_tx_manager(|tx_manager| {
+        tx_manager.get_current_tx()
+    })
 }
 
 /// 检查是否有活跃事务
 pub fn has_active_tx() -> bool {
-    unsafe { TX_MANAGER.has_active_tx() }
+    with_tx_manager(|tx_manager| {
+        tx_manager.has_active_tx()
+    })
 }
 
 /// 设置事务管理器低功耗模式
-pub unsafe fn set_low_power_mode(enabled: bool) {
-    TX_MANAGER.set_low_power_mode(enabled);
+pub fn set_low_power_mode(enabled: bool) {
+    with_tx_manager(|tx_manager| {
+        tx_manager.set_low_power_mode(enabled);
+    })
 }
 
 /// 设置日志管理器
-pub unsafe fn set_log_manager(log_manager: LogManager) {
-    TX_MANAGER.set_log_manager(log_manager);
+pub fn set_log_manager(log_manager: LogManager) {
+    with_tx_manager(|tx_manager| {
+        // SAFETY: TransactionManager::set_log_manager() is unsafe due to static mut access.
+        // The static mut access is now managed by the Mutex.
+        unsafe { tx_manager.set_log_manager(log_manager); }
+    })
+}
+
+/// 获取事务ID计数器
+pub fn get_tx_id_counter() -> u32 {
+    with_tx_manager(|tx_manager| {
+        tx_manager.tx_id_counter
+    })
+}
+
+/// 检查记录是否可见
+pub fn is_record_visible(create_tx_id: u32, delete_tx_id: u32, tx_id: u32) -> bool {
+    with_tx_manager(|tx_manager| {
+        tx_manager.is_visible(create_tx_id, delete_tx_id, tx_id)
+    })
+}
+
+/// 使用日志管理器执行操作
+pub fn with_log_manager<F, R>(f: F) -> R
+where
+    F: FnOnce(Option<&mut LogManager>) -> R,
+{
+    with_tx_manager(|tx_manager| {
+        f(tx_manager.get_log_manager_mut())
+    })
+}
+
+/// 重置事务管理器
+pub fn reset_tx_manager() {
+    with_tx_manager(|tx_manager| {
+        // SAFETY: TransactionManager::reset() is unsafe due to static mut access.
+        // The static mut access is now managed by the Mutex.
+        unsafe { tx_manager.reset() }
+    })
+}
+
+/// 清除日志管理器
+pub fn clear_log_manager_tx() {
+    with_tx_manager(|tx_manager| {
+        tx_manager.clear_log_manager();
+    })
 }

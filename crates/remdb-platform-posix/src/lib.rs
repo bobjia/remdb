@@ -1,0 +1,1 @@
+// POSIX platform stub — populated in Phase 8

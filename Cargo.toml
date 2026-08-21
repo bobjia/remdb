@@ -2,7 +2,19 @@
 members = [
     ".",
     "remdb-macros",
+    "crates/remdb-c-api",
+    "crates/remdb-alloc",
+    "crates/remdb-platform-posix",
+    "crates/remdb-platform-baremetal",
 ]
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
 
 [package]
 name = "remdb"
@@ -20,9 +32,13 @@ name = "remdb"
 path = "src/lib.rs"
 crate-type = ["staticlib", "rlib"]
 
+[lints]
+workspace = true
+
 
 
 [dependencies]
+parking_lot = { version = "0.12", default-features = false }
 rand = { version = "0.8.5", optional = true }
 remdb-macros = { path = "./remdb-macros", version = "0.2.9" }
 socket2 = { version = "0.5.5", optional = true }

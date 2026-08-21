@@ -1,3 +1,13 @@
+#![allow(unsafe_code)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::not_unsafe_ptr_arg_deref,
+    clippy::never_loop,
+    clippy::mut_from_ref,
+)]
+
 mod codegen;
 mod ddl_parser;
 
@@ -30,6 +40,7 @@ pub fn derive_memdb_table(input: TokenStream) -> TokenStream {
     for attr in &derive_input.attrs {
         if attr.path().is_ident("memdb_schema") {
             // 使用正确的syn 2.0 API解析属性
+            #[allow(clippy::unwrap_used)]
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("ddl") {
                     let lit = meta.value()?;
