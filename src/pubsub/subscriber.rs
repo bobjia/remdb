@@ -412,14 +412,12 @@ mod tests {
     
     #[test]
     fn test_handle_data() {
-        // 使用静态变量来跟踪回调是否被调用
-        static mut CALLBACK_CALLED: bool = false;
+        // 使用AtomicBool来跟踪回调是否被调用
+        static CALLBACK_CALLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         
         // 定义测试回调函数
         fn test_callback(_topic_id: u16, data: &[u8]) -> bool {
-            unsafe {
-                CALLBACK_CALLED = true;
-            }
+            CALLBACK_CALLED.store(true, std::sync::atomic::Ordering::SeqCst);
             assert_eq!(data, b"test data");
             true
         }
@@ -434,9 +432,7 @@ mod tests {
         manager.handle_data(0, b"test data").unwrap();
         
         // 检查回调是否被调用
-        unsafe {
-            assert!(CALLBACK_CALLED);
-        }
+        assert!(CALLBACK_CALLED.load(std::sync::atomic::Ordering::SeqCst));
     }
     
     #[test]

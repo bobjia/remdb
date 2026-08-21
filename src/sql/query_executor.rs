@@ -676,33 +676,31 @@ fn execute_select_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     // 5. 遍历表中的所有记录，收集匹配的记录
     let mut matched_rows = Vec::with_capacity(table.def.max_records);
     
-    unsafe {
-        // 遍历表中的所有记录，收集匹配的记录
-        let iterate_result = table.iterate(|id, record_ptr| {
-            // 检查记录是否符合WHERE条件
-            let mut matches = true;
-            if let Some(where_clause) = &query.where_clause {
-                matches = evaluate_condition(table, record_ptr, &where_clause.condition);
-            }
-            
-            if matches {
-                // 直接从记录中提取字段值，创建行数据
-                let mut record_values = Vec::with_capacity(table.def.fields.len());
-                for field in table.def.fields.iter() {
-                    match get_field_value(table, record_ptr, &field.name) {
-                        Ok(typed_value) => record_values.push(typed_value),
-                        Err(_) => return true, // 跳过错误记录，继续遍历
-                    }
+    // 遍历表中的所有记录，收集匹配的记录
+    let iterate_result = table.iterate(|id, record| {
+        // 检查记录是否符合WHERE条件
+        let mut matches = true;
+        if let Some(where_clause) = &query.where_clause {
+            matches = evaluate_condition(table, record, &where_clause.condition);
+        }
+        
+        if matches {
+            // 直接从记录中提取字段值，创建行数据
+            let mut record_values = Vec::with_capacity(table.def.fields.len());
+            for field in table.def.fields.iter() {
+                match get_field_value(table, record, &field.name) {
+                    Ok(typed_value) => record_values.push(typed_value),
+                    Err(_) => return true, // 跳过错误记录，继续遍历
                 }
-                
-                // 将匹配的记录值添加到向量中
-                matched_rows.push(record_values);
             }
             
-            true // 继续遍历
-        });
-        iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
-    }
+            // 将匹配的记录值添加到向量中
+            matched_rows.push(record_values);
+        }
+        
+        true // 继续遍历
+    });
+    iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
     
     // 6. 如果有ORDER BY子句，对记录进行排序
     if let Some(order_by) = &query.order_by {
@@ -1006,11 +1004,11 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
     
     // 6. 遍历主表中的所有记录
     unsafe {
-        let iterate_result = main_table.iterate(|main_id, main_record_ptr| {
+        let iterate_result = main_table.iterate(|main_id, main_record| {
             // 从主表记录中提取所有字段值
             let mut main_record_values = Vec::with_capacity(main_table.def.fields.len());
             for field in main_table.def.fields.iter() {
-                if let Ok(typed_value) = get_field_value(main_table, main_record_ptr, &field.name) {
+                if let Ok(typed_value) = get_field_value(main_table, main_record, &field.name) {
                     main_record_values.push(typed_value);
                 } else {
                     continue; // 跳过错误记录
@@ -1026,11 +1024,11 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                 let mut has_matching_join = false;
                 
                 // 遍历连接表中的所有记录
-                join_table.iterate(|join_id, join_record_ptr| {
+                join_table.iterate(|join_id, join_record| {
                     // 从连接表记录中提取所有字段值
                     let mut join_record_values = Vec::with_capacity(join_table.def.fields.len());
                     for field in join_table.def.fields.iter() {
-                        if let Ok(typed_value) = get_field_value(join_table, join_record_ptr, &field.name) {
+                        if let Ok(typed_value) = get_field_value(join_table, join_record, &field.name) {
                             join_record_values.push(typed_value);
                         } else {
                             return true; // 跳过错误记录，继续遍历
@@ -1280,11 +1278,11 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
             
             unsafe {
                 // 遍历连接表中的所有记录
-                let iterate_result = join_table.iterate(|join_id, join_record_ptr| {
+                let iterate_result = join_table.iterate(|join_id, join_record| {
                     // 从连接表记录中提取所有字段值
                     let mut join_record_values = Vec::with_capacity(join_table.def.fields.len());
                     for field in join_table.def.fields.iter() {
-                        if let Ok(typed_value) = get_field_value(join_table, join_record_ptr, &field.name) {
+                        if let Ok(typed_value) = get_field_value(join_table, join_record, &field.name) {
                             join_record_values.push(typed_value);
                         } else {
                             return true; // 跳过错误记录，继续遍历
@@ -1295,11 +1293,11 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                     let mut has_matching_main = false;
                     
                     // 遍历主表中的所有记录
-                    main_table.iterate(|main_id, main_record_ptr| {
+                    main_table.iterate(|main_id, main_record| {
                         // 从主表记录中提取所有字段值
                         let mut main_record_values = Vec::with_capacity(main_table.def.fields.len());
                         for field in main_table.def.fields.iter() {
-                            if let Ok(typed_value) = get_field_value(main_table, main_record_ptr, &field.name) {
+                            if let Ok(typed_value) = get_field_value(main_table, main_record, &field.name) {
                                 main_record_values.push(typed_value);
                             } else {
                                 return true; // 跳过错误记录，继续遍历
@@ -4206,7 +4204,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
         }
         
         // 7. 调用表的插入方法
-        match table.insert(record_data.as_ptr()) {
+        match table.insert(&record_data) {
             Ok(_) => affected_rows += 1,
             Err(e) => {
                 match e {
@@ -4316,11 +4314,11 @@ fn execute_delete_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     
     unsafe {
         // 遍历表中的所有记录
-        let iterate_result = table_ref.iterate(|id, record_ptr| {
+        let iterate_result = table_ref.iterate(|id, record| {
             // 检查记录是否符合WHERE条件
             let mut matches = true;
             if let Some(where_clause) = &query.where_clause {
-                matches = evaluate_condition(table_ref, record_ptr, &where_clause.condition);
+                matches = evaluate_condition(table_ref, record, &where_clause.condition);
             }
             
             if matches {
@@ -4403,26 +4401,24 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     // 4. 遍历表中的所有记录，收集要更新的记录ID和它们的当前数据
     let mut to_update = Vec::new();
     
-    unsafe {
-        // 遍历表中的所有记录
-        let iterate_result = table_ref.iterate(|id, record_ptr| {
-            // 检查记录是否符合WHERE条件
-            let mut matches = true;
-            if let Some(where_clause) = &query.where_clause {
-                matches = evaluate_condition(table_ref, record_ptr, &where_clause.condition);
-            }
-            
-            if matches {
-                // 复制记录数据到临时缓冲区
-                let mut record_data = alloc::vec![0; record_size];
-                core::ptr::copy_nonoverlapping(record_ptr, record_data.as_mut_ptr(), record_size);
-                to_update.push((id, record_data));
-            }
-            
-            true // 继续遍历
-        });
-        iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
-    }
+    // 遍历表中的所有记录
+    let iterate_result = table_ref.iterate(|id, record| {
+        // 检查记录是否符合WHERE条件
+        let mut matches = true;
+        if let Some(where_clause) = &query.where_clause {
+            matches = evaluate_condition(table_ref, record, &where_clause.condition);
+        }
+        
+        if matches {
+            // 复制记录数据到临时缓冲区
+            let mut record_data = alloc::vec![0; record_size];
+            record_data.copy_from_slice(record);
+            to_update.push((id, record_data));
+        }
+        
+        true // 继续遍历
+    });
+    iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
     
     // 4. 获取可变表引用（用于更新）
     let table_mut = db.get_table_mut(table_id).map_err(|_| QueryExecutionError::InternalError)?;
@@ -4444,44 +4440,12 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
             set_field_value(table_mut, &mut record_data, field.offset, field.data_type, field.size, new_value)?;
         }
         
-        // 记录日志（如果有活跃事务）
-        unsafe {
-            if crate::transaction::has_active_tx() {
-                // 保存旧数据
-                let mut old_data = alloc::vec![0; record_size];
-                let old_record_ptr = table_mut.get_record_ptr_mut(id);
-                core::ptr::copy_nonoverlapping(old_record_ptr, old_data.as_mut_ptr(), record_size);
-                
-                // 保存新数据
-                let mut new_data = alloc::vec![0; record_size];
-                core::ptr::copy_nonoverlapping(record_data.as_ptr(), new_data.as_mut_ptr(), record_size);
-                
-                // 检查当前事务是否有效，避免访问悬空指针
-                if let Some(mut tx) = crate::transaction::get_current_tx() {
-                    // 直接使用事务添加日志项，不检查is_active()和is_read_only()
-                    let tx_id = tx.as_mut().id;
-                    tx.as_mut().begin_log_item(
-                        tx_id,
-                        crate::transaction::LogOperation::Update,
-                        table_mut.def.id,
-                        id as u16,
-                        record_size as u16,
-                        Some(&old_data),
-                        Some(&new_data)
-                    );
-                }
-            }
-            
-            // 获取记录指针并写入更新后的数据
-            let record_ptr = table_mut.get_record_ptr_mut(id);
-            core::ptr::copy_nonoverlapping(record_data.as_ptr(), record_ptr, record_size);
-            
-            // 更新记录版本号
-            let status_ptr = table_mut.get_status_ptr(id);
-            let status = &mut *status_ptr;
-            status.version += 1;
-        }
-        
+// 获取记录指针并写入更新后的数据
+        let record_slice = unsafe { table_mut.get_record_slice_mut(id) };
+        record_slice.copy_from_slice(&record_data);
+
+        // 更新记录版本号
+        table_mut.status_array[id].version += 1;
         affected_rows += 1;
     }
     
@@ -4830,23 +4794,23 @@ fn execute_create_time_series_table_query(db: &mut RemDb, query: &SqlQuery) -> R
 }
 
 /// 评估条件
-unsafe fn evaluate_condition(table: &MemoryTable, record_ptr: *const u8, condition: &Condition) -> bool {
+fn evaluate_condition(table: &MemoryTable, record: &[u8], condition: &Condition) -> bool {
     match condition {
-        Condition::Comparison(comp) => evaluate_comparison(table, record_ptr, comp),
-        Condition::Between(between) => evaluate_between(table, record_ptr, between),
+        Condition::Comparison(comp) => evaluate_comparison(table, record, comp),
+        Condition::Between(between) => evaluate_between(table, record, between),
         Condition::And(left, right) => {
-            evaluate_condition(table, record_ptr, left) && 
-            evaluate_condition(table, record_ptr, right)
+            evaluate_condition(table, record, left) && 
+            evaluate_condition(table, record, right)
         },
         Condition::Or(left, right) => {
-            evaluate_condition(table, record_ptr, left) || 
-            evaluate_condition(table, record_ptr, right)
+            evaluate_condition(table, record, left) || 
+            evaluate_condition(table, record, right)
         },
     }
 }
 
 /// 评估BETWEEN条件
-unsafe fn evaluate_between(table: &MemoryTable, record_ptr: *const u8, between: &BetweenCondition) -> bool {
+fn evaluate_between(table: &MemoryTable, record: &[u8], between: &BetweenCondition) -> bool {
     // 获取字段索引
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if between.field.contains('.') {
@@ -4867,7 +4831,7 @@ unsafe fn evaluate_between(table: &MemoryTable, record_ptr: *const u8, between: 
     let field_type = table.def.fields[field_index].data_type;
     
     // 获取字段值
-    match get_field_value(table, record_ptr, &between.field) {
+    match get_field_value(table, record, &between.field) {
         Ok(field_value) => {
             // BETWEEN条件：field_value >= min_value AND field_value <= max_value
             let is_greater_or_equal = compare_field_with_condition(&field_value.value, field_type, &ComparisonOperator::GreaterThanOrEqual, &between.min_value);
@@ -4879,7 +4843,7 @@ unsafe fn evaluate_between(table: &MemoryTable, record_ptr: *const u8, between: 
 }
 
 /// 评估比较条件
-unsafe fn evaluate_comparison(table: &MemoryTable, record_ptr: *const u8, comp: &ComparisonCondition) -> bool {
+fn evaluate_comparison(table: &MemoryTable, record: &[u8], comp: &ComparisonCondition) -> bool {
     // 获取字段索引
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if comp.field.contains('.') {
@@ -4900,7 +4864,7 @@ unsafe fn evaluate_comparison(table: &MemoryTable, record_ptr: *const u8, comp: 
     let field_type = table.def.fields[field_index].data_type;
     
     // 获取字段值
-    match get_field_value(table, record_ptr, &comp.field) {
+    match get_field_value(table, record, &comp.field) {
         Ok(field_value) => {
             // 比较字段值和条件值，传入字段类型
             compare_field_with_condition(&field_value.value, field_type, &comp.operator, &comp.value)
@@ -5386,7 +5350,7 @@ fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &Or
 }
 
 /// 获取字段值
-unsafe fn get_field_value(table: &MemoryTable, record_ptr: *const u8, field_name: &str) -> Result<TypedValue, QueryExecutionError> {
+fn get_field_value(table: &MemoryTable, record: &[u8], field_name: &str) -> Result<TypedValue, QueryExecutionError> {
     // 查找字段索引
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if field_name.contains('.') {
@@ -5404,8 +5368,10 @@ unsafe fn get_field_value(table: &MemoryTable, record_ptr: *const u8, field_name
     
     let field = &table.def.fields[field_index];
     // 获取字段值
-    let value = table.get_field(record_ptr, field_index)
-        .map_err(|_| QueryExecutionError::FieldNotFound)?;
+    let value = unsafe {
+        table.get_field(record, field_index)
+            .unwrap_or(Value { u64: 0 })
+    };
     
     Ok(TypedValue {
         value_type: field.data_type,

@@ -526,11 +526,20 @@ version = "0.2.9"
 dependencies = [
  "cc",
  "criterion",
+ "parking_lot",
  "rand",
  "remdb-macros",
  "serial_test",
  "socket2",
 ]
+
+[[package]]
+name = "remdb-alloc"
+version = "0.1.0"
+
+[[package]]
+name = "remdb-c-api"
+version = "0.1.0"
 
 [[package]]
 name = "remdb-macros"
@@ -540,6 +549,14 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "remdb-platform-baremetal"
+version = "0.1.0"
+
+[[package]]
+name = "remdb-platform-posix"
+version = "0.1.0"
 
 [[package]]
 name = "rustversion"

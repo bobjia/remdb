@@ -14,9 +14,6 @@ const SYNC_REQUEST_TOPIC: u16 = 2;
 // 确认主题ID
 const ACK_TOPIC: u16 = 3;
 
-// 全局复制管理器实例（用于回调函数访问）
-static mut GLOBAL_REPLICATION_MANAGER: Option<*mut ReplicationManager> = None;
-
 // 从节点确认处理函数
 fn handle_slave_ack(topic_id: u16, data: &[u8]) -> bool {
     if topic_id != ACK_TOPIC {
@@ -29,29 +26,46 @@ fn handle_slave_ack(topic_id: u16, data: &[u8]) -> bool {
     }
     
     let slave_id = data[0];
-    let log_index = u32::from_le_bytes([data[1], data[2], data[3], data[4]]);
+    let _log_index = u32::from_le_bytes([data[1], data[2], data[3], data[4]]);
     
-    unsafe {
-        if let Some(manager_ptr) = GLOBAL_REPLICATION_MANAGER {
-            let manager = &mut *manager_ptr;
+    crate::ha::with_ha_manager(|ha_manager| {
+        if let Some(manager) = ha_manager {
+            let replication_manager = manager.get_replication_manager_mut();
             // 更新从节点确认状态
-            if slave_id < manager.slave_acks.len() as u8 {
-                manager.slave_acks[slave_id as usize] = true;
-                manager.confirmed_slaves += 1;
+            if slave_id < replication_manager.slave_acks.len() as u8 {
+                replication_manager.slave_acks[slave_id as usize] = true;
+                replication_manager.confirmed_slaves += 1;
             }
-            return true;
         }
-    }
+    });
     
-    false
+    true
 }
 
 // WAL日志处理回调函数
 fn handle_wal_log_callback(topic_id: u16, data: &[u8]) -> bool {
-    // 直接返回，不处理任何消息
-    // 这个回调函数在测试环境中可能被调用，但我们不需要实际处理消息
-    // 避免访问全局管理器，防止访问冲突
-    true
+    // 只处理WAL_TOPIC的消息
+    if let Some(wal_topic_id) = pubsub::get_topic_id(pubsub::topics::WAL_TOPIC) {
+        if topic_id == wal_topic_id {
+            crate::ha::with_ha_manager(|ha_manager| {
+                if let Some(manager) = ha_manager {
+                    let replication_manager = manager.get_replication_manager_mut();
+                    // 解析协议帧
+                    if let Ok(frame) = pubsub::protocol::ProtocolFrame::from_bytes(data) {
+                        // 提取实际的日志数据
+                        let log_data = frame.payload();
+                        // 检查数据长度是否合法
+                        if log_data.len() >= core::mem::size_of::<LogItem>() {
+                            replication_manager.handle_wal_log(log_data);
+                        }
+                    }
+                }
+            });
+            return true;
+        }
+    }
+
+    false
 }
 
 /// 复制管理器
@@ -97,13 +111,7 @@ impl ReplicationManager {
     
     /// 初始化复制管理器
     pub fn init(&mut self) -> Result<()> {
-        // 设置全局复制管理器实例（用于回调函数访问）
-        unsafe {
-            // 保存当前管理器的指针到静态变量中
-            // 注意：这是一个不安全的操作，需要确保管理器的生命周期足够长
-            GLOBAL_REPLICATION_MANAGER = Some(self as *mut ReplicationManager);
-        }
-        
+        // 全局复制管理器已不再需要，回调函数通过 crate::ha::with_ha_manager() 访问
         Ok(())
     }
     
@@ -227,62 +235,61 @@ impl ReplicationManager {
                             // 解析默认值（如果有）
                             let default_value = if has_default {
                                 // 根据数据类型解析默认值
-                                let mut value = crate::types::Value { u64: 0 };
-                                match data_type {
+                                let value = match data_type {
                                     crate::types::DataType::Bool => {
                                         let bool_value = log_item.new_data[offset] != 0;
                                         offset += 1;
-                                        unsafe { value.bool = bool_value; }
+                                        crate::types::Value { bool: bool_value }
                                     },
                                     crate::types::DataType::Int8 => {
                                         let i8_value = i8::from_le_bytes([log_item.new_data[offset]]);
                                         offset += 1;
-                                        unsafe { value.i8 = i8_value; }
+                                        crate::types::Value { i8: i8_value }
                                     },
                                     crate::types::DataType::UInt8 => {
                                         let u8_value = log_item.new_data[offset];
                                         offset += 1;
-                                        unsafe { value.u8 = u8_value; }
+                                        crate::types::Value { u8: u8_value }
                                     },
                                     crate::types::DataType::Int16 => {
                                         let i16_value = i16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
                                         offset += 2;
-                                        unsafe { value.i16 = i16_value; }
+                                        crate::types::Value { i16: i16_value }
                                     },
                                     crate::types::DataType::UInt16 => {
                                         let u16_value = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
                                         offset += 2;
-                                        unsafe { value.u16 = u16_value; }
+                                        crate::types::Value { u16: u16_value }
                                     },
                                     crate::types::DataType::Int32 => {
                                         let i32_value = i32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                         offset += 4;
-                                        unsafe { value.i32 = i32_value; }
+                                        crate::types::Value { i32: i32_value }
                                     },
                                     crate::types::DataType::UInt32 => {
                                         let u32_value = u32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                         offset += 4;
-                                        unsafe { value.u32 = u32_value; }
+                                        crate::types::Value { u32: u32_value }
                                     },
                                     crate::types::DataType::Int64 => {
                                         let i64_value = i64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        unsafe { value.i64 = i64_value; }
+                                        crate::types::Value { i64: i64_value }
                                     },
                                     crate::types::DataType::UInt64 => {
                                         let u64_value = u64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        unsafe { value.u64 = u64_value; }
+                                        crate::types::Value { u64: u64_value }
                                     },
                                     crate::types::DataType::Float32 => {
                                         let float32_value = f32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                         offset += 4;
-                                        unsafe { value.float32 = float32_value; }
+                                        crate::types::Value { float32: float32_value }
                                     },
                                     crate::types::DataType::Float64 => {
                                         let float64_value = f64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        unsafe { value.float64 = float64_value; }
+                                        crate::types::Value { float64: float64_value }
                                     },
                                     crate::types::DataType::String => {
                                         let string_len = log_item.new_data[offset] as usize;
@@ -292,12 +299,12 @@ impl ReplicationManager {
                                         let copy_len = core::cmp::min(string_len, 64);
                                         string_data[..copy_len].copy_from_slice(&log_item.new_data[offset..offset+copy_len]);
                                         offset += 64; // 跳过固定64字节字符串空间
-                                        unsafe { value.string = string_data; }
+                                        crate::types::Value { string: string_data }
                                     },
                                     crate::types::DataType::Timestamp | crate::types::DataType::TimestampTZ => {
                                         let timestamp_value = u64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        unsafe { value.timestamp = timestamp_value; }
+                                        crate::types::Value { time: crate::types::db_timestamp::new(timestamp_value as i64, 0, 0, 0) }
                                     },
                                     crate::types::DataType::Interval => {
                                         // 解析Interval类型，读取value、precision和flags
@@ -308,15 +315,9 @@ impl ReplicationManager {
                                         offset += 1;
                                         let flags = log_item.new_data[offset];
                                         offset += 1;
-                                        unsafe {
-                                            value.interval = crate::types::db_interval {
-                                                value: interval_value,
-                                                precision,
-                                                flags
-                                            };
-                                        }
+                                        crate::types::Value { interval: crate::types::db_interval::new(interval_value, precision, flags) }
                                     },
-                                }
+                                };
                                 Some(value)
                             } else {
                                 None
@@ -352,27 +353,29 @@ impl ReplicationManager {
                         eprintln!("[Slave] Applying Insert operation, table_id: {}, record_id: {}", 
                                  log_item.table_id, log_item.record_id);
                         
-                        // 对于插入操作，使用全局TX_MANAGER的LogManager执行恢复
-                        let tx_manager = crate::transaction::get_tx_manager();
-                        if let Some(log_manager) = tx_manager.get_log_manager() {
-                            // 注意：这里我们直接调用recover方法处理单个日志项
-                            // 实际实现中可能需要更高效的方式
-                            let _ = log_manager.recover(db);
-                            eprintln!("[Slave] Insert operation recovered via log manager");
-                        }
+// 对于插入操作，使用全局事务管理器的LogManager执行恢复
+                        crate::transaction::with_log_manager(|log_manager| {
+                            if let Some(lm) = log_manager {
+                                // 注意：这里我们直接调用recover方法处理单个日志项
+                                // 实际实现中可能需要更高效的方式
+                                let _ = lm.recover(db);
+                                eprintln!("[Slave] Insert operation recovered via log manager");
+                            }
+                        });
                     },
                     _ => {
-                        // 对于其他操作，使用全局TX_MANAGER的LogManager执行恢复
+                        // 对于其他操作，使用全局事务管理器的LogManager执行恢复
                         eprintln!("[Slave] Applying other operation: {:?}, using log manager recover", 
                                  log_item.op_type);
                         
-                        let tx_manager = crate::transaction::get_tx_manager();
-                        if let Some(log_manager) = tx_manager.get_log_manager() {
-                            // 注意：这里我们直接调用recover方法处理单个日志项
-                            // 实际实现中可能需要更高效的方式
-                            let _ = log_manager.recover(db);
-                            eprintln!("[Slave] Operation recovered via log manager");
-                        }
+crate::transaction::with_log_manager(|log_manager| {
+                            if let Some(lm) = log_manager {
+                                // 注意：这里我们直接调用recover方法处理单个日志项
+                                // 实际实现中可能需要更高效的方式
+                                let _ = lm.recover(db);
+                                eprintln!("[Slave] Operation recovered via log manager");
+                            }
+                        });
                     }
                 }
             }
@@ -508,10 +511,7 @@ impl ReplicationManager {
     
     /// 关闭复制管理器
     pub fn shutdown(&self) -> Result<()> {
-        // 清除全局复制管理器实例，防止悬空指针
-        unsafe {
-            GLOBAL_REPLICATION_MANAGER = None;
-        }
+        // 全局复制管理器已不再需要，由 crate::ha::with_ha_manager() 替代
         Ok(())
     }
     

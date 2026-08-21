@@ -1,110 +1,79 @@
-use core::ptr::NonNull;
+use alloc::vec::Vec;
 use crate::types::Result;
 
 /// 固定大小内存池
 pub struct MemoryPool {
-    /// 内存池起始地址
-    start_ptr: NonNull<u8>,
+    /// 存储空间
+    storage: Vec<u8>,
     /// 内存块大小
     block_size: usize,
     /// 总块数
     total_blocks: usize,
     /// 已使用块数
     used_blocks: usize,
-    /// 空闲列表头
-    free_list: Option<NonNull<u8>>,
+    /// 空闲索引列表
+    free_indices: Vec<usize>,
 }
 
 impl MemoryPool {
-    /// 创建新的内存池
-    pub unsafe fn new(
-        start_ptr: *mut u8,
-        block_size: usize,
-        total_blocks: usize
-    ) -> Self {
-        let start_ptr = NonNull::new_unchecked(start_ptr);
-        let aligned_block_size = (block_size + 7) & !7; // 8字节对齐
-        
-        // 初始化空闲列表
-        let mut free_list = None;
-        let mut current_ptr = start_ptr;
-        
-        for _ in 0..total_blocks {
-            // 保存当前块指针
-            let block_ptr = current_ptr;
-            
-            // 移动到下一个块
-            current_ptr = NonNull::new_unchecked(
-                (current_ptr.as_ptr() as usize + aligned_block_size) as *mut u8
-            );
-            
-            // 将当前块添加到空闲列表
-            let next_ptr = free_list;
-            // 存储下一个块的指针在当前块的开头
-            core::ptr::write(block_ptr.as_ptr() as *mut Option<NonNull<u8>>, next_ptr);
-            free_list = Some(block_ptr);
-        }
-        
+    /// 创建新的内存池，分配 block_size * total_blocks 字节的存储空间
+    pub fn new(block_size: usize, total_blocks: usize) -> Self {
+        let storage = alloc::vec![0u8; block_size * total_blocks];
+        // 初始化空闲索引列表，从大到小排列以便 pop 时获取最小索引
+        let mut free_indices: Vec<usize> = (0..total_blocks).collect();
+        free_indices.reverse();
         MemoryPool {
-            start_ptr,
-            block_size: aligned_block_size,
+            storage,
+            block_size,
             total_blocks,
             used_blocks: 0,
-            free_list,
+            free_indices,
         }
     }
-    
-    /// 分配一个内存块
-    pub unsafe fn allocate(&mut self) -> Result<NonNull<u8>> {
-        if let Some(block_ptr) = self.free_list {
-            // 从空闲列表获取块
-            let next_ptr = core::ptr::read(block_ptr.as_ptr() as *const Option<NonNull<u8>>);
-            self.free_list = next_ptr;
-            self.used_blocks += 1;
-            
-            Ok(block_ptr)
-        } else {
-            Err(crate::types::RemDbError::OutOfMemory)
-        }
+
+    /// 分配一个内存块，返回块索引
+    pub fn allocate(&mut self) -> Result<usize> {
+        let index = self.free_indices.pop().ok_or(crate::types::RemDbError::OutOfMemory)?;
+        self.used_blocks += 1;
+        Ok(index)
     }
-    
-    /// 释放一个内存块
-    pub unsafe fn free(&mut self, ptr: NonNull<u8>) {
-        // 确保指针在内存池范围内
-        let ptr_addr = ptr.as_ptr() as usize;
-        let start_addr = self.start_ptr.as_ptr() as usize;
-        let end_addr = start_addr + self.block_size * self.total_blocks;
-        
-        assert!(ptr_addr >= start_addr && ptr_addr < end_addr, "Pointer not in memory pool");
-        
-        // 将块添加到空闲列表
-        core::ptr::write(ptr.as_ptr() as *mut Option<NonNull<u8>>, self.free_list);
-        self.free_list = Some(ptr);
+
+    /// 释放指定索引的内存块
+    pub fn free(&mut self, index: usize) {
+        self.free_indices.push(index);
         self.used_blocks -= 1;
     }
-    
+
+    /// 获取指定索引块的不可变切片
+    pub fn get_block(&self, index: usize) -> &[u8] {
+        let start = index * self.block_size;
+        &self.storage[start..start + self.block_size]
+    }
+
+    /// 获取指定索引块的可变切片
+    pub fn get_block_mut(&mut self, index: usize) -> &mut [u8] {
+        let start = index * self.block_size;
+        &mut self.storage[start..start + self.block_size]
+    }
+
     /// 获取已使用块数
     pub fn used_blocks(&self) -> usize {
         self.used_blocks
     }
-    
+
     /// 获取总块数
     pub fn total_blocks(&self) -> usize {
         self.total_blocks
     }
-    
+
     /// 获取内存池使用率
     pub fn usage(&self) -> f32 {
         self.used_blocks as f32 / self.total_blocks as f32
     }
-    
-    /// 检查指针是否在内存池范围内
-    pub fn contains(&self, ptr: NonNull<u8>) -> bool {
-        let ptr_addr = ptr.as_ptr() as usize;
-        let start_addr = self.start_ptr.as_ptr() as usize;
-        let end_addr = start_addr + self.block_size * self.total_blocks;
-        
-        ptr_addr >= start_addr && ptr_addr < end_addr
+
+    /// 获取空闲块数
+    pub fn free_blocks(&self) -> usize {
+        self.total_blocks - self.used_blocks
     }
 }
 
@@ -118,51 +87,50 @@ pub struct MultiPoolManager<'a> {
 
 impl<'a> MultiPoolManager<'a> {
     /// 创建新的多内存池管理器
-    pub unsafe fn new(pools: &'a mut [MemoryPool]) -> Self {
-        // 计算pool_count并立即使用，避免同时借用
+    pub fn new(pools: &'a mut [MemoryPool]) -> Self {
         let pool_count = pools.len();
         MultiPoolManager {
             pools,
             pool_count,
         }
     }
-    
-    /// 根据大小分配内存块
-    pub unsafe fn allocate(&mut self, size: usize) -> Result<NonNull<u8>> {
-        // 找到合适大小的内存池
-        for pool in &mut self.pools[..self.pool_count] {
+
+    /// 根据大小分配内存块，返回 (池索引, 块索引)
+    pub fn allocate(&mut self, size: usize) -> Result<(usize, usize)> {
+        for (i, pool) in self.pools[..self.pool_count].iter_mut().enumerate() {
             if pool.block_size >= size {
-                return pool.allocate();
+                let block_idx = pool.allocate()?;
+                return Ok((i, block_idx));
             }
         }
-        
         Err(crate::types::RemDbError::OutOfMemory)
     }
-    
-    /// 释放内存块
-    pub unsafe fn free(&mut self, ptr: NonNull<u8>) {
-        // 找到包含该指针的内存池
-        for pool in &mut self.pools[..self.pool_count] {
-            if pool.contains(ptr) {
-                pool.free(ptr);
-                return;
-            }
-        }
-        
-        // 如果没有找到，panic
-        panic!("Pointer not found in any memory pool");
+
+    /// 释放指定池中指定索引的内存块
+    pub fn free(&mut self, pool_index: usize, block_index: usize) {
+        self.pools[pool_index].free(block_index);
     }
-    
+
+    /// 获取指定池中指定索引块的不可变切片
+    pub fn get_block(&self, pool_index: usize, block_index: usize) -> &[u8] {
+        self.pools[pool_index].get_block(block_index)
+    }
+
+    /// 获取指定池中指定索引块的可变切片
+    pub fn get_block_mut(&mut self, pool_index: usize, block_index: usize) -> &mut [u8] {
+        self.pools[pool_index].get_block_mut(block_index)
+    }
+
     /// 获取总内存使用情况
     pub fn total_usage(&self) -> f32 {
         let mut total_used = 0;
         let mut total_blocks = 0;
-        
+
         for pool in &self.pools[..self.pool_count] {
             total_used += pool.used_blocks();
             total_blocks += pool.total_blocks();
         }
-        
+
         if total_blocks == 0 {
             0.0
         } else {

@@ -82,11 +82,13 @@ fn slave_example() {
         // 同时定期检查HA状态
         for i in 0..15 {
             // 检查HA状态
-            if let Some(ha_manager) = ha::get_ha_manager() {
-                if let Err(e) = ha_manager.check_status() {
-                    println!("[HA] Slave check status error: {:?}", e);
+            ha::with_ha_manager(|ha_manager| {
+                if let Some(manager) = ha_manager {
+                    if let Err(e) = manager.check_status() {
+                        println!("[HA] Slave check status error: {:?}", e);
+                    }
                 }
-            }
+            });
             
             // 每1秒检查一次
             std::thread::sleep(std::time::Duration::from_secs(1));

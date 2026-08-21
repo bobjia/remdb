@@ -1100,7 +1100,9 @@ pub unsafe extern "C" fn remdb_table_insert(
     let db = &mut *handle;
     match db.get_table_mut(table_id) {
         Ok(table) => {
-            match table.insert(record) {
+            let record_size = table.record_size;
+            let record_slice = core::slice::from_raw_parts(record, record_size);
+            match table.insert(record_slice) {
                 Ok(_) => RemDbError::Success,
                 Err(e) => e.into(),
             }
@@ -1142,8 +1144,10 @@ pub unsafe extern "C" fn remdb_table_get(
         Ok(table) => table,
         Err(e) => return e.into(),
     };
+    let record_size = table.record_size;
+    let record_slice = core::slice::from_raw_parts_mut(record, record_size);
     
-    match table.get_by_id(record_id, record) {
+    match table.get_by_id(record_id, record_slice) {
         Ok(_) => RemDbError::Success,
         Err(e) => e.into(),
     }
@@ -1182,8 +1186,10 @@ pub unsafe extern "C" fn remdb_table_update(
         Ok(table) => table,
         Err(e) => return e.into(),
     };
+    let record_size = table.record_size;
+    let record_slice = core::slice::from_raw_parts(record, record_size);
     
-    match table.update(record_id, record) {
+    match table.update(record_id, record_slice) {
         Ok(_) => RemDbError::Success,
         Err(e) => e.into(),
     }
