@@ -1,4 +1,20 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+// # Safety
+//
+// This crate uses `#![allow(unsafe_code)]` rather than `#![forbid(unsafe_code)]`
+// because `NonNull<T>` is not `Send+Sync` in Rust 1.95.0 (a recent breaking change).
+// Types containing `NonNull<T>` (Transaction, TransactionManager, RecordHeader, RemDb)
+// require `unsafe impl Send/Sync` to be thread-safe, which is flagged by
+// `#![forbid(unsafe_code)]`.
+//
+// All inherently unsafe internal code (memory allocator, platform-specific I/O) has
+// been extracted to satellite crates (remdb-alloc, remdb-platform-posix,
+// remdb-platform-baremetal) which are individually `#![allow(unsafe_code)]`.
+// The remaining unsafe in this crate is confined to:
+//  - `unsafe impl Send/Sync` for types with `NonNull<T>` fields (lib.rs, transaction.rs)
+//  - Raw pointer manipulation in table.rs, index.rs (MVCC record headers)
+//  - `no_std` OnceLock in platform/mod.rs
+//  - `Box::from_raw` / `Vec::from_raw_parts` for memory management
 #![allow(unsafe_code)]
 #![allow(
     clippy::unwrap_used,
