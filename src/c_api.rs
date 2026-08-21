@@ -58,7 +58,7 @@ impl From<Value> for RemDbValue {
         unsafe {
             // 注意：Value是union，直接访问第一个字段作为默认值
             // 实际使用中，应该根据字段的数据类型来访问正确的union字段
-            RemDbValue { u32: rust_value.u32 }
+            RemDbValue::U32(rust_value.as_u32())
         }
     }
 }
@@ -69,7 +69,7 @@ impl From<RemDbValue> for Value {
         // 在实际使用中，应该根据字段的数据类型来选择合适的变体
         // 这里提供一个默认实现，实际使用时需要根据上下文调整
         unsafe {
-            Value { u32: c_value.u32 }
+            Value::U32(c_value.as_u32())
         }
     }
 }

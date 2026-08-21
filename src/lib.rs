@@ -939,62 +939,62 @@ impl DdlExecutor for RemDb {
                         // 根据数据类型写入默认值
                         match field.data_type {
                             crate::types::DataType::Bool => {
-                                let b = default_value.bool;
+                                let b = default_value.as_bool();
                                 log_data[offset] = b as u8;
                                 offset += 1;
                             },
                             crate::types::DataType::Int8 => {
-                                let i = default_value.i8;
+                                let i = default_value.as_i8();
                                 log_data[offset] = i as u8;
                                 offset += 1;
                             },
                             crate::types::DataType::UInt8 => {
-                                let u = default_value.u8;
+                                let u = default_value.as_u8();
                                 log_data[offset] = u;
                                 offset += 1;
                             },
                             crate::types::DataType::Int16 => {
-                                let i = default_value.i16;
+                                let i = default_value.as_i16();
                                 log_data[offset..offset+2].copy_from_slice(&i.to_le_bytes());
                                 offset += 2;
                             },
                             crate::types::DataType::UInt16 => {
-                                let u = default_value.u16;
+                                let u = default_value.as_u16();
                                 log_data[offset..offset+2].copy_from_slice(&u.to_le_bytes());
                                 offset += 2;
                             },
                             crate::types::DataType::Int32 => {
-                                let i = default_value.i32;
+                                let i = default_value.as_i32();
                                 log_data[offset..offset+4].copy_from_slice(&i.to_le_bytes());
                                 offset += 4;
                             },
                             crate::types::DataType::UInt32 => {
-                                let u = default_value.u32;
+                                let u = default_value.as_u32();
                                 log_data[offset..offset+4].copy_from_slice(&u.to_le_bytes());
                                 offset += 4;
                             },
                             crate::types::DataType::Int64 => {
-                                let i = default_value.i64;
+                                let i = default_value.as_i64();
                                 log_data[offset..offset+8].copy_from_slice(&i.to_le_bytes());
                                 offset += 8;
                             },
                             crate::types::DataType::UInt64 => {
-                                let u = default_value.u64;
+                                let u = default_value.as_u64();
                                 log_data[offset..offset+8].copy_from_slice(&u.to_le_bytes());
                                 offset += 8;
                             },
                             crate::types::DataType::Float32 => {
-                                let f = default_value.float32;
+                                let f = default_value.as_float32();
                                 log_data[offset..offset+4].copy_from_slice(&f.to_le_bytes());
                                 offset += 4;
                             },
                             crate::types::DataType::Float64 => {
-                                let f = default_value.float64;
+                                let f = default_value.as_float64();
                                 log_data[offset..offset+8].copy_from_slice(&f.to_le_bytes());
                                 offset += 8;
                             },
                             crate::types::DataType::String => {
-                                let s = default_value.string;
+                                let s = default_value.as_string();
                                 let string_len = core::cmp::min(s.iter().position(|&c| c == 0).unwrap_or(64), 64);
                                 log_data[offset] = string_len as u8;
                                 offset += 1;
@@ -1002,12 +1002,12 @@ impl DdlExecutor for RemDb {
                                 offset += 64; // 固定64字节字符串空间
                             },
                             crate::types::DataType::Timestamp | crate::types::DataType::TimestampTZ => {
-                                let t = default_value.time;
+                                let t = default_value.as_time();
                                 log_data[offset..offset+8].copy_from_slice(&t.value.to_le_bytes());
                                 offset += 8;
                             },
                             crate::types::DataType::Interval => {
-                                let interval = default_value.interval;
+                                let interval = default_value.as_interval();
                                 log_data[offset..offset+8].copy_from_slice(&interval.value.to_le_bytes());
                                 offset += 8;
                                 log_data[offset] = interval.precision;
@@ -1270,7 +1270,7 @@ impl RemDb {
             not_null: true,
             unique: false,
             auto_increment: false,
-            default_value: Some(Value { time: crate::types::db_timestamp::new(0, 0, 0, 0) }),
+            default_value: Some(Value::Time(crate::types::db_timestamp::new(0, 0, 0, 0))),
         });
         offset += time_field_size;
         record_size += time_field_size;
@@ -1287,7 +1287,7 @@ impl RemDb {
             not_null: true,
             unique: false,
             auto_increment: false,
-            default_value: Some(Value { float64: 0.0 }),
+            default_value: Some(Value::Float64(0.0)),
         });
         offset += value_field_size;
         record_size += value_field_size;
@@ -1484,7 +1484,7 @@ impl RemDb {
             if let Some(value) = row.values.first() {
                 // 假设第一个值是受影响的行数（u64类型）
                 unsafe {
-                    let affected_rows = value.value.u64 as usize;
+                    let affected_rows = value.value.as_u64() as usize;
                     return Ok(affected_rows);
                 }
             }
@@ -1536,7 +1536,7 @@ impl RemDb {
             if let Some(value) = row.values.first() {
                 // 假设第一个值是受影响的行数（u64类型）
                 unsafe {
-                    let affected_rows = value.value.u64 as usize;
+                    let affected_rows = value.value.as_u64() as usize;
                     return Ok(affected_rows);
                 }
             }
@@ -1562,7 +1562,7 @@ impl RemDb {
             if let Some(value) = row.values.first() {
                 // 假设第一个值是受影响的行数（u64类型）
                 unsafe {
-                    let affected_rows = value.value.u64 as usize;
+                    let affected_rows = value.value.as_u64() as usize;
                     return Ok(affected_rows);
                 }
             }
@@ -1588,7 +1588,7 @@ impl RemDb {
             if let Some(value) = row.values.first() {
                 // 假设第一个值是受影响的行数（u64类型）
                 unsafe {
-                    let affected_rows = value.value.u64 as usize;
+                    let affected_rows = value.value.as_u64() as usize;
                     return Ok(affected_rows);
                 }
             }

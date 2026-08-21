@@ -938,57 +938,57 @@ impl LogManager {
                                     crate::types::DataType::Bool => {
                                         let bool_value = log_item.new_data[offset] != 0;
                                         offset += 1;
-                                        crate::types::Value { bool: bool_value }
+                                        crate::types::Value::Bool(bool_value)
                                     },
                                     crate::types::DataType::Int8 => {
                                         let i8_value = i8::from_le_bytes([log_item.new_data[offset]]);
                                         offset += 1;
-                                        crate::types::Value { i8: i8_value }
+                                        crate::types::Value::I8(i8_value)
                                     },
                                     crate::types::DataType::UInt8 => {
                                         let u8_value = log_item.new_data[offset];
                                         offset += 1;
-                                        crate::types::Value { u8: u8_value }
+                                        crate::types::Value::U8(u8_value)
                                     },
                                     crate::types::DataType::Int16 => {
                                         let i16_value = i16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
                                         offset += 2;
-                                        crate::types::Value { i16: i16_value }
+                                        crate::types::Value::I16(i16_value)
                                     },
                                     crate::types::DataType::UInt16 => {
                                         let u16_value = u16::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1]]);
                                         offset += 2;
-                                        crate::types::Value { u16: u16_value }
+                                        crate::types::Value::U16(u16_value)
                                     },
                                     crate::types::DataType::Int32 => {
                                         let i32_value = i32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                         offset += 4;
-                                        crate::types::Value { i32: i32_value }
+                                        crate::types::Value::I32(i32_value)
                                     },
                                     crate::types::DataType::UInt32 => {
                                         let u32_value = u32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                         offset += 4;
-                                        crate::types::Value { u32: u32_value }
+                                        crate::types::Value::U32(u32_value)
                                     },
                                     crate::types::DataType::Int64 => {
                                         let i64_value = i64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        crate::types::Value { i64: i64_value }
+                                        crate::types::Value::I64(i64_value)
                                     },
                                     crate::types::DataType::UInt64 => {
                                         let u64_value = u64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        crate::types::Value { u64: u64_value }
+                                        crate::types::Value::U64(u64_value)
                                     },
                                     crate::types::DataType::Float32 => {
                                         let float32_value = f32::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3]]);
                                         offset += 4;
-                                        crate::types::Value { float32: float32_value }
+                                        crate::types::Value::Float32(float32_value)
                                     },
                                     crate::types::DataType::Float64 => {
                                         let float64_value = f64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        crate::types::Value { float64: float64_value }
+                                        crate::types::Value::Float64(float64_value)
                                     },
                                     crate::types::DataType::String => {
                                         let string_len = log_item.new_data[offset] as usize;
@@ -996,12 +996,12 @@ impl LogManager {
                                         let mut string_data = [0u8; 64];
                                         string_data[..string_len].copy_from_slice(&log_item.new_data[offset..offset+string_len]);
                                         offset += 64; // 跳过固定64字节字符串空间
-                                        crate::types::Value { string: string_data }
+                                        crate::types::Value::String(string_data)
                                     },
                                     crate::types::DataType::Timestamp | crate::types::DataType::TimestampTZ => {
                                         let timestamp_value = u64::from_le_bytes([log_item.new_data[offset], log_item.new_data[offset+1], log_item.new_data[offset+2], log_item.new_data[offset+3], log_item.new_data[offset+4], log_item.new_data[offset+5], log_item.new_data[offset+6], log_item.new_data[offset+7]]);
                                         offset += 8;
-                                        crate::types::Value { time: crate::types::db_timestamp::new(timestamp_value as i64, 0, 0, 0) }
+                                        crate::types::Value::Time(crate::types::db_timestamp::new(timestamp_value as i64, 0, 0, 0))
                                     },
                                     crate::types::DataType::Interval => {
                                         // 解析Interval类型，读取value、precision和flags
@@ -1012,7 +1012,7 @@ impl LogManager {
                                         offset += 1;
                                         let flags = log_item.new_data[offset];
                                         offset += 1;
-                                        crate::types::Value { interval: crate::types::db_interval::new(interval_value, precision, flags) }
+                                        crate::types::Value::Interval(crate::types::db_interval::new(interval_value, precision, flags))
                                     },
                                 };
                                 Some(value)
