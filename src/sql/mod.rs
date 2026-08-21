@@ -1,6 +1,7 @@
 //! SQL查询模块
 //! 
 //! 该模块提供SQL查询支持，允许用户使用标准SQL语法查询数据库中的数据。
+#![allow(unsafe_code)]
 
 mod query_parser;
 mod query_executor;

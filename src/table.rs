@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 use crate::types::{RecordHeader, RecordStatus, TableDef, Value, Result, RemDbError, DataType};
 
 // 引入alloc模块
