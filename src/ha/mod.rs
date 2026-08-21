@@ -1,4 +1,5 @@
 // 嵌入式高可用主从复制模块
+#![allow(unsafe_code)]
 
 pub mod manager;
 pub mod replication;

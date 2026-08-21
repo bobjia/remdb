@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 use core::fmt;
 use core::mem::size_of;
 

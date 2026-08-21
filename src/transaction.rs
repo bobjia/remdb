@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 use core::ptr::NonNull;
 use crate::types::{Result, RemDbError};
 use crate::platform::{memcpy, memset};

@@ -1,4 +1,6 @@
 
+#![allow(unsafe_code)]
+
 // 导出时序数据相关类型和结构体
 pub mod table;
 pub mod compression;

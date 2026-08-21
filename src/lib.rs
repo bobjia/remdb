@@ -1,11 +1,15 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 // # Safety
 //
-// This crate uses `#![allow(unsafe_code)]` rather than `#![forbid(unsafe_code)]`
+// This crate uses `#![deny(unsafe_code)]` rather than `#![forbid(unsafe_code)]`
 // because `NonNull<T>` is not `Send+Sync` in Rust 1.95.0 (a recent breaking change).
 // Types containing `NonNull<T>` (Transaction, TransactionManager, RecordHeader, RemDb)
 // require `unsafe impl Send/Sync` to be thread-safe, which is flagged by
 // `#![forbid(unsafe_code)]`.
+//
+// `#![deny(unsafe_code)]` means all unsafe code is a compile error by default,
+// but individual items can opt in with `#[allow(unsafe_code)]`. This ensures every
+// unsafe site is explicit and auditable.
 //
 // All inherently unsafe internal code (memory allocator, platform-specific I/O) has
 // been extracted to satellite crates (remdb-alloc, remdb-platform-posix,
@@ -15,7 +19,7 @@
 //  - Raw pointer manipulation in table.rs, index.rs (MVCC record headers)
 //  - `no_std` OnceLock in platform/mod.rs
 //  - `Box::from_raw` / `Vec::from_raw_parts` for memory management
-#![allow(unsafe_code)]
+#![deny(unsafe_code)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -131,7 +135,9 @@ pub struct RemDb {
 
 // RemDb 包含 Vec<Option<MemoryTable>> 等类型，需要手动实现 Send/Sync
 // 因为内部类型可能包含 NonNull 指针（如 RecordHeader.next_version）
+#[allow(unsafe_code)]
 unsafe impl Send for RemDb {}
+#[allow(unsafe_code)]
 unsafe impl Sync for RemDb {}
 
 // 实现Drop trait，确保资源正确释放
@@ -145,6 +151,7 @@ impl Drop for RemDb {
     }
 }
 
+#[allow(unsafe_code)]
 impl RemDb {
     /// 快照魔数
     const SNAPSHOT_MAGIC: u32 = 0x52454D44; // 'REMD'
@@ -771,6 +778,7 @@ impl RemDb {
 }
 
 /// 为RemDb实现DdlExecutor trait
+#[allow(unsafe_code)]
 impl DdlExecutor for RemDb {
     fn create_table(
         &mut self,
@@ -1198,6 +1206,7 @@ impl DdlExecutor for RemDb {
     }
 }
 
+#[allow(unsafe_code)]
 impl RemDb {
     /// 将指标输出为文本格式
     pub fn dump_metrics(&self) -> alloc::string::String {
@@ -1941,6 +1950,7 @@ static DB_INSTANCE: OnceLock<Mutex<Option<RemDb>>> = OnceLock::new();
 
 /// 初始化数据库全局实例
 /// 注意：这是一个简化的实现，实际应用中应该根据需要创建数据库实例
+#[allow(unsafe_code)]
 pub fn init_global_db(
     config: &'static config::DbConfig
 ) -> Result<&'static mut RemDb> {
@@ -1972,6 +1982,7 @@ pub fn init_global_db(
 }
 
 /// 获取全局数据库实例
+#[allow(unsafe_code)]
 pub fn get_global_db() -> Option<&'static mut RemDb> {
     let mut guard = DB_INSTANCE.get_or_init(|| Mutex::new(None)).lock();
     // SAFETY: Extend the lifetime to 'static for compatibility with existing callers.

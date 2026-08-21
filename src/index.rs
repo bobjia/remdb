@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 use crate::types::{TableDef, Result, RemDbError, IndexType};
 
 /// B-Tree阶数（每个节点的最大键数量）

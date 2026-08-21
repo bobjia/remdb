@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 use core::mem::size_of;
 use crate::types::TableDef;
 pub use crate::time_series::TimeSeriesConfig;

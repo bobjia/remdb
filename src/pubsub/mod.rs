@@ -1,4 +1,5 @@
 // 基于UDP的高可靠数据订阅与发布模块
+#![allow(unsafe_code)]
 
 pub mod protocol;
 pub mod udp;
