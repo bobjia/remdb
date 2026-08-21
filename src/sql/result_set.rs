@@ -208,25 +208,25 @@ pub fn string_to_columns(s: &str) -> Vec<String> {
 fn value_to_string_repr(value: &TypedValue) -> String {
     unsafe {
         match value.value_type {
-            DataType::UInt8 => alloc::format!("{}", value.value.u8),
-            DataType::UInt16 => alloc::format!("{}", value.value.u16),
-            DataType::UInt32 => alloc::format!("{}", value.value.u32),
-            DataType::UInt64 => alloc::format!("{}", value.value.u64),
-            DataType::Int8 => alloc::format!("{}", value.value.i8),
-            DataType::Int16 => alloc::format!("{}", value.value.i16),
-            DataType::Int32 => alloc::format!("{}", value.value.i32),
-            DataType::Int64 => alloc::format!("{}", value.value.i64),
-            DataType::Float32 => alloc::format!("{}", value.value.float32),
-            DataType::Float64 => alloc::format!("{}", value.value.float64),
-            DataType::Bool => alloc::format!("{}", value.value.bool),
-            DataType::Timestamp => alloc::format!("{}", value.value.time.value),
-            DataType::TimestampTZ => alloc::format!("{}", value.value.time.value),
+            DataType::UInt8 => alloc::format!("{}", value.value.as_u8()),
+            DataType::UInt16 => alloc::format!("{}", value.value.as_u16()),
+            DataType::UInt32 => alloc::format!("{}", value.value.as_u32()),
+            DataType::UInt64 => alloc::format!("{}", value.value.as_u64()),
+            DataType::Int8 => alloc::format!("{}", value.value.as_i8()),
+            DataType::Int16 => alloc::format!("{}", value.value.as_i16()),
+            DataType::Int32 => alloc::format!("{}", value.value.as_i32()),
+            DataType::Int64 => alloc::format!("{}", value.value.as_i64()),
+            DataType::Float32 => alloc::format!("{}", value.value.as_float32()),
+            DataType::Float64 => alloc::format!("{}", value.value.as_float64()),
+            DataType::Bool => alloc::format!("{}", value.value.as_bool()),
+            DataType::Timestamp => alloc::format!("{}", value.value.as_time().value),
+            DataType::TimestampTZ => alloc::format!("{}", value.value.as_time().value),
             DataType::String => {
-                let string_slice = core::str::from_utf8(&value.value.string).unwrap_or("");
+                let string_slice = core::str::from_utf8(value.value.as_string()).unwrap_or("");
                 string_slice.trim_end_matches(char::from(0)).to_string()
             },
             DataType::Interval => {
-                alloc::format!("{}", value.value.interval.value)
+                alloc::format!("{}", value.value.as_interval().value)
             },
         }
     }

@@ -182,7 +182,7 @@ fn execute_select_timeseries_query(db: &mut RemDb, query: &SqlQuery) -> Result<R
             // 暂时返回默认值
             let default_value = TypedValue {
                 value_type: DataType::Int64,
-                value: Value { i64: 0 },
+                value: Value::I64(0),
             };
             row_data.push(default_value);
         }
@@ -213,7 +213,7 @@ fn process_aggregate_query(
                         // 初始化COUNT为0
                         aggregate_values.push(TypedValue {
                             value_type: DataType::UInt64,
-                            value: Value { u64: 0 },
+                            value: Value::U64(0),
                         });
                         var_stddev_states.push((0.0, 0.0, 0));
                     },
@@ -221,7 +221,7 @@ fn process_aggregate_query(
                         // 初始化SUM为0，类型为UInt64
                         aggregate_values.push(TypedValue {
                             value_type: DataType::UInt64,
-                            value: Value { u64: 0 },
+                            value: Value::U64(0),
                         });
                         var_stddev_states.push((0.0, 0.0, 0));
                     },
@@ -229,7 +229,7 @@ fn process_aggregate_query(
                         // 初始化AVG的sum为0，类型为Float64
                         aggregate_values.push(TypedValue {
                             value_type: DataType::Float64,
-                            value: Value { float64: 0.0 },
+                            value: Value::Float64(0.0),
                         });
                         var_stddev_states.push((0.0, 0.0, 0));
                     },
@@ -237,7 +237,7 @@ fn process_aggregate_query(
                         // 初始化MIN/MAX为None（使用0作为占位符，后续会更新）
                         aggregate_values.push(TypedValue {
                             value_type: DataType::UInt64,
-                            value: Value { u64: 0 },
+                            value: Value::U64(0),
                         });
                         var_stddev_states.push((0.0, 0.0, 0));
                     },
@@ -246,7 +246,7 @@ fn process_aggregate_query(
                         // 初始化方差和标准差的中间状态
                         aggregate_values.push(TypedValue {
                             value_type: DataType::Float64,
-                            value: Value { float64: 0.0 },
+                            value: Value::Float64(0.0),
                         });
                         // 初始化(sum, sum_of_squares, count)
                         var_stddev_states.push((0.0, 0.0, 0));
@@ -256,7 +256,7 @@ fn process_aggregate_query(
                         // 初始化滑动窗口函数为0
                         aggregate_values.push(TypedValue {
                             value_type: DataType::Float64,
-                            value: Value { float64: 0.0 },
+                            value: Value::Float64(0.0),
                         });
                         // 初始化(sum, sum_of_squares, count)
                         var_stddev_states.push((0.0, 0.0, 0));
@@ -266,7 +266,7 @@ fn process_aggregate_query(
                         // TIME_BUCKET函数需要为每个分组保存结果，这里先使用默认值
                         aggregate_values.push(TypedValue {
                             value_type: DataType::UInt64,
-                            value: Value { u64: 0 },
+                            value: Value::U64(0),
                         });
                         var_stddev_states.push((0.0, 0.0, 0));
                     },
@@ -297,21 +297,21 @@ fn process_aggregate_query(
                     "COUNT" => {
                         unsafe {
                             // COUNT函数简单累加
-                            aggregate_values[i].value.u64 += 1;
+                            aggregate_values[i].value = Value::U64(aggregate_values[i].value.as_u64() +  1);
                         }
                     },
                     "SUM" => {
                         unsafe {
                             // SUM函数累加值
                             match current_value.value_type {
-                                DataType::UInt8 => aggregate_values[i].value.float64 += current_value.value.u8 as f64,
-                                DataType::UInt16 => aggregate_values[i].value.float64 += current_value.value.u16 as f64,
-                                DataType::UInt32 => aggregate_values[i].value.float64 += current_value.value.u32 as f64,
-                                DataType::UInt64 => aggregate_values[i].value.float64 += current_value.value.u64 as f64,
-                                DataType::Int8 => aggregate_values[i].value.float64 += current_value.value.i8 as f64,
-                                DataType::Int16 => aggregate_values[i].value.float64 += current_value.value.i16 as f64,
-                                DataType::Int32 => aggregate_values[i].value.float64 += current_value.value.i32 as f64,
-                                DataType::Int64 => aggregate_values[i].value.float64 += current_value.value.i64 as f64,
+                                DataType::UInt8 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_u8() as f64),
+                                DataType::UInt16 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_u16() as f64),
+                                DataType::UInt32 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_u32() as f64),
+                                DataType::UInt64 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_u64() as f64),
+                                DataType::Int8 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_i8() as f64),
+                                DataType::Int16 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_i16() as f64),
+                                DataType::Int32 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_i32() as f64),
+                                DataType::Int64 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_i64() as f64),
                                 _ => return Err(QueryExecutionError::TypeMismatch),
                             }
                             
@@ -323,21 +323,21 @@ fn process_aggregate_query(
                     "MIN" => {
                         // MIN函数取最小值
                         unsafe {
-                            if aggregate_values[i].value.u64 == 0 {
+                            if aggregate_values[i].value.as_u64() == 0 {
                                 // 第一次迭代，直接赋值
                                 aggregate_values[i] = current_value;
                             } else {
                                 // 比较并取最小值
                                 let is_less = unsafe {
                                     match (aggregate_values[i].value_type, current_value.value_type) {
-                                        (DataType::UInt8, DataType::UInt8) => current_value.value.u8 < aggregate_values[i].value.u8,
-                                        (DataType::UInt16, DataType::UInt16) => current_value.value.u16 < aggregate_values[i].value.u16,
-                                        (DataType::UInt32, DataType::UInt32) => current_value.value.u32 < aggregate_values[i].value.u32,
-                                        (DataType::UInt64, DataType::UInt64) => current_value.value.u64 < aggregate_values[i].value.u64,
-                                        (DataType::Int8, DataType::Int8) => current_value.value.i8 < aggregate_values[i].value.i8,
-                                        (DataType::Int16, DataType::Int16) => current_value.value.i16 < aggregate_values[i].value.i16,
-                                        (DataType::Int32, DataType::Int32) => current_value.value.i32 < aggregate_values[i].value.i32,
-                                        (DataType::Int64, DataType::Int64) => current_value.value.i64 < aggregate_values[i].value.i64,
+                                        (DataType::UInt8, DataType::UInt8) => current_value.value.as_u8() < aggregate_values[i].value.as_u8(),
+                                        (DataType::UInt16, DataType::UInt16) => current_value.value.as_u16() < aggregate_values[i].value.as_u16(),
+                                        (DataType::UInt32, DataType::UInt32) => current_value.value.as_u32() < aggregate_values[i].value.as_u32(),
+                                        (DataType::UInt64, DataType::UInt64) => current_value.value.as_u64() < aggregate_values[i].value.as_u64(),
+                                        (DataType::Int8, DataType::Int8) => current_value.value.as_i8() < aggregate_values[i].value.as_i8(),
+                                        (DataType::Int16, DataType::Int16) => current_value.value.as_i16() < aggregate_values[i].value.as_i16(),
+                                        (DataType::Int32, DataType::Int32) => current_value.value.as_i32() < aggregate_values[i].value.as_i32(),
+                                        (DataType::Int64, DataType::Int64) => current_value.value.as_i64() < aggregate_values[i].value.as_i64(),
                                         _ => return Err(QueryExecutionError::TypeMismatch),
                                     }
                                 };
@@ -350,21 +350,21 @@ fn process_aggregate_query(
                     "MAX" => {
                         // MAX函数取最大值
                         unsafe {
-                            if aggregate_values[i].value.u64 == 0 {
+                            if aggregate_values[i].value.as_u64() == 0 {
                                 // 第一次迭代，直接赋值
                                 aggregate_values[i] = current_value;
                             } else {
                                 // 比较并取最大值
                                 let is_greater = unsafe {
                                     match (aggregate_values[i].value_type, current_value.value_type) {
-                                        (DataType::UInt8, DataType::UInt8) => current_value.value.u8 > aggregate_values[i].value.u8,
-                                        (DataType::UInt16, DataType::UInt16) => current_value.value.u16 > aggregate_values[i].value.u16,
-                                        (DataType::UInt32, DataType::UInt32) => current_value.value.u32 > aggregate_values[i].value.u32,
-                                        (DataType::UInt64, DataType::UInt64) => current_value.value.u64 > aggregate_values[i].value.u64,
-                                        (DataType::Int8, DataType::Int8) => current_value.value.i8 > aggregate_values[i].value.i8,
-                                        (DataType::Int16, DataType::Int16) => current_value.value.i16 > aggregate_values[i].value.i16,
-                                        (DataType::Int32, DataType::Int32) => current_value.value.i32 > aggregate_values[i].value.i32,
-                                        (DataType::Int64, DataType::Int64) => current_value.value.i64 > aggregate_values[i].value.i64,
+                                        (DataType::UInt8, DataType::UInt8) => current_value.value.as_u8() > aggregate_values[i].value.as_u8(),
+                                        (DataType::UInt16, DataType::UInt16) => current_value.value.as_u16() > aggregate_values[i].value.as_u16(),
+                                        (DataType::UInt32, DataType::UInt32) => current_value.value.as_u32() > aggregate_values[i].value.as_u32(),
+                                        (DataType::UInt64, DataType::UInt64) => current_value.value.as_u64() > aggregate_values[i].value.as_u64(),
+                                        (DataType::Int8, DataType::Int8) => current_value.value.as_i8() > aggregate_values[i].value.as_i8(),
+                                        (DataType::Int16, DataType::Int16) => current_value.value.as_i16() > aggregate_values[i].value.as_i16(),
+                                        (DataType::Int32, DataType::Int32) => current_value.value.as_i32() > aggregate_values[i].value.as_i32(),
+                                        (DataType::Int64, DataType::Int64) => current_value.value.as_i64() > aggregate_values[i].value.as_i64(),
                                         _ => return Err(QueryExecutionError::TypeMismatch),
                                     }
                                 };
@@ -379,16 +379,16 @@ fn process_aggregate_query(
                         // 这里简化处理，只返回总和
                         unsafe {
                             match current_value.value_type {
-                                DataType::UInt8 => aggregate_values[i].value.float64 += current_value.value.u8 as f64,
-                                DataType::UInt16 => aggregate_values[i].value.float64 += current_value.value.u16 as f64,
-                                DataType::UInt32 => aggregate_values[i].value.float64 += current_value.value.u32 as f64,
-                                DataType::UInt64 => aggregate_values[i].value.float64 += current_value.value.u64 as f64,
-                                DataType::Int8 => aggregate_values[i].value.float64 += current_value.value.i8 as f64,
-                                DataType::Int16 => aggregate_values[i].value.float64 += current_value.value.i16 as f64,
-                                DataType::Int32 => aggregate_values[i].value.float64 += current_value.value.i32 as f64,
-                                DataType::Int64 => aggregate_values[i].value.float64 += current_value.value.i64 as f64,
-                                DataType::Float32 => aggregate_values[i].value.float64 += current_value.value.float32 as f64,
-                                DataType::Float64 => aggregate_values[i].value.float64 += current_value.value.float64,
+                                DataType::UInt8 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_u8() as f64),
+                                DataType::UInt16 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_u16() as f64),
+                                DataType::UInt32 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_u32() as f64),
+                                DataType::UInt64 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_u64() as f64),
+                                DataType::Int8 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_i8() as f64),
+                                DataType::Int16 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_i16() as f64),
+                                DataType::Int32 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_i32() as f64),
+                                DataType::Int64 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_i64() as f64),
+                                DataType::Float32 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_float32() as f64),
+                                DataType::Float64 => aggregate_values[i].value = Value::Float64(aggregate_values[i].value.as_float64() +  current_value.value.as_float64()),
                                 _ => return Err(QueryExecutionError::TypeMismatch),
                             }
                         }
@@ -398,16 +398,16 @@ fn process_aggregate_query(
                         // 将当前值转换为浮点数
                         let current_float = unsafe {
                             match current_value.value_type {
-                                DataType::UInt8 => current_value.value.u8 as f64,
-                                DataType::UInt16 => current_value.value.u16 as f64,
-                                DataType::UInt32 => current_value.value.u32 as f64,
-                                DataType::UInt64 => current_value.value.u64 as f64,
-                                DataType::Int8 => current_value.value.i8 as f64,
-                                DataType::Int16 => current_value.value.i16 as f64,
-                                DataType::Int32 => current_value.value.i32 as f64,
-                                DataType::Int64 => current_value.value.i64 as f64,
-                                DataType::Float32 => current_value.value.float32 as f64,
-                                DataType::Float64 => current_value.value.float64,
+                                DataType::UInt8 => current_value.value.as_u8() as f64,
+                                DataType::UInt16 => current_value.value.as_u16() as f64,
+                                DataType::UInt32 => current_value.value.as_u32() as f64,
+                                DataType::UInt64 => current_value.value.as_u64() as f64,
+                                DataType::Int8 => current_value.value.as_i8() as f64,
+                                DataType::Int16 => current_value.value.as_i16() as f64,
+                                DataType::Int32 => current_value.value.as_i32() as f64,
+                                DataType::Int64 => current_value.value.as_i64() as f64,
+                                DataType::Float32 => current_value.value.as_float32() as f64,
+                                DataType::Float64 => current_value.value.as_float64(),
                                 _ => return Err(QueryExecutionError::TypeMismatch),
                             }
                         };
@@ -423,16 +423,16 @@ fn process_aggregate_query(
                         // 将当前值转换为浮点数
                         let current_float = unsafe {
                             match current_value.value_type {
-                                DataType::UInt8 => current_value.value.u8 as f64,
-                                DataType::UInt16 => current_value.value.u16 as f64,
-                                DataType::UInt32 => current_value.value.u32 as f64,
-                                DataType::UInt64 => current_value.value.u64 as f64,
-                                DataType::Int8 => current_value.value.i8 as f64,
-                                DataType::Int16 => current_value.value.i16 as f64,
-                                DataType::Int32 => current_value.value.i32 as f64,
-                                DataType::Int64 => current_value.value.i64 as f64,
-                                DataType::Float32 => current_value.value.float32 as f64,
-                                DataType::Float64 => current_value.value.float64,
+                                DataType::UInt8 => current_value.value.as_u8() as f64,
+                                DataType::UInt16 => current_value.value.as_u16() as f64,
+                                DataType::UInt32 => current_value.value.as_u32() as f64,
+                                DataType::UInt64 => current_value.value.as_u64() as f64,
+                                DataType::Int8 => current_value.value.as_i8() as f64,
+                                DataType::Int16 => current_value.value.as_i16() as f64,
+                                DataType::Int32 => current_value.value.as_i32() as f64,
+                                DataType::Int64 => current_value.value.as_i64() as f64,
+                                DataType::Float32 => current_value.value.as_float32() as f64,
+                                DataType::Float64 => current_value.value.as_float64(),
                                 _ => return Err(QueryExecutionError::TypeMismatch),
                             }
                         };
@@ -475,7 +475,7 @@ fn process_aggregate_query(
                         let stddev = 0.0;
                         aggregate_values[i] = TypedValue {
                             value_type: DataType::Float64,
-                            value: Value { float64: stddev },
+                            value: Value::Float64(stddev),
                         };
                     }
                 },
@@ -487,7 +487,7 @@ fn process_aggregate_query(
                         let variance = sum_of_squares / count as f64 - mean * mean;
                         aggregate_values[i] = TypedValue {
                             value_type: DataType::Float64,
-                            value: Value { float64: variance },
+                            value: Value::Float64(variance),
                         };
                     }
                 },
@@ -496,11 +496,11 @@ fn process_aggregate_query(
                     if count > 0 {
                         // 计算平均值：总和 / 计数
                         unsafe {
-                            let sum = aggregate_values[i].value.float64;
+                            let sum = aggregate_values[i].value.as_float64();
                             let avg = sum / count as f64;
                             aggregate_values[i] = TypedValue {
                                 value_type: DataType::Float64,
-                                value: Value { float64: avg },
+                                value: Value::Float64(avg),
                             };
                         }
                     }
@@ -518,7 +518,7 @@ fn process_aggregate_query(
                         let stddev = 0.0;
                         aggregate_values[i] = TypedValue {
                             value_type: DataType::Float64,
-                            value: Value { float64: stddev },
+                            value: Value::Float64(stddev),
                         };
                     }
                 },
@@ -530,7 +530,7 @@ fn process_aggregate_query(
                         let variance = (sum_of_squares - sum * sum / count as f64) / (count - 1) as f64;
                         aggregate_values[i] = TypedValue {
                             value_type: DataType::Float64,
-                            value: Value { float64: variance },
+                            value: Value::Float64(variance),
                         };
                     }
                 },
@@ -542,7 +542,7 @@ fn process_aggregate_query(
                         let avg = sum / count as f64;
                         aggregate_values[i] = TypedValue {
                             value_type: DataType::Float64,
-                            value: Value { float64: avg },
+                            value: Value::Float64(avg),
                         };
                     }
                 },
@@ -551,7 +551,7 @@ fn process_aggregate_query(
                     // 简单实现：返回总和，不实现完整的滑动窗口逻辑
                     aggregate_values[i] = TypedValue {
                         value_type: DataType::Float64,
-                        value: Value { float64: sum },
+                        value: Value::Float64(sum),
                     };
                 },
                 _ => {}, // 其他函数不需要额外计算
@@ -574,7 +574,7 @@ fn evaluate_expression_for_aggregate(
         // 对于COUNT(*), COUNT(1)等无参数情况
         return Ok(TypedValue {
             value_type: DataType::UInt64,
-            value: Value { u64: 1 },
+            value: Value::U64(1),
         });
     }
     
@@ -587,22 +587,22 @@ fn evaluate_expression_for_aggregate(
             use crate::sql::Value as SqlValue;
             
             let (value_type, value) = match value {
-                SqlValue::Integer(i) => (DataType::Int64, Value { i64: *i }),
-                SqlValue::Float(f) => (DataType::Float64, Value { float64: *f }),
+                SqlValue::Integer(i) => (DataType::Int64, Value::I64(*i)),
+                SqlValue::Float(f) => (DataType::Float64, Value::Float64(*f)),
                 SqlValue::String(s) => {
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                     buf[..len].copy_from_slice(s.as_bytes());
-                    (DataType::String, Value { string: buf })
+                    (DataType::String, Value::String(buf))
                 },
-                SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
-                SqlValue::Null => (DataType::Int64, Value { i64: 0 }),
+                SqlValue::Boolean(b) => (DataType::Bool, Value::Bool(*b)),
+                SqlValue::Null => (DataType::Int64, Value::I64(0)),
                 SqlValue::Identifier(s) => {
                     // 标识符作为字符串处理
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                     buf[..len].copy_from_slice(s.as_bytes());
-                    (DataType::String, Value { string: buf })
+                    (DataType::String, Value::String(buf))
                 },
             };
             
@@ -616,7 +616,7 @@ fn evaluate_expression_for_aggregate(
             // TODO: 支持更复杂的表达式
             Ok(TypedValue {
                 value_type: DataType::UInt64,
-                value: Value { u64: 1 },
+                value: Value::U64(1),
             })
         },
     }
@@ -841,7 +841,7 @@ fn add_joined_row(
                     // 字段不存在，添加默认值
                     let default_value = TypedValue {
                         value_type: DataType::Int64,
-                        value: Value { i64: 0 },
+                        value: Value::I64(0),
                     };
                     row_data.push(default_value);
                 }
@@ -850,7 +850,7 @@ fn add_joined_row(
                 // 其他表达式类型，添加默认值
                 let default_value = TypedValue {
                     value_type: DataType::Int64,
-                    value: Value { i64: 0 },
+                    value: Value::I64(0),
                 };
                 row_data.push(default_value);
             },
@@ -920,33 +920,33 @@ fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
     
     unsafe {
         match left.value_type {
-            DataType::Int8 => left.value.i8 == right.value.i8,
-            DataType::Int16 => left.value.i16 == right.value.i16,
-            DataType::Int32 => left.value.i32 == right.value.i32,
-            DataType::Int64 => left.value.i64 == right.value.i64,
-            DataType::UInt8 => left.value.u8 == right.value.u8,
-            DataType::UInt16 => left.value.u16 == right.value.u16,
-            DataType::UInt32 => left.value.u32 == right.value.u32,
-            DataType::UInt64 => left.value.u64 == right.value.u64,
+            DataType::Int8 => left.value.as_i8() == right.value.as_i8(),
+            DataType::Int16 => left.value.as_i16() == right.value.as_i16(),
+            DataType::Int32 => left.value.as_i32() == right.value.as_i32(),
+            DataType::Int64 => left.value.as_i64() == right.value.as_i64(),
+            DataType::UInt8 => left.value.as_u8() == right.value.as_u8(),
+            DataType::UInt16 => left.value.as_u16() == right.value.as_u16(),
+            DataType::UInt32 => left.value.as_u32() == right.value.as_u32(),
+            DataType::UInt64 => left.value.as_u64() == right.value.as_u64(),
             DataType::Float32 => {
-                (left.value.float32 - right.value.float32).abs() < f32::EPSILON
+                (left.value.as_float32() - right.value.as_float32()).abs() < f32::EPSILON
             },
             DataType::Float64 => {
-                (left.value.float64 - right.value.float64).abs() < f64::EPSILON
+                (left.value.as_float64() - right.value.as_float64()).abs() < f64::EPSILON
             },
-            DataType::Bool => left.value.bool == right.value.bool,
+            DataType::Bool => left.value.as_bool() == right.value.as_bool(),
             DataType::String => {
-                let left_str = core::str::from_utf8(&left.value.string)
+                let left_str = core::str::from_utf8(left.value.as_string())
                     .unwrap()
                     .trim_end_matches(char::from(0));
-                let right_str = core::str::from_utf8(&right.value.string)
+                let right_str = core::str::from_utf8(right.value.as_string())
                     .unwrap()
                     .trim_end_matches(char::from(0));
                 left_str == right_str
             },
-            DataType::Timestamp => left.value.time == right.value.time,
-            DataType::TimestampTZ => left.value.time == right.value.time,
-            DataType::Interval => left.value.interval == right.value.interval,
+            DataType::Timestamp => left.value.as_time() == right.value.as_time(),
+            DataType::TimestampTZ => left.value.as_time() == right.value.as_time(),
+            DataType::Interval => left.value.as_interval() == right.value.as_interval(),
         }
     }
 }
@@ -1084,43 +1084,43 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                                 // 使用完整的命名空间来区分SQL解析的Value和数据库存储的Value
                                 match (&field_value.value_type, &right_value) {
                                     (DataType::Int8, crate::sql::Value::Integer(v)) => {
-                                        field_value.value.i8 == *v as i8
+                                        field_value.value.as_i8() == *v as i8
                                     },
                                     (DataType::Int16, crate::sql::Value::Integer(v)) => {
-                                        field_value.value.i16 == *v as i16
+                                        field_value.value.as_i16() == *v as i16
                                     },
                                     (DataType::Int32, crate::sql::Value::Integer(v)) => {
-                                        field_value.value.i32 == *v as i32
+                                        field_value.value.as_i32() == *v as i32
                                     },
                                     (DataType::Int64, crate::sql::Value::Integer(v)) => {
-                                        field_value.value.i64 == *v
+                                        field_value.value.as_i64() == *v
                                     },
                                     (DataType::UInt8, crate::sql::Value::Integer(v)) => {
-                                        field_value.value.u8 == *v as u8
+                                        field_value.value.as_u8() == *v as u8
                                     },
                                     (DataType::UInt16, crate::sql::Value::Integer(v)) => {
-                                        field_value.value.u16 == *v as u16
+                                        field_value.value.as_u16() == *v as u16
                                     },
                                     (DataType::UInt32, crate::sql::Value::Integer(v)) => {
-                                        field_value.value.u32 == *v as u32
+                                        field_value.value.as_u32() == *v as u32
                                     },
                                     (DataType::UInt64, crate::sql::Value::Integer(v)) => {
-                                        field_value.value.u64 == *v as u64
+                                        field_value.value.as_u64() == *v as u64
                                     },
                                     (DataType::String, crate::sql::Value::String(v)) => {
-                                        let field_str = core::str::from_utf8(&field_value.value.string)
+                                        let field_str = core::str::from_utf8(field_value.value.as_string())
                                             .unwrap()
                                             .trim_end_matches(char::from(0));
                                         field_str == v
                                     },
                                     (DataType::Bool, crate::sql::Value::Boolean(v)) => {
-                                        field_value.value.bool == *v
+                                        field_value.value.as_bool() == *v
                                     },
                                     (DataType::Float32, crate::sql::Value::Float(v)) => {
-                                        (field_value.value.float32 - *v as f32).abs() < f32::EPSILON
+                                        (field_value.value.as_float32() - *v as f32).abs() < f32::EPSILON
                                     },
                                     (DataType::Float64, crate::sql::Value::Float(v)) => {
-                                        (field_value.value.float64 - *v).abs() < f64::EPSILON
+                                        (field_value.value.as_float64() - *v).abs() < f64::EPSILON
                                     },
                                     // 支持字段引用比较
                                     (_, crate::sql::Value::Identifier(right_field)) => {
@@ -1207,7 +1207,7 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                                         // 字段不存在，添加默认值
                                         let default_value = TypedValue {
                                             value_type: DataType::Int64,
-                                            value: Value { i64: 0 },
+                                            value: Value::I64(0),
                                         };
                                         row_data.push(default_value);
                                     }
@@ -1216,7 +1216,7 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                                     // 其他表达式类型，添加默认值
                                     let default_value = TypedValue {
                                         value_type: DataType::Int64,
-                                        value: Value { i64: 0 },
+                                        value: Value::I64(0),
                                     };
                                     row_data.push(default_value);
                                 },
@@ -1238,24 +1238,24 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                     for field in join_table.def.fields.iter() {
                         // 根据字段类型创建默认值
                         let default_value = match field.data_type {
-                            DataType::Int8 => TypedValue { value_type: DataType::Int8, value: Value { i8: 0 } },
-                            DataType::Int16 => TypedValue { value_type: DataType::Int16, value: Value { i16: 0 } },
-                            DataType::Int32 => TypedValue { value_type: DataType::Int32, value: Value { i32: 0 } },
-                            DataType::Int64 => TypedValue { value_type: DataType::Int64, value: Value { i64: 0 } },
-                            DataType::UInt8 => TypedValue { value_type: DataType::UInt8, value: Value { u8: 0 } },
-                            DataType::UInt16 => TypedValue { value_type: DataType::UInt16, value: Value { u16: 0 } },
-                            DataType::UInt32 => TypedValue { value_type: DataType::UInt32, value: Value { u32: 0 } },
-                            DataType::UInt64 => TypedValue { value_type: DataType::UInt64, value: Value { u64: 0 } },
-                            DataType::Float32 => TypedValue { value_type: DataType::Float32, value: Value { float32: 0.0 } },
-                            DataType::Float64 => TypedValue { value_type: DataType::Float64, value: Value { float64: 0.0 } },
-                            DataType::Bool => TypedValue { value_type: DataType::Bool, value: Value { bool: false } },
+                            DataType::Int8 => TypedValue { value_type: DataType::Int8, value: Value::I8(0) },
+                            DataType::Int16 => TypedValue { value_type: DataType::Int16, value: Value::I16(0) },
+                            DataType::Int32 => TypedValue { value_type: DataType::Int32, value: Value::I32(0) },
+                            DataType::Int64 => TypedValue { value_type: DataType::Int64, value: Value::I64(0) },
+                            DataType::UInt8 => TypedValue { value_type: DataType::UInt8, value: Value::U8(0) },
+                            DataType::UInt16 => TypedValue { value_type: DataType::UInt16, value: Value::U16(0) },
+                            DataType::UInt32 => TypedValue { value_type: DataType::UInt32, value: Value::U32(0) },
+                            DataType::UInt64 => TypedValue { value_type: DataType::UInt64, value: Value::U64(0) },
+                            DataType::Float32 => TypedValue { value_type: DataType::Float32, value: Value::Float32(0.0) },
+                            DataType::Float64 => TypedValue { value_type: DataType::Float64, value: Value::Float64(0.0) },
+                            DataType::Bool => TypedValue { value_type: DataType::Bool, value: Value::Bool(false) },
                             DataType::String => {
                                 let mut buf = [0; MAX_STRING_LEN];
-                                TypedValue { value_type: DataType::String, value: Value { string: buf } }
+                                TypedValue { value_type: DataType::String, value: Value::String(buf) }
                             },
-                            DataType::Timestamp => TypedValue { value_type: DataType::Timestamp, value: Value { u64: 0 } },
-                            DataType::TimestampTZ => TypedValue { value_type: DataType::TimestampTZ, value: Value { u64: 0 } },
-                            DataType::Interval => TypedValue { value_type: DataType::Interval, value: Value { i64: 0 } },
+                            DataType::Timestamp => TypedValue { value_type: DataType::Timestamp, value: Value::U64(0) },
+                            DataType::TimestampTZ => TypedValue { value_type: DataType::TimestampTZ, value: Value::U64(0) },
+                            DataType::Interval => TypedValue { value_type: DataType::Interval, value: Value::I64(0) },
                         };
                         join_default_values.push(default_value);
                     }
@@ -1353,43 +1353,43 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                                     // 使用完整的命名空间来区分SQL解析的Value和数据库存储的Value
                                     match (&field_value.value_type, &right_value) {
                                         (DataType::Int8, crate::sql::Value::Integer(v)) => {
-                                            field_value.value.i8 == *v as i8
+                                            field_value.value.as_i8() == *v as i8
                                         },
                                         (DataType::Int16, crate::sql::Value::Integer(v)) => {
-                                            field_value.value.i16 == *v as i16
+                                            field_value.value.as_i16() == *v as i16
                                         },
                                         (DataType::Int32, crate::sql::Value::Integer(v)) => {
-                                            field_value.value.i32 == *v as i32
+                                            field_value.value.as_i32() == *v as i32
                                         },
                                         (DataType::Int64, crate::sql::Value::Integer(v)) => {
-                                            field_value.value.i64 == *v
+                                            field_value.value.as_i64() == *v
                                         },
                                         (DataType::UInt8, crate::sql::Value::Integer(v)) => {
-                                            field_value.value.u8 == *v as u8
+                                            field_value.value.as_u8() == *v as u8
                                         },
                                         (DataType::UInt16, crate::sql::Value::Integer(v)) => {
-                                            field_value.value.u16 == *v as u16
+                                            field_value.value.as_u16() == *v as u16
                                         },
                                         (DataType::UInt32, crate::sql::Value::Integer(v)) => {
-                                            field_value.value.u32 == *v as u32
+                                            field_value.value.as_u32() == *v as u32
                                         },
                                         (DataType::UInt64, crate::sql::Value::Integer(v)) => {
-                                            field_value.value.u64 == *v as u64
+                                            field_value.value.as_u64() == *v as u64
                                         },
                                         (DataType::String, crate::sql::Value::String(v)) => {
-                                            let field_str = core::str::from_utf8(&field_value.value.string)
+                                            let field_str = core::str::from_utf8(field_value.value.as_string())
                                                 .unwrap()
                                                 .trim_end_matches(char::from(0));
                                             field_str == v
                                         },
                                         (DataType::Bool, crate::sql::Value::Boolean(v)) => {
-                                            field_value.value.bool == *v
+                                            field_value.value.as_bool() == *v
                                         },
                                         (DataType::Float32, crate::sql::Value::Float(v)) => {
-                                            (field_value.value.float32 - *v as f32).abs() < f32::EPSILON
+                                            (field_value.value.as_float32() - *v as f32).abs() < f32::EPSILON
                                         },
                                         (DataType::Float64, crate::sql::Value::Float(v)) => {
-                                            (field_value.value.float64 - *v).abs() < f64::EPSILON
+                                            (field_value.value.as_float64() - *v).abs() < f64::EPSILON
                                         },
                                         _ => false, // 不支持的类型比较
                                     }
@@ -1414,24 +1414,24 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                         for field in main_table.def.fields.iter() {
                             // 根据字段类型创建默认值
                             let default_value = match field.data_type {
-                                DataType::Int8 => TypedValue { value_type: DataType::Int8, value: Value { i8: 0 } },
-                                DataType::Int16 => TypedValue { value_type: DataType::Int16, value: Value { i16: 0 } },
-                                DataType::Int32 => TypedValue { value_type: DataType::Int32, value: Value { i32: 0 } },
-                                DataType::Int64 => TypedValue { value_type: DataType::Int64, value: Value { i64: 0 } },
-                                DataType::UInt8 => TypedValue { value_type: DataType::UInt8, value: Value { u8: 0 } },
-                                DataType::UInt16 => TypedValue { value_type: DataType::UInt16, value: Value { u16: 0 } },
-                                DataType::UInt32 => TypedValue { value_type: DataType::UInt32, value: Value { u32: 0 } },
-                                DataType::UInt64 => TypedValue { value_type: DataType::UInt64, value: Value { u64: 0 } },
-                                DataType::Float32 => TypedValue { value_type: DataType::Float32, value: Value { float32: 0.0 } },
-                                DataType::Float64 => TypedValue { value_type: DataType::Float64, value: Value { float64: 0.0 } },
-                                DataType::Bool => TypedValue { value_type: DataType::Bool, value: Value { bool: false } },
+                                DataType::Int8 => TypedValue { value_type: DataType::Int8, value: Value::I8(0) },
+                                DataType::Int16 => TypedValue { value_type: DataType::Int16, value: Value::I16(0) },
+                                DataType::Int32 => TypedValue { value_type: DataType::Int32, value: Value::I32(0) },
+                                DataType::Int64 => TypedValue { value_type: DataType::Int64, value: Value::I64(0) },
+                                DataType::UInt8 => TypedValue { value_type: DataType::UInt8, value: Value::U8(0) },
+                                DataType::UInt16 => TypedValue { value_type: DataType::UInt16, value: Value::U16(0) },
+                                DataType::UInt32 => TypedValue { value_type: DataType::UInt32, value: Value::U32(0) },
+                                DataType::UInt64 => TypedValue { value_type: DataType::UInt64, value: Value::U64(0) },
+                                DataType::Float32 => TypedValue { value_type: DataType::Float32, value: Value::Float32(0.0) },
+                                DataType::Float64 => TypedValue { value_type: DataType::Float64, value: Value::Float64(0.0) },
+                                DataType::Bool => TypedValue { value_type: DataType::Bool, value: Value::Bool(false) },
                                 DataType::String => {
                                     let mut buf = [0; MAX_STRING_LEN];
-                                    TypedValue { value_type: DataType::String, value: Value { string: buf } }
+                                    TypedValue { value_type: DataType::String, value: Value::String(buf) }
                                 },
-                                DataType::Timestamp => TypedValue { value_type: DataType::Timestamp, value: Value { u64: 0 } },
-                                DataType::TimestampTZ => TypedValue { value_type: DataType::TimestampTZ, value: Value { u64: 0 } },
-                                DataType::Interval => TypedValue { value_type: DataType::Interval, value: Value { i64: 0 } },
+                                DataType::Timestamp => TypedValue { value_type: DataType::Timestamp, value: Value::U64(0) },
+                                DataType::TimestampTZ => TypedValue { value_type: DataType::TimestampTZ, value: Value::U64(0) },
+                                DataType::Interval => TypedValue { value_type: DataType::Interval, value: Value::I64(0) },
                             };
                             main_default_values.push(default_value);
                         }
@@ -1465,7 +1465,7 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                                         // 字段不存在，添加默认值
                                         let default_value = TypedValue {
                                             value_type: DataType::Int64,
-                                            value: Value { i64: 0 },
+                                            value: Value::I64(0),
                                         };
                                         row_data.push(default_value);
                                     }
@@ -1474,7 +1474,7 @@ fn execute_select_join_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultS
                                     // 其他表达式类型，添加默认值
                                     let default_value = TypedValue {
                                         value_type: DataType::Int64,
-                                        value: Value { i64: 0 },
+                                        value: Value::I64(0),
                                     };
                                     row_data.push(default_value);
                                 },
@@ -1549,22 +1549,22 @@ fn evaluate_expression(
                 use crate::sql::Value as SqlValue;
                 
                 let (value_type, value) = match constant {
-                    SqlValue::Integer(i) => (DataType::Int64, Value { i64: *i }),
-                    SqlValue::Float(f) => (DataType::Float64, Value { float64: *f }),
+                    SqlValue::Integer(i) => (DataType::Int64, Value::I64(*i)),
+                    SqlValue::Float(f) => (DataType::Float64, Value::Float64(*f)),
                     SqlValue::String(s) => {
                         let mut buf = [0; MAX_STRING_LEN];
                         let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                         buf[..len].copy_from_slice(s.as_bytes());
-                        (DataType::String, Value { string: buf })
+                        (DataType::String, Value::String(buf))
                     },
-                    SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
-                    SqlValue::Null => (DataType::Int64, Value { i64: 0 }),
+                    SqlValue::Boolean(b) => (DataType::Bool, Value::Bool(*b)),
+                    SqlValue::Null => (DataType::Int64, Value::I64(0)),
                     SqlValue::Identifier(s) => {
                         // 标识符作为字符串处理
                         let mut buf = [0; MAX_STRING_LEN];
                         let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                         buf[..len].copy_from_slice(s.as_bytes());
-                        (DataType::String, Value { string: buf })
+                        (DataType::String, Value::String(buf))
                     },
                 };
                 
@@ -1602,36 +1602,36 @@ fn evaluate_binary_op(
             unsafe {
                 // 将操作数转换为f64进行比较，适用于所有数值类型
                 let left_val = match left.value_type {
-                    DataType::UInt8 => left.value.u8 as f64,
-                    DataType::UInt16 => left.value.u16 as f64,
-                    DataType::UInt32 => left.value.u32 as f64,
-                    DataType::UInt64 => left.value.u64 as f64,
-                    DataType::Int8 => left.value.i8 as f64,
-                    DataType::Int16 => left.value.i16 as f64,
-                    DataType::Int32 => left.value.i32 as f64,
-                    DataType::Int64 => left.value.i64 as f64,
-                    DataType::Float32 => left.value.float32 as f64,
-                    DataType::Float64 => left.value.float64,
-                    DataType::Bool => left.value.bool as u8 as f64,
-                    DataType::Timestamp => left.value.time.value as f64,
-                    DataType::TimestampTZ => left.value.time.value as f64,
+                    DataType::UInt8 => left.value.as_u8() as f64,
+                    DataType::UInt16 => left.value.as_u16() as f64,
+                    DataType::UInt32 => left.value.as_u32() as f64,
+                    DataType::UInt64 => left.value.as_u64() as f64,
+                    DataType::Int8 => left.value.as_i8() as f64,
+                    DataType::Int16 => left.value.as_i16() as f64,
+                    DataType::Int32 => left.value.as_i32() as f64,
+                    DataType::Int64 => left.value.as_i64() as f64,
+                    DataType::Float32 => left.value.as_float32() as f64,
+                    DataType::Float64 => left.value.as_float64(),
+                    DataType::Bool => left.value.as_bool() as u8 as f64,
+                    DataType::Timestamp => left.value.as_time().value as f64,
+                    DataType::TimestampTZ => left.value.as_time().value as f64,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 
                 let right_val = match right.value_type {
-                    DataType::UInt8 => right.value.u8 as f64,
-                    DataType::UInt16 => right.value.u16 as f64,
-                    DataType::UInt32 => right.value.u32 as f64,
-                    DataType::UInt64 => right.value.u64 as f64,
-                    DataType::Int8 => right.value.i8 as f64,
-                    DataType::Int16 => right.value.i16 as f64,
-                    DataType::Int32 => right.value.i32 as f64,
-                    DataType::Int64 => right.value.i64 as f64,
-                    DataType::Float32 => right.value.float32 as f64,
-                    DataType::Float64 => right.value.float64,
-                    DataType::Bool => right.value.bool as u8 as f64,
-                    DataType::Timestamp => right.value.time.value as f64,
-                    DataType::TimestampTZ => right.value.time.value as f64,
+                    DataType::UInt8 => right.value.as_u8() as f64,
+                    DataType::UInt16 => right.value.as_u16() as f64,
+                    DataType::UInt32 => right.value.as_u32() as f64,
+                    DataType::UInt64 => right.value.as_u64() as f64,
+                    DataType::Int8 => right.value.as_i8() as f64,
+                    DataType::Int16 => right.value.as_i16() as f64,
+                    DataType::Int32 => right.value.as_i32() as f64,
+                    DataType::Int64 => right.value.as_i64() as f64,
+                    DataType::Float32 => right.value.as_float32() as f64,
+                    DataType::Float64 => right.value.as_float64(),
+                    DataType::Bool => right.value.as_bool() as u8 as f64,
+                    DataType::Timestamp => right.value.as_time().value as f64,
+                    DataType::TimestampTZ => right.value.as_time().value as f64,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 
@@ -1649,7 +1649,7 @@ fn evaluate_binary_op(
                 // 返回布尔结果
                 return Ok(TypedValue {
                     value_type: DataType::Bool,
-                    value: Value { bool: result },
+                    value: Value::Bool(result),
                 });
             }
         },
@@ -1666,15 +1666,13 @@ fn evaluate_binary_op(
                 (DataType::Timestamp, DataType::TimestampTZ) |
                 (DataType::TimestampTZ, DataType::Timestamp) => {
                     // 任意时间类型之间的减法都返回Interval
-                    let t1 = left.value.time.value;
-                    let t2 = right.value.time.value;
+                    let t1 = left.value.as_time().value;
+                    let t2 = right.value.as_time().value;
                     let diff = t1 - t2;
                     
                     return Ok(TypedValue {
                         value_type: DataType::Interval,
-                        value: Value { 
-                            interval: crate::types::db_interval::new(diff, 6, 0)
-                        },
+                        value: Value::Interval(crate::types::db_interval::new(diff, 6, 0)),
                     });
                 },
                 _ => {}, // 其他情况继续处理
@@ -1695,30 +1693,30 @@ fn evaluate_binary_op(
         unsafe {
             // 将操作数转换为f64进行计算
             let left_val = match left.value_type {
-                DataType::UInt8 => left.value.u8 as f64,
-                DataType::UInt16 => left.value.u16 as f64,
-                DataType::UInt32 => left.value.u32 as f64,
-                DataType::UInt64 => left.value.u64 as f64,
-                DataType::Int8 => left.value.i8 as f64,
-                DataType::Int16 => left.value.i16 as f64,
-                DataType::Int32 => left.value.i32 as f64,
-                DataType::Int64 => left.value.i64 as f64,
-                DataType::Float32 => left.value.float32 as f64,
-                DataType::Float64 => left.value.float64,
+                DataType::UInt8 => left.value.as_u8() as f64,
+                DataType::UInt16 => left.value.as_u16() as f64,
+                DataType::UInt32 => left.value.as_u32() as f64,
+                DataType::UInt64 => left.value.as_u64() as f64,
+                DataType::Int8 => left.value.as_i8() as f64,
+                DataType::Int16 => left.value.as_i16() as f64,
+                DataType::Int32 => left.value.as_i32() as f64,
+                DataType::Int64 => left.value.as_i64() as f64,
+                DataType::Float32 => left.value.as_float32() as f64,
+                DataType::Float64 => left.value.as_float64(),
                 _ => unreachable!(),
             };
             
             let right_val = match right.value_type {
-                DataType::UInt8 => right.value.u8 as f64,
-                DataType::UInt16 => right.value.u16 as f64,
-                DataType::UInt32 => right.value.u32 as f64,
-                DataType::UInt64 => right.value.u64 as f64,
-                DataType::Int8 => right.value.i8 as f64,
-                DataType::Int16 => right.value.i16 as f64,
-                DataType::Int32 => right.value.i32 as f64,
-                DataType::Int64 => right.value.i64 as f64,
-                DataType::Float32 => right.value.float32 as f64,
-                DataType::Float64 => right.value.float64,
+                DataType::UInt8 => right.value.as_u8() as f64,
+                DataType::UInt16 => right.value.as_u16() as f64,
+                DataType::UInt32 => right.value.as_u32() as f64,
+                DataType::UInt64 => right.value.as_u64() as f64,
+                DataType::Int8 => right.value.as_i8() as f64,
+                DataType::Int16 => right.value.as_i16() as f64,
+                DataType::Int32 => right.value.as_i32() as f64,
+                DataType::Int64 => right.value.as_i64() as f64,
+                DataType::Float32 => right.value.as_float32() as f64,
+                DataType::Float64 => right.value.as_float64(),
                 _ => unreachable!(),
             };
             
@@ -1732,17 +1730,17 @@ fn evaluate_binary_op(
             // 返回FLOAT64类型结果
             return Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: result },
+                value: Value::Float64(result),
             });
         }
     }
     
     // 解析间隔值，支持字符串格式（如"1 HOUR"）和数值格式（微秒）
     let interval_micros = match right.value_type {
-        DataType::Int64 => unsafe { right.value.i64 },
+        DataType::Int64 => unsafe { right.value.as_i64() },
         DataType::String => {
             unsafe {
-                let interval_str = core::str::from_utf8(&right.value.string)
+                let interval_str = core::str::from_utf8(right.value.as_string())
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
                 parse_interval_string(interval_str)?
@@ -1758,27 +1756,23 @@ fn evaluate_binary_op(
                 match left.value_type {
                     // Timestamp + Interval = Timestamp
                     DataType::Timestamp => {
-                        let timestamp = left.value.time.value;
+                        let timestamp = left.value.as_time().value;
                         let new_timestamp = timestamp + interval_micros;
                         
                         Ok(TypedValue {
                             value_type: DataType::Timestamp,
-                            value: Value {
-                                time: crate::types::db_timestamp::new(new_timestamp, 0, 6, 0)
-                            },
+                            value: Value::Time(crate::types::db_timestamp::new(new_timestamp, 0, 6, 0)),
                         })
                     },
                     // TimestampTZ + Interval = TimestampTZ
                     DataType::TimestampTZ => {
-                        let timestamp = left.value.time.value;
-                        let tz_offset = left.value.time.tz_offset;
+                        let timestamp = left.value.as_time().value;
+                        let tz_offset = left.value.as_time().tz_offset;
                         let new_timestamp = timestamp + interval_micros;
                         
                         Ok(TypedValue {
                             value_type: DataType::TimestampTZ,
-                            value: Value {
-                                time: crate::types::db_timestamp::new(new_timestamp, tz_offset, 6, 0)
-                            },
+                            value: Value::Time(crate::types::db_timestamp::new(new_timestamp, tz_offset, 6, 0)),
                         })
                     },
                     // 其他类型的加法操作（暂时不支持）
@@ -1792,27 +1786,23 @@ fn evaluate_binary_op(
                 match left.value_type {
                     // Timestamp - Interval = Timestamp
                     DataType::Timestamp => {
-                        let timestamp = left.value.time.value;
+                        let timestamp = left.value.as_time().value;
                         let new_timestamp = timestamp - interval_micros;
                         
                         Ok(TypedValue {
                             value_type: DataType::Timestamp,
-                            value: Value {
-                                time: crate::types::db_timestamp::new(new_timestamp, 0, 6, 0)
-                            },
+                            value: Value::Time(crate::types::db_timestamp::new(new_timestamp, 0, 6, 0)),
                         })
                     },
                     // TimestampTZ - Interval = TimestampTZ
                     DataType::TimestampTZ => {
-                        let timestamp = left.value.time.value;
-                        let tz_offset = left.value.time.tz_offset;
+                        let timestamp = left.value.as_time().value;
+                        let tz_offset = left.value.as_time().tz_offset;
                         let new_timestamp = timestamp - interval_micros;
                         
                         Ok(TypedValue {
                             value_type: DataType::TimestampTZ,
-                            value: Value {
-                                time: crate::types::db_timestamp::new(new_timestamp, tz_offset, 6, 0)
-                            },
+                            value: Value::Time(crate::types::db_timestamp::new(new_timestamp, tz_offset, 6, 0)),
                         })
                     },
                     // 其他类型的减法操作（暂时不支持）
@@ -1831,14 +1821,14 @@ fn evaluate_binary_op(
             unsafe {
                 // 比较两个时间类型的值
                 let t1 = match left.value_type {
-                    DataType::Timestamp => left.value.time.value,
-                    DataType::TimestampTZ => left.value.time.value,
+                    DataType::Timestamp => left.value.as_time().value,
+                    DataType::TimestampTZ => left.value.as_time().value,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 
                 let t2 = match right.value_type {
-                    DataType::Timestamp => right.value.time.value,
-                    DataType::TimestampTZ => right.value.time.value,
+                    DataType::Timestamp => right.value.as_time().value,
+                    DataType::TimestampTZ => right.value.as_time().value,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 
@@ -1856,7 +1846,7 @@ fn evaluate_binary_op(
                 // 返回布尔结果
                 Ok(TypedValue {
                     value_type: DataType::Bool,
-                    value: Value { bool: result },
+                    value: Value::Bool(result),
                 })
             }
         },
@@ -1920,7 +1910,7 @@ fn execute_count(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
     // COUNT函数返回记录数，这里简单返回1，实际聚合时会累加
     Ok(TypedValue {
         value_type: DataType::UInt64,
-        value: Value { u64: 1 },
+        value: Value::U64(1),
     })
 }
 
@@ -1937,33 +1927,33 @@ fn execute_sum(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
         match arg.value_type {
             DataType::UInt8 => Ok(TypedValue {
                 value_type: DataType::UInt64,
-                value: Value { u64: arg.value.u8 as u64 },
+                value: Value::U64(arg.value.as_u8() as u64),
             }),
             DataType::UInt16 => Ok(TypedValue {
                 value_type: DataType::UInt64,
-                value: Value { u64: arg.value.u16 as u64 },
+                value: Value::U64(arg.value.as_u16() as u64),
             }),
             DataType::UInt32 => Ok(TypedValue {
                 value_type: DataType::UInt64,
-                value: Value { u64: arg.value.u32 as u64 },
+                value: Value::U64(arg.value.as_u32() as u64),
             }),
             DataType::UInt64 => Ok(arg.clone()),
             DataType::Int8 => Ok(TypedValue {
                 value_type: DataType::Int64,
-                value: Value { i64: arg.value.i8 as i64 },
+                value: Value::I64(arg.value.as_i8() as i64),
             }),
             DataType::Int16 => Ok(TypedValue {
                 value_type: DataType::Int64,
-                value: Value { i64: arg.value.i16 as i64 },
+                value: Value::I64(arg.value.as_i16() as i64),
             }),
             DataType::Int32 => Ok(TypedValue {
                 value_type: DataType::Int64,
-                value: Value { i64: arg.value.i32 as i64 },
+                value: Value::I64(arg.value.as_i32() as i64),
             }),
             DataType::Int64 => Ok(arg.clone()),
             DataType::Float32 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.float32 as f64 },
+                value: Value::Float64(arg.value.as_float32() as f64),
             }),
             DataType::Float64 => Ok(arg.clone()),
             _ => Err(QueryExecutionError::TypeMismatch),
@@ -1984,39 +1974,39 @@ fn execute_avg(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
         match arg.value_type {
             DataType::UInt8 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.u8 as f64 },
+                value: Value::Float64(arg.value.as_u8() as f64),
             }),
             DataType::UInt16 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.u16 as f64 },
+                value: Value::Float64(arg.value.as_u16() as f64),
             }),
             DataType::UInt32 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.u32 as f64 },
+                value: Value::Float64(arg.value.as_u32() as f64),
             }),
             DataType::UInt64 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.u64 as f64 },
+                value: Value::Float64(arg.value.as_u64() as f64),
             }),
             DataType::Int8 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.i8 as f64 },
+                value: Value::Float64(arg.value.as_i8() as f64),
             }),
             DataType::Int16 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.i16 as f64 },
+                value: Value::Float64(arg.value.as_i16() as f64),
             }),
             DataType::Int32 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.i32 as f64 },
+                value: Value::Float64(arg.value.as_i32() as f64),
             }),
             DataType::Int64 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.i64 as f64 },
+                value: Value::Float64(arg.value.as_i64() as f64),
             }),
             DataType::Float32 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.float32 as f64 },
+                value: Value::Float64(arg.value.as_float32() as f64),
             }),
             DataType::Float64 => Ok(arg.clone()),
             _ => Err(QueryExecutionError::TypeMismatch),
@@ -2128,16 +2118,16 @@ fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecution
     unsafe {
         // 从不同类型中提取时间戳值
         let timestamp = match timestamp_arg.value_type {
-            DataType::Timestamp => timestamp_arg.value.time.value,
-            DataType::TimestampTZ => timestamp_arg.value.time.value,
-            DataType::UInt64 => timestamp_arg.value.u64 as i64,
-            DataType::Int64 => timestamp_arg.value.i64,
-            DataType::UInt32 => timestamp_arg.value.u32 as i64,
-            DataType::Int32 => timestamp_arg.value.i32 as i64,
-            DataType::UInt16 => timestamp_arg.value.u16 as i64,
-            DataType::Int16 => timestamp_arg.value.i16 as i64,
-            DataType::UInt8 => timestamp_arg.value.u8 as i64,
-            DataType::Int8 => timestamp_arg.value.i8 as i64,
+            DataType::Timestamp => timestamp_arg.value.as_time().value,
+            DataType::TimestampTZ => timestamp_arg.value.as_time().value,
+            DataType::UInt64 => timestamp_arg.value.as_u64() as i64,
+            DataType::Int64 => timestamp_arg.value.as_i64(),
+            DataType::UInt32 => timestamp_arg.value.as_u32() as i64,
+            DataType::Int32 => timestamp_arg.value.as_i32() as i64,
+            DataType::UInt16 => timestamp_arg.value.as_u16() as i64,
+            DataType::Int16 => timestamp_arg.value.as_i16() as i64,
+            DataType::UInt8 => timestamp_arg.value.as_u8() as i64,
+            DataType::Int8 => timestamp_arg.value.as_i8() as i64,
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
@@ -2148,47 +2138,43 @@ fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecution
         match timestamp_arg.value_type {
             DataType::Timestamp => Ok(TypedValue {
                 value_type: DataType::Timestamp,
-                value: Value { 
-                    time: crate::types::db_timestamp::new(bucketed_timestamp, 0, 6, 0) 
-                },
+                value: Value::Time(crate::types::db_timestamp::new(bucketed_timestamp, 0, 6, 0)),
             }),
             DataType::TimestampTZ => Ok(TypedValue {
                 value_type: DataType::TimestampTZ,
-                value: Value { 
-                    time: crate::types::db_timestamp::new(bucketed_timestamp, timestamp_arg.value.time.tz_offset, 6, 0) 
-                },
+                value: Value::Time(crate::types::db_timestamp::new(bucketed_timestamp, timestamp_arg.value.as_time().tz_offset, 6, 0)),
             }),
             DataType::UInt64 => Ok(TypedValue {
                 value_type: DataType::UInt64,
-                value: Value { u64: bucketed_timestamp as u64 },
+                value: Value::U64(bucketed_timestamp as u64),
             }),
             DataType::Int64 => Ok(TypedValue {
                 value_type: DataType::Int64,
-                value: Value { i64: bucketed_timestamp },
+                value: Value::I64(bucketed_timestamp),
             }),
             DataType::UInt32 => Ok(TypedValue {
                 value_type: DataType::UInt32,
-                value: Value { u32: bucketed_timestamp as u32 },
+                value: Value::U32(bucketed_timestamp as u32),
             }),
             DataType::Int32 => Ok(TypedValue {
                 value_type: DataType::Int32,
-                value: Value { i32: bucketed_timestamp as i32 },
+                value: Value::I32(bucketed_timestamp as i32),
             }),
             DataType::UInt16 => Ok(TypedValue {
                 value_type: DataType::UInt16,
-                value: Value { u16: bucketed_timestamp as u16 },
+                value: Value::U16(bucketed_timestamp as u16),
             }),
             DataType::Int16 => Ok(TypedValue {
                 value_type: DataType::Int16,
-                value: Value { i16: bucketed_timestamp as i16 },
+                value: Value::I16(bucketed_timestamp as i16),
             }),
             DataType::UInt8 => Ok(TypedValue {
                 value_type: DataType::UInt8,
-                value: Value { u8: bucketed_timestamp as u8 },
+                value: Value::U8(bucketed_timestamp as u8),
             }),
             DataType::Int8 => Ok(TypedValue {
                 value_type: DataType::Int8,
-                value: Value { i8: bucketed_timestamp as i8 },
+                value: Value::I8(bucketed_timestamp as i8),
             }),
             _ => Err(QueryExecutionError::TypeMismatch),
         }
@@ -2260,17 +2246,17 @@ fn parse_origin_timestamp(origin_arg: &TypedValue) -> Result<i64, QueryExecution
     unsafe {
         match origin_arg.value_type {
             // 数值形式的时间戳（微秒）
-            DataType::UInt8 => Ok(origin_arg.value.u8 as i64),
-            DataType::UInt16 => Ok(origin_arg.value.u16 as i64),
-            DataType::UInt32 => Ok(origin_arg.value.u32 as i64),
-            DataType::UInt64 => Ok(origin_arg.value.u64 as i64),
-            DataType::Int8 => Ok(origin_arg.value.i8 as i64),
-            DataType::Int16 => Ok(origin_arg.value.i16 as i64),
-            DataType::Int32 => Ok(origin_arg.value.i32 as i64),
-            DataType::Int64 => Ok(origin_arg.value.i64),
+            DataType::UInt8 => Ok(origin_arg.value.as_u8() as i64),
+            DataType::UInt16 => Ok(origin_arg.value.as_u16() as i64),
+            DataType::UInt32 => Ok(origin_arg.value.as_u32() as i64),
+            DataType::UInt64 => Ok(origin_arg.value.as_u64() as i64),
+            DataType::Int8 => Ok(origin_arg.value.as_i8() as i64),
+            DataType::Int16 => Ok(origin_arg.value.as_i16() as i64),
+            DataType::Int32 => Ok(origin_arg.value.as_i32() as i64),
+            DataType::Int64 => Ok(origin_arg.value.as_i64()),
             // 字符串形式的时间戳（如'2020-01-01'）
             DataType::String => {
-                let origin_str = core::str::from_utf8(&origin_arg.value.string)
+                let origin_str = core::str::from_utf8(origin_arg.value.as_string())
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
                 
@@ -2278,8 +2264,8 @@ fn parse_origin_timestamp(origin_arg: &TypedValue) -> Result<i64, QueryExecution
                 parse_time_string(origin_str)
             },
             // 时间类型
-            DataType::Timestamp => Ok(origin_arg.value.time.value),
-            DataType::TimestampTZ => Ok(origin_arg.value.time.value),
+            DataType::Timestamp => Ok(origin_arg.value.as_time().value),
+            DataType::TimestampTZ => Ok(origin_arg.value.as_time().value),
             _ => Err(QueryExecutionError::TypeMismatch),
         }
     }
@@ -2296,7 +2282,7 @@ fn execute_to_iso8601(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionE
     unsafe {
         match timestamp_arg.value_type {
             DataType::Timestamp | DataType::TimestampTZ => {
-                let timestamp = &timestamp_arg.value.time;
+                let timestamp = &timestamp_arg.value.as_time();
                 let result = process_to_iso8601(timestamp)?;
                 
                 // 将字符串转换为TypedValue
@@ -2306,7 +2292,7 @@ fn execute_to_iso8601(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionE
                 
                 Ok(TypedValue {
                     value_type: DataType::String,
-                    value: Value { string: string_value },
+                    value: Value::String(string_value),
                 })
             },
             _ => Err(QueryExecutionError::TypeMismatch),
@@ -2326,9 +2312,9 @@ fn execute_to_char(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionErro
     unsafe {
         match (timestamp_arg.value_type, format_arg.value_type) {
             (DataType::Timestamp | DataType::TimestampTZ, DataType::String) => {
-                let timestamp = &timestamp_arg.value.time;
+                let timestamp = &timestamp_arg.value.as_time();
                 // 提取字符串格式
-                let format_str = core::str::from_utf8(&format_arg.value.string)
+                let format_str = core::str::from_utf8(format_arg.value.as_string())
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
                 
@@ -2341,7 +2327,7 @@ fn execute_to_char(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionErro
                 
                 Ok(TypedValue {
                     value_type: DataType::String,
-                    value: Value { string: string_value },
+                    value: Value::String(string_value),
                 })
             },
             _ => Err(QueryExecutionError::TypeMismatch),
@@ -2360,12 +2346,12 @@ fn execute_to_epoch(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionErr
     unsafe {
         match timestamp_arg.value_type {
             DataType::Timestamp | DataType::TimestampTZ => {
-                let timestamp = &timestamp_arg.value.time;
+                let timestamp = &timestamp_arg.value.as_time();
                 let result = process_to_epoch(timestamp)?;
                 
                 Ok(TypedValue {
                     value_type: DataType::Float64,
-                    value: Value { float64: result },
+                    value: Value::Float64(result),
                 })
             },
             _ => Err(QueryExecutionError::TypeMismatch),
@@ -2378,19 +2364,19 @@ fn parse_time_interval(interval_arg: &TypedValue) -> Result<i64, QueryExecutionE
     unsafe {
         match interval_arg.value_type {
             // 数值形式的时间间隔（微秒）
-            DataType::UInt8 => Ok(interval_arg.value.u8 as i64),
-            DataType::UInt16 => Ok(interval_arg.value.u16 as i64),
-            DataType::UInt32 => Ok(interval_arg.value.u32 as i64),
-            DataType::UInt64 => Ok(interval_arg.value.u64 as i64),
-            DataType::Int8 => Ok(interval_arg.value.i8 as i64),
-            DataType::Int16 => Ok(interval_arg.value.i16 as i64),
-            DataType::Int32 => Ok(interval_arg.value.i32 as i64),
-            DataType::Int64 => Ok(interval_arg.value.i64),
-            DataType::Float32 => Ok(interval_arg.value.float32 as i64),
-            DataType::Float64 => Ok(interval_arg.value.float64 as i64),
+            DataType::UInt8 => Ok(interval_arg.value.as_u8() as i64),
+            DataType::UInt16 => Ok(interval_arg.value.as_u16() as i64),
+            DataType::UInt32 => Ok(interval_arg.value.as_u32() as i64),
+            DataType::UInt64 => Ok(interval_arg.value.as_u64() as i64),
+            DataType::Int8 => Ok(interval_arg.value.as_i8() as i64),
+            DataType::Int16 => Ok(interval_arg.value.as_i16() as i64),
+            DataType::Int32 => Ok(interval_arg.value.as_i32() as i64),
+            DataType::Int64 => Ok(interval_arg.value.as_i64()),
+            DataType::Float32 => Ok(interval_arg.value.as_float32() as i64),
+            DataType::Float64 => Ok(interval_arg.value.as_float64() as i64),
             // 字符串形式的时间间隔，如'5 minutes'、'1 hour'等
             DataType::String => {
-                let interval_str = core::str::from_utf8(&interval_arg.value.string)
+                let interval_str = core::str::from_utf8(interval_arg.value.as_string())
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
                 
@@ -2416,21 +2402,21 @@ fn execute_concat(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError
         unsafe {
             let arg_str = match arg.value_type {
                 DataType::String => {
-                    String::from(core::str::from_utf8(&arg.value.string)
+                    String::from(core::str::from_utf8(arg.value.as_string())
                         .map_err(|_| QueryExecutionError::TypeMismatch)?
                         .trim_end_matches(char::from(0)))
                 },
-                DataType::UInt8 => alloc::format!("{}", arg.value.u8),
-                DataType::UInt16 => alloc::format!("{}", arg.value.u16),
-                DataType::UInt32 => alloc::format!("{}", arg.value.u32),
-                DataType::UInt64 => alloc::format!("{}", arg.value.u64),
-                DataType::Int8 => alloc::format!("{}", arg.value.i8),
-                DataType::Int16 => alloc::format!("{}", arg.value.i16),
-                DataType::Int32 => alloc::format!("{}", arg.value.i32),
-                DataType::Int64 => alloc::format!("{}", arg.value.i64),
-                DataType::Float32 => alloc::format!("{}", arg.value.float32),
-                DataType::Float64 => alloc::format!("{}", arg.value.float64),
-                DataType::Bool => alloc::format!("{}", arg.value.bool),
+                DataType::UInt8 => alloc::format!("{}", arg.value.as_u8()),
+                DataType::UInt16 => alloc::format!("{}", arg.value.as_u16()),
+                DataType::UInt32 => alloc::format!("{}", arg.value.as_u32()),
+                DataType::UInt64 => alloc::format!("{}", arg.value.as_u64()),
+                DataType::Int8 => alloc::format!("{}", arg.value.as_i8()),
+                DataType::Int16 => alloc::format!("{}", arg.value.as_i16()),
+                DataType::Int32 => alloc::format!("{}", arg.value.as_i32()),
+                DataType::Int64 => alloc::format!("{}", arg.value.as_i64()),
+                DataType::Float32 => alloc::format!("{}", arg.value.as_float32()),
+                DataType::Float64 => alloc::format!("{}", arg.value.as_float64()),
+                DataType::Bool => alloc::format!("{}", arg.value.as_bool()),
                 _ => return Err(QueryExecutionError::TypeMismatch),
             };
             result.push_str(&arg_str);
@@ -2444,7 +2430,7 @@ fn execute_concat(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError
     
     Ok(TypedValue {
         value_type: DataType::String,
-        value: Value { string: string_value },
+        value: Value::String(string_value),
     })
 }
 
@@ -2462,7 +2448,7 @@ fn execute_substring(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionEr
         // 提取源字符串
         let source_str = match string_arg.value_type {
             DataType::String => {
-                core::str::from_utf8(&string_arg.value.string)
+                core::str::from_utf8(string_arg.value.as_string())
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0))
             },
@@ -2471,14 +2457,14 @@ fn execute_substring(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionEr
         
         // 提取起始位置（从1开始）
         let start = match start_arg.value_type {
-            DataType::Int8 => start_arg.value.i8 as usize,
-            DataType::Int16 => start_arg.value.i16 as usize,
-            DataType::Int32 => start_arg.value.i32 as usize,
-            DataType::Int64 => start_arg.value.i64 as usize,
-            DataType::UInt8 => start_arg.value.u8 as usize,
-            DataType::UInt16 => start_arg.value.u16 as usize,
-            DataType::UInt32 => start_arg.value.u32 as usize,
-            DataType::UInt64 => start_arg.value.u64 as usize,
+            DataType::Int8 => start_arg.value.as_i8() as usize,
+            DataType::Int16 => start_arg.value.as_i16() as usize,
+            DataType::Int32 => start_arg.value.as_i32() as usize,
+            DataType::Int64 => start_arg.value.as_i64() as usize,
+            DataType::UInt8 => start_arg.value.as_u8() as usize,
+            DataType::UInt16 => start_arg.value.as_u16() as usize,
+            DataType::UInt32 => start_arg.value.as_u32() as usize,
+            DataType::UInt64 => start_arg.value.as_u64() as usize,
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
@@ -2492,14 +2478,14 @@ fn execute_substring(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionEr
         // 提取长度（如果提供）
         let actual_end = if let Some(len_arg) = length_arg {
             let len = match len_arg.value_type {
-                DataType::Int8 => len_arg.value.i8 as usize,
-                DataType::Int16 => len_arg.value.i16 as usize,
-                DataType::Int32 => len_arg.value.i32 as usize,
-                DataType::Int64 => len_arg.value.i64 as usize,
-                DataType::UInt8 => len_arg.value.u8 as usize,
-                DataType::UInt16 => len_arg.value.u16 as usize,
-                DataType::UInt32 => len_arg.value.u32 as usize,
-                DataType::UInt64 => len_arg.value.u64 as usize,
+                DataType::Int8 => len_arg.value.as_i8() as usize,
+                DataType::Int16 => len_arg.value.as_i16() as usize,
+                DataType::Int32 => len_arg.value.as_i32() as usize,
+                DataType::Int64 => len_arg.value.as_i64() as usize,
+                DataType::UInt8 => len_arg.value.as_u8() as usize,
+                DataType::UInt16 => len_arg.value.as_u16() as usize,
+                DataType::UInt32 => len_arg.value.as_u32() as usize,
+                DataType::UInt64 => len_arg.value.as_u64() as usize,
                 _ => return Err(QueryExecutionError::TypeMismatch),
             };
             core::cmp::min(actual_start + len, source_str.len())
@@ -2517,7 +2503,7 @@ fn execute_substring(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionEr
         
         Ok(TypedValue {
             value_type: DataType::String,
-            value: Value { string: string_value },
+            value: Value::String(string_value),
         })
     }
 }
@@ -2533,7 +2519,7 @@ fn execute_upper(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
     unsafe {
         let result_str = match arg.value_type {
             DataType::String => {
-                let source_str = core::str::from_utf8(&arg.value.string)
+                let source_str = core::str::from_utf8(arg.value.as_string())
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
                 source_str.to_uppercase()
@@ -2548,7 +2534,7 @@ fn execute_upper(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
         
         Ok(TypedValue {
             value_type: DataType::String,
-            value: Value { string: string_value },
+            value: Value::String(string_value),
         })
     }
 }
@@ -2564,7 +2550,7 @@ fn execute_lower(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
     unsafe {
         let result_str = match arg.value_type {
             DataType::String => {
-                let source_str = core::str::from_utf8(&arg.value.string)
+                let source_str = core::str::from_utf8(arg.value.as_string())
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0));
                 source_str.to_lowercase()
@@ -2579,7 +2565,7 @@ fn execute_lower(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
         
         Ok(TypedValue {
             value_type: DataType::String,
-            value: Value { string: string_value },
+            value: Value::String(string_value),
         })
     }
 }
@@ -2598,27 +2584,27 @@ fn execute_abs(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
         match arg.value_type {
             DataType::Int8 => Ok(TypedValue {
                 value_type: DataType::Int8,
-                value: Value { i8: arg.value.i8.abs() },
+                value: Value::I8(arg.value.as_i8().abs()),
             }),
             DataType::Int16 => Ok(TypedValue {
                 value_type: DataType::Int16,
-                value: Value { i16: arg.value.i16.abs() },
+                value: Value::I16(arg.value.as_i16().abs()),
             }),
             DataType::Int32 => Ok(TypedValue {
                 value_type: DataType::Int32,
-                value: Value { i32: arg.value.i32.abs() },
+                value: Value::I32(arg.value.as_i32().abs()),
             }),
             DataType::Int64 => Ok(TypedValue {
                 value_type: DataType::Int64,
-                value: Value { i64: arg.value.i64.abs() },
+                value: Value::I64(arg.value.as_i64().abs()),
             }),
             DataType::Float32 => Ok(TypedValue {
                 value_type: DataType::Float32,
-                value: Value { float32: arg.value.float32.abs() },
+                value: Value::Float32(arg.value.as_float32().abs()),
             }),
             DataType::Float64 => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: arg.value.float64.abs() },
+                value: Value::Float64(arg.value.as_float64().abs()),
             }),
             _ => Err(QueryExecutionError::TypeMismatch),
         }
@@ -2635,16 +2621,16 @@ fn execute_sqrt(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> 
     
     unsafe {
         let value = match arg.value_type {
-            DataType::UInt8 => arg.value.u8 as f64,
-            DataType::UInt16 => arg.value.u16 as f64,
-            DataType::UInt32 => arg.value.u32 as f64,
-            DataType::UInt64 => arg.value.u64 as f64,
-            DataType::Int8 => arg.value.i8 as f64,
-            DataType::Int16 => arg.value.i16 as f64,
-            DataType::Int32 => arg.value.i32 as f64,
-            DataType::Int64 => arg.value.i64 as f64,
-            DataType::Float32 => arg.value.float32 as f64,
-            DataType::Float64 => arg.value.float64,
+            DataType::UInt8 => arg.value.as_u8() as f64,
+            DataType::UInt16 => arg.value.as_u16() as f64,
+            DataType::UInt32 => arg.value.as_u32() as f64,
+            DataType::UInt64 => arg.value.as_u64() as f64,
+            DataType::Int8 => arg.value.as_i8() as f64,
+            DataType::Int16 => arg.value.as_i16() as f64,
+            DataType::Int32 => arg.value.as_i32() as f64,
+            DataType::Int64 => arg.value.as_i64() as f64,
+            DataType::Float32 => arg.value.as_float32() as f64,
+            DataType::Float64 => arg.value.as_float64(),
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
@@ -2655,7 +2641,7 @@ fn execute_sqrt(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> 
         
         Ok(TypedValue {
             value_type: DataType::Float64,
-            value: Value { float64: result },
+            value: Value::Float64(result),
         })
     }
 }
@@ -2671,30 +2657,30 @@ fn execute_power(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
     
     unsafe {
         let base = match base_arg.value_type {
-            DataType::UInt8 => base_arg.value.u8 as f64,
-            DataType::UInt16 => base_arg.value.u16 as f64,
-            DataType::UInt32 => base_arg.value.u32 as f64,
-            DataType::UInt64 => base_arg.value.u64 as f64,
-            DataType::Int8 => base_arg.value.i8 as f64,
-            DataType::Int16 => base_arg.value.i16 as f64,
-            DataType::Int32 => base_arg.value.i32 as f64,
-            DataType::Int64 => base_arg.value.i64 as f64,
-            DataType::Float32 => base_arg.value.float32 as f64,
-            DataType::Float64 => base_arg.value.float64,
+            DataType::UInt8 => base_arg.value.as_u8() as f64,
+            DataType::UInt16 => base_arg.value.as_u16() as f64,
+            DataType::UInt32 => base_arg.value.as_u32() as f64,
+            DataType::UInt64 => base_arg.value.as_u64() as f64,
+            DataType::Int8 => base_arg.value.as_i8() as f64,
+            DataType::Int16 => base_arg.value.as_i16() as f64,
+            DataType::Int32 => base_arg.value.as_i32() as f64,
+            DataType::Int64 => base_arg.value.as_i64() as f64,
+            DataType::Float32 => base_arg.value.as_float32() as f64,
+            DataType::Float64 => base_arg.value.as_float64(),
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
         let exponent = match exponent_arg.value_type {
-            DataType::UInt8 => exponent_arg.value.u8 as f64,
-            DataType::UInt16 => exponent_arg.value.u16 as f64,
-            DataType::UInt32 => exponent_arg.value.u32 as f64,
-            DataType::UInt64 => exponent_arg.value.u64 as f64,
-            DataType::Int8 => exponent_arg.value.i8 as f64,
-            DataType::Int16 => exponent_arg.value.i16 as f64,
-            DataType::Int32 => exponent_arg.value.i32 as f64,
-            DataType::Int64 => exponent_arg.value.i64 as f64,
-            DataType::Float32 => exponent_arg.value.float32 as f64,
-            DataType::Float64 => exponent_arg.value.float64,
+            DataType::UInt8 => exponent_arg.value.as_u8() as f64,
+            DataType::UInt16 => exponent_arg.value.as_u16() as f64,
+            DataType::UInt32 => exponent_arg.value.as_u32() as f64,
+            DataType::UInt64 => exponent_arg.value.as_u64() as f64,
+            DataType::Int8 => exponent_arg.value.as_i8() as f64,
+            DataType::Int16 => exponent_arg.value.as_i16() as f64,
+            DataType::Int32 => exponent_arg.value.as_i32() as f64,
+            DataType::Int64 => exponent_arg.value.as_i64() as f64,
+            DataType::Float32 => exponent_arg.value.as_float32() as f64,
+            DataType::Float64 => exponent_arg.value.as_float64(),
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
@@ -2705,7 +2691,7 @@ fn execute_power(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
         
         Ok(TypedValue {
             value_type: DataType::Float64,
-            value: Value { float64: result },
+            value: Value::Float64(result),
         })
     }
 }
@@ -2720,16 +2706,16 @@ fn execute_sin(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
     
     unsafe {
         let value = match arg.value_type {
-            DataType::UInt8 => arg.value.u8 as f64,
-            DataType::UInt16 => arg.value.u16 as f64,
-            DataType::UInt32 => arg.value.u32 as f64,
-            DataType::UInt64 => arg.value.u64 as f64,
-            DataType::Int8 => arg.value.i8 as f64,
-            DataType::Int16 => arg.value.i16 as f64,
-            DataType::Int32 => arg.value.i32 as f64,
-            DataType::Int64 => arg.value.i64 as f64,
-            DataType::Float32 => arg.value.float32 as f64,
-            DataType::Float64 => arg.value.float64,
+            DataType::UInt8 => arg.value.as_u8() as f64,
+            DataType::UInt16 => arg.value.as_u16() as f64,
+            DataType::UInt32 => arg.value.as_u32() as f64,
+            DataType::UInt64 => arg.value.as_u64() as f64,
+            DataType::Int8 => arg.value.as_i8() as f64,
+            DataType::Int16 => arg.value.as_i16() as f64,
+            DataType::Int32 => arg.value.as_i32() as f64,
+            DataType::Int64 => arg.value.as_i64() as f64,
+            DataType::Float32 => arg.value.as_float32() as f64,
+            DataType::Float64 => arg.value.as_float64(),
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
@@ -2740,7 +2726,7 @@ fn execute_sin(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
         
         Ok(TypedValue {
             value_type: DataType::Float64,
-            value: Value { float64: result },
+            value: Value::Float64(result),
         })
     }
 }
@@ -2755,16 +2741,16 @@ fn execute_cos(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
     
     unsafe {
         let value = match arg.value_type {
-            DataType::UInt8 => arg.value.u8 as f64,
-            DataType::UInt16 => arg.value.u16 as f64,
-            DataType::UInt32 => arg.value.u32 as f64,
-            DataType::UInt64 => arg.value.u64 as f64,
-            DataType::Int8 => arg.value.i8 as f64,
-            DataType::Int16 => arg.value.i16 as f64,
-            DataType::Int32 => arg.value.i32 as f64,
-            DataType::Int64 => arg.value.i64 as f64,
-            DataType::Float32 => arg.value.float32 as f64,
-            DataType::Float64 => arg.value.float64,
+            DataType::UInt8 => arg.value.as_u8() as f64,
+            DataType::UInt16 => arg.value.as_u16() as f64,
+            DataType::UInt32 => arg.value.as_u32() as f64,
+            DataType::UInt64 => arg.value.as_u64() as f64,
+            DataType::Int8 => arg.value.as_i8() as f64,
+            DataType::Int16 => arg.value.as_i16() as f64,
+            DataType::Int32 => arg.value.as_i32() as f64,
+            DataType::Int64 => arg.value.as_i64() as f64,
+            DataType::Float32 => arg.value.as_float32() as f64,
+            DataType::Float64 => arg.value.as_float64(),
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
@@ -2775,7 +2761,7 @@ fn execute_cos(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
         
         Ok(TypedValue {
             value_type: DataType::Float64,
-            value: Value { float64: result },
+            value: Value::Float64(result),
         })
     }
 }
@@ -2790,16 +2776,16 @@ fn execute_log(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
     
     unsafe {
         let value = match arg.value_type {
-            DataType::UInt8 => arg.value.u8 as f64,
-            DataType::UInt16 => arg.value.u16 as f64,
-            DataType::UInt32 => arg.value.u32 as f64,
-            DataType::UInt64 => arg.value.u64 as f64,
-            DataType::Int8 => arg.value.i8 as f64,
-            DataType::Int16 => arg.value.i16 as f64,
-            DataType::Int32 => arg.value.i32 as f64,
-            DataType::Int64 => arg.value.i64 as f64,
-            DataType::Float32 => arg.value.float32 as f64,
-            DataType::Float64 => arg.value.float64,
+            DataType::UInt8 => arg.value.as_u8() as f64,
+            DataType::UInt16 => arg.value.as_u16() as f64,
+            DataType::UInt32 => arg.value.as_u32() as f64,
+            DataType::UInt64 => arg.value.as_u64() as f64,
+            DataType::Int8 => arg.value.as_i8() as f64,
+            DataType::Int16 => arg.value.as_i16() as f64,
+            DataType::Int32 => arg.value.as_i32() as f64,
+            DataType::Int64 => arg.value.as_i64() as f64,
+            DataType::Float32 => arg.value.as_float32() as f64,
+            DataType::Float64 => arg.value.as_float64(),
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
@@ -2810,7 +2796,7 @@ fn execute_log(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
         
         Ok(TypedValue {
             value_type: DataType::Float64,
-            value: Value { float64: result },
+            value: Value::Float64(result),
         })
     }
 }
@@ -2825,16 +2811,16 @@ fn execute_exp(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
     
     unsafe {
         let value = match arg.value_type {
-            DataType::UInt8 => arg.value.u8 as f64,
-            DataType::UInt16 => arg.value.u16 as f64,
-            DataType::UInt32 => arg.value.u32 as f64,
-            DataType::UInt64 => arg.value.u64 as f64,
-            DataType::Int8 => arg.value.i8 as f64,
-            DataType::Int16 => arg.value.i16 as f64,
-            DataType::Int32 => arg.value.i32 as f64,
-            DataType::Int64 => arg.value.i64 as f64,
-            DataType::Float32 => arg.value.float32 as f64,
-            DataType::Float64 => arg.value.float64,
+            DataType::UInt8 => arg.value.as_u8() as f64,
+            DataType::UInt16 => arg.value.as_u16() as f64,
+            DataType::UInt32 => arg.value.as_u32() as f64,
+            DataType::UInt64 => arg.value.as_u64() as f64,
+            DataType::Int8 => arg.value.as_i8() as f64,
+            DataType::Int16 => arg.value.as_i16() as f64,
+            DataType::Int32 => arg.value.as_i32() as f64,
+            DataType::Int64 => arg.value.as_i64() as f64,
+            DataType::Float32 => arg.value.as_float32() as f64,
+            DataType::Float64 => arg.value.as_float64(),
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
         
@@ -2845,7 +2831,7 @@ fn execute_exp(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
         
         Ok(TypedValue {
             value_type: DataType::Float64,
-            value: Value { float64: result },
+            value: Value::Float64(result),
         })
     }
 }
@@ -2860,14 +2846,14 @@ fn execute_round(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
     let decimals = if args.len() > 1 {
         unsafe {
             match args[1].value_type {
-                DataType::Int8 => args[1].value.i8 as i32,
-                DataType::Int16 => args[1].value.i16 as i32,
-                DataType::Int32 => args[1].value.i32,
-                DataType::Int64 => args[1].value.i64 as i32,
-                DataType::UInt8 => args[1].value.u8 as i32,
-                DataType::UInt16 => args[1].value.u16 as i32,
-                DataType::UInt32 => args[1].value.u32 as i32,
-                DataType::UInt64 => args[1].value.u64 as i32,
+                DataType::Int8 => args[1].value.as_i8() as i32,
+                DataType::Int16 => args[1].value.as_i16() as i32,
+                DataType::Int32 => args[1].value.as_i32(),
+                DataType::Int64 => args[1].value.as_i64() as i32,
+                DataType::UInt8 => args[1].value.as_u8() as i32,
+                DataType::UInt16 => args[1].value.as_u16() as i32,
+                DataType::UInt32 => args[1].value.as_u32() as i32,
+                DataType::UInt64 => args[1].value.as_u64() as i32,
                 _ => 0,
             }
         }
@@ -2881,24 +2867,24 @@ fn execute_round(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
                 #[cfg(feature = "std")]
                 let factor = 10.0f32.powi(decimals);
                 #[cfg(feature = "std")]
-                let result = (arg.value.float32 * factor).round() / factor;
+                let result = (arg.value.as_float32() * factor).round() / factor;
                 #[cfg(not(feature = "std"))]
-                let result = arg.value.float32;
+                let result = arg.value.as_float32();
                 Ok(TypedValue {
                     value_type: DataType::Float32,
-                    value: Value { float32: result },
+                    value: Value::Float32(result),
                 })
             },
             DataType::Float64 => {
                 #[cfg(feature = "std")]
                 let factor = 10.0f64.powi(decimals);
                 #[cfg(feature = "std")]
-                let result = (arg.value.float64 * factor).round() / factor;
+                let result = (arg.value.as_float64() * factor).round() / factor;
                 #[cfg(not(feature = "std"))]
-                let result = arg.value.float64;
+                let result = arg.value.as_float64();
                 Ok(TypedValue {
                     value_type: DataType::Float64,
-                    value: Value { float64: result },
+                    value: Value::Float64(result),
                 })
             },
             _ => {
@@ -2922,27 +2908,27 @@ fn execute_ceil(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> 
             DataType::Float32 => {
                 let result = {
                     #[cfg(feature = "std")]
-                    let val = arg.value.float32.ceil();
+                    let val = arg.value.as_float32().ceil();
                     #[cfg(not(feature = "std"))]
-                    let val = arg.value.float32;
+                    let val = arg.value.as_float32();
                     val
                 };
                 Ok(TypedValue {
                     value_type: DataType::Float32,
-                    value: Value { float32: result },
+                    value: Value::Float32(result),
                 })
             },
             DataType::Float64 => {
                 let result = {
                     #[cfg(feature = "std")]
-                    let val = arg.value.float64.ceil();
+                    let val = arg.value.as_float64().ceil();
                     #[cfg(not(feature = "std"))]
-                    let val = arg.value.float64;
+                    let val = arg.value.as_float64();
                     val
                 };
                 Ok(TypedValue {
                     value_type: DataType::Float64,
-                    value: Value { float64: result },
+                    value: Value::Float64(result),
                 })
             },
             _ => {
@@ -2966,27 +2952,27 @@ fn execute_floor(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError>
             DataType::Float32 => {
                 let result = {
                     #[cfg(feature = "std")]
-                    let val = arg.value.float32.floor();
+                    let val = arg.value.as_float32().floor();
                     #[cfg(not(feature = "std"))]
-                    let val = arg.value.float32;
+                    let val = arg.value.as_float32();
                     val
                 };
                 Ok(TypedValue {
                     value_type: DataType::Float32,
-                    value: Value { float32: result },
+                    value: Value::Float32(result),
                 })
             },
             DataType::Float64 => {
                 let result = {
                     #[cfg(feature = "std")]
-                    let val = arg.value.float64.floor();
+                    let val = arg.value.as_float64().floor();
                     #[cfg(not(feature = "std"))]
-                    let val = arg.value.float64;
+                    let val = arg.value.as_float64();
                     val
                 };
                 Ok(TypedValue {
                     value_type: DataType::Float64,
-                    value: Value { float64: result },
+                    value: Value::Float64(result),
                 })
             },
             _ => {
@@ -3011,72 +2997,72 @@ fn execute_mod(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
             // 整数类型
             (DataType::UInt8, DataType::UInt8) => Ok(TypedValue {
                 value_type: DataType::UInt8,
-                value: Value { u8: dividend_arg.value.u8 % divisor_arg.value.u8 },
+                value: Value::U8(dividend_arg.value.as_u8() % divisor_arg.value.as_u8()),
             }),
             (DataType::UInt16, DataType::UInt16) => Ok(TypedValue {
                 value_type: DataType::UInt16,
-                value: Value { u16: dividend_arg.value.u16 % divisor_arg.value.u16 },
+                value: Value::U16(dividend_arg.value.as_u16() % divisor_arg.value.as_u16()),
             }),
             (DataType::UInt32, DataType::UInt32) => Ok(TypedValue {
                 value_type: DataType::UInt32,
-                value: Value { u32: dividend_arg.value.u32 % divisor_arg.value.u32 },
+                value: Value::U32(dividend_arg.value.as_u32() % divisor_arg.value.as_u32()),
             }),
             (DataType::UInt64, DataType::UInt64) => Ok(TypedValue {
                 value_type: DataType::UInt64,
-                value: Value { u64: dividend_arg.value.u64 % divisor_arg.value.u64 },
+                value: Value::U64(dividend_arg.value.as_u64() % divisor_arg.value.as_u64()),
             }),
             (DataType::Int8, DataType::Int8) => Ok(TypedValue {
                 value_type: DataType::Int8,
-                value: Value { i8: dividend_arg.value.i8 % divisor_arg.value.i8 },
+                value: Value::I8(dividend_arg.value.as_i8() % divisor_arg.value.as_i8()),
             }),
             (DataType::Int16, DataType::Int16) => Ok(TypedValue {
                 value_type: DataType::Int16,
-                value: Value { i16: dividend_arg.value.i16 % divisor_arg.value.i16 },
+                value: Value::I16(dividend_arg.value.as_i16() % divisor_arg.value.as_i16()),
             }),
             (DataType::Int32, DataType::Int32) => Ok(TypedValue {
                 value_type: DataType::Int32,
-                value: Value { i32: dividend_arg.value.i32 % divisor_arg.value.i32 },
+                value: Value::I32(dividend_arg.value.as_i32() % divisor_arg.value.as_i32()),
             }),
             (DataType::Int64, DataType::Int64) => Ok(TypedValue {
                 value_type: DataType::Int64,
-                value: Value { i64: dividend_arg.value.i64 % divisor_arg.value.i64 },
+                value: Value::I64(dividend_arg.value.as_i64() % divisor_arg.value.as_i64()),
             }),
             // 浮点数类型
             (DataType::Float32, DataType::Float32) => Ok(TypedValue {
                 value_type: DataType::Float32,
-                value: Value { float32: dividend_arg.value.float32 % divisor_arg.value.float32 },
+                value: Value::Float32(dividend_arg.value.as_float32() % divisor_arg.value.as_float32()),
             }),
             (DataType::Float64, DataType::Float64) => Ok(TypedValue {
                 value_type: DataType::Float64,
-                value: Value { float64: dividend_arg.value.float64 % divisor_arg.value.float64 },
+                value: Value::Float64(dividend_arg.value.as_float64() % divisor_arg.value.as_float64()),
             }),
             // 混合类型，转换为浮点数
             _ => {
                 let dividend = match dividend_arg.value_type {
-                    DataType::UInt8 => dividend_arg.value.u8 as f64,
-                    DataType::UInt16 => dividend_arg.value.u16 as f64,
-                    DataType::UInt32 => dividend_arg.value.u32 as f64,
-                    DataType::UInt64 => dividend_arg.value.u64 as f64,
-                    DataType::Int8 => dividend_arg.value.i8 as f64,
-                    DataType::Int16 => dividend_arg.value.i16 as f64,
-                    DataType::Int32 => dividend_arg.value.i32 as f64,
-                    DataType::Int64 => dividend_arg.value.i64 as f64,
-                    DataType::Float32 => dividend_arg.value.float32 as f64,
-                    DataType::Float64 => dividend_arg.value.float64,
+                    DataType::UInt8 => dividend_arg.value.as_u8() as f64,
+                    DataType::UInt16 => dividend_arg.value.as_u16() as f64,
+                    DataType::UInt32 => dividend_arg.value.as_u32() as f64,
+                    DataType::UInt64 => dividend_arg.value.as_u64() as f64,
+                    DataType::Int8 => dividend_arg.value.as_i8() as f64,
+                    DataType::Int16 => dividend_arg.value.as_i16() as f64,
+                    DataType::Int32 => dividend_arg.value.as_i32() as f64,
+                    DataType::Int64 => dividend_arg.value.as_i64() as f64,
+                    DataType::Float32 => dividend_arg.value.as_float32() as f64,
+                    DataType::Float64 => dividend_arg.value.as_float64(),
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 
                 let divisor = match divisor_arg.value_type {
-                    DataType::UInt8 => divisor_arg.value.u8 as f64,
-                    DataType::UInt16 => divisor_arg.value.u16 as f64,
-                    DataType::UInt32 => divisor_arg.value.u32 as f64,
-                    DataType::UInt64 => divisor_arg.value.u64 as f64,
-                    DataType::Int8 => divisor_arg.value.i8 as f64,
-                    DataType::Int16 => divisor_arg.value.i16 as f64,
-                    DataType::Int32 => divisor_arg.value.i32 as f64,
-                    DataType::Int64 => divisor_arg.value.i64 as f64,
-                    DataType::Float32 => divisor_arg.value.float32 as f64,
-                    DataType::Float64 => divisor_arg.value.float64,
+                    DataType::UInt8 => divisor_arg.value.as_u8() as f64,
+                    DataType::UInt16 => divisor_arg.value.as_u16() as f64,
+                    DataType::UInt32 => divisor_arg.value.as_u32() as f64,
+                    DataType::UInt64 => divisor_arg.value.as_u64() as f64,
+                    DataType::Int8 => divisor_arg.value.as_i8() as f64,
+                    DataType::Int16 => divisor_arg.value.as_i16() as f64,
+                    DataType::Int32 => divisor_arg.value.as_i32() as f64,
+                    DataType::Int64 => divisor_arg.value.as_i64() as f64,
+                    DataType::Float32 => divisor_arg.value.as_float32() as f64,
+                    DataType::Float64 => divisor_arg.value.as_float64(),
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 
@@ -3084,7 +3070,7 @@ fn execute_mod(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
                 
                 Ok(TypedValue {
                     value_type: DataType::Float64,
-                    value: Value { float64: result },
+                    value: Value::Float64(result),
                 })
             },
         }
@@ -3201,146 +3187,146 @@ fn execute_create_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
                         };
                         
                         match data_type {
-                            DataType::UInt8 => Value { u8: actual_value as u8 },
-                            DataType::UInt16 => Value { u16: actual_value as u16 },
-                            DataType::UInt32 => Value { u32: actual_value as u32 },
-                            DataType::UInt64 => Value { u64: actual_value as u64 },
-                            DataType::Int8 => Value { i8: actual_value as i8 },
-                            DataType::Int16 => Value { i16: actual_value as i16 },
-                            DataType::Int32 => Value { i32: actual_value as i32 },
-                            DataType::Int64 => Value { i64: actual_value },
-                            DataType::Bool => Value { bool: actual_value != 0 },
-                            DataType::Float32 => Value { float32: actual_value as f32 },
-                            DataType::Float64 => Value { float64: actual_value as f64 },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(actual_value, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(actual_value, 0, precision, 0) },
+                            DataType::UInt8 => Value::U8(actual_value as u8),
+                            DataType::UInt16 => Value::U16(actual_value as u16),
+                            DataType::UInt32 => Value::U32(actual_value as u32),
+                            DataType::UInt64 => Value::U64(actual_value as u64),
+                            DataType::Int8 => Value::I8(actual_value as i8),
+                            DataType::Int16 => Value::I16(actual_value as i16),
+                            DataType::Int32 => Value::I32(actual_value as i32),
+                            DataType::Int64 => Value::I64(actual_value),
+                            DataType::Bool => Value::Bool(actual_value != 0),
+                            DataType::Float32 => Value::Float32(actual_value as f32),
+                            DataType::Float64 => Value::Float64(actual_value as f64),
+                            DataType::Timestamp => Value::Time(crate::types::db_timestamp::new(actual_value, 0, precision, 0)),
+                            DataType::TimestampTZ => Value::Time(crate::types::db_timestamp::new(actual_value, 0, precision, 0)),
                             DataType::String => {
                                 let mut s = [0; MAX_STRING_LEN];
                                 let str_val = actual_value.to_string();
                                 let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
                                 s[..len].copy_from_slice(str_val.as_bytes());
-                                Value { string: s }
+                                Value::String(s)
                             },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(actual_value, precision, 0) },
+                            DataType::Interval => Value::Interval(crate::types::db_interval::new(actual_value, precision, 0)),
                         }
                     },
                     crate::sql::Value::Float(f) => {
                         match data_type {
-                            DataType::UInt8 => Value { u8: *f as u8 },
-                            DataType::UInt16 => Value { u16: *f as u16 },
-                            DataType::UInt32 => Value { u32: *f as u32 },
-                            DataType::UInt64 => Value { u64: *f as u64 },
-                            DataType::Int8 => Value { i8: *f as i8 },
-                            DataType::Int16 => Value { i16: *f as i16 },
-                            DataType::Int32 => Value { i32: *f as i32 },
-                            DataType::Int64 => Value { i64: *f as i64 },
-                            DataType::Bool => Value { bool: *f != 0.0 },
-                            DataType::Float32 => Value { float32: *f as f32 },
-                            DataType::Float64 => Value { float64: *f },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(*f as i64, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(*f as i64, 0, precision, 0) },
+                            DataType::UInt8 => Value::U8(*f as u8),
+                            DataType::UInt16 => Value::U16(*f as u16),
+                            DataType::UInt32 => Value::U32(*f as u32),
+                            DataType::UInt64 => Value::U64(*f as u64),
+                            DataType::Int8 => Value::I8(*f as i8),
+                            DataType::Int16 => Value::I16(*f as i16),
+                            DataType::Int32 => Value::I32(*f as i32),
+                            DataType::Int64 => Value::I64(*f as i64),
+                            DataType::Bool => Value::Bool(*f != 0.0),
+                            DataType::Float32 => Value::Float32(*f as f32),
+                            DataType::Float64 => Value::Float64(*f),
+                            DataType::Timestamp => Value::Time(crate::types::db_timestamp::new(*f as i64, 0, precision, 0)),
+                            DataType::TimestampTZ => Value::Time(crate::types::db_timestamp::new(*f as i64, 0, precision, 0)),
                             DataType::String => {
                                 let mut s = [0; MAX_STRING_LEN];
                                 let str_val = f.to_string();
                                 let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
                                 s[..len].copy_from_slice(str_val.as_bytes());
-                                Value { string: s }
+                                Value::String(s)
                             },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(*f as i64, precision, 0) },
+                            DataType::Interval => Value::Interval(crate::types::db_interval::new(*f as i64, precision, 0)),
                         }
                     },
                     crate::sql::Value::Boolean(b) => {
                         match data_type {
-                            DataType::UInt8 => Value { u8: *b as u8 },
-                            DataType::UInt16 => Value { u16: *b as u16 },
-                            DataType::UInt32 => Value { u32: *b as u32 },
-                            DataType::UInt64 => Value { u64: *b as u64 },
-                            DataType::Int8 => Value { i8: *b as i8 },
-                            DataType::Int16 => Value { i16: *b as i16 },
-                            DataType::Int32 => Value { i32: *b as i32 },
-                            DataType::Int64 => Value { i64: *b as i64 },
-                            DataType::Bool => Value { bool: *b },
-                            DataType::Float32 => Value { float32: (*b as i32) as f32 },
-                            DataType::Float64 => Value { float64: (*b as i32) as f64 },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(*b as i64, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(*b as i64, 0, precision, 0) },
+                            DataType::UInt8 => Value::U8(*b as u8),
+                            DataType::UInt16 => Value::U16(*b as u16),
+                            DataType::UInt32 => Value::U32(*b as u32),
+                            DataType::UInt64 => Value::U64(*b as u64),
+                            DataType::Int8 => Value::I8(*b as i8),
+                            DataType::Int16 => Value::I16(*b as i16),
+                            DataType::Int32 => Value::I32(*b as i32),
+                            DataType::Int64 => Value::I64(*b as i64),
+                            DataType::Bool => Value::Bool(*b),
+                            DataType::Float32 => Value::Float32((*b as i32) as f32),
+                            DataType::Float64 => Value::Float64((*b as i32) as f64),
+                            DataType::Timestamp => Value::Time(crate::types::db_timestamp::new(*b as i64, 0, precision, 0)),
+                            DataType::TimestampTZ => Value::Time(crate::types::db_timestamp::new(*b as i64, 0, precision, 0)),
                             DataType::String => {
                                 let mut s = [0; MAX_STRING_LEN];
                                 let str_val = b.to_string();
                                 let len = core::cmp::min(str_val.len(), MAX_STRING_LEN);
                                 s[..len].copy_from_slice(str_val.as_bytes());
-                                Value { string: s }
+                                Value::String(s)
                             },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(*b as i64, precision, 0) },
+                            DataType::Interval => Value::Interval(crate::types::db_interval::new(*b as i64, precision, 0)),
                         }
                     },
                     crate::sql::Value::String(s) => {
                         match data_type {
-                            DataType::UInt8 => Value { u8: s.parse().unwrap_or(0) },
-                            DataType::UInt16 => Value { u16: s.parse().unwrap_or(0) },
-                            DataType::UInt32 => Value { u32: s.parse().unwrap_or(0) },
-                            DataType::UInt64 => Value { u64: s.parse().unwrap_or(0) },
-                            DataType::Int8 => Value { i8: s.parse().unwrap_or(0) },
-                            DataType::Int16 => Value { i16: s.parse().unwrap_or(0) },
-                            DataType::Int32 => Value { i32: s.parse().unwrap_or(0) },
-                            DataType::Int64 => Value { i64: s.parse().unwrap_or(0) },
-                            DataType::Bool => Value { bool: s.parse().unwrap_or(false) },
-                            DataType::Float32 => Value { float32: s.parse().unwrap_or(0.0) },
-                            DataType::Float64 => Value { float64: s.parse().unwrap_or(0.0) },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
+                            DataType::UInt8 => Value::U8(s.parse().unwrap_or(0)),
+                            DataType::UInt16 => Value::U16(s.parse().unwrap_or(0)),
+                            DataType::UInt32 => Value::U32(s.parse().unwrap_or(0)),
+                            DataType::UInt64 => Value::U64(s.parse().unwrap_or(0)),
+                            DataType::Int8 => Value::I8(s.parse().unwrap_or(0)),
+                            DataType::Int16 => Value::I16(s.parse().unwrap_or(0)),
+                            DataType::Int32 => Value::I32(s.parse().unwrap_or(0)),
+                            DataType::Int64 => Value::I64(s.parse().unwrap_or(0)),
+                            DataType::Bool => Value::Bool(s.parse().unwrap_or(false)),
+                            DataType::Float32 => Value::Float32(s.parse().unwrap_or(0.0)),
+                            DataType::Float64 => Value::Float64(s.parse().unwrap_or(0.0)),
+                            DataType::Timestamp => Value::Time(crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0)),
+                            DataType::TimestampTZ => Value::Time(crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0)),
                             DataType::String => {
                                 let mut buf = [0; MAX_STRING_LEN];
                                 let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                                 buf[..len].copy_from_slice(s.as_bytes());
-                                Value { string: buf }
+                                Value::String(buf)
                             },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision, 0) },
+                            DataType::Interval => Value::Interval(crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision, 0)),
                         }
                     },
                     crate::sql::Value::Identifier(s) => {
                         // 标识符作为字符串处理
                         match data_type {
-                            DataType::UInt8 => Value { u8: s.parse().unwrap_or(0) },
-                            DataType::UInt16 => Value { u16: s.parse().unwrap_or(0) },
-                            DataType::UInt32 => Value { u32: s.parse().unwrap_or(0) },
-                            DataType::UInt64 => Value { u64: s.parse().unwrap_or(0) },
-                            DataType::Int8 => Value { i8: s.parse().unwrap_or(0) },
-                            DataType::Int16 => Value { i16: s.parse().unwrap_or(0) },
-                            DataType::Int32 => Value { i32: s.parse().unwrap_or(0) },
-                            DataType::Int64 => Value { i64: s.parse().unwrap_or(0) },
-                            DataType::Bool => Value { bool: s.parse().unwrap_or(false) },
-                            DataType::Float32 => Value { float32: s.parse().unwrap_or(0.0) },
-                            DataType::Float64 => Value { float64: s.parse().unwrap_or(0.0) },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0) },
+                            DataType::UInt8 => Value::U8(s.parse().unwrap_or(0)),
+                            DataType::UInt16 => Value::U16(s.parse().unwrap_or(0)),
+                            DataType::UInt32 => Value::U32(s.parse().unwrap_or(0)),
+                            DataType::UInt64 => Value::U64(s.parse().unwrap_or(0)),
+                            DataType::Int8 => Value::I8(s.parse().unwrap_or(0)),
+                            DataType::Int16 => Value::I16(s.parse().unwrap_or(0)),
+                            DataType::Int32 => Value::I32(s.parse().unwrap_or(0)),
+                            DataType::Int64 => Value::I64(s.parse().unwrap_or(0)),
+                            DataType::Bool => Value::Bool(s.parse().unwrap_or(false)),
+                            DataType::Float32 => Value::Float32(s.parse().unwrap_or(0.0)),
+                            DataType::Float64 => Value::Float64(s.parse().unwrap_or(0.0)),
+                            DataType::Timestamp => Value::Time(crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0)),
+                            DataType::TimestampTZ => Value::Time(crate::types::db_timestamp::new(s.parse().unwrap_or(0) as i64, 0, precision, 0)),
                             DataType::String => {
                                 let mut buf = [0; MAX_STRING_LEN];
                                 let len = core::cmp::min(s.len(), MAX_STRING_LEN);
                                 buf[..len].copy_from_slice(s.as_bytes());
-                                Value { string: buf }
+                                Value::String(buf)
                             },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision, 0) },
+                            DataType::Interval => Value::Interval(crate::types::db_interval::new(s.parse().unwrap_or(0) as i64, precision, 0)),
                         }
                     },
                     crate::sql::Value::Null => {
                         // 对于NULL默认值，根据数据类型生成适当的默认值
                         match data_type {
-                            DataType::UInt8 => Value { u8: 0 },
-                            DataType::UInt16 => Value { u16: 0 },
-                            DataType::UInt32 => Value { u32: 0 },
-                            DataType::UInt64 => Value { u64: 0 },
-                            DataType::Int8 => Value { i8: 0 },
-                            DataType::Int16 => Value { i16: 0 },
-                            DataType::Int32 => Value { i32: 0 },
-                            DataType::Int64 => Value { i64: 0 },
-                            DataType::Bool => Value { bool: false },
-                            DataType::Float32 => Value { float32: 0.0 },
-                            DataType::Float64 => Value { float64: 0.0 },
-                            DataType::Timestamp => Value { time: crate::types::db_timestamp::new(0, 0, precision, 0) },
-                            DataType::TimestampTZ => Value { time: crate::types::db_timestamp::new(0, 0, precision, 0) },
-                            DataType::String => Value { string: [0; MAX_STRING_LEN] },
-                            DataType::Interval => Value { interval: crate::types::db_interval::new(0, precision, 0) },
+                            DataType::UInt8 => Value::U8(0),
+                            DataType::UInt16 => Value::U16(0),
+                            DataType::UInt32 => Value::U32(0),
+                            DataType::UInt64 => Value::U64(0),
+                            DataType::Int8 => Value::I8(0),
+                            DataType::Int16 => Value::I16(0),
+                            DataType::Int32 => Value::I32(0),
+                            DataType::Int64 => Value::I64(0),
+                            DataType::Bool => Value::Bool(false),
+                            DataType::Float32 => Value::Float32(0.0),
+                            DataType::Float64 => Value::Float64(0.0),
+                            DataType::Timestamp => Value::Time(crate::types::db_timestamp::new(0, 0, precision, 0)),
+                            DataType::TimestampTZ => Value::Time(crate::types::db_timestamp::new(0, 0, precision, 0)),
+                            DataType::String => Value::String([0; MAX_STRING_LEN]),
+                            DataType::Interval => Value::Interval(crate::types::db_interval::new(0, precision, 0)),
                         }
                     },
                 };
@@ -3389,7 +3375,7 @@ DdlExecutor::create_table(
     let mut result_set = ResultSet::new(columns);
     result_set.add_row(alloc::vec![TypedValue {
         value_type: DataType::String,
-        value: Value { string: [b'0'; 64] },
+        value: Value::String([b'0'; 64]),
     }]);
     
     Ok(result_set)
@@ -3424,7 +3410,7 @@ fn execute_create_index_query(db: &mut RemDb, query: &SqlQuery) -> Result<Result
     let mut result_set = ResultSet::new(columns);
     result_set.add_row(alloc::vec![TypedValue {
         value_type: DataType::String,
-        value: Value { string: [b'0'; 64] },
+        value: Value::String([b'0'; 64]),
     }]);
     
     Ok(result_set)
@@ -3493,43 +3479,43 @@ fn process_group_by_query(
                         "COUNT" => {
                             TypedValue {
                                 value_type: DataType::UInt64,
-                                value: Value { u64: 0 },
+                                value: Value::U64(0),
                             }
                         },
                         "SUM" => {
                             TypedValue {
                                 value_type: DataType::UInt64,
-                                value: Value { u64: 0 },
+                                value: Value::U64(0),
                             }
                         },
                         "AVG" => {
                             TypedValue {
                                 value_type: DataType::Float64,
-                                value: Value { float64: 0.0 },
+                                value: Value::Float64(0.0),
                             }
                         },
                         "MIN" => {
                             TypedValue {
                                 value_type: DataType::UInt64,
-                                value: Value { u64: 0 },
+                                value: Value::U64(0),
                             }
                         },
                         "MAX" => {
                             TypedValue {
                                 value_type: DataType::UInt64,
-                                value: Value { u64: 0 },
+                                value: Value::U64(0),
                             }
                         },
                         "STDDEV" | "VAR" | "STDDEV_SAMP" | "VAR_SAMP" => {
                             TypedValue {
                                 value_type: DataType::Float64,
-                                value: Value { float64: 0.0 },
+                                value: Value::Float64(0.0),
                             }
                         },
                         "MOVING_AVERAGE" | "MOVING_SUM" => {
                             TypedValue {
                                 value_type: DataType::Float64,
-                                value: Value { float64: 0.0 },
+                                value: Value::Float64(0.0),
                             }
                         },
                         "TIME_BUCKET" => {
@@ -3551,12 +3537,12 @@ fn process_group_by_query(
                         match name.to_uppercase().as_str() {
                             "COUNT" => {
                                 unsafe {
-                                    agg_result.value.u64 += 1;
+                                    agg_result.value = Value::U64(agg_result.value.as_u64() +  1);
                                 }
                             },
                             "SUM" => {
                                 // 如果是第一个元素，初始化agg_result为正确的类型
-                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.u64 == 0 };
+                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.as_u64() == 0 };
                                 if is_first {
                                     // 直接使用第一个值的类型作为初始类型
                                     agg_result = arg_values[0].clone();
@@ -3569,16 +3555,16 @@ fn process_group_by_query(
                                     // 累加值
                                     unsafe {
                                         match agg_result.value_type {
-                                            DataType::UInt8 => agg_result.value.u8 += arg_values[0].value.u8,
-                                            DataType::UInt16 => agg_result.value.u16 += arg_values[0].value.u16,
-                                            DataType::UInt32 => agg_result.value.u32 += arg_values[0].value.u32,
-                                            DataType::UInt64 => agg_result.value.u64 += arg_values[0].value.u64,
-                                            DataType::Int8 => agg_result.value.i8 += arg_values[0].value.i8,
-                                            DataType::Int16 => agg_result.value.i16 += arg_values[0].value.i16,
-                                            DataType::Int32 => agg_result.value.i32 += arg_values[0].value.i32,
-                                            DataType::Int64 => agg_result.value.i64 += arg_values[0].value.i64,
-                                            DataType::Float32 => agg_result.value.float32 += arg_values[0].value.float32,
-                                            DataType::Float64 => agg_result.value.float64 += arg_values[0].value.float64,
+                                            DataType::UInt8 => agg_result.value = Value::U8(agg_result.value.as_u8() +  arg_values[0].value.as_u8()),
+                                            DataType::UInt16 => agg_result.value = Value::U16(agg_result.value.as_u16() +  arg_values[0].value.as_u16()),
+                                            DataType::UInt32 => agg_result.value = Value::U32(agg_result.value.as_u32() +  arg_values[0].value.as_u32()),
+                                            DataType::UInt64 => agg_result.value = Value::U64(agg_result.value.as_u64() +  arg_values[0].value.as_u64()),
+                                            DataType::Int8 => agg_result.value = Value::I8(agg_result.value.as_i8() +  arg_values[0].value.as_i8()),
+                                            DataType::Int16 => agg_result.value = Value::I16(agg_result.value.as_i16() +  arg_values[0].value.as_i16()),
+                                            DataType::Int32 => agg_result.value = Value::I32(agg_result.value.as_i32() +  arg_values[0].value.as_i32()),
+                                            DataType::Int64 => agg_result.value = Value::I64(agg_result.value.as_i64() +  arg_values[0].value.as_i64()),
+                                            DataType::Float32 => agg_result.value = Value::Float32(agg_result.value.as_float32() +  arg_values[0].value.as_float32()),
+                                            DataType::Float64 => agg_result.value = Value::Float64(agg_result.value.as_float64() +  arg_values[0].value.as_float64()),
                                             _ => return Err(QueryExecutionError::TypeMismatch),
                                         }
                                     }
@@ -3586,23 +3572,23 @@ fn process_group_by_query(
                             },
                             "MIN" => {
                                 // 如果是第一个元素，直接使用它作为初始值
-                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.u64 == 0 };
+                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.as_u64() == 0 };
                                 if is_first {
                                     agg_result = arg_values[0].clone();
                                 } else {
                                     // 比较并更新最小值
                                     let is_less = unsafe {
                                         match (agg_result.value_type, arg_values[0].value_type) {
-                                            (DataType::UInt8, DataType::UInt8) => arg_values[0].value.u8 < agg_result.value.u8,
-                                            (DataType::UInt16, DataType::UInt16) => arg_values[0].value.u16 < agg_result.value.u16,
-                                            (DataType::UInt32, DataType::UInt32) => arg_values[0].value.u32 < agg_result.value.u32,
-                                            (DataType::UInt64, DataType::UInt64) => arg_values[0].value.u64 < agg_result.value.u64,
-                                            (DataType::Int8, DataType::Int8) => arg_values[0].value.i8 < agg_result.value.i8,
-                                            (DataType::Int16, DataType::Int16) => arg_values[0].value.i16 < agg_result.value.i16,
-                                            (DataType::Int32, DataType::Int32) => arg_values[0].value.i32 < agg_result.value.i32,
-                                            (DataType::Int64, DataType::Int64) => arg_values[0].value.i64 < agg_result.value.i64,
-                                            (DataType::Float32, DataType::Float32) => arg_values[0].value.float32 < agg_result.value.float32,
-                                            (DataType::Float64, DataType::Float64) => arg_values[0].value.float64 < agg_result.value.float64,
+                                            (DataType::UInt8, DataType::UInt8) => arg_values[0].value.as_u8() < agg_result.value.as_u8(),
+                                            (DataType::UInt16, DataType::UInt16) => arg_values[0].value.as_u16() < agg_result.value.as_u16(),
+                                            (DataType::UInt32, DataType::UInt32) => arg_values[0].value.as_u32() < agg_result.value.as_u32(),
+                                            (DataType::UInt64, DataType::UInt64) => arg_values[0].value.as_u64() < agg_result.value.as_u64(),
+                                            (DataType::Int8, DataType::Int8) => arg_values[0].value.as_i8() < agg_result.value.as_i8(),
+                                            (DataType::Int16, DataType::Int16) => arg_values[0].value.as_i16() < agg_result.value.as_i16(),
+                                            (DataType::Int32, DataType::Int32) => arg_values[0].value.as_i32() < agg_result.value.as_i32(),
+                                            (DataType::Int64, DataType::Int64) => arg_values[0].value.as_i64() < agg_result.value.as_i64(),
+                                            (DataType::Float32, DataType::Float32) => arg_values[0].value.as_float32() < agg_result.value.as_float32(),
+                                            (DataType::Float64, DataType::Float64) => arg_values[0].value.as_float64() < agg_result.value.as_float64(),
                                             _ => return Err(QueryExecutionError::TypeMismatch),
                                         }
                                     };
@@ -3613,23 +3599,23 @@ fn process_group_by_query(
                             },
                             "MAX" => {
                                 // 如果是第一个元素，直接使用它作为初始值
-                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.u64 == 0 };
+                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.as_u64() == 0 };
                                 if is_first {
                                     agg_result = arg_values[0].clone();
                                 } else {
                                     // 比较并更新最大值
                                     let is_greater = unsafe {
                                         match (agg_result.value_type, arg_values[0].value_type) {
-                                            (DataType::UInt8, DataType::UInt8) => arg_values[0].value.u8 > agg_result.value.u8,
-                                            (DataType::UInt16, DataType::UInt16) => arg_values[0].value.u16 > agg_result.value.u16,
-                                            (DataType::UInt32, DataType::UInt32) => arg_values[0].value.u32 > agg_result.value.u32,
-                                            (DataType::UInt64, DataType::UInt64) => arg_values[0].value.u64 > agg_result.value.u64,
-                                            (DataType::Int8, DataType::Int8) => arg_values[0].value.i8 > agg_result.value.i8,
-                                            (DataType::Int16, DataType::Int16) => arg_values[0].value.i16 > agg_result.value.i16,
-                                            (DataType::Int32, DataType::Int32) => arg_values[0].value.i32 > agg_result.value.i32,
-                                            (DataType::Int64, DataType::Int64) => arg_values[0].value.i64 > agg_result.value.i64,
-                                            (DataType::Float32, DataType::Float32) => arg_values[0].value.float32 > agg_result.value.float32,
-                                            (DataType::Float64, DataType::Float64) => arg_values[0].value.float64 > agg_result.value.float64,
+                                            (DataType::UInt8, DataType::UInt8) => arg_values[0].value.as_u8() > agg_result.value.as_u8(),
+                                            (DataType::UInt16, DataType::UInt16) => arg_values[0].value.as_u16() > agg_result.value.as_u16(),
+                                            (DataType::UInt32, DataType::UInt32) => arg_values[0].value.as_u32() > agg_result.value.as_u32(),
+                                            (DataType::UInt64, DataType::UInt64) => arg_values[0].value.as_u64() > agg_result.value.as_u64(),
+                                            (DataType::Int8, DataType::Int8) => arg_values[0].value.as_i8() > agg_result.value.as_i8(),
+                                            (DataType::Int16, DataType::Int16) => arg_values[0].value.as_i16() > agg_result.value.as_i16(),
+                                            (DataType::Int32, DataType::Int32) => arg_values[0].value.as_i32() > agg_result.value.as_i32(),
+                                            (DataType::Int64, DataType::Int64) => arg_values[0].value.as_i64() > agg_result.value.as_i64(),
+                                            (DataType::Float32, DataType::Float32) => arg_values[0].value.as_float32() > agg_result.value.as_float32(),
+                                            (DataType::Float64, DataType::Float64) => arg_values[0].value.as_float64() > agg_result.value.as_float64(),
                                             _ => return Err(QueryExecutionError::TypeMismatch),
                                         }
                                     };
@@ -3640,48 +3626,48 @@ fn process_group_by_query(
                             },
                             "AVG" => {
                                 // 如果是第一个元素，初始化agg_result为正确的类型
-                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.u64 == 0 };
+                                let is_first = agg_result.value_type == DataType::UInt64 && unsafe { agg_result.value.as_u64() == 0 };
                                 if is_first {
                                     // 将第一个值转换为float64
                                     let float_val = unsafe {
                                         match arg_values[0].value_type {
-                                            DataType::UInt8 => arg_values[0].value.u8 as f64,
-                                            DataType::UInt16 => arg_values[0].value.u16 as f64,
-                                            DataType::UInt32 => arg_values[0].value.u32 as f64,
-                                            DataType::UInt64 => arg_values[0].value.u64 as f64,
-                                            DataType::Int8 => arg_values[0].value.i8 as f64,
-                                            DataType::Int16 => arg_values[0].value.i16 as f64,
-                                            DataType::Int32 => arg_values[0].value.i32 as f64,
-                                            DataType::Int64 => arg_values[0].value.i64 as f64,
-                                            DataType::Float32 => arg_values[0].value.float32 as f64,
-                                            DataType::Float64 => arg_values[0].value.float64,
+                                            DataType::UInt8 => arg_values[0].value.as_u8() as f64,
+                                            DataType::UInt16 => arg_values[0].value.as_u16() as f64,
+                                            DataType::UInt32 => arg_values[0].value.as_u32() as f64,
+                                            DataType::UInt64 => arg_values[0].value.as_u64() as f64,
+                                            DataType::Int8 => arg_values[0].value.as_i8() as f64,
+                                            DataType::Int16 => arg_values[0].value.as_i16() as f64,
+                                            DataType::Int32 => arg_values[0].value.as_i32() as f64,
+                                            DataType::Int64 => arg_values[0].value.as_i64() as f64,
+                                            DataType::Float32 => arg_values[0].value.as_float32() as f64,
+                                            DataType::Float64 => arg_values[0].value.as_float64(),
                                             _ => return Err(QueryExecutionError::TypeMismatch),
                                         }
                                     };
                                     // 为AVG创建一个float64类型的初始值
                                     agg_result = TypedValue {
                                         value_type: DataType::Float64,
-                                        value: Value { float64: float_val },
+                                        value: Value::Float64(float_val),
                                     };
                                 } else {
                                     // 累加值
                                     let float_val = unsafe {
                                         match arg_values[0].value_type {
-                                            DataType::UInt8 => arg_values[0].value.u8 as f64,
-                                            DataType::UInt16 => arg_values[0].value.u16 as f64,
-                                            DataType::UInt32 => arg_values[0].value.u32 as f64,
-                                            DataType::UInt64 => arg_values[0].value.u64 as f64,
-                                            DataType::Int8 => arg_values[0].value.i8 as f64,
-                                            DataType::Int16 => arg_values[0].value.i16 as f64,
-                                            DataType::Int32 => arg_values[0].value.i32 as f64,
-                                            DataType::Int64 => arg_values[0].value.i64 as f64,
-                                            DataType::Float32 => arg_values[0].value.float32 as f64,
-                                            DataType::Float64 => arg_values[0].value.float64,
+                                            DataType::UInt8 => arg_values[0].value.as_u8() as f64,
+                                            DataType::UInt16 => arg_values[0].value.as_u16() as f64,
+                                            DataType::UInt32 => arg_values[0].value.as_u32() as f64,
+                                            DataType::UInt64 => arg_values[0].value.as_u64() as f64,
+                                            DataType::Int8 => arg_values[0].value.as_i8() as f64,
+                                            DataType::Int16 => arg_values[0].value.as_i16() as f64,
+                                            DataType::Int32 => arg_values[0].value.as_i32() as f64,
+                                            DataType::Int64 => arg_values[0].value.as_i64() as f64,
+                                            DataType::Float32 => arg_values[0].value.as_float32() as f64,
+                                            DataType::Float64 => arg_values[0].value.as_float64(),
                                             _ => return Err(QueryExecutionError::TypeMismatch),
                                         }
                                     };
                                     unsafe {
-                                        agg_result.value.float64 += float_val;
+                                        agg_result.value = Value::Float64(agg_result.value.as_float64() +  float_val);
                                     }
                                 }
                             },
@@ -3837,29 +3823,29 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
             // 根据字段类型格式化默认值
             match field.data_type {
                 // 整数类型
-                DataType::UInt8 => alloc::format!("{}", unsafe { default_val.u8 }),
-                DataType::UInt16 => alloc::format!("{}", unsafe { default_val.u16 }),
-                DataType::UInt32 => alloc::format!("{}", unsafe { default_val.u32 }),
-                DataType::UInt64 => alloc::format!("{}", unsafe { default_val.u64 }),
-                DataType::Int8 => alloc::format!("{}", unsafe { default_val.i8 }),
-                DataType::Int16 => alloc::format!("{}", unsafe { default_val.i16 }),
-                DataType::Int32 => alloc::format!("{}", unsafe { default_val.i32 }),
-                DataType::Int64 => alloc::format!("{}", unsafe { default_val.i64 }),
+                DataType::UInt8 => alloc::format!("{}", unsafe { default_val.as_u8() }),
+                DataType::UInt16 => alloc::format!("{}", unsafe { default_val.as_u16() }),
+                DataType::UInt32 => alloc::format!("{}", unsafe { default_val.as_u32() }),
+                DataType::UInt64 => alloc::format!("{}", unsafe { default_val.as_u64() }),
+                DataType::Int8 => alloc::format!("{}", unsafe { default_val.as_i8() }),
+                DataType::Int16 => alloc::format!("{}", unsafe { default_val.as_i16() }),
+                DataType::Int32 => alloc::format!("{}", unsafe { default_val.as_i32() }),
+                DataType::Int64 => alloc::format!("{}", unsafe { default_val.as_i64() }),
                 // 布尔类型
-                DataType::Bool => alloc::format!("{}", unsafe { default_val.bool }),
+                DataType::Bool => alloc::format!("{}", unsafe { default_val.as_bool() }),
                 // 浮点数类型
-                DataType::Float32 => alloc::format!("{}", unsafe { default_val.float32 }),
-                DataType::Float64 => alloc::format!("{}", unsafe { default_val.float64 }),
+                DataType::Float32 => alloc::format!("{}", unsafe { default_val.as_float32() }),
+                DataType::Float64 => alloc::format!("{}", unsafe { default_val.as_float64() }),
                 // 时间类型
-                DataType::Timestamp => alloc::format!("{}", unsafe { default_val.time.value }),
-                DataType::TimestampTZ => alloc::format!("{}", unsafe { default_val.time.value }),
+                DataType::Timestamp => alloc::format!("{}", unsafe { default_val.as_time().value }),
+                DataType::TimestampTZ => alloc::format!("{}", unsafe { default_val.as_time().value }),
                 // 字符串类型
                 DataType::String => {
-                    let str_val = unsafe { &default_val.string };
+                    let str_val = default_val.as_string();
                     String::from_utf8_lossy(str_val).trim_end_matches(char::from(0)).to_string()
                 },
                 // 时间间隔类型
-                DataType::Interval => alloc::format!("{}", unsafe { default_val.interval.value }),
+                DataType::Interval => alloc::format!("{}", unsafe { default_val.as_interval().value }),
             }
         } else {
             "".to_string()
@@ -3887,56 +3873,46 @@ fn execute_describe_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet,
         // 创建行数据
         // 由于Value是union类型，我们需要确保每个值都被正确初始化
         // 对于字符串值，我们使用string字段并确保它是一个有效的C风格字符串
-        let mut field_name_val = crate::Value { string: [0u8; 64] };
+        let mut field_name_val = crate::Value::String([0u8; 64]);
         let field_name_bytes = field.name.as_bytes();
         let field_name_len = core::cmp::min(field_name_bytes.len(), 63);
-        unsafe {
-            field_name_val.string[..field_name_len].copy_from_slice(&field_name_bytes[..field_name_len]);
-        }
+        field_name_val.as_string_mut()[..field_name_len].copy_from_slice(&field_name_bytes[..field_name_len]);
         let field_name_typed_val = TypedValue {
             value_type: DataType::String,
             value: field_name_val,
         };
         
-        let mut type_val = crate::Value { string: [0u8; 64] };
+        let mut type_val = crate::Value::String([0u8; 64]);
         let type_bytes = type_str.as_bytes();
         let type_len = core::cmp::min(type_bytes.len(), 63);
-        unsafe {
-            type_val.string[..type_len].copy_from_slice(&type_bytes[..type_len]);
-        }
+        type_val.as_string_mut()[..type_len].copy_from_slice(&type_bytes[..type_len]);
         let type_typed_val = TypedValue {
             value_type: DataType::String,
             value: type_val,
         };
         
-        let mut key_val = crate::Value { string: [0u8; 64] };
+        let mut key_val = crate::Value::String([0u8; 64]);
         let key_bytes = key_str.as_bytes();
         let key_len = core::cmp::min(key_bytes.len(), 63);
-        unsafe {
-            key_val.string[..key_len].copy_from_slice(&key_bytes[..key_len]);
-        }
+        key_val.as_string_mut()[..key_len].copy_from_slice(&key_bytes[..key_len]);
         let key_typed_val = TypedValue {
             value_type: DataType::String,
             value: key_val,
         };
         
-        let mut null_val = crate::Value { string: [0u8; 64] };
+        let mut null_val = crate::Value::String([0u8; 64]);
         let null_bytes = null_str.as_bytes();
         let null_len = core::cmp::min(null_bytes.len(), 63);
-        unsafe {
-            null_val.string[..null_len].copy_from_slice(&null_bytes[..null_len]);
-        }
+        null_val.as_string_mut()[..null_len].copy_from_slice(&null_bytes[..null_len]);
         let null_typed_val = TypedValue {
             value_type: DataType::String,
             value: null_val,
         };
         
-        let mut default_val = crate::Value { string: [0u8; 64] };
+        let mut default_val = crate::Value::String([0u8; 64]);
         let default_bytes = default_str.as_bytes();
         let default_len = core::cmp::min(default_bytes.len(), 63);
-        unsafe {
-            default_val.string[..default_len].copy_from_slice(&default_bytes[..default_len]);
-        }
+        default_val.as_string_mut()[..default_len].copy_from_slice(&default_bytes[..default_len]);
         let default_typed_val = TypedValue {
             value_type: DataType::String,
             value: default_val,
@@ -4154,49 +4130,49 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
                 unsafe {
                     match field.data_type {
                         DataType::UInt8 => {
-                            record_data[field.offset] = default_value.u8;
+                            record_data[field.offset] = default_value.as_u8();
                         },
                         DataType::UInt16 => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u16, default_value.u16);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u16, default_value.as_u16());
                         },
                         DataType::UInt32 => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u32, default_value.u32);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u32, default_value.as_u32());
                         },
                         DataType::UInt64 => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u64, default_value.u64);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut u64, default_value.as_u64());
                         },
                         DataType::Int8 => {
-                            record_data[field.offset] = default_value.i8 as u8;
+                            record_data[field.offset] = default_value.as_i8() as u8;
                         },
                         DataType::Int16 => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i16, default_value.i16);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i16, default_value.as_i16());
                         },
                         DataType::Int32 => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i32, default_value.i32);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i32, default_value.as_i32());
                         },
                         DataType::Int64 => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i64, default_value.i64);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut i64, default_value.as_i64());
                         },
                         DataType::Float32 => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut f32, default_value.float32);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut f32, default_value.as_float32());
                         },
                         DataType::Float64 => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut f64, default_value.float64);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut f64, default_value.as_float64());
                         },
                         DataType::Bool => {
-                            record_data[field.offset] = default_value.bool as u8;
+                            record_data[field.offset] = default_value.as_bool() as u8;
                         },
                         DataType::Timestamp => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut crate::types::db_timestamp, default_value.time);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut crate::types::db_timestamp, default_value.as_time());
                         },
                         DataType::TimestampTZ => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut crate::types::db_timestamp, default_value.time);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut crate::types::db_timestamp, default_value.as_time());
                         },
                         DataType::String => {
-                            core::ptr::copy_nonoverlapping(default_value.string.as_ptr(), record_data.as_mut_ptr().add(field.offset), field.size);
+                            core::ptr::copy_nonoverlapping(default_value.as_string().as_ptr(), record_data.as_mut_ptr().add(field.offset), field.size);
                         },
                         DataType::Interval => {
-                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut crate::types::db_interval, default_value.interval);
+                            core::ptr::write_unaligned(record_data.as_mut_ptr().add(field.offset) as *mut crate::types::db_interval, default_value.as_interval());
                         },
                     }
                 }
@@ -4260,7 +4236,7 @@ fn execute_insert_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     
     let row_data = alloc::vec![TypedValue {
         value_type: DataType::UInt64,
-        value: crate::Value { u64: affected_rows as u64 },
+        value: crate::Value::U64(affected_rows as u64),
     }];
     result_set.add_row(row_data);
     
@@ -4348,7 +4324,7 @@ fn execute_delete_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     
     let row_data = alloc::vec![TypedValue {
         value_type: DataType::UInt64,
-        value: crate::Value { u64: affected_rows as u64 },
+        value: crate::Value::U64(affected_rows as u64),
     }];
     result_set.add_row(row_data);
     
@@ -4455,7 +4431,7 @@ fn execute_update_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Q
     
     let row_data = alloc::vec![TypedValue {
         value_type: DataType::UInt64,
-        value: crate::Value { u64: affected_rows as u64 },
+        value: crate::Value::U64(affected_rows as u64),
     }];
     result_set.add_row(row_data);
     
@@ -4476,25 +4452,25 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
         let record_values = table.def.fields.iter().map(|field| {
             let field_ptr = record_data.as_ptr().add(field.offset);
             let value = match field.data_type {
-                DataType::UInt8 => crate::types::Value { u8: unsafe { *field_ptr as u8 } },
-                DataType::UInt16 => crate::types::Value { u16: unsafe { core::ptr::read_unaligned(field_ptr as *const u16) } },
-                DataType::UInt32 => crate::types::Value { u32: unsafe { core::ptr::read_unaligned(field_ptr as *const u32) } },
-                DataType::UInt64 => crate::types::Value { u64: unsafe { core::ptr::read_unaligned(field_ptr as *const u64) } },
-                DataType::Int8 => crate::types::Value { i8: unsafe { core::ptr::read_unaligned(field_ptr as *const i8) } },
-                DataType::Int16 => crate::types::Value { i16: unsafe { core::ptr::read_unaligned(field_ptr as *const i16) } },
-                DataType::Int32 => crate::types::Value { i32: unsafe { core::ptr::read_unaligned(field_ptr as *const i32) } },
-                DataType::Int64 => crate::types::Value { i64: unsafe { core::ptr::read_unaligned(field_ptr as *const i64) } },
-                DataType::Float32 => crate::types::Value { float32: unsafe { core::ptr::read_unaligned(field_ptr as *const f32) } },
-                DataType::Float64 => crate::types::Value { float64: unsafe { core::ptr::read_unaligned(field_ptr as *const f64) } },
-                DataType::Bool => crate::types::Value { bool: unsafe { *field_ptr != 0 } },
+                DataType::UInt8 => crate::types::Value::U8(unsafe { *field_ptr as u8 }),
+                DataType::UInt16 => crate::types::Value::U16(unsafe { core::ptr::read_unaligned(field_ptr as *const u16) }),
+                DataType::UInt32 => crate::types::Value::U32(unsafe { core::ptr::read_unaligned(field_ptr as *const u32) }),
+                DataType::UInt64 => crate::types::Value::U64(unsafe { core::ptr::read_unaligned(field_ptr as *const u64) }),
+                DataType::Int8 => crate::types::Value::I8(unsafe { core::ptr::read_unaligned(field_ptr as *const i8) }),
+                DataType::Int16 => crate::types::Value::I16(unsafe { core::ptr::read_unaligned(field_ptr as *const i16) }),
+                DataType::Int32 => crate::types::Value::I32(unsafe { core::ptr::read_unaligned(field_ptr as *const i32) }),
+                DataType::Int64 => crate::types::Value::I64(unsafe { core::ptr::read_unaligned(field_ptr as *const i64) }),
+                DataType::Float32 => crate::types::Value::Float32(unsafe { core::ptr::read_unaligned(field_ptr as *const f32) }),
+                DataType::Float64 => crate::types::Value::Float64(unsafe { core::ptr::read_unaligned(field_ptr as *const f64) }),
+                DataType::Bool => crate::types::Value::Bool(unsafe { *field_ptr != 0 }),
                 DataType::String => {
                     let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                     unsafe {
                         core::ptr::copy_nonoverlapping(field_ptr, str_value.as_mut_ptr(), field.size);
                     }
-                    crate::types::Value { string: str_value }
+                    crate::types::Value::String(str_value)
                 },
-                _ => crate::types::Value { i64: 0 },
+                _ => crate::types::Value::I64(0),
             };
             crate::types::TypedValue {
                 value_type: field.data_type,
@@ -4510,9 +4486,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             // 无符号整数类型
             DataType::UInt8 => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64 as u8,
-                    DataType::Float64 => evaluated_value.value.float64 as u8,
-                    DataType::Bool => evaluated_value.value.bool as u8,
+                    DataType::Int64 => evaluated_value.value.as_i64() as u8,
+                    DataType::Float64 => evaluated_value.value.as_float64() as u8,
+                    DataType::Bool => evaluated_value.value.as_bool() as u8,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // u8不需要对齐，直接复制
@@ -4520,9 +4496,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             },
             DataType::UInt16 => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64 as u16,
-                    DataType::Float64 => evaluated_value.value.float64 as u16,
-                    DataType::Bool => evaluated_value.value.bool as u16,
+                    DataType::Int64 => evaluated_value.value.as_i64() as u16,
+                    DataType::Float64 => evaluated_value.value.as_float64() as u16,
+                    DataType::Bool => evaluated_value.value.as_bool() as u16,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // 使用core::ptr::write_unaligned来避免对齐问题
@@ -4530,9 +4506,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             },
             DataType::UInt32 => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64 as u32,
-                    DataType::Float64 => evaluated_value.value.float64 as u32,
-                    DataType::Bool => evaluated_value.value.bool as u32,
+                    DataType::Int64 => evaluated_value.value.as_i64() as u32,
+                    DataType::Float64 => evaluated_value.value.as_float64() as u32,
+                    DataType::Bool => evaluated_value.value.as_bool() as u32,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // 使用core::ptr::write_unaligned来避免对齐问题
@@ -4540,9 +4516,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             },
             DataType::UInt64 => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64 as u64,
-                    DataType::Float64 => evaluated_value.value.float64 as u64,
-                    DataType::Bool => evaluated_value.value.bool as u64,
+                    DataType::Int64 => evaluated_value.value.as_i64() as u64,
+                    DataType::Float64 => evaluated_value.value.as_float64() as u64,
+                    DataType::Bool => evaluated_value.value.as_bool() as u64,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // 使用core::ptr::write_unaligned来避免对齐问题
@@ -4552,9 +4528,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             // 有符号整数类型
             DataType::Int8 => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64 as i8,
-                    DataType::Float64 => evaluated_value.value.float64 as i8,
-                    DataType::Bool => evaluated_value.value.bool as i8,
+                    DataType::Int64 => evaluated_value.value.as_i64() as i8,
+                    DataType::Float64 => evaluated_value.value.as_float64() as i8,
+                    DataType::Bool => evaluated_value.value.as_bool() as i8,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // i8不需要对齐，直接复制
@@ -4562,9 +4538,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             },
             DataType::Int16 => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64 as i16,
-                    DataType::Float64 => evaluated_value.value.float64 as i16,
-                    DataType::Bool => evaluated_value.value.bool as i16,
+                    DataType::Int64 => evaluated_value.value.as_i64() as i16,
+                    DataType::Float64 => evaluated_value.value.as_float64() as i16,
+                    DataType::Bool => evaluated_value.value.as_bool() as i16,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // 使用core::ptr::write_unaligned来避免对齐问题
@@ -4572,9 +4548,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             },
             DataType::Int32 => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64 as i32,
-                    DataType::Float64 => evaluated_value.value.float64 as i32,
-                    DataType::Bool => evaluated_value.value.bool as i32,
+                    DataType::Int64 => evaluated_value.value.as_i64() as i32,
+                    DataType::Float64 => evaluated_value.value.as_float64() as i32,
+                    DataType::Bool => evaluated_value.value.as_bool() as i32,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // 使用core::ptr::write_unaligned来避免对齐问题
@@ -4582,9 +4558,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             },
             DataType::Int64 => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64,
-                    DataType::Float64 => evaluated_value.value.float64 as i64,
-                    DataType::Bool => evaluated_value.value.bool as i64,
+                    DataType::Int64 => evaluated_value.value.as_i64(),
+                    DataType::Float64 => evaluated_value.value.as_float64() as i64,
+                    DataType::Bool => evaluated_value.value.as_bool() as i64,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // 使用core::ptr::write_unaligned来避免对齐问题
@@ -4594,9 +4570,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             // 浮点数类型
             DataType::Float32 => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64 as f32,
-                    DataType::Float64 => evaluated_value.value.float64 as f32,
-                    DataType::Bool => (evaluated_value.value.bool as u8) as f32,
+                    DataType::Int64 => evaluated_value.value.as_i64() as f32,
+                    DataType::Float64 => evaluated_value.value.as_float64() as f32,
+                    DataType::Bool => (evaluated_value.value.as_bool() as u8) as f32,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // 使用core::ptr::write_unaligned来避免对齐问题
@@ -4604,9 +4580,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             },
             DataType::Float64 => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64 as f64,
-                    DataType::Float64 => evaluated_value.value.float64,
-                    DataType::Bool => (evaluated_value.value.bool as u8) as f64,
+                    DataType::Int64 => evaluated_value.value.as_i64() as f64,
+                    DataType::Float64 => evaluated_value.value.as_float64(),
+                    DataType::Bool => (evaluated_value.value.as_bool() as u8) as f64,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // 使用core::ptr::write_unaligned来避免对齐问题
@@ -4616,9 +4592,9 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             // 布尔类型
             DataType::Bool => {
                 let value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64 != 0,
-                    DataType::Float64 => evaluated_value.value.float64 != 0.0,
-                    DataType::Bool => evaluated_value.value.bool,
+                    DataType::Int64 => evaluated_value.value.as_i64() != 0,
+                    DataType::Float64 => evaluated_value.value.as_float64() != 0.0,
+                    DataType::Bool => evaluated_value.value.as_bool(),
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 // bool不需要对齐，直接复制
@@ -4629,15 +4605,15 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             DataType::Timestamp => {
                 // 支持从数值类型转换为时间戳
                 let timestamp_value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64,
-                    DataType::UInt64 => evaluated_value.value.u64 as i64,
-                    DataType::Int32 => evaluated_value.value.i32 as i64,
-                    DataType::UInt32 => evaluated_value.value.u32 as i64,
-                    DataType::Int16 => evaluated_value.value.i16 as i64,
-                    DataType::UInt16 => evaluated_value.value.u16 as i64,
-                    DataType::Int8 => evaluated_value.value.i8 as i64,
-                    DataType::UInt8 => evaluated_value.value.u8 as i64,
-                    DataType::Float64 => evaluated_value.value.float64 as i64,
+                    DataType::Int64 => evaluated_value.value.as_i64(),
+                    DataType::UInt64 => evaluated_value.value.as_u64() as i64,
+                    DataType::Int32 => evaluated_value.value.as_i32() as i64,
+                    DataType::UInt32 => evaluated_value.value.as_u32() as i64,
+                    DataType::Int16 => evaluated_value.value.as_i16() as i64,
+                    DataType::UInt16 => evaluated_value.value.as_u16() as i64,
+                    DataType::Int8 => evaluated_value.value.as_i8() as i64,
+                    DataType::UInt8 => evaluated_value.value.as_u8() as i64,
+                    DataType::Float64 => evaluated_value.value.as_float64() as i64,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 
@@ -4652,15 +4628,15 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             DataType::TimestampTZ => {
                 // 支持从数值类型转换为时间戳TZ
                 let timestamp_value = match evaluated_value.value_type {
-                    DataType::Int64 => evaluated_value.value.i64,
-                    DataType::UInt64 => evaluated_value.value.u64 as i64,
-                    DataType::Int32 => evaluated_value.value.i32 as i64,
-                    DataType::UInt32 => evaluated_value.value.u32 as i64,
-                    DataType::Int16 => evaluated_value.value.i16 as i64,
-                    DataType::UInt16 => evaluated_value.value.u16 as i64,
-                    DataType::Int8 => evaluated_value.value.i8 as i64,
-                    DataType::UInt8 => evaluated_value.value.u8 as i64,
-                    DataType::Float64 => evaluated_value.value.float64 as i64,
+                    DataType::Int64 => evaluated_value.value.as_i64(),
+                    DataType::UInt64 => evaluated_value.value.as_u64() as i64,
+                    DataType::Int32 => evaluated_value.value.as_i32() as i64,
+                    DataType::UInt32 => evaluated_value.value.as_u32() as i64,
+                    DataType::Int16 => evaluated_value.value.as_i16() as i64,
+                    DataType::UInt16 => evaluated_value.value.as_u16() as i64,
+                    DataType::Int8 => evaluated_value.value.as_i8() as i64,
+                    DataType::UInt8 => evaluated_value.value.as_u8() as i64,
+                    DataType::Float64 => evaluated_value.value.as_float64() as i64,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 
@@ -4675,10 +4651,10 @@ fn set_field_value(table: &MemoryTable, record_data: &mut Vec<u8>, offset: usize
             // 字符串类型
             DataType::String => {
                 let str_value = match evaluated_value.value_type {
-                    DataType::String => core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default(),
-                    DataType::Int64 => &evaluated_value.value.i64.to_string(),
-                    DataType::Float64 => &evaluated_value.value.float64.to_string(),
-                    DataType::Bool => &evaluated_value.value.bool.to_string(),
+                    DataType::String => core::str::from_utf8(evaluated_value.value.as_string()).unwrap_or_default(),
+                    DataType::Int64 => &evaluated_value.value.as_i64().to_string(),
+                    DataType::Float64 => &evaluated_value.value.as_float64().to_string(),
+                    DataType::Bool => &evaluated_value.value.as_bool().to_string(),
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
                 
@@ -4787,7 +4763,7 @@ fn execute_create_time_series_table_query(db: &mut RemDb, query: &SqlQuery) -> R
     let mut result_set = ResultSet::new(columns);
     result_set.add_row(alloc::vec![TypedValue {
         value_type: crate::DataType::String,
-        value: crate::Value { string: [b'0'; 64] },
+        value: crate::Value::String([b'0'; 64]),
     }]);
     
     Ok(result_set)
@@ -4879,7 +4855,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
     match field_type {
         // 无符号整数类型
         DataType::UInt8 => {
-            let f_val = unsafe { field_value.u8 }; // 读取u8字段
+            let f_val = unsafe { field_value.as_u8() }; // 读取u8字段
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as u8;
@@ -4889,7 +4865,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
             }
         },
         DataType::UInt16 => {
-            let f_val = unsafe { field_value.u16 }; // 读取u16字段
+            let f_val = unsafe { field_value.as_u16() }; // 读取u16字段
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as u16;
@@ -4899,7 +4875,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
             }
         },
         DataType::UInt32 => {
-            let f_val = unsafe { field_value.u32 }; // 读取u32字段
+            let f_val = unsafe { field_value.as_u32() }; // 读取u32字段
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as u32;
@@ -4909,7 +4885,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
             }
         },
         DataType::UInt64 => {
-            let f_val = unsafe { field_value.u64 }; // 读取u64字段
+            let f_val = unsafe { field_value.as_u64() }; // 读取u64字段
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as u64;
@@ -4921,7 +4897,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
         
         // 有符号整数类型
         DataType::Int8 => {
-            let f_val = unsafe { field_value.i8 }; // 读取i8字段
+            let f_val = unsafe { field_value.as_i8() }; // 读取i8字段
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as i8;
@@ -4935,7 +4911,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
             }
         },
         DataType::Int16 => {
-            let f_val = unsafe { field_value.i16 }; // 读取i16字段
+            let f_val = unsafe { field_value.as_i16() }; // 读取i16字段
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as i16;
@@ -4945,7 +4921,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
             }
         },
         DataType::Int32 => {
-            let f_val = unsafe { field_value.i32 }; // 读取i32字段
+            let f_val = unsafe { field_value.as_i32() }; // 读取i32字段
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as i32;
@@ -4955,7 +4931,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
             }
         },
         DataType::Int64 => {
-            let f_val = unsafe { field_value.i64 }; // 读取i64字段
+            let f_val = unsafe { field_value.as_i64() }; // 读取i64字段
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int;
@@ -4967,7 +4943,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
         
         // 浮点数类型
         DataType::Float32 => {
-            let f_val = unsafe { field_value.float32 }; // 读取float32字段
+            let f_val = unsafe { field_value.as_float32() }; // 读取float32字段
             match condition_value {
                 crate::sql::Value::Float(c_float) => {
                     compare_numbers(f_val as f64, *c_float, operator)
@@ -4979,7 +4955,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
             }
         },
         DataType::Float64 => {
-            let f_val = unsafe { field_value.float64 }; // 读取float64字段
+            let f_val = unsafe { field_value.as_float64() }; // 读取float64字段
             match condition_value {
                 crate::sql::Value::Float(c_float) => {
                     compare_numbers(f_val, *c_float, operator)
@@ -4993,7 +4969,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
         
         // 布尔类型
         DataType::Bool => {
-            let f_val = unsafe { field_value.bool }; // 读取bool字段
+            let f_val = unsafe { field_value.as_bool() }; // 读取bool字段
             match condition_value {
                 crate::sql::Value::Boolean(c_bool) => {
                     compare_booleans(f_val, *c_bool, operator)
@@ -5004,7 +4980,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
         
         // 时间戳类型
         DataType::Timestamp => {
-            let f_val = unsafe { field_value.time.value } as u64; // 读取时间值
+            let f_val = unsafe { field_value.as_time().value } as u64; // 读取时间值
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as u64;
@@ -5014,7 +4990,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
             }
         },
         DataType::TimestampTZ => {
-            let f_val = unsafe { field_value.time.value } as u64; // 读取时间值
+            let f_val = unsafe { field_value.as_time().value } as u64; // 读取时间值
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as u64;
@@ -5026,7 +5002,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
         
         // 字符串类型
         DataType::String => {
-            let f_str = unsafe { &field_value.string }; // 读取string字段
+            let f_str = field_value.as_string(); // 读取string字段
             let f_str = String::from_utf8_lossy(f_str).trim_end_matches(char::from(0)).to_string();
             match condition_value {
                 crate::sql::Value::String(c_str) => {
@@ -5037,7 +5013,7 @@ fn compare_field_with_condition(field_value: &Value, field_type: DataType, opera
         },
         // 时间间隔类型
         DataType::Interval => {
-            let f_val = unsafe { field_value.interval.value } as u64; // 读取时间间隔值
+            let f_val = unsafe { field_value.as_interval().value } as u64; // 读取时间间隔值
             match condition_value {
                 crate::sql::Value::Integer(c_int) => {
                     let c_val = *c_int as u64;
@@ -5169,28 +5145,28 @@ fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &Or
             unsafe {
                 let comparison = match (val_a.value_type, val_b.value_type) {
                     // 无符号整数类型
-                    (DataType::UInt8, DataType::UInt8) => val_a.value.u8.cmp(&val_b.value.u8),
-                    (DataType::UInt16, DataType::UInt16) => val_a.value.u16.cmp(&val_b.value.u16),
-                    (DataType::UInt32, DataType::UInt32) => val_a.value.u32.cmp(&val_b.value.u32),
-                    (DataType::UInt64, DataType::UInt64) => val_a.value.u64.cmp(&val_b.value.u64),
+                    (DataType::UInt8, DataType::UInt8) => val_a.value.as_u8().cmp(&val_b.value.as_u8()),
+                    (DataType::UInt16, DataType::UInt16) => val_a.value.as_u16().cmp(&val_b.value.as_u16()),
+                    (DataType::UInt32, DataType::UInt32) => val_a.value.as_u32().cmp(&val_b.value.as_u32()),
+                    (DataType::UInt64, DataType::UInt64) => val_a.value.as_u64().cmp(&val_b.value.as_u64()),
                     
                     // 有符号整数类型
-                    (DataType::Int8, DataType::Int8) => val_a.value.i8.cmp(&val_b.value.i8),
-                    (DataType::Int16, DataType::Int16) => val_a.value.i16.cmp(&val_b.value.i16),
-                    (DataType::Int32, DataType::Int32) => val_a.value.i32.cmp(&val_b.value.i32),
-                    (DataType::Int64, DataType::Int64) => val_a.value.i64.cmp(&val_b.value.i64),
+                    (DataType::Int8, DataType::Int8) => val_a.value.as_i8().cmp(&val_b.value.as_i8()),
+                    (DataType::Int16, DataType::Int16) => val_a.value.as_i16().cmp(&val_b.value.as_i16()),
+                    (DataType::Int32, DataType::Int32) => val_a.value.as_i32().cmp(&val_b.value.as_i32()),
+                    (DataType::Int64, DataType::Int64) => val_a.value.as_i64().cmp(&val_b.value.as_i64()),
                     
                     // 浮点数类型
                     (DataType::Float32, DataType::Float32) => 
-                        val_a.value.float32.partial_cmp(&val_b.value.float32).unwrap_or(core::cmp::Ordering::Equal),
+                        val_a.value.as_float32().partial_cmp(&val_b.value.as_float32()).unwrap_or(core::cmp::Ordering::Equal),
                     (DataType::Float64, DataType::Float64) => 
-                        val_a.value.float64.partial_cmp(&val_b.value.float64).unwrap_or(core::cmp::Ordering::Equal),
+                        val_a.value.as_float64().partial_cmp(&val_b.value.as_float64()).unwrap_or(core::cmp::Ordering::Equal),
                     
                     // 时间戳类型
                     (DataType::Timestamp, DataType::Timestamp) => 
-                        val_a.value.time.value.cmp(&val_b.value.time.value),
+                        val_a.value.as_time().value.cmp(&val_b.value.as_time().value),
                     (DataType::TimestampTZ, DataType::TimestampTZ) => 
-                        val_a.value.time.value.cmp(&val_b.value.time.value),
+                        val_a.value.as_time().value.cmp(&val_b.value.as_time().value),
                     
                     // 其他类型，默认按升序排列
                     _ => core::cmp::Ordering::Equal,
@@ -5248,83 +5224,83 @@ fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &Or
         let comparison = match field_type {
             // 无符号整数类型
             DataType::UInt8 => {
-                let a_val = unsafe { val_a.value.u8 };
-                let b_val = unsafe { val_b.value.u8 };
+                let a_val = unsafe { val_a.value.as_u8() };
+                let b_val = unsafe { val_b.value.as_u8() };
                 a_val.cmp(&b_val)
             },
             DataType::UInt16 => {
-                let a_val = unsafe { val_a.value.u16 };
-                let b_val = unsafe { val_b.value.u16 };
+                let a_val = unsafe { val_a.value.as_u16() };
+                let b_val = unsafe { val_b.value.as_u16() };
                 a_val.cmp(&b_val)
             },
             DataType::UInt32 => {
-                let a_val = unsafe { val_a.value.u32 };
-                let b_val = unsafe { val_b.value.u32 };
+                let a_val = unsafe { val_a.value.as_u32() };
+                let b_val = unsafe { val_b.value.as_u32() };
                 a_val.cmp(&b_val)
             },
             DataType::UInt64 => {
-                let a_val = unsafe { val_a.value.u64 };
-                let b_val = unsafe { val_b.value.u64 };
+                let a_val = unsafe { val_a.value.as_u64() };
+                let b_val = unsafe { val_b.value.as_u64() };
                 a_val.cmp(&b_val)
             },
             
             // 有符号整数类型
             DataType::Int8 => {
-                let a_val = unsafe { val_a.value.i8 };
-                let b_val = unsafe { val_b.value.i8 };
+                let a_val = unsafe { val_a.value.as_i8() };
+                let b_val = unsafe { val_b.value.as_i8() };
                 a_val.cmp(&b_val)
             },
             DataType::Int16 => {
-                let a_val = unsafe { val_a.value.i16 };
-                let b_val = unsafe { val_b.value.i16 };
+                let a_val = unsafe { val_a.value.as_i16() };
+                let b_val = unsafe { val_b.value.as_i16() };
                 a_val.cmp(&b_val)
             },
             DataType::Int32 => {
-                let a_val = unsafe { val_a.value.i32 };
-                let b_val = unsafe { val_b.value.i32 };
+                let a_val = unsafe { val_a.value.as_i32() };
+                let b_val = unsafe { val_b.value.as_i32() };
                 a_val.cmp(&b_val)
             },
             DataType::Int64 => {
-                let a_val = unsafe { val_a.value.i64 };
-                let b_val = unsafe { val_b.value.i64 };
+                let a_val = unsafe { val_a.value.as_i64() };
+                let b_val = unsafe { val_b.value.as_i64() };
                 a_val.cmp(&b_val)
             },
             
             // 浮点数类型
             DataType::Float32 => {
-                let a_val = unsafe { val_a.value.float32 };
-                let b_val = unsafe { val_b.value.float32 };
+                let a_val = unsafe { val_a.value.as_float32() };
+                let b_val = unsafe { val_b.value.as_float32() };
                 a_val.partial_cmp(&b_val).unwrap_or(core::cmp::Ordering::Equal)
             },
             DataType::Float64 => {
-                let a_val = unsafe { val_a.value.float64 };
-                let b_val = unsafe { val_b.value.float64 };
+                let a_val = unsafe { val_a.value.as_float64() };
+                let b_val = unsafe { val_b.value.as_float64() };
                 a_val.partial_cmp(&b_val).unwrap_or(core::cmp::Ordering::Equal)
             },
             
             // 布尔类型
             DataType::Bool => {
-                let a_val = unsafe { val_a.value.bool };
-                let b_val = unsafe { val_b.value.bool };
+                let a_val = unsafe { val_a.value.as_bool() };
+                let b_val = unsafe { val_b.value.as_bool() };
                 a_val.cmp(&b_val)
             },
             
             // 时间戳类型
             DataType::Timestamp => {
-                let a_val = unsafe { val_a.value.time.value };
-                let b_val = unsafe { val_b.value.time.value };
+                let a_val = unsafe { val_a.value.as_time().value };
+                let b_val = unsafe { val_b.value.as_time().value };
                 a_val.cmp(&b_val)
             },
             DataType::TimestampTZ => {
-                let a_val = unsafe { val_a.value.time.value };
-                let b_val = unsafe { val_b.value.time.value };
+                let a_val = unsafe { val_a.value.as_time().value };
+                let b_val = unsafe { val_b.value.as_time().value };
                 a_val.cmp(&b_val)
             },
             
             // 字符串类型
             DataType::String => {
-                let a_str = unsafe { &val_a.value.string };
-                let b_str = unsafe { &val_b.value.string };
+                let a_str = val_a.value.as_string();
+                let b_str = val_b.value.as_string();
                 
                 let a_str = String::from_utf8_lossy(a_str).trim_end_matches(char::from(0)).to_string();
                 let b_str = String::from_utf8_lossy(b_str).trim_end_matches(char::from(0)).to_string();
@@ -5333,8 +5309,8 @@ fn sort_rows(rows: &mut Vec<Vec<TypedValue>>, table: &MemoryTable, order_by: &Or
             },
             // 时间间隔类型
             DataType::Interval => {
-                let a_val = unsafe { val_a.value.interval.value };
-                let b_val = unsafe { val_b.value.interval.value };
+                let a_val = unsafe { val_a.value.as_interval().value };
+                let b_val = unsafe { val_b.value.as_interval().value };
                 a_val.cmp(&b_val)
             },
         };
@@ -5368,10 +5344,8 @@ fn get_field_value(table: &MemoryTable, record: &[u8], field_name: &str) -> Resu
     
     let field = &table.def.fields[field_index];
     // 获取字段值
-    let value = unsafe {
-        table.get_field(record, field_index)
-            .unwrap_or(Value { u64: 0 })
-    };
+    let value = table.get_field(record, field_index)
+            .unwrap_or(Value::U64(0));
     
     Ok(TypedValue {
         value_type: field.data_type,

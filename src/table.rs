@@ -386,22 +386,22 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
     unsafe fn get_field_by_offset(&self, record_data: &[u8], offset: usize, data_type: DataType, size: usize) -> Result<Value>
     {
         let value = match data_type {
-            DataType::UInt8 => Value { u8: record_data[offset] },
-            DataType::UInt16 => Value { u16: u16::from_le_bytes(record_data[offset..offset+2].try_into().unwrap()) },
-            DataType::UInt32 => Value { u32: u32::from_le_bytes(record_data[offset..offset+4].try_into().unwrap()) },
-            DataType::UInt64 => Value { u64: u64::from_le_bytes(record_data[offset..offset+8].try_into().unwrap()) },
-            DataType::Int8 => Value { i8: i8::from_le_bytes(record_data[offset..offset+1].try_into().unwrap()) },
-            DataType::Int16 => Value { i16: i16::from_le_bytes(record_data[offset..offset+2].try_into().unwrap()) },
-            DataType::Int32 => Value { i32: i32::from_le_bytes(record_data[offset..offset+4].try_into().unwrap()) },
-            DataType::Int64 => Value { i64: i64::from_le_bytes(record_data[offset..offset+8].try_into().unwrap()) },
-            DataType::Float32 => Value { float32: f32::from_le_bytes(record_data[offset..offset+4].try_into().unwrap()) },
-            DataType::Float64 => Value { float64: f64::from_le_bytes(record_data[offset..offset+8].try_into().unwrap()) },
-            DataType::Bool => Value { bool: record_data[offset] != 0 },
+            DataType::UInt8 => Value::U8(record_data[offset]),
+            DataType::UInt16 => Value::U16(u16::from_le_bytes(record_data[offset..offset+2].try_into().unwrap())),
+            DataType::UInt32 => Value::U32(u32::from_le_bytes(record_data[offset..offset+4].try_into().unwrap())),
+            DataType::UInt64 => Value::U64(u64::from_le_bytes(record_data[offset..offset+8].try_into().unwrap())),
+            DataType::Int8 => Value::I8(i8::from_le_bytes(record_data[offset..offset+1].try_into().unwrap())),
+            DataType::Int16 => Value::I16(i16::from_le_bytes(record_data[offset..offset+2].try_into().unwrap())),
+            DataType::Int32 => Value::I32(i32::from_le_bytes(record_data[offset..offset+4].try_into().unwrap())),
+            DataType::Int64 => Value::I64(i64::from_le_bytes(record_data[offset..offset+8].try_into().unwrap())),
+            DataType::Float32 => Value::Float32(f32::from_le_bytes(record_data[offset..offset+4].try_into().unwrap())),
+            DataType::Float64 => Value::Float64(f64::from_le_bytes(record_data[offset..offset+8].try_into().unwrap())),
+            DataType::Bool => Value::Bool(record_data[offset] != 0),
             DataType::Timestamp => {
                 let mut bytes = [0u8; 8];
                 bytes.copy_from_slice(&record_data[offset..offset+8]);
                 let value = i64::from_le_bytes(bytes);
-                Value { time: crate::types::db_timestamp { value, tz_offset: 0, precision: 0, flags: 0 } }
+                Value::Time(crate::types::db_timestamp { value, tz_offset: 0, precision: 0, flags: 0 })
             },
             DataType::TimestampTZ => {
                 let mut bytes = [0u8; 8];
@@ -410,7 +410,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                 let mut tz_bytes = [0u8; 2];
                 tz_bytes.copy_from_slice(&record_data[offset+8..offset+10]);
                 let tz_offset = i16::from_le_bytes(tz_bytes);
-                Value { time: crate::types::db_timestamp { value, tz_offset, precision: 0, flags: 0 } }
+                Value::Time(crate::types::db_timestamp { value, tz_offset, precision: 0, flags: 0 })
             },
             DataType::String => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
@@ -419,13 +419,13 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                 let end = core::cmp::min(offset + copy_size, record_data.len());
                 let slice = &record_data[offset..end];
                 str_value[..slice.len()].copy_from_slice(slice);
-                Value { string: str_value }
+                Value::String(str_value)
             },
             DataType::Interval => {
                 let mut bytes = [0u8; 8];
                 bytes.copy_from_slice(&record_data[offset..offset+8]);
                 let value = i64::from_le_bytes(bytes);
-                Value { interval: crate::types::db_interval { value, precision: 0, flags: 0 } }
+                Value::Interval(crate::types::db_interval { value, precision: 0, flags: 0 })
             },
         };
         
@@ -765,7 +765,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
     }
     
     /// 获取字段值
-    pub unsafe fn get_field(
+    pub fn get_field(
         &self,
         record_data: &[u8],
         field_index: usize
@@ -780,43 +780,43 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
         // 根据字段类型获取值
         let value = match field.data_type {
             crate::types::DataType::UInt8 => {
-                Value { u8: record_data[field.offset] }
+                Value::U8(record_data[field.offset])
             }
             crate::types::DataType::UInt16 => {
-                Value { u16: u16::from_le_bytes(record_data[field.offset..field.offset+2].try_into().unwrap()) }
+                Value::U16(u16::from_le_bytes(record_data[field.offset..field.offset+2].try_into().unwrap()))
             }
             crate::types::DataType::UInt32 => {
-                Value { u32: u32::from_le_bytes(record_data[field.offset..field.offset+4].try_into().unwrap()) }
+                Value::U32(u32::from_le_bytes(record_data[field.offset..field.offset+4].try_into().unwrap()))
             }
             crate::types::DataType::UInt64 => {
-                Value { u64: u64::from_le_bytes(record_data[field.offset..field.offset+8].try_into().unwrap()) }
+                Value::U64(u64::from_le_bytes(record_data[field.offset..field.offset+8].try_into().unwrap()))
             }
             crate::types::DataType::Int8 => {
-                Value { i8: i8::from_le_bytes(record_data[field.offset..field.offset+1].try_into().unwrap()) }
+                Value::I8(i8::from_le_bytes(record_data[field.offset..field.offset+1].try_into().unwrap()))
             }
             crate::types::DataType::Int16 => {
-                Value { i16: i16::from_le_bytes(record_data[field.offset..field.offset+2].try_into().unwrap()) }
+                Value::I16(i16::from_le_bytes(record_data[field.offset..field.offset+2].try_into().unwrap()))
             }
             crate::types::DataType::Int32 => {
-                Value { i32: i32::from_le_bytes(record_data[field.offset..field.offset+4].try_into().unwrap()) }
+                Value::I32(i32::from_le_bytes(record_data[field.offset..field.offset+4].try_into().unwrap()))
             }
             crate::types::DataType::Int64 => {
-                Value { i64: i64::from_le_bytes(record_data[field.offset..field.offset+8].try_into().unwrap()) }
+                Value::I64(i64::from_le_bytes(record_data[field.offset..field.offset+8].try_into().unwrap()))
             }
             crate::types::DataType::Float32 => {
-                Value { float32: f32::from_le_bytes(record_data[field.offset..field.offset+4].try_into().unwrap()) }
+                Value::Float32(f32::from_le_bytes(record_data[field.offset..field.offset+4].try_into().unwrap()))
             }
             crate::types::DataType::Float64 => {
-                Value { float64: f64::from_le_bytes(record_data[field.offset..field.offset+8].try_into().unwrap()) }
+                Value::Float64(f64::from_le_bytes(record_data[field.offset..field.offset+8].try_into().unwrap()))
             }
             crate::types::DataType::Bool => {
-                Value { bool: record_data[field.offset] != 0 }
+                Value::Bool(record_data[field.offset] != 0)
             }
             crate::types::DataType::Timestamp => {
                 let mut bytes = [0u8; 8];
                 bytes.copy_from_slice(&record_data[field.offset..field.offset+8]);
                 let value = i64::from_le_bytes(bytes);
-                Value { time: crate::types::db_timestamp { value, tz_offset: 0, precision: 0, flags: 0 } }
+                Value::Time(crate::types::db_timestamp { value, tz_offset: 0, precision: 0, flags: 0 })
             }
             crate::types::DataType::TimestampTZ => {
                 let mut bytes = [0u8; 8];
@@ -825,7 +825,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                 let mut tz_bytes = [0u8; 2];
                 tz_bytes.copy_from_slice(&record_data[field.offset+8..field.offset+10]);
                 let tz_offset = i16::from_le_bytes(tz_bytes);
-                Value { time: crate::types::db_timestamp { value, tz_offset, precision: 0, flags: 0 } }
+                Value::Time(crate::types::db_timestamp { value, tz_offset, precision: 0, flags: 0 })
             }
             crate::types::DataType::String => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
@@ -834,13 +834,13 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                 let end = core::cmp::min(field.offset + copy_size, record_data.len());
                 let slice = &record_data[field.offset..end];
                 str_value[..slice.len()].copy_from_slice(slice);
-                Value { string: str_value }
+                Value::String(str_value)
             },
             crate::types::DataType::Interval => {
                 let mut bytes = [0u8; 8];
                 bytes.copy_from_slice(&record_data[field.offset..field.offset+8]);
                 let value = i64::from_le_bytes(bytes);
-                Value { interval: crate::types::db_interval { value, precision: 0, flags: 0 } }
+                Value::Interval(crate::types::db_interval { value, precision: 0, flags: 0 })
             }
         };
         
@@ -848,7 +848,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
     }
     
     /// 设置字段值
-    pub unsafe fn set_field(
+    pub fn set_field(
         &self,
         record_data: &mut [u8],
         field_index: usize,
@@ -864,65 +864,65 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
         // 根据字段类型设置值
         match field.data_type {
             crate::types::DataType::UInt8 => {
-                record_data[field.offset] = value.u8;
+                record_data[field.offset] = value.as_u8();
             }
             crate::types::DataType::UInt16 => {
-                let bytes = value.u16.to_le_bytes();
+                let bytes = value.as_u16().to_le_bytes();
                 record_data[field.offset..field.offset+2].copy_from_slice(&bytes);
             }
             crate::types::DataType::UInt32 => {
-                let bytes = value.u32.to_le_bytes();
+                let bytes = value.as_u32().to_le_bytes();
                 record_data[field.offset..field.offset+4].copy_from_slice(&bytes);
             }
             crate::types::DataType::UInt64 => {
-                let bytes = value.u64.to_le_bytes();
+                let bytes = value.as_u64().to_le_bytes();
                 record_data[field.offset..field.offset+8].copy_from_slice(&bytes);
             }
             crate::types::DataType::Int8 => {
-                record_data[field.offset] = value.i8 as u8;
+                record_data[field.offset] = value.as_i8() as u8;
             }
             crate::types::DataType::Int16 => {
-                let bytes = value.i16.to_le_bytes();
+                let bytes = value.as_i16().to_le_bytes();
                 record_data[field.offset..field.offset+2].copy_from_slice(&bytes);
             }
             crate::types::DataType::Int32 => {
-                let bytes = value.i32.to_le_bytes();
+                let bytes = value.as_i32().to_le_bytes();
                 record_data[field.offset..field.offset+4].copy_from_slice(&bytes);
             }
             crate::types::DataType::Int64 => {
-                let bytes = value.i64.to_le_bytes();
+                let bytes = value.as_i64().to_le_bytes();
                 record_data[field.offset..field.offset+8].copy_from_slice(&bytes);
             }
             crate::types::DataType::Float32 => {
-                let bytes = value.float32.to_le_bytes();
+                let bytes = value.as_float32().to_le_bytes();
                 record_data[field.offset..field.offset+4].copy_from_slice(&bytes);
             }
             crate::types::DataType::Float64 => {
-                let bytes = value.float64.to_le_bytes();
+                let bytes = value.as_float64().to_le_bytes();
                 record_data[field.offset..field.offset+8].copy_from_slice(&bytes);
             }
             crate::types::DataType::Bool => {
-                record_data[field.offset] = if value.bool { 1 } else { 0 };
+                record_data[field.offset] = if value.as_bool() { 1 } else { 0 };
             }
             crate::types::DataType::Timestamp => {
-                let bytes = value.time.value.to_le_bytes();
+                let bytes = value.as_time().value.to_le_bytes();
                 record_data[field.offset..field.offset+8].copy_from_slice(&bytes);
             }
             crate::types::DataType::TimestampTZ => {
-                let bytes = value.time.value.to_le_bytes();
+                let bytes = value.as_time().value.to_le_bytes();
                 record_data[field.offset..field.offset+8].copy_from_slice(&bytes);
-                let tz_bytes = value.time.tz_offset.to_le_bytes();
+                let tz_bytes = value.as_time().tz_offset.to_le_bytes();
                 record_data[field.offset+8..field.offset+10].copy_from_slice(&tz_bytes);
             }
             crate::types::DataType::String => {
                 let copy_size = core::cmp::min(field.size, crate::types::MAX_STRING_LEN);
                 let end = core::cmp::min(field.offset + copy_size, record_data.len());
                 let dest = &mut record_data[field.offset..end];
-                let src = &value.string[..dest.len()];
+                let src = &value.as_string()[..dest.len()];
                 dest.copy_from_slice(src);
             },
             crate::types::DataType::Interval => {
-                let bytes = value.interval.value.to_le_bytes();
+                let bytes = value.as_interval().value.to_le_bytes();
                 record_data[field.offset..field.offset+8].copy_from_slice(&bytes);
             }
         }
@@ -1449,7 +1449,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
     
     /// 时间序列聚合：计算时间范围内数值字段总和
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间
-    pub unsafe fn aggregate_sum(
+    pub fn aggregate_sum(
         &self,
         time_field_index: usize,
         value_field_index: usize,
@@ -1501,12 +1501,12 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                 // 获取数值
                 let value = self.get_field(record_data, value_field_index)?;
                 let numeric_value = match self.def.fields[value_field_index].data_type {
-                    crate::types::DataType::UInt8 => value.u8 as f64,
-                    crate::types::DataType::UInt16 => value.u16 as f64,
-                    crate::types::DataType::UInt32 => value.u32 as f64,
-                    crate::types::DataType::UInt64 => value.u64 as f64,
-                    crate::types::DataType::Float32 => value.float32 as f64,
-                    crate::types::DataType::Float64 => value.float64,
+                    crate::types::DataType::UInt8 => value.as_u8() as f64,
+                    crate::types::DataType::UInt16 => value.as_u16() as f64,
+                    crate::types::DataType::UInt32 => value.as_u32() as f64,
+                    crate::types::DataType::UInt64 => value.as_u64() as f64,
+                    crate::types::DataType::Float32 => value.as_float32() as f64,
+                    crate::types::DataType::Float64 => value.as_float64(),
                     _ => return Err(RemDbError::TypeMismatch),
                 };
                 
@@ -1519,7 +1519,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
     
     /// 时间序列聚合：计算时间范围内数值字段平均值
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间
-    pub unsafe fn aggregate_avg(
+    pub fn aggregate_avg(
         &self,
         time_field_index: usize,
         value_field_index: usize,
@@ -1572,12 +1572,12 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                 // 获取数值
                 let value = self.get_field(record_data, value_field_index)?;
                 let numeric_value = match self.def.fields[value_field_index].data_type {
-                    crate::types::DataType::UInt8 => value.u8 as f64,
-                    crate::types::DataType::UInt16 => value.u16 as f64,
-                    crate::types::DataType::UInt32 => value.u32 as f64,
-                    crate::types::DataType::UInt64 => value.u64 as f64,
-                    crate::types::DataType::Float32 => value.float32 as f64,
-                    crate::types::DataType::Float64 => value.float64,
+                    crate::types::DataType::UInt8 => value.as_u8() as f64,
+                    crate::types::DataType::UInt16 => value.as_u16() as f64,
+                    crate::types::DataType::UInt32 => value.as_u32() as f64,
+                    crate::types::DataType::UInt64 => value.as_u64() as f64,
+                    crate::types::DataType::Float32 => value.as_float32() as f64,
+                    crate::types::DataType::Float64 => value.as_float64(),
                     _ => return Err(RemDbError::TypeMismatch),
                 };
                 
@@ -1595,7 +1595,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
     
     /// 时间序列聚合：计算时间范围内数值字段最小值
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间
-    pub unsafe fn aggregate_min(
+    pub fn aggregate_min(
         &self,
         time_field_index: usize,
         value_field_index: usize,
@@ -1647,12 +1647,12 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                 // 获取数值
                 let value = self.get_field(record_data, value_field_index)?;
                 let numeric_value = match self.def.fields[value_field_index].data_type {
-                    crate::types::DataType::UInt8 => value.u8 as f64,
-                    crate::types::DataType::UInt16 => value.u16 as f64,
-                    crate::types::DataType::UInt32 => value.u32 as f64,
-                    crate::types::DataType::UInt64 => value.u64 as f64,
-                    crate::types::DataType::Float32 => value.float32 as f64,
-                    crate::types::DataType::Float64 => value.float64,
+                    crate::types::DataType::UInt8 => value.as_u8() as f64,
+                    crate::types::DataType::UInt16 => value.as_u16() as f64,
+                    crate::types::DataType::UInt32 => value.as_u32() as f64,
+                    crate::types::DataType::UInt64 => value.as_u64() as f64,
+                    crate::types::DataType::Float32 => value.as_float32() as f64,
+                    crate::types::DataType::Float64 => value.as_float64(),
                     _ => return Err(RemDbError::TypeMismatch),
                 };
                 
@@ -1706,7 +1706,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
 
     /// 时间序列聚合：计算时间范围内数值字段最大值
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间
-    pub unsafe fn aggregate_max(
+    pub fn aggregate_max(
         &self,
         time_field_index: usize,
         value_field_index: usize,
@@ -1739,12 +1739,12 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                 // 获取数值
                 let value = self.get_field(record_data, value_field_index)?;
                 let numeric_value = match self.def.fields[value_field_index].data_type {
-                    crate::types::DataType::UInt8 => value.u8 as f64,
-                    crate::types::DataType::UInt16 => value.u16 as f64,
-                    crate::types::DataType::UInt32 => value.u32 as f64,
-                    crate::types::DataType::UInt64 => value.u64 as f64,
-                    crate::types::DataType::Float32 => value.float32 as f64,
-                    crate::types::DataType::Float64 => value.float64,
+                    crate::types::DataType::UInt8 => value.as_u8() as f64,
+                    crate::types::DataType::UInt16 => value.as_u16() as f64,
+                    crate::types::DataType::UInt32 => value.as_u32() as f64,
+                    crate::types::DataType::UInt64 => value.as_u64() as f64,
+                    crate::types::DataType::Float32 => value.as_float32() as f64,
+                    crate::types::DataType::Float64 => value.as_float64(),
                     _ => return Err(RemDbError::TypeMismatch),
                 };
                 
@@ -1907,7 +1907,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
     /// 按时间窗口聚合
     /// 参数：time_field_index - 时间字段索引，value_field_index - 数值字段索引，start_time - 开始时间，end_time - 结束时间，window_size - 窗口大小（毫秒）
     #[cfg(feature = "std")]
-    pub unsafe fn get_aggregate_in_time_window(
+    pub fn get_aggregate_in_time_window(
         &self,
         time_field_index: usize,
         value_field_index: usize,
@@ -1952,12 +1952,12 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
                 // 获取数值
                 let value = self.get_field(record_data, value_field_index)?;
                 let numeric_value = match value_field.data_type {
-                    crate::types::DataType::UInt8 => value.u8 as f64,
-                    crate::types::DataType::UInt16 => value.u16 as f64,
-                    crate::types::DataType::UInt32 => value.u32 as f64,
-                    crate::types::DataType::UInt64 => value.u64 as f64,
-                    crate::types::DataType::Float32 => value.float32 as f64,
-                    crate::types::DataType::Float64 => value.float64,
+                    crate::types::DataType::UInt8 => value.as_u8() as f64,
+                    crate::types::DataType::UInt16 => value.as_u16() as f64,
+                    crate::types::DataType::UInt32 => value.as_u32() as f64,
+                    crate::types::DataType::UInt64 => value.as_u64() as f64,
+                    crate::types::DataType::Float32 => value.as_float32() as f64,
+                    crate::types::DataType::Float64 => value.as_float64(),
                     _ => return Err(RemDbError::TypeMismatch),
                 };
                 
@@ -1986,7 +1986,7 @@ let current_tx_id = crate::transaction::get_tx_id_counter();
     
     /// no_std环境下不支持的聚合函数
     #[cfg(not(feature = "std"))]
-    pub unsafe fn get_aggregate_in_time_window(
+    pub fn get_aggregate_in_time_window(
         &self,
         _time_field_index: usize,
         _value_field_index: usize,

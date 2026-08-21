@@ -382,30 +382,77 @@ pub mod time_utils {
 /// 通用值类型
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub union Value {
-    pub u8: u8,
-    pub u16: u16,
-    pub u32: u32,
-    pub u64: u64,
-    pub i8: i8,
-    pub i16: i16,
-    pub i32: i32,
-    pub i64: i64,
-    pub float32: f32,
-    pub float64: f64,
-    pub bool: bool,
-    pub timestamp: u64,              // 兼容旧版本
-    pub time: db_timestamp,          // 新的时间戳类型
-    pub interval: db_interval,       // 时间间隔类型
-    pub string: [u8; MAX_STRING_LEN],
+pub enum Value {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    Float32(f32),
+    Float64(f64),
+    Bool(bool),
+    Timestamp(u64),
+    Time(db_timestamp),
+    Interval(db_interval),
+    String([u8; MAX_STRING_LEN]),
 }
 
-// 手动实现Debug trait，因为Rust不支持为union类型自动派生Debug
 impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // 默认打印为u64值，实际使用时需要根据数据类型进行转换
-        unsafe {
-            write!(f, "Value(0x{:x})", self.u64)
+        match self {
+            Value::U8(v) => write!(f, "U8({})", v),
+            Value::U16(v) => write!(f, "U16({})", v),
+            Value::U32(v) => write!(f, "U32({})", v),
+            Value::U64(v) => write!(f, "U64({})", v),
+            Value::I8(v) => write!(f, "I8({})", v),
+            Value::I16(v) => write!(f, "I16({})", v),
+            Value::I32(v) => write!(f, "I32({})", v),
+            Value::I64(v) => write!(f, "I64({})", v),
+            Value::Float32(v) => write!(f, "Float32({})", v),
+            Value::Float64(v) => write!(f, "Float64({})", v),
+            Value::Bool(v) => write!(f, "Bool({})", v),
+            Value::Timestamp(v) => write!(f, "Timestamp({})", v),
+            Value::Time(v) => write!(f, "Time({:?})", v),
+            Value::Interval(v) => write!(f, "Interval({:?})", v),
+            Value::String(v) => {
+                let s = core::str::from_utf8(v).unwrap_or("<invalid utf8>");
+                write!(f, "String({:?})", s)
+            }
+        }
+    }
+}
+
+impl Value {
+    pub fn as_u8(&self) -> u8 { match self { Value::U8(v) => *v, _ => 0 } }
+    pub fn as_u16(&self) -> u16 { match self { Value::U16(v) => *v, _ => 0 } }
+    pub fn as_u32(&self) -> u32 { match self { Value::U32(v) => *v, _ => 0 } }
+    pub fn as_u64(&self) -> u64 { match self { Value::U64(v) => *v, _ => 0 } }
+    pub fn as_i8(&self) -> i8 { match self { Value::I8(v) => *v, _ => 0 } }
+    pub fn as_i16(&self) -> i16 { match self { Value::I16(v) => *v, _ => 0 } }
+    pub fn as_i32(&self) -> i32 { match self { Value::I32(v) => *v, _ => 0 } }
+    pub fn as_i64(&self) -> i64 { match self { Value::I64(v) => *v, _ => 0 } }
+    pub fn as_float32(&self) -> f32 { match self { Value::Float32(v) => *v, _ => 0.0 } }
+    pub fn as_float64(&self) -> f64 { match self { Value::Float64(v) => *v, _ => 0.0 } }
+    pub fn as_bool(&self) -> bool { match self { Value::Bool(v) => *v, _ => false } }
+    pub fn as_timestamp(&self) -> u64 { match self { Value::Timestamp(v) => *v, Value::Time(v) => v.value as u64, _ => 0 } }
+    pub fn as_time(&self) -> db_timestamp { match self { Value::Time(v) => *v, Value::Timestamp(v) => db_timestamp::new(*v as i64, 0, 0, 0), _ => db_timestamp::new(0, 0, 0, 0) } }
+    pub fn as_interval(&self) -> db_interval { match self { Value::Interval(v) => *v, _ => db_interval::new(0, 0, 0) } }
+    pub fn as_string(&self) -> &[u8; MAX_STRING_LEN] {
+        match self {
+            Value::String(v) => v,
+            _ => {
+                const EMPTY_STRING: [u8; MAX_STRING_LEN] = [0u8; MAX_STRING_LEN];
+                &EMPTY_STRING
+            }
+        }
+    }
+    pub fn as_string_mut(&mut self) -> &mut [u8; MAX_STRING_LEN] {
+        match self {
+            Value::String(v) => v,
+            _ => panic!("Value is not a string"),
         }
     }
 }
@@ -427,20 +474,20 @@ impl PartialEq for TypedValue {
             return false;
         }
         
-        unsafe {
+        {
             match self.value_type {
-                DataType::UInt8 => self.value.u8 == other.value.u8,
-                DataType::UInt16 => self.value.u16 == other.value.u16,
-                DataType::UInt32 => self.value.u32 == other.value.u32,
-                DataType::UInt64 => self.value.u64 == other.value.u64,
-                DataType::Int8 => self.value.i8 == other.value.i8,
-                DataType::Int16 => self.value.i16 == other.value.i16,
-                DataType::Int32 => self.value.i32 == other.value.i32,
-                DataType::Int64 => self.value.i64 == other.value.i64,
+                DataType::UInt8 => self.value.as_u8() == other.value.as_u8(),
+                DataType::UInt16 => self.value.as_u16() == other.value.as_u16(),
+                DataType::UInt32 => self.value.as_u32() == other.value.as_u32(),
+                DataType::UInt64 => self.value.as_u64() == other.value.as_u64(),
+                DataType::Int8 => self.value.as_i8() == other.value.as_i8(),
+                DataType::Int16 => self.value.as_i16() == other.value.as_i16(),
+                DataType::Int32 => self.value.as_i32() == other.value.as_i32(),
+                DataType::Int64 => self.value.as_i64() == other.value.as_i64(),
                 DataType::Float32 => {
                     // 处理浮点数的特殊比较：NaN 和无穷大
-                    let a = self.value.float32;
-                    let b = other.value.float32;
+                    let a = self.value.as_float32();
+                    let b = other.value.as_float32();
                     if a.is_nan() && b.is_nan() {
                         true // 两个都是 NaN 时认为相等
                     } else {
@@ -448,26 +495,26 @@ impl PartialEq for TypedValue {
                     }
                 }
                 DataType::Float64 => {
-                    let a = self.value.float64;
-                    let b = other.value.float64;
+                    let a = self.value.as_float64();
+                    let b = other.value.as_float64();
                     if a.is_nan() && b.is_nan() {
                         true
                     } else {
                         a == b
                     }
                 }
-                DataType::Bool => self.value.bool == other.value.bool,
-                DataType::Timestamp => self.value.time.value == other.value.time.value,
+                DataType::Bool => self.value.as_bool() == other.value.as_bool(),
+                DataType::Timestamp => self.value.as_time().value == other.value.as_time().value,
                 DataType::TimestampTZ => {
                     // 比较值和时区偏移
-                    self.value.time.value == other.value.time.value && 
-                    self.value.time.tz_offset == other.value.time.tz_offset
+                    self.value.as_time().value == other.value.as_time().value && 
+                    self.value.as_time().tz_offset == other.value.as_time().tz_offset
                 },
-                DataType::Interval => self.value.interval.value == other.value.interval.value,
+                DataType::Interval => self.value.as_interval().value == other.value.as_interval().value,
                 DataType::String => {
                     // 比较字符串数组
-                    let a_str = core::str::from_utf8(&self.value.string).unwrap_or("");
-                    let b_str = core::str::from_utf8(&other.value.string).unwrap_or("");
+                    let a_str = core::str::from_utf8(self.value.as_string()).unwrap_or("");
+                    let b_str = core::str::from_utf8(other.value.as_string()).unwrap_or("");
                     a_str.trim_end_matches(char::from(0)) == b_str.trim_end_matches(char::from(0))
                 }
             }
@@ -486,19 +533,19 @@ impl Hash for TypedValue {
         // 首先哈希类型
         self.value_type.hash(state);
         
-        unsafe {
+        {
             match self.value_type {
-                DataType::UInt8 => self.value.u8.hash(state),
-                DataType::UInt16 => self.value.u16.hash(state),
-                DataType::UInt32 => self.value.u32.hash(state),
-                DataType::UInt64 => self.value.u64.hash(state),
-                DataType::Int8 => self.value.i8.hash(state),
-                DataType::Int16 => self.value.i16.hash(state),
-                DataType::Int32 => self.value.i32.hash(state),
-                DataType::Int64 => self.value.i64.hash(state),
+                DataType::UInt8 => self.value.as_u8().hash(state),
+                DataType::UInt16 => self.value.as_u16().hash(state),
+                DataType::UInt32 => self.value.as_u32().hash(state),
+                DataType::UInt64 => self.value.as_u64().hash(state),
+                DataType::Int8 => self.value.as_i8().hash(state),
+                DataType::Int16 => self.value.as_i16().hash(state),
+                DataType::Int32 => self.value.as_i32().hash(state),
+                DataType::Int64 => self.value.as_i64().hash(state),
                 DataType::Float32 => {
                     // 处理浮点数的特殊情况：NaN 和无穷大
-                    let a = self.value.float32;
+                    let a = self.value.as_float32();
                     if a.is_nan() {
                         // 所有NaN使用相同的哈希值
                         state.write_u32(0x7FC00000);
@@ -507,7 +554,7 @@ impl Hash for TypedValue {
                     }
                 },
                 DataType::Float64 => {
-                    let a = self.value.float64;
+                    let a = self.value.as_float64();
                     if a.is_nan() {
                         // 所有NaN使用相同的哈希值
                         state.write_u64(0x7FF8000000000000);
@@ -515,17 +562,17 @@ impl Hash for TypedValue {
                         a.to_bits().hash(state);
                     }
                 },
-                DataType::Bool => self.value.bool.hash(state),
-                DataType::Timestamp => self.value.time.value.hash(state),
+                DataType::Bool => self.value.as_bool().hash(state),
+                DataType::Timestamp => self.value.as_time().value.hash(state),
                 DataType::TimestampTZ => {
                     // 哈希值和时区偏移
-                    self.value.time.value.hash(state);
-                    self.value.time.tz_offset.hash(state);
+                    self.value.as_time().value.hash(state);
+                    self.value.as_time().tz_offset.hash(state);
                 },
-                DataType::Interval => self.value.interval.value.hash(state),
+                DataType::Interval => self.value.as_interval().value.hash(state),
                 DataType::String => {
                     // 哈希字符串内容，忽略末尾的空字符
-                    let s = core::str::from_utf8(&self.value.string).unwrap_or("");
+                    let s = core::str::from_utf8(self.value.as_string()).unwrap_or("");
                     s.trim_end_matches(char::from(0)).hash(state);
                 }
             }
@@ -540,20 +587,20 @@ impl PartialOrd for TypedValue {
         match self.value_type.cmp(&other.value_type) {
             core::cmp::Ordering::Equal => {
                 // 类型相同，比较值
-                unsafe {
+                {
                     match self.value_type {
-                        DataType::UInt8 => Some(self.value.u8.cmp(&other.value.u8)),
-                        DataType::UInt16 => Some(self.value.u16.cmp(&other.value.u16)),
-                        DataType::UInt32 => Some(self.value.u32.cmp(&other.value.u32)),
-                        DataType::UInt64 => Some(self.value.u64.cmp(&other.value.u64)),
-                        DataType::Int8 => Some(self.value.i8.cmp(&other.value.i8)),
-                        DataType::Int16 => Some(self.value.i16.cmp(&other.value.i16)),
-                        DataType::Int32 => Some(self.value.i32.cmp(&other.value.i32)),
-                        DataType::Int64 => Some(self.value.i64.cmp(&other.value.i64)),
+                        DataType::UInt8 => Some(self.value.as_u8().cmp(&other.value.as_u8())),
+                        DataType::UInt16 => Some(self.value.as_u16().cmp(&other.value.as_u16())),
+                        DataType::UInt32 => Some(self.value.as_u32().cmp(&other.value.as_u32())),
+                        DataType::UInt64 => Some(self.value.as_u64().cmp(&other.value.as_u64())),
+                        DataType::Int8 => Some(self.value.as_i8().cmp(&other.value.as_i8())),
+                        DataType::Int16 => Some(self.value.as_i16().cmp(&other.value.as_i16())),
+                        DataType::Int32 => Some(self.value.as_i32().cmp(&other.value.as_i32())),
+                        DataType::Int64 => Some(self.value.as_i64().cmp(&other.value.as_i64())),
                         DataType::Float32 => {
                             // 处理浮点数的特殊情况：NaN
-                            let a = self.value.float32;
-                            let b = other.value.float32;
+                            let a = self.value.as_float32();
+                            let b = other.value.as_float32();
                             if a.is_nan() || b.is_nan() {
                                 None // NaN 无法比较
                             } else {
@@ -561,30 +608,30 @@ impl PartialOrd for TypedValue {
                             }
                         },
                         DataType::Float64 => {
-                            let a = self.value.float64;
-                            let b = other.value.float64;
+                            let a = self.value.as_float64();
+                            let b = other.value.as_float64();
                             if a.is_nan() || b.is_nan() {
                                 None // NaN 无法比较
                             } else {
                                 Some(a.partial_cmp(&b).unwrap())
                             }
                         },
-                        DataType::Bool => Some(self.value.bool.cmp(&other.value.bool)),
-                        DataType::Timestamp => Some(self.value.time.value.cmp(&other.value.time.value)),
+                        DataType::Bool => Some(self.value.as_bool().cmp(&other.value.as_bool())),
+                        DataType::Timestamp => Some(self.value.as_time().value.cmp(&other.value.as_time().value)),
                         DataType::TimestampTZ => {
                             // 先比较时间值，再比较时区偏移
-                            match self.value.time.value.cmp(&other.value.time.value) {
+                            match self.value.as_time().value.cmp(&other.value.as_time().value) {
                                 core::cmp::Ordering::Equal => {
-                                    Some(self.value.time.tz_offset.cmp(&other.value.time.tz_offset))
+                                    Some(self.value.as_time().tz_offset.cmp(&other.value.as_time().tz_offset))
                                 },
                                 ordering => Some(ordering),
                             }
                         },
-                        DataType::Interval => Some(self.value.interval.value.cmp(&other.value.interval.value)),
+                        DataType::Interval => Some(self.value.as_interval().value.cmp(&other.value.as_interval().value)),
                         DataType::String => {
                             // 比较字符串内容
-                            let a_str = core::str::from_utf8(&self.value.string).unwrap_or("");
-                            let b_str = core::str::from_utf8(&other.value.string).unwrap_or("");
+                            let a_str = core::str::from_utf8(self.value.as_string()).unwrap_or("");
+                            let b_str = core::str::from_utf8(other.value.as_string()).unwrap_or("");
                             Some(a_str.trim_end_matches(char::from(0)).cmp(b_str.trim_end_matches(char::from(0))))
                         },
                     }
@@ -605,34 +652,34 @@ impl Ord for TypedValue {
 /// 手动实现Debug trait，因为Rust不支持为union类型自动派生Debug
 impl fmt::Debug for TypedValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        unsafe {
+        {
             match self.value_type {
-                DataType::UInt8 => write!(f, "TypedValue(UInt8, {})", self.value.u8),
-                DataType::UInt16 => write!(f, "TypedValue(UInt16, {})", self.value.u16),
-                DataType::UInt32 => write!(f, "TypedValue(UInt32, {})", self.value.u32),
-                DataType::UInt64 => write!(f, "TypedValue(UInt64, {})", self.value.u64),
-                DataType::Int8 => write!(f, "TypedValue(Int8, {})", self.value.i8),
-                DataType::Int16 => write!(f, "TypedValue(Int16, {})", self.value.i16),
-                DataType::Int32 => write!(f, "TypedValue(Int32, {})", self.value.i32),
-                DataType::Int64 => write!(f, "TypedValue(Int64, {})", self.value.i64),
-                DataType::Float32 => write!(f, "TypedValue(Float32, {})", self.value.float32),
-                DataType::Float64 => write!(f, "TypedValue(Float64, {})", self.value.float64),
-                DataType::Bool => write!(f, "TypedValue(Bool, {})", self.value.bool),
+                DataType::UInt8 => write!(f, "TypedValue(UInt8, {})", self.value.as_u8()),
+                DataType::UInt16 => write!(f, "TypedValue(UInt16, {})", self.value.as_u16()),
+                DataType::UInt32 => write!(f, "TypedValue(UInt32, {})", self.value.as_u32()),
+                DataType::UInt64 => write!(f, "TypedValue(UInt64, {})", self.value.as_u64()),
+                DataType::Int8 => write!(f, "TypedValue(Int8, {})", self.value.as_i8()),
+                DataType::Int16 => write!(f, "TypedValue(Int16, {})", self.value.as_i16()),
+                DataType::Int32 => write!(f, "TypedValue(Int32, {})", self.value.as_i32()),
+                DataType::Int64 => write!(f, "TypedValue(Int64, {})", self.value.as_i64()),
+                DataType::Float32 => write!(f, "TypedValue(Float32, {})", self.value.as_float32()),
+                DataType::Float64 => write!(f, "TypedValue(Float64, {})", self.value.as_float64()),
+                DataType::Bool => write!(f, "TypedValue(Bool, {})", self.value.as_bool()),
                 DataType::Timestamp => {
                     write!(f, "TypedValue(Timestamp, value: {}, precision: {})", 
-                           self.value.time.value, self.value.time.precision)
+                           self.value.as_time().value, self.value.as_time().precision)
                 },
                 DataType::TimestampTZ => {
                     write!(f, "TypedValue(TimestampTZ, value: {}, tz_offset: {}s, precision: {})", 
-                           self.value.time.value, self.value.time.tz_offset, self.value.time.precision)
+                           self.value.as_time().value, self.value.as_time().tz_offset, self.value.as_time().precision)
                 },
                 DataType::String => {
-                    let s = core::str::from_utf8(&self.value.string).unwrap_or("").trim_end_matches(char::from(0));
+                    let s = core::str::from_utf8(self.value.as_string()).unwrap_or("").trim_end_matches(char::from(0));
                     write!(f, "TypedValue(String, \"{}\")", s)
                 },
                 DataType::Interval => {
                     write!(f, "TypedValue(Interval, value: {}, precision: {})", 
-                           self.value.interval.value, self.value.interval.precision)
+                           self.value.as_interval().value, self.value.as_interval().precision)
                 }
             }
         }
@@ -689,29 +736,29 @@ impl FieldDef {
         
         if let Some(default) = self.default_value {
             constraints.push_str(" DEFAULT ");
-            unsafe {
+            {
                 match self.data_type {
                     DataType::String => {
-                        let s = core::str::from_utf8(&default.string).unwrap_or("").trim_end_matches(char::from(0));
+                        let s = core::str::from_utf8(default.as_string()).unwrap_or("").trim_end_matches(char::from(0));
                         constraints.push_str(&alloc::format!("'{}'", s));
                     },
                     DataType::Bool => {
-                        let b = default.bool;
+                        let b = default.as_bool();
                         constraints.push_str(if b { "TRUE" } else { "FALSE" });
                     },
-                    DataType::UInt8 => constraints.push_str(&default.u8.to_string()),
-                    DataType::UInt16 => constraints.push_str(&default.u16.to_string()),
-                    DataType::UInt32 => constraints.push_str(&default.u32.to_string()),
-                    DataType::UInt64 => constraints.push_str(&default.u64.to_string()),
-                    DataType::Int8 => constraints.push_str(&default.i8.to_string()),
-                    DataType::Int16 => constraints.push_str(&default.i16.to_string()),
-                    DataType::Int32 => constraints.push_str(&default.i32.to_string()),
-                    DataType::Int64 => constraints.push_str(&default.i64.to_string()),
-                    DataType::Float32 => constraints.push_str(&default.float32.to_string()),
-                    DataType::Float64 => constraints.push_str(&default.float64.to_string()),
-                    DataType::Timestamp => constraints.push_str(&default.timestamp.to_string()),
-                    DataType::TimestampTZ => constraints.push_str(&default.timestamp.to_string()),
-                    DataType::Interval => constraints.push_str(&default.interval.value.to_string()),
+                    DataType::UInt8 => constraints.push_str(&default.as_u8().to_string()),
+                    DataType::UInt16 => constraints.push_str(&default.as_u16().to_string()),
+                    DataType::UInt32 => constraints.push_str(&default.as_u32().to_string()),
+                    DataType::UInt64 => constraints.push_str(&default.as_u64().to_string()),
+                    DataType::Int8 => constraints.push_str(&default.as_i8().to_string()),
+                    DataType::Int16 => constraints.push_str(&default.as_i16().to_string()),
+                    DataType::Int32 => constraints.push_str(&default.as_i32().to_string()),
+                    DataType::Int64 => constraints.push_str(&default.as_i64().to_string()),
+                    DataType::Float32 => constraints.push_str(&default.as_float32().to_string()),
+                    DataType::Float64 => constraints.push_str(&default.as_float64().to_string()),
+                    DataType::Timestamp => constraints.push_str(&default.as_timestamp().to_string()),
+                    DataType::TimestampTZ => constraints.push_str(&default.as_timestamp().to_string()),
+                    DataType::Interval => constraints.push_str(&default.as_interval().value.to_string()),
                 }
             }
         }
