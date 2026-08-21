@@ -8,6 +8,7 @@ members = [
     "crates/remdb-platform-baremetal",
     "crates/remdb-server",
 ]
+default-members = [".", "crates/remdb-server"]
 
 [workspace.lints.rust]
 unsafe_code = "deny"
