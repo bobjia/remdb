@@ -1209,9 +1209,10 @@ impl RemDb {
         // 如果系统表是新创建的，则使用默认的RBAC数据（已在RbacManager::new()中初始化）
         if !tables_created {
             // 加载RBAC数据从系统表
-            unsafe {
-                let _ = RbacManager::load_from_system_tables(&mut self.rbac_manager, &*self);
-            }
+            // 使用 addr_of_mut! 获取原始指针以避免借用冲突
+            // 函数本身是 unsafe 的，调用者负责保证安全
+            let manager_ptr = core::ptr::addr_of_mut!(self.rbac_manager);
+            let _ = unsafe { RbacManager::load_from_system_tables(&mut *manager_ptr, &*self) };
         }
 
         // 初始化HA管理器
