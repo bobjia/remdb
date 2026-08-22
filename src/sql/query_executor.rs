@@ -1529,7 +1529,6 @@ fn execute_select_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
-    eprintln!("DEBUG execute_select_query: table_name='{}', has_from={}", query.table_name, query.table_name.is_empty());
     
     // 从系统表获取查询资源配置
     let (max_memory_mb, query_timeout_ms) = crate::get_query_resource_config();
@@ -1540,13 +1539,10 @@ fn execute_select_query(
     let mut stats = QueryStats::default();
 
     // 检查是否有FROM子句（如果没有FROM子句，则执行表达式查询）
-    eprintln!("DEBUG execute_select_query: checking if table_name is empty: '{}', is_empty: {}", query.table_name, query.table_name.is_empty());
     if query.table_name.is_empty() {
         // 没有FROM子句，执行表达式查询
-        eprintln!("DEBUG execute_select_query: executing expression query (no FROM clause)");
         return execute_expression_query(db, query);
     }
-    eprintln!("DEBUG execute_select_query: executing SELECT query with FROM clause");
 
     // 检查是否有JOIN子句
     if !query.joins.is_empty() {
@@ -1601,7 +1597,6 @@ fn execute_select_query(
         // 返回所有列（作为Field表达式）
         #[cfg(feature = "log")]
         info!("DEBUG: SELECT * query, table fields: {:?}", table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
-        eprintln!("DEBUG execute_select_query: SELECT * query, table fields: {:?}", table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
         table
             .def
             .fields
@@ -1790,8 +1785,6 @@ fn execute_select_query(
     
     // 更新匹配的记录数
     stats.matched_records = all_records.len();
-    eprintln!("DEBUG execute_select_query: scanned {} records", stats.scanned_records);
-    eprintln!("DEBUG execute_select_query: found {} records", all_records.len());
     
     // 内存使用检查
     let estimated_memory = estimate_memory_usage_for_records(&all_records);
@@ -1799,7 +1792,6 @@ fn execute_select_query(
 
     // 7. 计算每个记录的表达式值
     let mut records_with_expr_values = Vec::with_capacity(all_records.len());
-    eprintln!("DEBUG execute_select_query: evaluating expressions for {} records", all_records.len());
     for record_values in &all_records {
         // 计算表达式值
         let mut expr_values = Vec::with_capacity(columns.len());
@@ -1812,12 +1804,9 @@ fn execute_select_query(
         // 将记录值和表达式值组合起来
         records_with_expr_values.push((record_values.clone(), expr_values));
     }
-    eprintln!("DEBUG execute_select_query: evaluated {} records with expressions", records_with_expr_values.len());
 
     // 8. 应用WHERE条件过滤记录
     let mut filtered_records = Vec::with_capacity(records_with_expr_values.len());
-    eprintln!("DEBUG execute_select_query: filtering {} records", records_with_expr_values.len());
-    eprintln!("DEBUG execute_select_query: where_clause={:?}", query.where_clause);
     for (record_values, expr_values) in records_with_expr_values {
         // 检查记录是否符合WHERE条件
         let mut matches = true;
@@ -1832,14 +1821,12 @@ fn execute_select_query(
                     &alias_map,
                 )
             };
-            eprintln!("DEBUG execute_select_query: record matches where clause: {}", matches);
         }
 
         if matches {
             filtered_records.push((record_values, expr_values));
         }
     }
-    eprintln!("DEBUG execute_select_query: filtered to {} records", filtered_records.len());
 
     // 9. 如果有ORDER BY子句，对记录进行排序
     if let Some(order_by) = &query.order_by {
@@ -4530,12 +4517,10 @@ fn execute_expression_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
-    eprintln!("DEBUG execute_expression_query: called");
 
     // 确定要返回的列表达式
     let columns = query.columns.clone();
 
-    eprintln!("DEBUG execute_expression_query: columns count = {}", columns.len());
 
     // 生成结果集的列名
     let result_columns = columns
@@ -4571,10 +4556,8 @@ fn execute_expression_query(
     }
 
     // 添加行到结果集
-    eprintln!("DEBUG execute_expression_query: adding row with {} values", row_values.len());
     result_set.add_row(row_values);
 
-    eprintln!("DEBUG execute_expression_query: result_set row_count = {}", result_set.row_count());
 
     Ok(result_set)
 }
@@ -5828,7 +5811,6 @@ fn set_field_value_with_depth(
                 let str_value = match evaluated_value.value_type {
                     DataType::VarChar | DataType::Char | DataType::Text => {
                         let s = core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default();
-                        eprintln!("DEBUG set_field_value: string value from evaluated_value: '{}', len={}", s, s.len());
                         s
                     }
                     DataType::Int64 => &evaluated_value.value.i64.to_string(),
@@ -5840,7 +5822,6 @@ fn set_field_value_with_depth(
                 let ptr = record_data.as_mut_ptr().add(offset);
                 // 复制字符串到缓冲区，确保不超过字段大小
                 let max_len = field_size;
-                eprintln!("DEBUG set_field_value: copying string '{}' to offset={}, max_len={}", str_value, offset, max_len);
                 for (i, c) in str_value.as_bytes().iter().enumerate() {
                     if i < max_len {
                         *ptr.add(i) = *c;
@@ -6691,7 +6672,6 @@ fn sort_rows_with_alias(
     // 查找排序字段在表中的索引
     #[cfg(feature = "log")]
     debug!("DEBUG get_field_value: looking for field '{}' in table '{}'", actual_field_name, table.def.name);
-    eprintln!("DEBUG get_field_value: looking for field '{}' in table '{}'", actual_field_name, table.def.name);
     let field_index = table
         .def
         .fields
@@ -6700,7 +6680,6 @@ fn sort_rows_with_alias(
         .ok_or_else(|| {
             #[cfg(feature = "log")]
             error!("DEBUG get_field_value: field '{}' not found in table '{}'. Available fields: {:?}", actual_field_name, table.def.name, table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
-            eprintln!("DEBUG get_field_value: field '{}' not found in table '{}'. Available fields: {:?}", actual_field_name, table.def.name, table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
             QueryExecutionError::FieldNotFound
         })?;
 
@@ -6893,7 +6872,6 @@ fn sort_rows(
     // 查找排序字段在表中的索引
     #[cfg(feature = "log")]
     debug!("DEBUG get_field_value (unsafe): looking for field '{}' in table '{}'", actual_field_name, table.def.name);
-    eprintln!("DEBUG get_field_value (unsafe): looking for field '{}' in table '{}'", actual_field_name, table.def.name);
     let field_index = table
         .def
         .fields
@@ -6902,7 +6880,6 @@ fn sort_rows(
         .ok_or_else(|| {
             #[cfg(feature = "log")]
             error!("DEBUG get_field_value (unsafe): field '{}' not found in table '{}'. Available fields: {:?}", actual_field_name, table.def.name, table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
-            eprintln!("DEBUG get_field_value (unsafe): field '{}' not found in table '{}'. Available fields: {:?}", actual_field_name, table.def.name, table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
             QueryExecutionError::FieldNotFound
         })?;
 

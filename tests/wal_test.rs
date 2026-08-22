@@ -26,7 +26,7 @@ fn get_test_wal_path(name: &str) -> &'static str {
 #[test]
 #[serial]
 fn test_wal_log_manager_creation() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -82,7 +82,7 @@ fn test_wal_log_manager_creation() {
 #[test]
 #[serial]
 fn test_wal_log_write_sync_mode() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -157,7 +157,7 @@ fn test_wal_log_write_sync_mode() {
 #[test]
 #[serial]
 fn test_wal_log_write_async_mode() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -235,7 +235,7 @@ fn test_wal_log_write_async_mode() {
 #[test]
 #[serial]
 fn test_wal_checkpoint_mechanism() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -313,7 +313,7 @@ fn test_wal_checkpoint_mechanism() {
 #[test]
 #[serial]
 fn test_wal_log_preallocation() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -371,7 +371,7 @@ fn test_wal_log_preallocation() {
 #[test]
 #[serial]
 fn test_wal_different_log_modes() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 测试不同日志模式的行为差异
     // 使用静态字符串作为日志路径
@@ -461,7 +461,7 @@ fn test_wal_different_log_modes() {
 #[test]
 #[serial]
 fn test_wal_checkpoint_comprehensive() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -702,7 +702,7 @@ fn test_wal_checkpoint_comprehensive() {
 #[test]
 #[serial]
 fn test_wal_recovery_flow() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -908,7 +908,7 @@ fn test_wal_recovery_flow() {
 #[test]
 #[serial]
 fn test_wal_checkpoint_with_recovery() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;

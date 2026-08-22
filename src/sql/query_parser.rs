@@ -273,7 +273,6 @@ fn test_parse_composite_primary_key() {
     use super::parse_sql_query;
     let sql = "CREATE TABLE IF NOT EXISTS test_composite_pk (id1 INTEGER, id2 INTEGER, name TEXT, PRIMARY KEY (id1, id2))";
     let result = parse_sql_query(sql);
-    eprintln!("DEBUG test result: {:?}", result);
     assert!(result.is_ok());
     let query = result.unwrap();
     assert!(query.primary_key.is_some());
@@ -1244,11 +1243,9 @@ impl SqlParser {
             }
             // 调试：打印当前位置和剩余输入
             let remaining_debug: String = self.input[self.position..].chars().take(50).collect();
-            eprintln!("DEBUG parse_create_table_query: position={}, remaining='{}'", self.position, remaining_debug);
             let is_primary = self.match_keyword("PRIMARY");
             #[cfg(feature = "log")]
             debug!("parse_create_table_query: match_keyword('PRIMARY')={}, position_after={}", is_primary, self.position);
-            eprintln!("DEBUG match_keyword('PRIMARY')={}, position_after={}", is_primary, self.position);
             if is_primary {
                 self.skip_whitespace();
                 self.expect_keyword("KEY")?;
@@ -2566,19 +2563,16 @@ impl SqlParser {
             // 检查是否是布尔值
             let saved_pos_bool = self.position;
             if self.match_keyword("TRUE") {
-                eprintln!("DEBUG parse_primary_expression: matched TRUE");
                 return Ok(Expression::Constant { 
                     value: Value::Boolean(true), 
                     alias: None 
                 });
             } else if self.match_keyword("FALSE") {
-                eprintln!("DEBUG parse_primary_expression: matched FALSE");
                 return Ok(Expression::Constant { 
                     value: Value::Boolean(false), 
                     alias: None 
                 });
             } else if self.match_keyword("NULL") {
-                eprintln!("DEBUG parse_primary_expression: matched NULL");
                 return Ok(Expression::Constant { 
                     value: Value::Null, 
                     alias: None 
@@ -3477,13 +3471,10 @@ impl SqlParser {
                 }
             }
         } else if self.match_keyword("NULL") {
-            eprintln!("DEBUG parse_value: matched NULL keyword");
             Ok(Value::Null)
         } else if self.match_keyword("TRUE") {
-            eprintln!("DEBUG parse_value: matched TRUE keyword");
             Ok(Value::Boolean(true))
         } else if self.match_keyword("FALSE") {
-            eprintln!("DEBUG parse_value: matched FALSE keyword");
             Ok(Value::Boolean(false))
         } else if self.match_keyword("NOW") {
             // 处理NOW()函数
@@ -3742,7 +3733,6 @@ impl SqlParser {
     /// 匹配关键字
     fn match_keyword(&mut self, keyword: &str) -> bool {
         // 调试：打印匹配尝试
-        eprintln!("DEBUG match_keyword called: keyword='{}', position={}, input_remaining='{}'", keyword, self.position, self.input[self.position..].chars().take(20).collect::<String>());
         let start = self.position;
         let keyword_bytes = keyword.as_bytes();
         let end = start + keyword_bytes.len();
@@ -3750,23 +3740,19 @@ impl SqlParser {
         if end <= self.input.as_bytes().len() {
             let actual_bytes = &self.input.as_bytes()[start..end];
             let expected_bytes = keyword_bytes;
-            eprintln!("DEBUG match_keyword: actual_bytes='{:?}', expected_bytes='{:?}'", String::from_utf8_lossy(actual_bytes), String::from_utf8_lossy(expected_bytes));
 
             // 比较字节序列（忽略大小写）
             if actual_bytes.eq_ignore_ascii_case(expected_bytes) {
                 // 检查是否是完整的关键字（后面跟着非字母数字字符）
                 let next_char = self.input.as_bytes().get(end).map(|&b| b as char);
-                eprintln!("DEBUG match_keyword: next_char='{:?}'", next_char);
                 if next_char.is_none() || !next_char.unwrap_or(' ').is_ascii_alphanumeric() {
                     self.position = end;
                     self.column += keyword.len();
-                    eprintln!("DEBUG match_keyword returning true for '{}'", keyword);
                     return true;
                 }
             }
         }
 
-        eprintln!("DEBUG match_keyword returning false for '{}'", keyword);
         false
     }
 
@@ -4397,7 +4383,6 @@ mod tests {
     fn test_parse_create_table_composite_primary_key() {
         let sql = "CREATE TABLE IF NOT EXISTS test_composite_pk (id1 INTEGER, id2 INTEGER, name TEXT, PRIMARY KEY (id1, id2))";
         let result = parse_sql_query(sql);
-        eprintln!("DEBUG test parse result: {:?}", result);
         assert!(result.is_ok());
         let query = result.unwrap();
         match query.query_type {

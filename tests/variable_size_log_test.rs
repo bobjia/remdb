@@ -19,7 +19,7 @@ fn get_test_wal_path(name: &str) -> &'static str {
 
 #[test]
 fn test_variable_size_log_item_write_and_read() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -170,7 +170,7 @@ fn test_variable_size_log_item_write_and_read() {
 
 #[test]
 fn test_variable_size_log_item_large_record() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;

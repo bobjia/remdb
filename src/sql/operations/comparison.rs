@@ -631,9 +631,7 @@ pub unsafe fn evaluate_comparison_with_alias(
                 }
             };
             // Simple extraction of age field from JSON
-            eprintln!("DEBUG: json_str = {}", json_str);
             if let Some(age) = extract_age_from_json(json_str) {
-                eprintln!("DEBUG: extracted age = {}", age);
                 let field_value = TypedValue {
                     value_type: DataType::Int64,
                     value: Value { i64: age },

@@ -50,7 +50,7 @@ remdb::database!(
 #[test]
 #[serial]
 fn test_sql_query() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -316,7 +316,7 @@ fn test_sql_query() {
 #[test]
 #[serial]
 fn test_sql_having() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -385,7 +385,7 @@ fn test_sql_having() {
 #[test]
 #[serial]
 fn test_sql_window_functions() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -469,7 +469,7 @@ remdb::database!(
 #[test]
 #[serial]
 fn test_sql_hybrid_query() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let db = unsafe { init_global_db(&HYBRID_DB).unwrap() };
@@ -531,7 +531,7 @@ fn test_sql_hybrid_query() {
 #[test]
 #[serial]
 fn test_sql_join() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -782,7 +782,7 @@ fn test_sql_join() {
 fn test_sql_distinct() {
     println!("=== 测试SQL DISTINCT语句 ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -861,7 +861,7 @@ fn test_sql_distinct() {
 #[test]
 #[serial]
 fn test_sql_aliases() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -900,7 +900,7 @@ fn test_sql_aliases() {
 #[test]
 #[serial]
 fn test_sql_functions() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -974,7 +974,7 @@ fn test_sql_functions() {
 #[test]
 #[serial]
 fn test_sql_statistical_functions() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -1024,7 +1024,7 @@ fn test_sql_statistical_functions() {
 #[test]
 #[serial]
 fn test_sql_aggregate_functions() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;
@@ -1078,7 +1078,7 @@ fn test_sql_aggregate_functions() {
 #[test]
 #[serial]
 fn test_sql_group_by() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化数据库
     let config = &TEST_DB;

@@ -53,7 +53,7 @@ fn create_test_config() -> &'static DbConfig {
 #[test]
 #[serial]
 fn test_json_extract_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_EXTRACT函数 ====");
 
@@ -113,7 +113,7 @@ fn test_json_extract_function() {
 #[test]
 #[serial]
 fn test_json_value_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_VALUE函数 ====");
 
@@ -155,7 +155,7 @@ fn test_json_value_function() {
 #[test]
 #[serial]
 fn test_json_query_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_QUERY函数 ====");
 
@@ -203,7 +203,7 @@ fn test_json_query_function() {
 #[test]
 #[serial]
 fn test_json_has_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_HAS函数 ====");
 
@@ -251,7 +251,7 @@ fn test_json_has_function() {
 #[test]
 #[serial]
 fn test_json_type_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_TYPE函数 ====");
 
@@ -316,7 +316,7 @@ fn test_json_type_function() {
 #[test]
 #[serial]
 fn test_json_array_length_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_ARRAY_LENGTH函数 ====");
 
@@ -370,7 +370,7 @@ fn test_json_array_length_function() {
 #[test]
 #[serial]
 fn test_json_array_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_ARRAY函数 ====");
 
@@ -407,7 +407,7 @@ fn test_json_array_function() {
 #[test]
 #[serial]
 fn test_json_object_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_OBJECT函数 ====");
 
@@ -444,7 +444,7 @@ fn test_json_object_function() {
 #[test]
 #[serial]
 fn test_json_set_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_SET函数 ====");
 
@@ -486,7 +486,7 @@ fn test_json_set_function() {
 #[test]
 #[serial]
 fn test_json_remove_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_REMOVE函数 ====");
 
@@ -523,7 +523,7 @@ fn test_json_remove_function() {
 #[test]
 #[serial]
 fn test_json_merge_patch_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_MERGE_PATCH函数 ====");
 
@@ -565,7 +565,7 @@ fn test_json_merge_patch_function() {
 #[test]
 #[serial]
 fn test_json_array_append_function() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON_ARRAY_APPEND函数 ====");
 
@@ -602,7 +602,7 @@ fn test_json_array_append_function() {
 #[test]
 #[serial]
 fn test_json_functions_combined() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON函数组合使用 ====");
 
@@ -655,7 +655,7 @@ fn test_json_functions_combined() {
 #[test]
 #[serial]
 fn test_json_functions_edge_cases() {
-    let _db_memory = setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
+    setup_test_db_with_memory(50 * 1024 * 1024); // 50MB
 
     println!("=== 测试JSON函数边界情况 ====");
 

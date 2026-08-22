@@ -60,7 +60,7 @@ static TEST_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new(
 fn test_table_insert_delete() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 创建表
     let table_def = Arc::new(TEST_TABLE_DEF.clone());
@@ -115,7 +115,7 @@ fn test_table_insert_delete() {
 fn test_table_get_field() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 创建表
     let table_def = Arc::new(TEST_TABLE_DEF.clone());
@@ -169,7 +169,7 @@ fn test_table_get_field() {
 fn test_table_set_field() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 创建表
     let table_def = Arc::new(TEST_TABLE_DEF.clone());
@@ -228,7 +228,7 @@ fn test_table_set_field() {
 fn test_table_iterate() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 创建表
     let table_def = Arc::new(TEST_TABLE_DEF.clone());
@@ -311,7 +311,7 @@ static SMALL_TABLE_DEF: std::sync::LazyLock<TableDef> = std::sync::LazyLock::new
 fn test_table_full() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 创建表
     let table_def = Arc::new(SMALL_TABLE_DEF.clone());
@@ -366,7 +366,7 @@ fn test_table_full() {
 fn test_not_null_constraint() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 创建表
     let table_def = Arc::new(TEST_TABLE_DEF.clone());
@@ -585,7 +585,7 @@ fn test_not_null_constraint() {
 fn test_table_record_ref_and_scan_ref() {
     let _guard = TEST_MUTEX.lock().unwrap();
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     let fields = vec![
         FieldDef {

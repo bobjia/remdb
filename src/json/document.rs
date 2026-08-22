@@ -445,13 +445,10 @@ impl JsonDocument {
     pub fn to_json(&self) -> Result<alloc::string::String, &'static str> {
         match &self.storage {
             JsonStorage::Inline(data) => {
-                eprintln!("DEBUG to_json: data.len()={}, self.size={}", data.len(), self.size);
-                eprintln!("DEBUG to_json: data={:?}", &data[..core::cmp::min(self.size, 64)]);
                 
                 // 需要反序列化MessagePack/CBOR数据为JsonValue，然后转换为JSON字符串
                 // 暂时使用parse_json_str解析原始JSON字符串（如果存储的是JSON）
                 let json_str = alloc::string::String::from_utf8_lossy(&data[..self.size]).to_string();
-                eprintln!("DEBUG to_json: json_str={}", json_str);
                 Ok(json_str)
             }
             JsonStorage::External { pool_id, offset, length } => {
@@ -875,31 +872,24 @@ pub fn json_extract_float(doc: &JsonDocument, path: &str) -> Option<f64> {
 
 /// 设置JSON路径对应的值
 pub fn json_set(doc: &mut JsonDocument, path: &str, value: &str) -> Result<(), &'static str> {
-    eprintln!("DEBUG json_set: path={}, value={}", path, value);
     
     // 1. 解析原始JSON文档为JsonValue树
     let mut json_value = doc.parse_json()?;
-    eprintln!("DEBUG json_set: parsed json_value={:?}", json_value);
     
     // 2. 将值字符串解析为JsonValue
     let new_value = JsonDocument::parse_json_str(value)?;
-    eprintln!("DEBUG json_set: new_value={:?}", new_value);
     
     // 3. 解析路径为键的向量
     let keys = parse_simple_json_path(path)?;
-    eprintln!("DEBUG json_set: keys={:?}", keys);
     
     // 4. 在JsonValue树中设置值
     set_value_at_path(&mut json_value, &keys, new_value)?;
-    eprintln!("DEBUG json_set: set value successfully");
     
     // 5. 将修改后的JsonValue序列化为JSON字符串
     let new_json_str = json_value.to_json_string();
-    eprintln!("DEBUG json_set: new_json_str={}, len={}", new_json_str, new_json_str.len());
     
     // 6. 直接设置JsonDocument的内容，避免创建新的JsonDocument
     doc.set_json_string(&new_json_str)?;
-    eprintln!("DEBUG json_set: set json_string successfully");
     
     Ok(())
 }
@@ -1028,26 +1018,20 @@ pub fn json_replace(doc: &mut JsonDocument, path: &str, value: &str) -> Result<(
 
 /// 删除JSON路径对应的值
 pub fn json_remove(doc: &mut JsonDocument, path: &str) -> Result<(), &'static str> {
-    eprintln!("DEBUG json_remove: path={}", path);
     // 1. 解析原始JSON文档为JsonValue树
     let mut json_value = doc.parse_json()?;
-    eprintln!("DEBUG json_remove: parsed json_value={:?}", json_value);
     
     // 2. 解析路径为键的向量
     let keys = parse_simple_json_path(path)?;
-    eprintln!("DEBUG json_remove: parsed keys={:?}", keys);
     
     // 3. 在JsonValue树中删除值
     remove_value_at_path(&mut json_value, &keys)?;
-    eprintln!("DEBUG json_remove: removed value successfully");
     
     // 4. 将修改后的JsonValue序列化为JSON字符串
     let new_json_str = json_value.to_json_string();
-    eprintln!("DEBUG json_remove: new_json_str={}", new_json_str);
     
     // 5. 创建新的JsonDocument替换原来的
     let new_doc = JsonDocument::from_json(&new_json_str)?;
-    eprintln!("DEBUG json_remove: created new_doc successfully");
     
     // 替换存储
     *doc = new_doc;

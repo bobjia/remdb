@@ -241,18 +241,18 @@ impl StaticAllocator {
     pub fn free(&mut self, ptr: NonNull<u8>) {
         // 获取块头指针
         let block_ptr = (ptr.as_ptr() as usize - MemoryBlock::SIZE) as *mut MemoryBlock;
-        
+
         // 检查块指针是否在当前分配器的内存范围内
         let block_addr = block_ptr as usize;
         let start_addr = self.start_ptr.as_ptr() as usize;
         let end_addr = start_addr + self.size;
-        
+
         // 如果指针不在当前分配器的内存范围内，直接返回
         // 这避免了在分配器被替换时的访问冲突
         if block_addr < start_addr || block_addr >= end_addr {
             return;
         }
-        
+
         // 检查块指针是否有效
         let Some(mut block) = NonNull::new(block_ptr) else {
             return;

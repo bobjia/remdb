@@ -116,7 +116,7 @@ static mut TABLE_FREE_SLOTS_BUFFER: [usize; 100] = [0usize; 100];
 #[test]
 #[serial]
 fn test_transaction_begin_commit() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 重置全局数据库实例和事务管理器
     remdb::reset_global_db();
@@ -197,7 +197,7 @@ fn test_transaction_begin_commit() {
 #[test]
 #[serial]
 fn test_mvcc_snapshot_isolation() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 重置事务管理器
     crate::transaction::init_tx_manager();
@@ -369,7 +369,7 @@ fn test_mvcc_snapshot_isolation() {
 #[serial]
 fn test_mvcc_version_chain() {
     unsafe {
-        let _db_memory = setup_test_db();
+        setup_test_db();
 
         // 重置事务管理器
         crate::transaction::init_tx_manager();
@@ -483,7 +483,7 @@ fn test_mvcc_version_chain() {
 #[serial]
 fn test_mvcc_gc() {
     unsafe {
-        let _db_memory = setup_test_db_with_memory(10 * 1024 * 1024); // 10MB内存
+        setup_test_db_with_memory(10 * 1024 * 1024); // 10MB内存
 
         // 重置事务管理器
         crate::transaction::init_tx_manager();
@@ -595,7 +595,7 @@ fn test_mvcc_gc() {
 #[serial]
 fn test_mvcc_visibility() {
     unsafe {
-        let _db_memory = setup_test_db();
+        setup_test_db();
 
         // 重置事务管理器
         crate::transaction::init_tx_manager();
@@ -725,7 +725,7 @@ fn test_mvcc_visibility() {
 #[serial]
 fn test_transaction_rollback() {
     unsafe {
-        let _db_memory = setup_test_db();
+        setup_test_db();
 
         // 重置事务管理器
         crate::transaction::init_tx_manager();
@@ -804,7 +804,7 @@ fn test_transaction_rollback() {
 #[serial]
 fn test_transaction_update_rollback() {
     unsafe {
-        let _db_memory = setup_test_db();
+        setup_test_db();
 
         // 重置事务管理器
         crate::transaction::init_tx_manager();
@@ -913,7 +913,7 @@ fn test_transaction_update_rollback() {
 #[serial]
 fn test_transaction_delete_rollback() {
     unsafe {
-        let _db_memory = setup_test_db();
+        setup_test_db();
 
         // 重置事务管理器
         crate::transaction::init_tx_manager();

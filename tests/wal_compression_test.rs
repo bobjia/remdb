@@ -19,7 +19,7 @@ fn get_test_wal_path(name: &str) -> &'static str {
 
 /// 测试不同压缩类型的 WAL 功能
 fn test_wal_compression(compression_type: WALCompressionType, test_name: &str) {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -157,7 +157,7 @@ fn test_wal_compression_zstd() {
 /// 测试压缩对存储空间的影响
 #[test]
 fn test_wal_compression_storage_impact() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
@@ -248,7 +248,7 @@ fn test_wal_compression_storage_impact() {
 /// 测试压缩对性能的影响
 #[test]
 fn test_wal_compression_performance() {
-    let _db_memory = setup_test_db_with_posix();
+    setup_test_db_with_posix();
 
     // 创建内存分配器
     static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;

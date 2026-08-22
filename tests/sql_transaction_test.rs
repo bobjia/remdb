@@ -99,7 +99,7 @@ static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> =
 #[test]
 #[serial]
 fn test_sql_transaction_commit() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 重置全局数据库实例和事务管理器
     remdb::reset_global_db();
@@ -137,7 +137,7 @@ fn test_sql_transaction_commit() {
 #[test]
 #[serial]
 fn test_sql_transaction_rollback() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 重置全局数据库实例和事务管理器
     remdb::reset_global_db();
@@ -175,7 +175,7 @@ fn test_sql_transaction_rollback() {
 #[test]
 #[serial]
 fn test_sql_transaction_simple() {
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 重置全局数据库实例和事务管理器
     remdb::reset_global_db();

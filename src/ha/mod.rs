@@ -193,7 +193,8 @@ pub fn shutdown() -> Result<()> {
     unsafe {
         let ha_manager_ptr = core::ptr::addr_of_mut!(HA_MANAGER);
         if let Some(ref mut manager) = *ha_manager_ptr {
-            manager.shutdown()?;
+            // 即使shutdown失败也清除HA_MANAGER，防止双重释放pubsub资源
+            let _ = manager.shutdown();
             *ha_manager_ptr = None;
         }
         Ok(())

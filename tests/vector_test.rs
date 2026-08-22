@@ -93,7 +93,7 @@ remdb::database!(
 fn test_vector_basic_support() {
     println!("=== 测试向量数据类型基本支持 ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     let config = &SIMPLE_DB;
     let db = unsafe { init_global_db(config).unwrap() };
@@ -118,7 +118,7 @@ fn test_vector_table_creation() {
     println!("=== 测试创建包含向量字段的表 ====");
 
     println!("Step 1: 分配测试内存");
-    let _db_memory = setup_test_db();
+    setup_test_db();
     println!("Step 2: 获取数据库配置");
     let config = &VECTOR_DB;
     println!("Step 3: 初始化全局数据库");
@@ -132,7 +132,7 @@ fn test_vector_table_creation() {
 fn test_vector_insert_data() {
     println!("=== 测试插入向量数据 ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     let config = &VECTOR_DB;
     let db = unsafe { init_global_db(config).unwrap() };
@@ -175,7 +175,7 @@ fn test_vector_insert_data() {
 fn test_vector_query_data() {
     println!("=== 测试查询向量数据 ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     let config = &VECTOR_DB;
     let db = unsafe { init_global_db(config).unwrap() };
@@ -222,7 +222,7 @@ fn test_vector_query_data() {
 fn test_vector_operators_basic() {
     println!("=== 测试向量操作符: 基本功能 ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     let config = &VECTOR_OPERATORS_DB;
     let db = unsafe { init_global_db(config).unwrap() };
@@ -291,7 +291,7 @@ fn test_vector_operators_basic() {
 fn test_vector_search_functions() {
     println!("=== 测试向量函数: VECTOR_SIMILAR 和 VECTOR_DISTANCE ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     let config = &VECTOR_OPS_FUNC_DB;
     let db = unsafe { init_global_db(config).unwrap() };

@@ -46,7 +46,7 @@ fn test_databases_command() -> Result<()> {
     // 处理可能的互斥锁 poisoning
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
-    let _db_memory = setup_test_db_with_memory(1024 * 1024); // 1MB to match TEST_DB_CONFIG
+    setup_test_db_with_memory(1024 * 1024); // 1MB to match TEST_DB_CONFIG
 
     // 初始化数据库
     let mut db = unsafe { remdb::init_global_db(&TEST_DB_CONFIG)? };
@@ -74,7 +74,7 @@ fn test_database_manager_list_databases() -> Result<()> {
     // 处理可能的互斥锁 poisoning
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 创建数据库管理器
     let mut manager = remdb::DatabaseManager::new(10);

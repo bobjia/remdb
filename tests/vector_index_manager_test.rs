@@ -35,12 +35,7 @@ remdb::database!(
 fn test_index_build_thread_pool_init() {
     println!("=== 测试索引构建线程池初始化 ===");
 
-    let mut _db_memory = setup_test_db();
-    remdb::memory::allocator::init_global_allocator(_db_memory.as_mut_ptr(), _db_memory.len())
-        .unwrap();
-
-    // 重置全局数据库实例
-    remdb::reset_global_db();
+    setup_test_db();
 
     // 初始化包含向量表的数据库
     let config = &VECTOR_DB;
@@ -69,7 +64,7 @@ fn test_index_build_thread_pool_init() {
 fn test_non_blocking_index_creation() {
     println!("=== 测试非阻塞索引创建 ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 重置全局数据库实例
     remdb::reset_global_db();
@@ -131,7 +126,7 @@ fn test_non_blocking_index_creation() {
 fn test_index_params_with_clause() {
     println!("=== 测试索引参数WITH子句 ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 重置全局数据库实例
     remdb::reset_global_db();
@@ -213,7 +208,7 @@ fn test_index_params_with_clause() {
 fn test_index_persistence_api() {
     println!("=== 测试索引持久化API ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 重置全局数据库实例
     remdb::reset_global_db();
@@ -264,7 +259,7 @@ fn test_index_persistence_api() {
 fn test_different_index_algorithms() {
     println!("=== 测试不同索引算法 ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 初始化索引构建线程池
     index::builder::init_index_build_thread_pool(2);
@@ -333,7 +328,7 @@ fn test_different_index_algorithms() {
 fn test_index_build_status_monitoring() {
     println!("=== 测试索引构建状态监控 ===");
 
-    let _db_memory = setup_test_db();
+    setup_test_db();
 
     // 重置全局数据库实例
     remdb::reset_global_db();
