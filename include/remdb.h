@@ -84,7 +84,7 @@ typedef union RemDbValue {
  */
 typedef struct RemDbFieldDef {
     const char* name;
-    enum RemDbDataType data_type;
+    RemDbDataType data_type;
     size_t size;
     size_t offset;
 } RemDbFieldDef;
