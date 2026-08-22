@@ -4163,7 +4163,7 @@ fn process_group_by_query(
                     let is_aggregate = matches!(upper_name.as_str(),
                         "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" |
                         "STDDEV" | "VAR" | "STDDEV_SAMP" | "VAR_SAMP" |
-                        "MOVING_AVERAGE" | "MOVING_SUM" | "TIME_BUCKET");
+                        "MOVING_AVERAGE" | "MOVING_SUM");
                     if !is_aggregate {
                         let mut arg_values = Vec::with_capacity(args.len());
                         for arg in args {
