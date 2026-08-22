@@ -183,7 +183,7 @@ impl RbacManager {
     }
 
     /// Load RBAC data from system tables
-    pub unsafe fn load_from_system_tables(manager: &mut Self, db: &mut crate::RemDb) -> Result<(), RbacError> {
+    pub unsafe fn load_from_system_tables(manager: &mut Self, db: &crate::RemDb) -> Result<(), RbacError> {
         use crate::system_tables::{
             SYSTEM_ROLES_TABLE, SYSTEM_ROLE_PERMISSIONS_TABLE, 
             SYSTEM_USERS_TABLE, SYSTEM_USER_ROLES_TABLE
@@ -272,14 +272,14 @@ impl RbacManager {
     }
 
     /// Save RBAC data to system tables
-    pub unsafe fn save_to_system_tables(manager: &mut Self, db: &mut crate::RemDb) -> Result<(), RbacError> {
+    pub unsafe fn save_to_system_tables(db: &mut crate::RemDb) -> Result<(), RbacError> {
         use crate::platform::{memset, memcpy};
         use crate::system_tables::{
             SYSTEM_ROLES_TABLE, SYSTEM_ROLE_PERMISSIONS_TABLE, 
             SYSTEM_USERS_TABLE, SYSTEM_USER_ROLES_TABLE
         };
         
-
+        let manager = &mut db.rbac_manager;
         let now = crate::platform::get_timestamp_us();
 
         // Collect data to avoid borrowing issues

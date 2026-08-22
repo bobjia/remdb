@@ -636,10 +636,7 @@ impl RemDb {
         
         // 保存到系统表
         unsafe {
-            use std::ptr;
-            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
-            let db = &mut *ptr::addr_of_mut!(*self);
-            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+            let _ = RbacManager::save_to_system_tables(&mut *self);
         }
         
         Ok(())
@@ -653,10 +650,7 @@ impl RemDb {
         
         // 保存到系统表
         unsafe {
-            use std::ptr;
-            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
-            let db = &mut *ptr::addr_of_mut!(*self);
-            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+            let _ = RbacManager::save_to_system_tables(&mut *self);
         }
         
         Ok(())
@@ -676,10 +670,7 @@ impl RemDb {
         
         // 保存到系统表
         unsafe {
-            use std::ptr;
-            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
-            let db = &mut *ptr::addr_of_mut!(*self);
-            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+            let _ = RbacManager::save_to_system_tables(&mut *self);
         }
         
         Ok(())
@@ -699,10 +690,7 @@ impl RemDb {
         
         // 保存到系统表
         unsafe {
-            use std::ptr;
-            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
-            let db = &mut *ptr::addr_of_mut!(*self);
-            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+            let _ = RbacManager::save_to_system_tables(&mut *self);
         }
         
         Ok(())
@@ -716,10 +704,7 @@ impl RemDb {
         
         // 保存到系统表
         unsafe {
-            use std::ptr;
-            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
-            let db = &mut *ptr::addr_of_mut!(*self);
-            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+            let _ = RbacManager::save_to_system_tables(&mut *self);
         }
         
         Ok(())
@@ -733,10 +718,7 @@ impl RemDb {
         
         // 保存到系统表
         unsafe {
-            use std::ptr;
-            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
-            let db = &mut *ptr::addr_of_mut!(*self);
-            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+            let _ = RbacManager::save_to_system_tables(&mut *self);
         }
         
         Ok(())
@@ -750,10 +732,7 @@ impl RemDb {
         
         // 保存到系统表
         unsafe {
-            use std::ptr;
-            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
-            let db = &mut *ptr::addr_of_mut!(*self);
-            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+            let _ = RbacManager::save_to_system_tables(&mut *self);
         }
         
         Ok(())
@@ -767,10 +746,7 @@ impl RemDb {
         
         // 保存到系统表
         unsafe {
-            use std::ptr;
-            let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
-            let db = &mut *ptr::addr_of_mut!(*self);
-            let _ = RbacManager::save_to_system_tables(rbac_manager, db);
+            let _ = RbacManager::save_to_system_tables(&mut *self);
         }
         
         Ok(())
@@ -1229,13 +1205,12 @@ impl RemDb {
         };
 
         // 只有在创建了新表时才加载RBAC数据
-        if tables_created {
+        // 注意：如果系统表已存在，需要加载之前持久化的RBAC数据
+        // 如果系统表是新创建的，则使用默认的RBAC数据（已在RbacManager::new()中初始化）
+        if !tables_created {
             // 加载RBAC数据从系统表
             unsafe {
-                use std::ptr;
-                let rbac_manager = &mut *ptr::addr_of_mut!(self.rbac_manager);
-                let db = &mut *ptr::addr_of_mut!(*self);
-                let _ = RbacManager::load_from_system_tables(rbac_manager, db);
+                let _ = RbacManager::load_from_system_tables(&mut self.rbac_manager, &*self);
             }
         }
 
