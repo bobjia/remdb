@@ -5,3 +5,4 @@ wal/*
 *.log
 .idea/*
 .vscode/*
+tests/c_api_tests
