@@ -13,6 +13,10 @@ use crate::sql::{QueryExecutionError};
 use crate::types::{DataType, TypedValue, JsonStorage};
 use crate::{MemoryTable, Value, MAX_STRING_LEN, RemDb};
 use crate::sql::functions as sql_functions;
+use crate::sql::operations::vector::{
+    calculate_vector_l2_distance, calculate_vector_inner_product,
+    calculate_vector_cosine_similarity,
+};
 
 const MAX_RECURSION_DEPTH: usize = 100;
 
@@ -203,6 +207,46 @@ pub fn evaluate_expression_with_depth(
                         .vector_metadata
                         .ok_or(QueryExecutionError::TypeMismatch)?
                         .dimension;
+
+                    // Handle the case where the right operand is a Json with Null storage
+                    // (the vector string was too large for the inline buffer)
+                    if matches!(right_val.value_type, DataType::Json) {
+                        if let crate::types::JsonStorage::Null = unsafe { right_val.value.json_storage } {
+                            // Try to extract the original string from the Constant expression
+                            if let Expression::Constant { value: crate::sql::Value::Json(json_str), .. } = right.as_ref() {
+                                // Parse the vector directly from the string
+                                let trimmed = json_str.trim();
+                                if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                                    let inner = &trimmed[1..trimmed.len()-1];
+                                    let elements: Vec<&str> = inner.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+                                    if elements.len() == vector_dim as usize {
+                                        let vec2_values: Vec<f32> = elements.iter()
+                                            .map(|s| s.parse::<f32>())
+                                            .collect::<Result<Vec<_>, _>>()
+                                            .map_err(|_| QueryExecutionError::TypeMismatch)?;
+                                        let vec2_f64: Vec<f64> = vec2_values.iter().map(|v| *v as f64).collect();
+                                        let result = match *op {
+                                            BinaryOperator::VectorL2 => unsafe {
+                                                calculate_vector_l2_distance(left_val.value.vector, &vec2_f64, vector_dim)
+                                            },
+                                            BinaryOperator::VectorIP => unsafe {
+                                                calculate_vector_inner_product(left_val.value.vector, &vec2_f64, vector_dim)
+                                            },
+                                            BinaryOperator::VectorCosine => unsafe {
+                                                calculate_vector_cosine_similarity(left_val.value.vector, &vec2_f64, vector_dim)
+                                            },
+                                            _ => return Err(QueryExecutionError::TypeMismatch),
+                                        };
+                                        return Ok(TypedValue {
+                                            value_type: DataType::Float64,
+                                            value: Value { float64: result },
+                                        });
+                                    }
+                                }
+                            }
+                            return Err(QueryExecutionError::TypeMismatch);
+                        }
+                    }
 
                     return evaluate_vector_binary_op(left_val, *op, right_val, vector_dim);
                 }
@@ -890,6 +934,7 @@ pub fn execute_function_call(
         "JSON_MERGE_PATCH" => sql_functions::execute_json_merge_patch(args),
         "JSON_ARRAY_APPEND" => sql_functions::execute_json_array_append(args),
         "JSON_ARRAY_LENGTH" => sql_functions::execute_json_array_length(args),
+        "JSON_KEYS" => sql_functions::execute_json_keys(args),
         "JSON_ARRAY" => sql_functions::execute_json_array(args),
         "JSON_OBJECT" => sql_functions::execute_json_object(args),
         _ => {

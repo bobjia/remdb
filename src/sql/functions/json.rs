@@ -127,25 +127,32 @@ pub fn execute_json_extract(args: &[TypedValue]) -> Result<TypedValue, QueryExec
                 })
             }
         }
-        crate::json::document::JsonQueryResult::Object(_) |
-        crate::json::document::JsonQueryResult::Array(_) => {
-            let result_json = match crate::json::document::json_extract(&doc, &path) {
-                crate::json::document::JsonQueryResult::Object(obj_doc) => {
-                    obj_doc.to_json().unwrap_or_else(|_| "null".to_string())
-                }
-                crate::json::document::JsonQueryResult::Array(arr) => {
-                    let json_str = arr.iter()
-                        .map(|item| match item {
-                            crate::json::document::JsonQueryResult::Scalar(s) => s.clone(),
-                            _ => "null".to_string(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    format!("[{}]", json_str)
-                }
-                _ => "null".to_string(),
-            };
-
+        crate::json::document::JsonQueryResult::Object(obj_doc) => {
+            let result_json = obj_doc.to_json().unwrap_or_else(|_| "null".to_string());
+            let mut buf = [0u8; 256];
+            let len = core::cmp::min(result_json.len(), 256);
+            buf[..len].copy_from_slice(result_json.as_bytes());
+            Ok(TypedValue {
+                value_type: DataType::Json,
+                value: Value { json_storage: JsonStorage::Inline(buf) },
+            })
+        }
+        crate::json::document::JsonQueryResult::Array(arr) => {
+            // Properly serialize array elements: quote strings, leave numbers/booleans unquoted
+            let json_str = arr.iter()
+                .map(|item| match item {
+                    crate::json::document::JsonQueryResult::Scalar(s) => {
+                        if s == "true" || s == "false" || s == "null" || s.parse::<f64>().is_ok() {
+                            s.clone()
+                        } else {
+                            format!("\"{}\"", s)
+                        }
+                    }
+                    _ => "null".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let result_json = format!("[{}]", json_str);
             let mut buf = [0u8; 256];
             let len = core::cmp::min(result_json.len(), 256);
             buf[..len].copy_from_slice(result_json.as_bytes());
@@ -223,7 +230,13 @@ pub fn execute_json_query(args: &[TypedValue]) -> Result<TypedValue, QueryExecut
         crate::json::document::JsonQueryResult::Array(arr) => {
             let json_str = arr.iter()
                 .map(|item| match item {
-                    crate::json::document::JsonQueryResult::Scalar(s) => s.clone(),
+                    crate::json::document::JsonQueryResult::Scalar(s) => {
+                        if s == "true" || s == "false" || s == "null" || s.parse::<f64>().is_ok() {
+                            s.clone()
+                        } else {
+                            format!("\"{}\"", s)
+                        }
+                    }
                     _ => "null".to_string(),
                 })
                 .collect::<Vec<_>>()
@@ -268,12 +281,18 @@ pub fn execute_json_has(args: &[TypedValue]) -> Result<TypedValue, QueryExecutio
 
 /// 执行JSON_TYPE函数
 pub fn execute_json_type(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.len() < 2 {
+    if args.is_empty() {
         return Err(QueryExecutionError::TypeMismatch);
     }
 
     let json_str = typed_value_to_json_string(&args[0])?;
-    let path = typed_value_to_string(&args[1])?;
+
+    // Optional path argument (defaults to "$")
+    let path = if args.len() > 1 {
+        typed_value_to_string(&args[1])?
+    } else {
+        "$".to_string()
+    };
 
     let doc = crate::json::document::JsonDocument::from_json(&json_str)
         .map_err(|_| QueryExecutionError::InvalidValue)?;
@@ -505,6 +524,55 @@ pub fn execute_json_array_length(args: &[TypedValue]) -> Result<TypedValue, Quer
             Ok(TypedValue {
                 value_type: DataType::UInt64,
                 value: Value { u64: 0 },
+            })
+        }
+    }
+}
+
+/// 执行JSON_KEYS函数
+pub fn execute_json_keys(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let json_str = typed_value_to_json_string(&args[0])?;
+
+    // Optional path argument (defaults to "$")
+    let path = if args.len() > 1 {
+        typed_value_to_string(&args[1])?
+    } else {
+        "$".to_string()
+    };
+
+    let doc = crate::json::document::JsonDocument::from_json(&json_str)
+        .map_err(|_| QueryExecutionError::InvalidValue)?;
+
+    match crate::json::document::json_keys(&doc, &path) {
+        crate::json::document::JsonQueryResult::Array(keys) => {
+            let key_strings: Vec<String> = keys.iter().map(|key| match key {
+                crate::json::document::JsonQueryResult::Scalar(s) => {
+                    format!("\"{}\"", s)
+                }
+                _ => "null".to_string(),
+            }).collect();
+            let result_json = format!("[{}]", key_strings.join(","));
+            let mut buf = [0u8; 256];
+            let len = core::cmp::min(result_json.len(), 256);
+            buf[..len].copy_from_slice(result_json.as_bytes());
+            Ok(TypedValue {
+                value_type: DataType::Json,
+                value: Value { json_storage: JsonStorage::Inline(buf) },
+            })
+        }
+        _ => {
+            // Return empty array if not an object
+            let mut buf = [0u8; 256];
+            let json_str = "[]";
+            let len = core::cmp::min(json_str.len(), 256);
+            buf[..len].copy_from_slice(json_str.as_bytes());
+            Ok(TypedValue {
+                value_type: DataType::Json,
+                value: Value { json_storage: JsonStorage::Inline(buf) },
             })
         }
     }

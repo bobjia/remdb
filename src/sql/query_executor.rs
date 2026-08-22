@@ -1131,6 +1131,12 @@ fn process_aggregate_query(
                                         (DataType::Int64, DataType::Int64) => {
                                             current_value.value.i64 < aggregate_values[i].value.i64
                                         }
+                                        (DataType::Float32, DataType::Float32) => {
+                                            current_value.value.float32 < aggregate_values[i].value.float32
+                                        }
+                                        (DataType::Float64, DataType::Float64) => {
+                                            current_value.value.float64 < aggregate_values[i].value.float64
+                                        }
                                         _ => return Err(QueryExecutionError::TypeMismatch),
                                     }
                                 };
@@ -1174,6 +1180,12 @@ fn process_aggregate_query(
                                         }
                                         (DataType::Int64, DataType::Int64) => {
                                             current_value.value.i64 > aggregate_values[i].value.i64
+                                        }
+                                        (DataType::Float32, DataType::Float32) => {
+                                            current_value.value.float32 > aggregate_values[i].value.float32
+                                        }
+                                        (DataType::Float64, DataType::Float64) => {
+                                            current_value.value.float64 > aggregate_values[i].value.float64
                                         }
                                         _ => return Err(QueryExecutionError::TypeMismatch),
                                     }
@@ -1529,11 +1541,11 @@ fn execute_select_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
-    
+
     // 从系统表获取查询资源配置
     let (max_memory_mb, query_timeout_ms) = crate::get_query_resource_config();
     let _query_timeout_ms = Some(query_timeout_ms as u64);
-    
+
     // 开始计时
     let start_time = Instant::now();
     let mut stats = QueryStats::default();
@@ -1550,7 +1562,7 @@ fn execute_select_query(
         // 计算执行时间
         let end_time = Instant::now();
         let execution_time = end_time.duration_since(start_time).as_micros() as u64;
-        
+
         // 输出查询执行统计信息
         #[cfg(feature = "log")]
         {
@@ -1560,7 +1572,7 @@ fn execute_select_query(
             info!("  Matched records: 0");
             info!("  Execution time: {}μs", execution_time);
         }
-        
+
         return execute_select_join_query(db, query);
     }
 
@@ -4001,34 +4013,49 @@ fn process_group_by_query(
         // 这样可以避免直接比较TypedValue
         values: Vec<u64>,
     }
-    
+
     // 实现必要的trait for GroupKey
     impl PartialEq for GroupKey {
         fn eq(&self, other: &Self) -> bool {
             self.values == other.values
         }
     }
-    
+
     impl Eq for GroupKey {}
-    
+
     impl PartialOrd for GroupKey {
         fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
             self.values.partial_cmp(&other.values)
         }
     }
-    
+
     impl Ord for GroupKey {
         fn cmp(&self, other: &Self) -> core::cmp::Ordering {
             self.values.cmp(&other.values)
         }
     }
-    
+
     impl Clone for GroupKey {
         fn clone(&self) -> Self {
             GroupKey {
                 values: self.values.clone(),
             }
         }
+    }
+
+    // 构建别名映射，将别名解析为原始表达式
+    // 例如: TIME_BUCKET('15m', timestamp) AS time_window  =>  "time_window" -> FunctionCall(TIME_BUCKET, ...)
+    let mut alias_to_expr: BTreeMap<String, &Expression> = BTreeMap::new();
+    for expr in columns {
+        let alias = match expr {
+            Expression::Field { alias, name } => alias.clone().unwrap_or_else(|| name.clone()),
+            Expression::FunctionCall { alias, name, .. } => alias.clone().unwrap_or_else(|| name.clone()),
+            Expression::Constant { alias, .. } => alias.clone().unwrap_or_else(|| "constant".to_string()),
+            Expression::BinaryOp { alias, .. } => alias.clone().unwrap_or_else(|| "binary_op".to_string()),
+            Expression::LogicalOp { alias, .. } => alias.clone().unwrap_or_else(|| "logical_op".to_string()),
+            Expression::UnaryOp { alias, .. } => alias.clone().unwrap_or_else(|| "unary_op".to_string()),
+        };
+        alias_to_expr.insert(alias.to_uppercase(), expr);
     }
 
     // 创建分组映射：GroupKey -> Vec<record_values>
@@ -4076,7 +4103,22 @@ fn process_group_by_query(
         // 评估每个分组表达式，生成分组键
         let mut key_values = Vec::new();
         for expr in &group_by.expressions {
-            let value = evaluate_expression(table, record_values, expr)?;
+            // 解析别名：如果GROUP BY表达式是Field且匹配SELECT列的别名，则使用原始表达式
+            let resolved_expr = match expr {
+                Expression::Field { name, .. } => {
+                    let upper = name.to_uppercase();
+                    if let Some(original) = alias_to_expr.get(&upper) {
+                        *original
+                    } else {
+                        expr
+                    }
+                }
+                _ => expr,
+            };
+            let value = evaluate_expression(table, record_values, resolved_expr)?;
+            if cfg!(feature = "log") {
+                crate::log::debug!("process_group_by_query: group expr value_type={:?}", value.value_type);
+            }
             let hash = hash_typed_value(&value);
             key_values.push(hash);
         }
@@ -4115,21 +4157,25 @@ fn process_group_by_query(
                     row_data.push(group_rows[0][field_index].clone());
                 }
                 Expression::FunctionCall { name, args, .. } => {
-                    // 处理TIME_BUCKET函数（非聚合函数）
-                    if name.to_uppercase() == "TIME_BUCKET" {
-                        // 计算分组中第一个记录的TIME_BUCKET值
+                    let upper_name = name.to_uppercase();
+
+                    // 处理非聚合函数（如JSON_EXTRACT、TIME_BUCKET等）：使用分组中第一个记录的值
+                    let is_aggregate = matches!(upper_name.as_str(),
+                        "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" |
+                        "STDDEV" | "VAR" | "STDDEV_SAMP" | "VAR_SAMP" |
+                        "MOVING_AVERAGE" | "MOVING_SUM" | "TIME_BUCKET");
+                    if !is_aggregate {
                         let mut arg_values = Vec::with_capacity(args.len());
                         for arg in args {
                             arg_values.push(evaluate_expression(table, &group_rows[0], arg)?);
                         }
-                        // 执行TIME_BUCKET函数
                         let result = execute_function_call(name, &arg_values)?;
                         row_data.push(result);
                         continue;
                     }
 
                     // 为每个聚合函数准备初始值
-                    let mut agg_result = match name.to_uppercase().as_str() {
+                    let mut agg_result = match upper_name.as_str() {
                         "COUNT" => TypedValue {
                             value_type: DataType::UInt64,
                             value: Value { u64: 0 },
@@ -5873,33 +5919,44 @@ fn set_field_value_with_depth(
                     }
                 } else if matches!(evaluated_value.value_type, DataType::Json) {
                     // 处理JSON类型的向量字面量
-                    if let crate::types::JsonStorage::Inline(json_bytes) = evaluated_value.value.json_storage {
-                        let s = core::str::from_utf8(&json_bytes)
-                            .unwrap_or_default()
-                            .trim_end_matches(char::from(0));
-                        
-                        // 检查是否是向量字面量格式 [x1, x2, ..., xn]
-                        if s.starts_with('[') && s.ends_with(']') {
-                            let vec_str = &s[1..s.len()-1];
-                            let vec_values: Vec<&str> = vec_str.split(',').map(|v| v.trim()).collect();
-                            
-                            // 计算向量维度
-                            let expected_dim = field_size / 4;
-                            if vec_values.len() != expected_dim {
+                    let json_str = match &evaluated_value.value.json_storage {
+                        crate::types::JsonStorage::Inline(json_bytes) => {
+                            core::str::from_utf8(json_bytes.as_slice()).unwrap_or_default().trim_end_matches(char::from(0)).to_string()
+                        }
+                        crate::types::JsonStorage::Null => {
+                            // For Null storage, the JSON string was too large for the inline buffer.
+                            // Try to extract the original string from the expression.
+                            if let Expression::Constant { value: crate::sql::Value::Json(s), .. } = expr {
+                                s.clone()
+                            } else {
                                 return Err(QueryExecutionError::TypeMismatch);
                             }
-                            
-                            // 解析向量值并写入记录
-                            let vec_ptr = record_data.as_mut_ptr().add(offset) as *mut f32;
-                            for (i, val_str) in vec_values.iter().enumerate() {
-                                if let Ok(val) = val_str.parse::<f32>() {
-                                    core::ptr::write_unaligned(vec_ptr.add(i), val);
-                                } else {
-                                    return Err(QueryExecutionError::TypeMismatch);
-                                }
-                            }
-                            return Ok(());
                         }
+                        _ => return Err(QueryExecutionError::TypeMismatch),
+                    };
+
+                    // Check if it's a vector literal [x1, x2, ..., xn]
+                    let s = json_str.trim();
+                    if s.starts_with('[') && s.ends_with(']') {
+                        let vec_str = &s[1..s.len()-1];
+                        let vec_values: Vec<&str> = vec_str.split(',').map(|v| v.trim()).collect();
+
+                        // Calculate expected dimension
+                        let expected_dim = field_size / 4;
+                        if vec_values.len() != expected_dim {
+                            return Err(QueryExecutionError::TypeMismatch);
+                        }
+
+                        // Parse vector values and write to record
+                        let vec_ptr = record_data.as_mut_ptr().add(offset) as *mut f32;
+                        for (i, val_str) in vec_values.iter().enumerate() {
+                            if let Ok(val) = val_str.parse::<f32>() {
+                                core::ptr::write_unaligned(vec_ptr.add(i), val);
+                            } else {
+                                return Err(QueryExecutionError::TypeMismatch);
+                            }
+                        }
+                        return Ok(());
                     }
                 }
                 

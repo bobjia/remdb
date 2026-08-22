@@ -53,10 +53,10 @@ fn main() -> Result<()> {
 
     println!("=== RBAC (基于角色的访问控制) 示例 ===\n");
 
-    // 1. 创建角色
+    // 1. 创建角色 (注意: "admin" 角色已默认存在)
     println!("1. 创建角色");
-    db.create_role("admin")?;
-    println!("   创建角色: admin");
+    // "admin" 角色已由系统默认创建，无需重复创建
+    println!("   使用默认角色: admin");
     db.create_role("developer")?;
     println!("   创建角色: developer");
     db.create_role("readonly")?;

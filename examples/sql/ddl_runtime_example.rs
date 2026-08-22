@@ -149,6 +149,9 @@ fn main() {
     // 初始化数据库和平台
     db.init().expect("Failed to initialize database");
 
+    // 初始化索引构建线程池
+    remdb::index::builder::init_index_build_thread_pool(2);
+
     println!("1. Testing DDL API - DdlExecutor trait");
     println!("=========================================");
 

@@ -8,7 +8,7 @@
 use remdb::config::{DbConfig, DefaultMemoryAllocator, WALConfig};
 use remdb::{RemDb, Result};
 
-static mut DB_MEMORY: [u8; 16 * 1024 * 1024] = [0; 16 * 1024 * 1024];
+static mut DB_MEMORY: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024];
 
 static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
 

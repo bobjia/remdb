@@ -7,6 +7,7 @@
 //! - Vector similarity search
 
 use remdb::config::{DbConfig, DefaultMemoryAllocator, WALConfig};
+use remdb::index::builder::init_index_build_thread_pool;
 use remdb::{RemDb, Result};
 
 static mut DB_MEMORY: [u8; 16 * 1024 * 1024] = [0; 16 * 1024 * 1024];
@@ -49,6 +50,7 @@ fn main() -> Result<()> {
 
     let mut db = RemDb::new(config);
     db.init()?;
+    init_index_build_thread_pool(2);
 
     println!("=== SQL Vector Operations Example ===\n");
 

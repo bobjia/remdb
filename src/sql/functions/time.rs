@@ -10,6 +10,9 @@ use crate::MAX_STRING_LEN;
 
 /// 执行TIME_BUCKET函数
 pub fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
+    #[cfg(feature = "log")]
+    crate::log::debug!("execute_time_bucket: args.len={}, args[0].type={:?}, args[1].type={:?}",
+        args.len(), args.get(0).map(|a| a.value_type), args.get(1).map(|a| a.value_type));
     if args.len() < 2 {
         return Err(QueryExecutionError::TypeMismatch);
     }
@@ -355,21 +358,50 @@ pub fn parse_interval_string(interval_str: &str) -> Result<i64, QueryExecutionEr
     let interval_str = interval_str.trim().to_lowercase();
     let mut parts = interval_str.split_whitespace();
 
-    let value = parts.next().ok_or(QueryExecutionError::TypeMismatch)?;
-    let unit = parts.next().ok_or(QueryExecutionError::TypeMismatch)?;
+    let value_str = parts.next().ok_or(QueryExecutionError::TypeMismatch)?;
 
-    let num = value.parse::<f64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+    // Try to parse as "value unit" (space-separated, e.g. "15 minutes")
+    if let Ok(num) = value_str.parse::<f64>() {
+        let unit = parts.next().unwrap_or("");
 
-    let micros_per_unit: i64 = match unit {
-        "microsecond" | "microseconds" => 1,
-        "millisecond" | "milliseconds" => 1000,
-        "second" | "seconds" => 1_000_000,
-        "minute" | "minutes" => 60_000_000,
-        "hour" | "hours" => 3_600_000_000,
-        "day" | "days" => 86_400_000_000,
-        "week" | "weeks" => 604_800_000_000,
-        "month" | "months" => 2_592_000_000_000, // Approximate 30 days
-        "year" | "years" => 31_556_952_000_000, // Approximate 365.25 days
+        let micros_per_unit: i64 = match unit {
+            "microsecond" | "microseconds" | "us" => 1,
+            "millisecond" | "milliseconds" | "ms" => 1000,
+            "second" | "seconds" | "s" => 1_000_000,
+            "minute" | "minutes" | "m" => 60_000_000,
+            "hour" | "hours" | "h" => 3_600_000_000,
+            "day" | "days" | "d" => 86_400_000_000,
+            "week" | "weeks" | "w" => 604_800_000_000,
+            "month" | "months" => 2_592_000_000_000, // Approximate 30 days
+            "year" | "years" => 31_556_952_000_000, // Approximate 365.25 days
+            // 如果没有单位，尝试将整个值解析为毫秒
+            "" => {
+                let ms = value_str.parse::<i64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+                return Ok(ms * 1000);
+            }
+            _ => return Err(QueryExecutionError::TypeMismatch),
+        };
+
+        return Ok((num * micros_per_unit as f64) as i64);
+    }
+
+    // Try to parse combined format like "15m", "1h", "30s", "500ms", etc.
+    let num_str = value_str.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect::<String>();
+    let unit_str = value_str.chars().skip_while(|c| c.is_ascii_digit() || *c == '.').collect::<String>();
+
+    if num_str.is_empty() || unit_str.is_empty() {
+        return Err(QueryExecutionError::TypeMismatch);
+    }
+
+    let num = num_str.parse::<f64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+    let micros_per_unit: i64 = match unit_str.as_str() {
+        "us" => 1,
+        "ms" => 1000,
+        "s" => 1_000_000,
+        "m" => 60_000_000,
+        "h" => 3_600_000_000,
+        "d" => 86_400_000_000,
+        "w" => 604_800_000_000,
         _ => return Err(QueryExecutionError::TypeMismatch),
     };
 

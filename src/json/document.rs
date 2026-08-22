@@ -808,6 +808,42 @@ pub fn json_extract(doc: &JsonDocument, path: &str) -> JsonQueryResult {
     }
 }
 
+/// 获取JSON对象的所有键
+pub fn json_keys(doc: &JsonDocument, path: &str) -> JsonQueryResult {
+    let result = json_extract(doc, path);
+    match result {
+        JsonQueryResult::Object(obj_doc) => {
+            // Parse the extracted object to get its keys
+            match obj_doc.parse_json() {
+                Ok(JsonValue::Object(map)) => {
+                    let keys: alloc::vec::Vec<JsonQueryResult> = map.keys()
+                        .map(|k| JsonQueryResult::Scalar(k.clone()))
+                        .collect();
+                    JsonQueryResult::Array(keys)
+                }
+                _ => JsonQueryResult::None,
+            }
+        }
+        JsonQueryResult::Scalar(s) => {
+            // If it's a JSON string that represents an object, try to parse it
+            if s.starts_with('{') {
+                match JsonDocument::parse_json_str(&s) {
+                    Ok(JsonValue::Object(map)) => {
+                        let keys: alloc::vec::Vec<JsonQueryResult> = map.keys()
+                            .map(|k| JsonQueryResult::Scalar(k.clone()))
+                            .collect();
+                        JsonQueryResult::Array(keys)
+                    }
+                    _ => JsonQueryResult::None,
+                }
+            } else {
+                JsonQueryResult::None
+            }
+        }
+        _ => JsonQueryResult::None,
+    }
+}
+
 /// 检查路径是否存在
 pub fn json_has(doc: &JsonDocument, path: &str) -> bool {
     match crate::json::path::parse_json_path(path) {

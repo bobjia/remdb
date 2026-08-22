@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     println!("\n4. TIME_BUCKET function");
     
     let result = db.sql_query(
-        "SELECT TIME_BUCKET('15m', timestamp) AS time_window, AVG(temperature) AS avg_temp, COUNT(*) AS count FROM sensor_data GROUP BY time_window"
+        "SELECT TIME_BUCKET('15m', timestamp) AS time_window, AVG(temperature) AS avg_temp, COUNT(*) AS count FROM sensor_data GROUP BY TIME_BUCKET('15m', timestamp)"
     )?;
     println!("   Grouped by 15-minute window:");
     println!("{}", result.to_string());
