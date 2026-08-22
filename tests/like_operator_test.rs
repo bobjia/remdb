@@ -1,4 +1,5 @@
 use remdb::{config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode}, RemDb, sql::execute_query, sql::parse_sql_query};
+use serial_test::serial;
 
 // 测试内存缓冲区
 static mut DB_MEMORY: [u8; 4 * 1024 * 1024] = [0; 4 * 1024 * 1024]; // 4MB
@@ -42,95 +43,97 @@ static TEST_CONFIG: DbConfig = DbConfig {
 };
 
 #[test]
+#[serial]
 fn test_like_operator() {
     // 初始化内存缓冲区
     unsafe {
         DB_MEMORY.fill(0);
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).expect("init_global_allocator failed");
     }
 
     // 创建数据库
     let mut db = RemDb::new(&TEST_CONFIG);
-    db.init().unwrap();
+    db.init().expect("db init failed");
 
     // 创建测试表
     let create_table_sql = "CREATE TABLE test (id INTEGER PRIMARY KEY, name VARCHAR(255));";
-    let create_query = parse_sql_query(create_table_sql).unwrap();
-    execute_query(&mut db, &create_query).unwrap();
-    
+    let create_query = parse_sql_query(create_table_sql).expect("parse CREATE TABLE failed");
+    execute_query(&mut db, &create_query).expect("execute CREATE TABLE failed");
+
     // 插入测试数据
     let insert_sql_1 = "INSERT INTO test (id, name) VALUES (1, 'test');";
-    let insert_query_1 = parse_sql_query(insert_sql_1).unwrap();
-    execute_query(&mut db, &insert_query_1).unwrap();
+    let insert_query_1 = parse_sql_query(insert_sql_1).expect("parse INSERT 1 failed");
+    execute_query(&mut db, &insert_query_1).expect("execute INSERT 1 failed");
 
     let insert_sql_2 = "INSERT INTO test (id, name) VALUES (2, 'testing');";
-    let insert_query_2 = parse_sql_query(insert_sql_2).unwrap();
-    execute_query(&mut db, &insert_query_2).unwrap();
+    let insert_query_2 = parse_sql_query(insert_sql_2).expect("parse INSERT 2 failed");
+    execute_query(&mut db, &insert_query_2).expect("execute INSERT 2 failed");
 
     let insert_sql_3 = "INSERT INTO test (id, name) VALUES (3, 'test123');";
-    let insert_query_3 = parse_sql_query(insert_sql_3).unwrap();
-    execute_query(&mut db, &insert_query_3).unwrap();
+    let insert_query_3 = parse_sql_query(insert_sql_3).expect("parse INSERT 3 failed");
+    execute_query(&mut db, &insert_query_3).expect("execute INSERT 3 failed");
 
     let insert_sql_4 = "INSERT INTO test (id, name) VALUES (4, '123test');";
-    let insert_query_4 = parse_sql_query(insert_sql_4).unwrap();
-    execute_query(&mut db, &insert_query_4).unwrap();
+    let insert_query_4 = parse_sql_query(insert_sql_4).expect("parse INSERT 4 failed");
+    execute_query(&mut db, &insert_query_4).expect("execute INSERT 4 failed");
 
     let insert_sql_5 = "INSERT INTO test (id, name) VALUES (5, '100%');";
-    let insert_query_5 = parse_sql_query(insert_sql_5).unwrap();
-    execute_query(&mut db, &insert_query_5).unwrap();
+    let insert_query_5 = parse_sql_query(insert_sql_5).expect("parse INSERT 5 failed");
+    execute_query(&mut db, &insert_query_5).expect("execute INSERT 5 failed");
 
     // 测试 LIKE 'test%' - 应该匹配以'test'开头的字符串
     let sql1 = "SELECT * FROM test WHERE name LIKE 'test%';";
-    let query1 = parse_sql_query(sql1).unwrap();
-    let result1 = execute_query(&mut db, &query1).unwrap();
+    let query1 = parse_sql_query(sql1).expect("parse SELECT 1 failed");
+    let result1 = execute_query(&mut db, &query1).expect("execute SELECT 1 failed");
     assert_eq!(result1.rows.len(), 3); // 应该匹配 'test', 'testing', 'test123'
 
     // 测试 LIKE '%test' - 应该匹配以'test'结尾的字符串
     let sql2 = "SELECT * FROM test WHERE name LIKE '%test';";
-    let query2 = parse_sql_query(sql2).unwrap();
-    let result2 = execute_query(&mut db, &query2).unwrap();
+    let query2 = parse_sql_query(sql2).expect("parse SELECT 2 failed");
+    let result2 = execute_query(&mut db, &query2).expect("execute SELECT 2 failed");
     assert_eq!(result2.rows.len(), 2); // 应该匹配 'test', '123test'
 
     // 测试 LIKE '%test%' - 应该匹配包含'test'的字符串
     let sql3 = "SELECT * FROM test WHERE name LIKE '%test%';";
-    let query3 = parse_sql_query(sql3).unwrap();
-    let result3 = execute_query(&mut db, &query3).unwrap();
+    let query3 = parse_sql_query(sql3).expect("parse SELECT 3 failed");
+    let result3 = execute_query(&mut db, &query3).expect("execute SELECT 3 failed");
     assert_eq!(result3.rows.len(), 4); // 应该匹配 'test', 'testing', 'test123', '123test'
 
     // 测试 LIKE '_test' - 应该匹配长度为5且以'test'结尾的字符串
     let sql4 = "SELECT * FROM test WHERE name LIKE '_test';";
-    let query4 = parse_sql_query(sql4).unwrap();
-    let result4 = execute_query(&mut db, &query4).unwrap();
+    let query4 = parse_sql_query(sql4).expect("parse SELECT 4 failed");
+    let result4 = execute_query(&mut db, &query4).expect("execute SELECT 4 failed");
     assert_eq!(result4.rows.len(), 0); // 没有匹配
 
     // 测试 LIKE '100\%' - 应该匹配包含字面量'%'的字符串
     let sql5 = "SELECT * FROM test WHERE name LIKE '100\\%';";
-    let query5 = parse_sql_query(sql5).unwrap();
-    let result5 = execute_query(&mut db, &query5).unwrap();
+    let query5 = parse_sql_query(sql5).expect("parse SELECT 5 failed");
+    let result5 = execute_query(&mut db, &query5).expect("execute SELECT 5 failed");
     assert_eq!(result5.rows.len(), 1); // 应该匹配 '100%'
 }
 
 #[test]
+#[serial]
 fn test_like_pattern_match_various_cases() {
     // 初始化内存缓冲区
     unsafe {
         DB_MEMORY.fill(0);
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).expect("init_global_allocator failed");
     }
 
     // 创建数据库
     let mut db = RemDb::new(&TEST_CONFIG);
-    db.init().unwrap();
+    db.init().expect("db init failed");
 
     // 创建测试表
     let create_table_sql = "CREATE TABLE test (id INTEGER PRIMARY KEY, name VARCHAR(255));";
-    let create_query = parse_sql_query(create_table_sql).unwrap();
-    execute_query(&mut db, &create_query).unwrap();
+    let create_query = parse_sql_query(create_table_sql).expect("parse CREATE TABLE failed");
+    execute_query(&mut db, &create_query).expect("execute CREATE TABLE failed");
 
     // 插入测试数据
     let insert_sql = "INSERT INTO test (id, name) VALUES (1, 'test');";
-    let insert_query = parse_sql_query(insert_sql).unwrap();
-    execute_query(&mut db, &insert_query).unwrap();
+    let insert_query = parse_sql_query(insert_sql).expect("parse INSERT failed");
+    execute_query(&mut db, &insert_query).expect("execute INSERT failed");
 
     // 测试各种模式
     let test_cases = vec!(
@@ -147,8 +150,8 @@ fn test_like_pattern_match_various_cases() {
 
     for (pattern, expected) in test_cases {
         let sql = format!("SELECT * FROM test WHERE name LIKE '{}';", pattern);
-        let query = parse_sql_query(&sql).unwrap();
-        let result = execute_query(&mut db, &query).unwrap();
+        let query = parse_sql_query(&sql).expect("parse SELECT failed");
+        let result = execute_query(&mut db, &query).expect("execute SELECT failed");
         let actual = !result.rows.is_empty();
         assert_eq!(actual, expected, "Pattern '{}' failed: expected {}, got {}", pattern, expected, actual);
     }
