@@ -4900,6 +4900,7 @@ fn execute_insert_query(
 
     // 5. 执行插入操作
     let mut affected_rows = 0;
+    let mut last_insert_id = 0u64;
 
     for values in &query.values {
         // 5. 创建记录数据缓冲区并初始化为0
@@ -5082,12 +5083,26 @@ fn execute_insert_query(
                         // 验证字符串长度
                         if let Some(max_length) = field.string_length {
                             if s.len() > max_length {
+                                // 自动创建的事务需要回滚，避免泄漏
+                                if !has_active_tx {
+                                    unsafe {
+                                        crate::transaction::rollback()
+                                            .map_err(|_| QueryExecutionError::InternalError)?;
+                                    }
+                                }
                                 return Err(QueryExecutionError::TypeMismatch);
                             }
                         } else if field.data_type == DataType::Text {
                             // TEXT类型限制为10KB
                             const MAX_TEXT_SIZE: usize = 10 * 1024; // 10KB
                             if s.len() > MAX_TEXT_SIZE {
+                                // 自动创建的事务需要回滚，避免泄漏
+                                if !has_active_tx {
+                                    unsafe {
+                                        crate::transaction::rollback()
+                                            .map_err(|_| QueryExecutionError::InternalError)?;
+                                    }
+                                }
                                 return Err(QueryExecutionError::TypeMismatch);
                             }
                         }
@@ -5101,21 +5116,30 @@ fn execute_insert_query(
                     alias: None,
                 };
 
-                set_field_value(
+                match set_field_value(
                     table,
                     &mut record_data,
                     field.offset,
                     field.data_type,
                     field.size,
                     &expr,
-                )
-                .map_err(|e| {
-                    #[cfg(feature = "log")]
-                    debug!("set_field_value failed for field '{}' with error: {:?}", field.name, e);
-                    #[cfg(feature = "log")]
-                    debug!("field.type={:?}, field.offset={}, field.size={}", field.data_type, field.offset, field.size);
-                    e
-                })?;
+                ) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        #[cfg(feature = "log")]
+                        debug!("set_field_value failed for field '{}' with error: {:?}", field.name, e);
+                        #[cfg(feature = "log")]
+                        debug!("field.type={:?}, field.offset={}, field.size={}", field.data_type, field.offset, field.size);
+                        // 自动创建的事务需要回滚，避免泄漏
+                        if !has_active_tx {
+                            unsafe {
+                                crate::transaction::rollback()
+                                    .map_err(|_| QueryExecutionError::InternalError)?;
+                            }
+                        }
+                        return Err(e);
+                    }
+                }
             } else if let Some(default_value) = &field.default_value {
                 // 使用字段默认值
                 // 直接写入默认值，因为default_value是types::Value类型
@@ -5235,7 +5259,10 @@ fn execute_insert_query(
 
         // 7. 调用表的插入方法
         match table.insert(record_data.as_ptr()) {
-            Ok(_) => affected_rows += 1,
+            Ok(slot_id) => {
+                affected_rows += 1;
+                last_insert_id = slot_id as u64;
+            }
             Err(e) => {
                 match e {
                     RemDbError::DuplicateKey => {
@@ -5282,15 +5309,23 @@ fn execute_insert_query(
     }
 
     // 8. 创建结果集，返回受影响的行数
-    let columns = alloc::vec!["affected_rows".to_string()];
+    let columns = alloc::vec!["affected_rows".to_string(), "last_insert_id".to_string()];
     let mut result_set = ResultSet::new(columns);
 
-    let row_data = alloc::vec![TypedValue {
-        value_type: DataType::UInt64,
-        value: crate::Value {
-            u64: affected_rows as u64
+    let row_data = alloc::vec![
+        TypedValue {
+            value_type: DataType::UInt64,
+            value: crate::Value {
+                u64: affected_rows as u64
+            },
         },
-    }];
+        TypedValue {
+            value_type: DataType::UInt64,
+            value: crate::Value {
+                u64: last_insert_id as u64
+            },
+        },
+    ];
     result_set.add_row(row_data);
 
     // 提交事务
@@ -5858,6 +5893,43 @@ fn set_field_value_with_depth(
                     DataType::VarChar | DataType::Char | DataType::Text => {
                         let s = core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default();
                         s
+                    }
+                    DataType::Json => {
+                        // 从JSON存储中提取字符串（用于向VarChar列写入JSON字符串）
+                        let json_str = match &evaluated_value.value.json_storage {
+                            crate::types::JsonStorage::Inline(json_bytes) => {
+                                core::str::from_utf8(json_bytes.as_slice())
+                                    .unwrap_or_default()
+                                    .trim_end_matches(char::from(0))
+                                    .to_string()
+                            }
+                            crate::types::JsonStorage::Null => {
+                                // For Null storage, the JSON string was too large for the inline buffer.
+                                // Try to extract the original string from the expression.
+                                if let Expression::Constant { value: crate::sql::Value::Json(s), .. } = expr {
+                                    s.clone()
+                                } else {
+                                    return Err(QueryExecutionError::TypeMismatch);
+                                }
+                            }
+                            _ => return Err(QueryExecutionError::TypeMismatch),
+                        };
+                        // 直接写入记录缓冲区
+                        let ptr = record_data.as_mut_ptr().add(offset);
+                        let max_len = field_size;
+                        let bytes = json_str.as_bytes();
+                        let copy_len = core::cmp::min(bytes.len(), max_len);
+                        let mut i = 0;
+                        while i < copy_len {
+                            *ptr.add(i) = bytes[i];
+                            i += 1;
+                        }
+                        // 填充剩余空间为0
+                        while i < max_len {
+                            *ptr.add(i) = 0;
+                            i += 1;
+                        }
+                        return Ok(());
                     }
                     DataType::Int64 => &evaluated_value.value.i64.to_string(),
                     DataType::Float64 => &evaluated_value.value.float64.to_string(),

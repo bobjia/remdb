@@ -1271,6 +1271,61 @@ impl VectorIndex {
         result
     }
 
+    /// k-NN search: find the k nearest neighbors of the query vector
+    /// Returns a vec of (distance, record_id) pairs sorted by distance ascending
+    pub unsafe fn search_knn(
+        &mut self,
+        query_vec: *const f32,
+        k: usize,
+    ) -> Result<Vec<(f32, u16)>> {
+        // Update stats
+        self.stats.access_count += 1;
+
+        // If no items, return empty results immediately (avoids spin lock issues)
+        if self.item_count == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Lock
+        crate::platform::spin_lock(&mut self.lock);
+
+        let k = core::cmp::min(k, self.item_count);
+
+        let results = match &self.index_impl {
+            VectorIndexImpl::HNSW(Some(hnsw_index)) => {
+                let r = hnsw_index.search(query_vec, k);
+                crate::platform::spin_unlock(&mut self.lock);
+                r?
+            }
+            VectorIndexImpl::IVFFlat(Some(ivf_index)) => {
+                let r = ivf_index.search(query_vec, k);
+                crate::platform::spin_unlock(&mut self.lock);
+                r?
+            }
+            _ => {
+                // Linear search: compute all distances, sort, take top k
+                let mut all_results: Vec<(f32, u16)> = Vec::new();
+                for i in 0..self.item_count {
+                    let item_ptr = self.items.add(i);
+                    let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
+                    let distance = self.calculate_distance(query_vec, vec_ptr);
+                    all_results.push((distance, (*item_ptr).record_id));
+                }
+                // Sort by distance ascending
+                all_results.sort_by(|a, b| {
+                    a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal)
+                });
+                all_results.truncate(k);
+                crate::platform::spin_unlock(&mut self.lock);
+                all_results
+            }
+        };
+
+        self.stats.hit_count += 1;
+
+        Ok(results)
+    }
+
     /// 向量范围查询
     pub unsafe fn find_range(
         &mut self,
