@@ -147,7 +147,7 @@ static void test_table_operations() {
     
     // Test get after delete
     err = remdb_table_get(handle, 0, &key, &retrieved);
-    assert(err == REMDB_RECORD_NOT_FOUND);
+    assert(err == REMDB_ERROR_RECORD_NOT_FOUND);
     
     // Test record count after delete
     err = remdb_table_get_record_count(handle, 0, &count);
@@ -233,7 +233,7 @@ static void test_transactions() {
     
     TestRecord duplicate = { .id = 1, .name = "duplicate", .value = 3.0f };
     err = remdb_table_insert(handle, 0, &duplicate);
-    assert(err == REMDB_DUPLICATE_KEY);
+    assert(err == REMDB_ERROR_DUPLICATE_KEY);
     
     err = remdb_rollback_transaction(handle);
     assert(err == REMDB_SUCCESS);
@@ -456,7 +456,7 @@ static void test_error_handling() {
     // Test null pointer handling
     RemDbHandle handle = NULL;
     enum RemDbError err = remdb_get_global(&handle);
-    assert(err == REMDB_CONFIG_ERROR);
+    assert(err == REMDB_ERROR_CONFIG_ERROR);
     
     // Initialize database with minimal config
     RemDbTableDef tables[0] = {};
@@ -474,14 +474,14 @@ static void test_error_handling() {
     // Test invalid table ID
     TestRecord record = { .id = 1, .name = "error_test", .value = 0.0f };
     err = remdb_table_insert(handle, 1, &record);
-    assert(err == REMDB_TABLE_NOT_FOUND);
+    assert(err == REMDB_ERROR_TABLE_NOT_FOUND);
     
     // Test record not found
     RemDbValue key;
     key.u32 = 999;
     TestRecord retrieved;
     err = remdb_table_get(handle, 0, &key, &retrieved);
-    assert(err == REMDB_RECORD_NOT_FOUND);
+    assert(err == REMDB_ERROR_RECORD_NOT_FOUND);
     
     printf("✓\n");
 }
@@ -546,7 +546,7 @@ static void test_table_get_by_name() {
     
     // Test get non-existent table by name
     err = remdb_table_get_by_name(handle, "nonexistent_table", &table_id);
-    assert(err == REMDB_TABLE_NOT_FOUND);
+    assert(err == REMDB_ERROR_TABLE_NOT_FOUND);
     
     printf("✓\n");
 }

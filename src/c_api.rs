@@ -203,6 +203,7 @@ pub struct RemDbHAConfig {
     pub master_address: *const u8, // 字符串形式的IP地址
     pub master_port: u16,
     pub replication_port: u16,
+    pub heartbeat_port: u16,
     pub node_id: u32,
 }
 

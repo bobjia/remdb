@@ -67,10 +67,10 @@ RemDB支持以下数据类型：
 
 | 数据类型 | C类型       | 描述               |
 | ---- | ---------- | ---------------- |
-| INT8 | int8_t     | 8位有符号整数         |
-| INT16 | int16_t    | 16位有符号整数        |
-| INT32 | int32_t    | 32位有符号整数        |
-| INT64 | int64_t    | 64位有符号整数        |
+| UINT8 | uint8_t    | 8位无符号整数         |
+| UINT16 | uint16_t   | 16位无符号整数        |
+| UINT32 | uint32_t   | 32位无符号整数        |
+| UINT64 | uint64_t   | 64位无符号整数        |
 | FLOAT32 | float    | 32位浮点数          |
 | FLOAT64 | double   | 64位浮点数          |
 | BOOL | uint8_t    | 布尔值（0或1）        |
@@ -985,9 +985,9 @@ enum RemDbError remdb_ha_get_replication_mode(enum RemDbReplicationMode* mode);
 
 // 定义用户结构体
 typedef struct User {
-    int32_t id;
+    uint32_t id;
     char name[32];
-    int32_t age;
+    uint32_t age;
 } User;
 
 int main() {
@@ -996,9 +996,9 @@ int main() {
 
     // 1. 定义字段定义
     RemDbFieldDef user_fields[] = {
-        { "id", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(User, id) },
+        { "id", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(User, id) },
         { "name", REMDB_TYPE_STRING, sizeof(((User*)0)->name), offsetof(User, name) },
-        { "age", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(User, age) }
+        { "age", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(User, age) }
     };
     size_t user_fields_count = sizeof(user_fields) / sizeof(user_fields[0]);
 
@@ -1053,7 +1053,7 @@ int main() {
     // 6. 查询记录
     printf("\nQuerying user 1...\n");
     RemDbValue key;
-    key.int32 = 1;
+    key.u32 = 1;
     User retrieved_user;
     err = remdb_table_get(handle, 0, &key, &retrieved_user);
     if (err != REMDB_SUCCESS) {
@@ -1066,7 +1066,7 @@ int main() {
     printf("\nUpdating user 2...\n");
     User updated_user = { .id = 2, .name = "Robert", .age = 31 };
     RemDbValue update_key;
-    update_key.int32 = 2;
+    update_key.u32 = 2;
     err = remdb_table_update(handle, 0, &update_key, &updated_user);
     if (err != REMDB_SUCCESS) {
         printf("Failed to update user 2: error code %d\n", err);
@@ -1077,7 +1077,7 @@ int main() {
     // 8. 删除记录
     printf("\nDeleting user 1...\n");
     RemDbValue delete_key;
-    delete_key.int32 = 1;
+    delete_key.u32 = 1;
     err = remdb_table_delete(handle, 0, &delete_key);
     if (err != REMDB_SUCCESS) {
         printf("Failed to delete user 1: error code %d\n", err);
@@ -1132,9 +1132,9 @@ int main() {
 
 // 定义用户结构体
 typedef struct User {
-    int32_t id;
+    uint32_t id;
     char name[32];
-    int32_t age;
+    uint32_t age;
 } User;
 
 int main() {
@@ -1143,9 +1143,9 @@ int main() {
 
     // 1. 定义字段定义
     RemDbFieldDef user_fields[] = {
-        { "id", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(User, id) },
+        { "id", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(User, id) },
         { "name", REMDB_TYPE_STRING, sizeof(((User*)0)->name), offsetof(User, name) },
-        { "age", REMDB_TYPE_INT32, sizeof(int32_t), offsetof(User, age) }
+        { "age", REMDB_TYPE_UINT32, sizeof(uint32_t), offsetof(User, age) }
     };
     size_t user_fields_count = sizeof(user_fields) / sizeof(user_fields[0]);
 
@@ -1381,8 +1381,8 @@ for (size_t i = 0; i < result_set->rows_count; i++) {
         
         // 根据数据类型打印值
         switch (value->data_type) {
-            case REMDB_TYPE_INT32:
-                printf("%d", value->value.int32);
+            case REMDB_TYPE_UINT32:
+                printf("%d", value->value.u32);
                 break;
             case REMDB_TYPE_STRING:
                 printf("%s", value->value.string);
@@ -1490,8 +1490,8 @@ for (size_t i = 0; i < result_set->rows_count; i++) {
         const RemDbTypedValue* value = &row->values[j];
         
         switch (value->data_type) {
-            case REMDB_TYPE_INT32:
-                printf("%d", value->value.int32);
+            case REMDB_TYPE_UINT32:
+                printf("%d", value->value.u32);
                 break;
             case REMDB_TYPE_STRING:
                 printf("%s", value->value.string);
@@ -1578,7 +1578,7 @@ printf("Data exported successfully!\n");
 
 ### 7.2 内存不足
 
-**问题**：执行插入操作时返回`REMDB_OUT_OF_MEMORY`错误
+**问题**：执行插入操作时返回`REMDB_ERROR_OUT_OF_MEMORY`错误
 
 **解决方案**：
 * 增加`total_memory`配置

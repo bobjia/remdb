@@ -42,12 +42,13 @@ typedef uint8_t RemDbDataType;
 
 /**
  * @brief Compression types for time series data
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbCompressionType {
-    REMDB_COMPRESSION_NONE = 0,
-    REMDB_COMPRESSION_DELTA_RUN_LENGTH = 1,
-    REMDB_COMPRESSION_SNAPPY = 2,
-};
+typedef uint8_t RemDbCompressionType;
+
+#define REMDB_COMPRESSION_NONE               ((RemDbCompressionType)0)
+#define REMDB_COMPRESSION_DELTA_RUN_LENGTH   ((RemDbCompressionType)1)
+#define REMDB_COMPRESSION_SNAPPY             ((RemDbCompressionType)2)
 
 /**
  * @brief Maximum string length supported by RemDB
@@ -105,8 +106,6 @@ typedef struct RemDbTableDef {
 
 /**
  * @brief Typed value for SQL result set
- * Note: data_type is uint8_t (1 byte) with 7 bytes padding before value
- * to match Rust's #[repr(C)] layout with #[repr(u8)] enum
  */
 typedef struct RemDbTypedValue {
     RemDbDataType data_type;  /* 1 byte */
@@ -148,7 +147,8 @@ typedef struct RemDbTimeSeriesRecord {
 typedef struct RemDbTimeSeriesConfig {
     uint64_t partition_duration_secs;
     uint64_t retention_period_secs;
-    enum RemDbCompressionType compression;
+    RemDbCompressionType compression;
+    /* 7 bytes padding to align next field to 8 bytes */
     size_t max_partitions;
 } RemDbTimeSeriesConfig;
 
@@ -181,7 +181,9 @@ typedef struct RemDbConfig {
     size_t time_series_tables_count;
     size_t total_memory;
     uint8_t low_power_mode_supported;
+    /* 3 bytes padding to align low_power_max_records to 4 bytes */
     int32_t low_power_max_records;
+    /* 4 bytes padding to align ha_config to 8 bytes */
     void* ha_config;
 } RemDbConfig;
 
@@ -192,21 +194,23 @@ typedef void* RemDbHandle;
 
 /**
  * @brief Transaction type
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbTransactionType {
-    REMDB_TX_READ = 0,
-    REMDB_TX_WRITE = 1,
-};
+typedef uint8_t RemDbTransactionType;
+
+#define REMDB_TX_READ   ((RemDbTransactionType)0)
+#define REMDB_TX_WRITE  ((RemDbTransactionType)1)
 
 /**
  * @brief Isolation level
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbIsolationLevel {
-    REMDB_ISO_READ_UNCOMMITTED = 0,
-    REMDB_ISO_READ_COMMITTED = 1,
-    REMDB_ISO_REPEATABLE_READ = 2,
-    REMDB_ISO_SERIALIZABLE = 3,
-};
+typedef uint8_t RemDbIsolationLevel;
+
+#define REMDB_ISO_READ_UNCOMMITTED ((RemDbIsolationLevel)0)
+#define REMDB_ISO_READ_COMMITTED   ((RemDbIsolationLevel)1)
+#define REMDB_ISO_REPEATABLE_READ  ((RemDbIsolationLevel)2)
+#define REMDB_ISO_SERIALIZABLE     ((RemDbIsolationLevel)3)
 
 /**
  * @brief Database metrics snapshot
@@ -231,21 +235,58 @@ typedef struct RemDbMetricsSnapshot {
 
 /**
  * @brief Health status
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbHealthStatus {
-    REMDB_HEALTH_HEALTHY = 0,
-    REMDB_HEALTH_WARNING = 1,
-    REMDB_HEALTH_UNHEALTHY = 2,
-};
+typedef uint8_t RemDbHealthStatus;
+
+#define REMDB_HEALTH_HEALTHY   ((RemDbHealthStatus)0)
+#define REMDB_HEALTH_WARNING   ((RemDbHealthStatus)1)
+#define REMDB_HEALTH_UNHEALTHY ((RemDbHealthStatus)2)
 
 /**
  * @brief Health check result
  */
 typedef struct RemDbHealthCheckResult {
-    enum RemDbHealthStatus status;
+    RemDbHealthStatus status;
+    /* 7 bytes padding to align metrics to 8 bytes */
     RemDbMetricsSnapshot metrics;
     const char* details;
 } RemDbHealthCheckResult;
+
+/**
+ * @brief Database status
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
+ */
+typedef uint8_t RemDbDatabaseStatus;
+
+#define REMDB_DB_CREATED ((RemDbDatabaseStatus)0)
+#define REMDB_DB_OPEN    ((RemDbDatabaseStatus)1)
+#define REMDB_DB_CLOSED  ((RemDbDatabaseStatus)2)
+#define REMDB_DB_DROPPED ((RemDbDatabaseStatus)3)
+
+/**
+ * @brief Database information
+ */
+typedef struct RemDbDatabaseInfo {
+    const char* name;
+    const char* database_type;
+    RemDbDatabaseStatus status;
+    /* 7 bytes padding to align table_count to 8 bytes */
+    size_t table_count;
+    size_t memory_usage;
+} RemDbDatabaseInfo;
+
+/**
+ * @brief Database configuration
+ */
+typedef struct RemDbDatabaseConfig {
+    const char* name;
+    const size_t* memory_limit;
+    const size_t* max_tables;
+    const uint8_t* wal_mode;
+    const uint8_t* default_index_type;
+    const uint8_t* temp_store;
+} RemDbDatabaseConfig;
 
 /* =========================================== */
 /*              Vector Index Types              */
@@ -253,31 +294,33 @@ typedef struct RemDbHealthCheckResult {
 
 /**
  * @brief Vector index type
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbVectorIndexType {
-    REMDB_VECTOR_INDEX_HNSW = 0,
-    REMDB_VECTOR_INDEX_HNSW_SQ = 1,
-    REMDB_VECTOR_INDEX_HNSW_BQ = 2,
-    REMDB_VECTOR_INDEX_IVF = 3,
-    REMDB_VECTOR_INDEX_IVF_PQ = 4,
-};
+typedef uint8_t RemDbVectorIndexType;
+
+#define REMDB_VECTOR_INDEX_HNSW   ((RemDbVectorIndexType)0)
+#define REMDB_VECTOR_INDEX_HNSW_SQ ((RemDbVectorIndexType)1)
+#define REMDB_VECTOR_INDEX_HNSW_BQ ((RemDbVectorIndexType)2)
+#define REMDB_VECTOR_INDEX_IVF    ((RemDbVectorIndexType)3)
+#define REMDB_VECTOR_INDEX_IVF_PQ ((RemDbVectorIndexType)4)
 
 /**
  * @brief Vector distance type
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbDistanceType {
-    REMDB_DISTANCE_L2 = 0,
-    REMDB_DISTANCE_INNER_PRODUCT = 1,
-    REMDB_DISTANCE_COSINE = 2,
-};
+typedef uint8_t RemDbDistanceType;
+
+#define REMDB_DISTANCE_L2            ((RemDbDistanceType)0)
+#define REMDB_DISTANCE_INNER_PRODUCT ((RemDbDistanceType)1)
+#define REMDB_DISTANCE_COSINE        ((RemDbDistanceType)2)
 
 /**
  * @brief Vector metadata configuration
  */
 typedef struct RemDbVectorMetadata {
     uint16_t dimension;
-    enum RemDbDistanceType distance_type;
-    enum RemDbVectorIndexType index_type;
+    RemDbDistanceType distance_type;
+    RemDbVectorIndexType index_type;
     uint8_t compression_enabled;
     uint8_t compression_scheme;
     uint8_t compression_level;
@@ -294,27 +337,33 @@ typedef struct RemDbVectorMetadata {
 
 /**
  * @brief UDP mode for PubSub
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbUdpMode {
-    REMDB_UDP_UNICAST = 0,
-    REMDB_UDP_BROADCAST = 1,
-    REMDB_UDP_MULTICAST = 2,
-};
+typedef uint8_t RemDbUdpMode;
+
+#define REMDB_UDP_UNICAST   ((RemDbUdpMode)0)
+#define REMDB_UDP_BROADCAST ((RemDbUdpMode)1)
+#define REMDB_UDP_MULTICAST ((RemDbUdpMode)2)
 
 /**
  * @brief PubSub configuration
  */
 typedef struct RemDbPubSubConfig {
-    enum RemDbUdpMode udp_mode;
+    RemDbUdpMode udp_mode;
+    /* 7 bytes padding to align multicast_addr to 8 bytes */
     const char* multicast_addr;
     uint16_t port;
+    /* 6 bytes padding to align max_topics to 8 bytes */
     size_t max_topics;
     size_t max_subscribers_per_topic;
     size_t buffer_size;
     uint8_t enable_nack;
+    /* 3 bytes padding to align retransmit_timeout_ms to 4 bytes */
     uint32_t retransmit_timeout_ms;
+    /* 4 bytes padding to align max_retransmits to 8 bytes */
     size_t max_retransmits;
     uint32_t heartbeat_interval_secs;
+    /* 4 bytes padding to align frame_pool_size to 8 bytes */
     size_t frame_pool_size;
 } RemDbPubSubConfig;
 
@@ -329,27 +378,30 @@ typedef uint8_t (*RemDbPubSubCallback)(uint16_t topic_id, const uint8_t* data, s
 
 /**
  * @brief HA role
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbHARole {
-    REMDB_HA_ROLE_MASTER = 0,
-    REMDB_HA_ROLE_SLAVE = 1,
-    REMDB_HA_ROLE_AUTO = 2,
-};
+typedef uint8_t RemDbHARole;
+
+#define REMDB_HA_ROLE_MASTER ((RemDbHARole)0)
+#define REMDB_HA_ROLE_SLAVE  ((RemDbHARole)1)
+#define REMDB_HA_ROLE_AUTO   ((RemDbHARole)2)
 
 /**
  * @brief Replication mode
+ * Note: Use uint8_t for ABI compatibility with Rust's #[repr(u8)] enum
  */
-enum RemDbReplicationMode {
-    REMDB_REPLICATION_MODE_ASYNC = 0,
-    REMDB_REPLICATION_MODE_SYNC = 1,
-};
+typedef uint8_t RemDbReplicationMode;
+
+#define REMDB_REPLICATION_MODE_ASYNC ((RemDbReplicationMode)0)
+#define REMDB_REPLICATION_MODE_SYNC  ((RemDbReplicationMode)1)
 
 /**
  * @brief HA configuration
  */
 typedef struct RemDbHAConfig {
-    enum RemDbHARole ha_role;
-    enum RemDbReplicationMode replication_mode;
+    RemDbHARole ha_role;
+    RemDbReplicationMode replication_mode;
+    /* 2 bytes padding to align heartbeat_interval_ms to 4 bytes */
     uint32_t heartbeat_interval_ms;
     uint32_t failure_detection_ms;
     uint32_t sync_timeout_ms;
@@ -357,6 +409,7 @@ typedef struct RemDbHAConfig {
     uint16_t master_port;
     uint16_t replication_port;
     uint16_t heartbeat_port;
+    /* 2 bytes padding to align node_id to 4 bytes */
     uint32_t node_id;
 } RemDbHAConfig;
 
@@ -366,6 +419,7 @@ typedef struct RemDbHAConfig {
 
 /**
  * @brief Error codes returned by RemDB API functions
+ * Note: This is a C enum (int-sized, 4 bytes) to match Rust's #[repr(u32)] enum
  */
 enum RemDbError {
     REMDB_SUCCESS = 0,
@@ -387,15 +441,16 @@ enum RemDbError {
     REMDB_ERROR_LOCK_TIMEOUT = 16,
     REMDB_ERROR_TABLE_NOT_FOUND = 17,
     REMDB_ERROR_INVALID_RECORD_SIZE = 18,
-    REMDB_ERROR_PUBSUB_INIT_FAILED = 19,
-    REMDB_ERROR_PUBSUB_NETWORK_ERROR = 20,
-    REMDB_ERROR_PUBSUB_INVALID_PARAMETER = 21,
-    REMDB_ERROR_PUBSUB_RESOURCE_EXHAUSTED = 22,
-    REMDB_ERROR_PUBSUB_INVALID_FRAME_FORMAT = 23,
-    REMDB_ERROR_PUBSUB_CRC_CHECK_FAILED = 24,
-    REMDB_ERROR_PUBSUB_TOPIC_NOT_FOUND = 25,
-    REMDB_ERROR_PUBSUB_SUBSCRIPTION_NOT_FOUND = 26,
-    REMDB_ERROR_NOT_ALLOWED = 27,
+    REMDB_ERROR_INVALID_PARAMETER = 19,
+    REMDB_ERROR_PUBSUB_INIT_FAILED = 20,
+    REMDB_ERROR_PUBSUB_NETWORK_ERROR = 21,
+    REMDB_ERROR_PUBSUB_INVALID_PARAMETER = 22,
+    REMDB_ERROR_PUBSUB_RESOURCE_EXHAUSTED = 23,
+    REMDB_ERROR_PUBSUB_INVALID_FRAME_FORMAT = 24,
+    REMDB_ERROR_PUBSUB_CRC_CHECK_FAILED = 25,
+    REMDB_ERROR_PUBSUB_TOPIC_NOT_FOUND = 26,
+    REMDB_ERROR_PUBSUB_SUBSCRIPTION_NOT_FOUND = 27,
+    REMDB_ERROR_NOT_ALLOWED = 28,
 };
 
 /* =========================================== */
@@ -452,9 +507,9 @@ enum RemDbError remdb_is_low_power_mode(RemDbHandle handle, uint8_t* is_enabled)
  * @param isolation_level Isolation level
  * @return Error code
  */
-enum RemDbError remdb_begin_transaction(RemDbHandle handle, 
-                                       enum RemDbTransactionType tx_type,
-                                       enum RemDbIsolationLevel isolation_level);
+enum RemDbError remdb_begin_transaction(RemDbHandle handle,
+                                        RemDbTransactionType tx_type,
+                                        RemDbIsolationLevel isolation_level);
 
 /**
  * @brief Commit a transaction
@@ -782,6 +837,66 @@ enum RemDbError remdb_export_ddl(RemDbHandle handle, const char* path);
 enum RemDbError remdb_export_data(RemDbHandle handle, const char* path);
 
 /* =========================================== */
+/*              Database Management Operations  */
+/* =========================================== */
+
+/**
+ * @brief Create a new database
+ *
+ * @param name Database name
+ * @param schema Schema string (optional)
+ * @param config Database configuration (optional)
+ * @return Error code
+ */
+enum RemDbError remdb_create_database(const char* name, const char* schema, const RemDbDatabaseConfig* config);
+
+/**
+ * @brief Switch to use a database
+ *
+ * @param handle Database handle
+ * @param name Database name
+ * @return Error code
+ */
+enum RemDbError remdb_use_database(RemDbHandle handle, const char* name);
+
+/**
+ * @brief Close a database
+ *
+ * @param handle Database handle
+ * @param name Database name
+ * @return Error code
+ */
+enum RemDbError remdb_close_database(RemDbHandle handle, const char* name);
+
+/**
+ * @brief Drop a database
+ *
+ * @param handle Database handle
+ * @param name Database name
+ * @return Error code
+ */
+enum RemDbError remdb_drop_database(RemDbHandle handle, const char* name);
+
+/**
+ * @brief Get list of databases
+ *
+ * @param handle Database handle
+ * @param databases Output parameter for database info array
+ * @param count Output parameter for number of databases
+ * @return Error code
+ */
+enum RemDbError remdb_get_databases(RemDbHandle handle, RemDbDatabaseInfo** databases, size_t* count);
+
+/**
+ * @brief Free database list memory
+ *
+ * @param databases Database info array to free
+ * @param count Number of databases in the array
+ * @return Error code
+ */
+enum RemDbError remdb_free_databases(RemDbDatabaseInfo* databases, size_t count);
+
+/* =========================================== */
 /*              Vector Index Operations         */
 /* =========================================== */
 
@@ -906,7 +1021,7 @@ enum RemDbError remdb_pubsub_shutdown(void);
  * @param role Output parameter for current HA role
  * @return Error code
  */
-enum RemDbError remdb_ha_get_role(enum RemDbHARole* role);
+enum RemDbError remdb_ha_get_role(RemDbHARole* role);
 
 /**
  * @brief Promote current node to Master
@@ -928,6 +1043,14 @@ enum RemDbError remdb_ha_demote_to_slave(void);
  * @return Error code
  */
 enum RemDbError remdb_ha_check_status(void);
+
+/**
+ * @brief Get current replication mode
+ *
+ * @param mode Output parameter for current replication mode
+ * @return Error code
+ */
+enum RemDbError remdb_ha_get_replication_mode(RemDbReplicationMode* mode);
 
 #ifdef __cplusplus
 }
