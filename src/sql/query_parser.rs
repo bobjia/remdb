@@ -363,6 +363,8 @@ impl std::fmt::Display for IndexType {
         CreateCheckpoint,
         /// SHOW INDEX BUILD STATUS查询
         ShowIndexBuildStatus,
+        /// REINDEX查询
+        Reindex,
         /// SHOW TABLES查询
         ShowTables,
         /// 其他查询类型（暂不支持）
@@ -696,7 +698,11 @@ impl SqlParser {
             QueryType::Delete => self.parse_delete_query(),
             QueryType::Describe => self.parse_describe_query(),
             QueryType::CreateTable => self.parse_create_table_query(),
-            QueryType::CreateTimeSeriesTable => self.parse_create_table_query(),
+            QueryType::CreateTimeSeriesTable => {
+                let mut query = self.parse_create_table_query()?;
+                query.query_type = QueryType::CreateTimeSeriesTable;
+                Ok(query)
+            }
             QueryType::CreateIndex => self.parse_create_index_query(),
             QueryType::CreateDatabase => self.parse_create_database_query(),
             QueryType::CreateModel => self.parse_create_model_query(),
@@ -841,38 +847,48 @@ impl SqlParser {
                 model_output: (String::new(), String::new()),
                 table_config: HashMap::new(),
             }),
-            QueryType::ShowIndexBuildStatus => Ok(SqlQuery {
-                query_type: QueryType::ShowIndexBuildStatus,
-                table_name: String::new(),
-                table_alias: None,
-                joins: Vec::new(),
-                columns: Vec::new(),
-                select_all: false,
-                distinct: false,
-                where_clause: None,
-                having_clause: None,
-                group_by: None,
-                order_by: None,
-                limit: None,
-                sample_by: None,
-                fill_clause: None,
-                window_functions: Vec::new(),
-                insert_columns: Vec::new(),
-                values: Vec::new(),
-                table_def: Vec::new(),
-                primary_key: None,
-                index_column: None,
-                index_type: None,
-                index_params: HashMap::new(),
-                index_online: true,
-                update_pairs: Vec::new(),
-                ignore_duplicates: false,
-                if_not_exists: false,
-                model_path: String::new(),
-                model_inputs: Vec::new(),
-                model_output: (String::new(), String::new()),
-                table_config: HashMap::new(),
-            }),
+            QueryType::ShowIndexBuildStatus => {
+                // 解析可选的 FOR <object_name>
+                let mut object_name = String::new();
+                self.skip_whitespace();
+                if self.match_keyword("FOR") {
+                    self.skip_whitespace();
+                    object_name = self.parse_identifier()?;
+                }
+                Ok(SqlQuery {
+                    query_type: QueryType::ShowIndexBuildStatus,
+                    table_name: object_name,
+                    table_alias: None,
+                    joins: Vec::new(),
+                    columns: Vec::new(),
+                    select_all: false,
+                    distinct: false,
+                    where_clause: None,
+                    having_clause: None,
+                    group_by: None,
+                    order_by: None,
+                    limit: None,
+                    sample_by: None,
+                    fill_clause: None,
+                    window_functions: Vec::new(),
+                    insert_columns: Vec::new(),
+                    values: Vec::new(),
+                    table_def: Vec::new(),
+                    primary_key: None,
+                    index_column: None,
+                    index_type: None,
+                    index_params: HashMap::new(),
+                    index_online: true,
+                    update_pairs: Vec::new(),
+                    ignore_duplicates: false,
+                    if_not_exists: false,
+                    model_path: String::new(),
+                    model_inputs: Vec::new(),
+                    model_output: (String::new(), String::new()),
+                    table_config: HashMap::new(),
+                })
+            },
+            QueryType::Reindex => self.parse_reindex_query(),
             QueryType::ShowTables => Ok(SqlQuery {
                 query_type: QueryType::ShowTables,
                 table_name: String::new(),
@@ -1272,6 +1288,121 @@ impl SqlParser {
                 
                 // 不在这里更新字段定义中的主键标志，因为字段可能还未定义
                 // 将在所有字段定义完成后统一处理
+            } else if self.match_keyword("FOREIGN") {
+                // 跳过 FOREIGN KEY 约束（remdb 不支持外键约束）
+                self.skip_whitespace();
+                self.expect_keyword("KEY")?;
+                self.skip_whitespace();
+                self.expect_char('(')?;
+                // 跳过字段列表
+                loop {
+                    self.skip_whitespace();
+                    self.parse_identifier()?;
+                    self.skip_whitespace();
+                    if self.match_char(')') {
+                        break;
+                    }
+                    if !self.match_char(',') {
+                        return Err(QueryParseError::InvalidSyntax);
+                    }
+                }
+                // 跳过 REFERENCES 子句
+                self.skip_whitespace();
+                self.expect_keyword("REFERENCES")?;
+                self.skip_whitespace();
+                self.parse_identifier()?; // 父表名
+                self.skip_whitespace();
+                if self.match_char('(') {
+                    loop {
+                        self.skip_whitespace();
+                        self.parse_identifier()?;
+                        self.skip_whitespace();
+                        if self.match_char(')') {
+                            break;
+                        }
+                        if !self.match_char(',') {
+                            return Err(QueryParseError::InvalidSyntax);
+                        }
+                    }
+                }
+            } else if self.match_keyword("CONSTRAINT") {
+                // 跳过 CONSTRAINT 子句（remdb 不支持）
+                self.skip_whitespace();
+                // 跳过约束名称
+                self.parse_identifier()?;
+                self.skip_whitespace();
+                // 检查约束类型
+                if self.match_keyword("PRIMARY") {
+                    self.skip_whitespace();
+                    self.expect_keyword("KEY")?;
+                    self.skip_whitespace();
+                    self.expect_char('(')?;
+                    loop {
+                        self.skip_whitespace();
+                        let field_name = self.parse_identifier()?;
+                        primary_key_fields.push(field_name);
+                        self.skip_whitespace();
+                        if self.match_char(')') {
+                            break;
+                        }
+                        if !self.match_char(',') {
+                            return Err(QueryParseError::InvalidSyntax);
+                        }
+                    }
+                    primary_key = Some(primary_key_fields.clone());
+                } else if self.match_keyword("UNIQUE") {
+                    // 跳过 UNIQUE 约束
+                    self.skip_whitespace();
+                    self.expect_char('(')?;
+                    loop {
+                        self.skip_whitespace();
+                        self.parse_identifier()?;
+                        self.skip_whitespace();
+                        if self.match_char(')') {
+                            break;
+                        }
+                        if !self.match_char(',') {
+                            return Err(QueryParseError::InvalidSyntax);
+                        }
+                    }
+                } else if self.match_keyword("FOREIGN") {
+                    // 跳过 FOREIGN KEY 约束
+                    self.skip_whitespace();
+                    self.expect_keyword("KEY")?;
+                    self.skip_whitespace();
+                    self.expect_char('(')?;
+                    loop {
+                        self.skip_whitespace();
+                        self.parse_identifier()?;
+                        self.skip_whitespace();
+                        if self.match_char(')') {
+                            break;
+                        }
+                        if !self.match_char(',') {
+                            return Err(QueryParseError::InvalidSyntax);
+                        }
+                    }
+                    self.skip_whitespace();
+                    self.expect_keyword("REFERENCES")?;
+                    self.skip_whitespace();
+                    self.parse_identifier()?;
+                    self.skip_whitespace();
+                    if self.match_char('(') {
+                        loop {
+                            self.skip_whitespace();
+                            self.parse_identifier()?;
+                            self.skip_whitespace();
+                            if self.match_char(')') {
+                                break;
+                            }
+                            if !self.match_char(',') {
+                                return Err(QueryParseError::InvalidSyntax);
+                            }
+                        }
+                    }
+                } else {
+                    return Err(QueryParseError::InvalidSyntax);
+                }
             } else {
                 // 解析普通字段定义
                 let field_name = self.parse_identifier()?;
@@ -1553,6 +1684,55 @@ impl SqlParser {
             index_column: Some(index_columns),
             index_type,
             index_params,
+            index_online,
+            update_pairs: Vec::new(),
+            ignore_duplicates: false,
+            if_not_exists: false,
+            model_path: String::new(),
+            model_inputs: Vec::new(),
+            model_output: (String::new(), String::new()),
+            table_config: HashMap::new(),
+        })
+    }
+
+    /// 解析REINDEX查询
+    fn parse_reindex_query(&mut self) -> Result<SqlQuery, QueryParseError> {
+        // 解析索引名称
+        self.skip_whitespace();
+        let index_name = self.parse_identifier()?;
+
+        // 解析构建模式（ONLINE/OFFLINE，可选）
+        let mut index_online = true; // 默认在线构建
+        self.skip_whitespace();
+        if self.match_keyword("ONLINE") {
+            index_online = true;
+        } else if self.match_keyword("OFFLINE") {
+            index_online = false;
+        }
+
+        Ok(SqlQuery {
+            query_type: QueryType::Reindex,
+            table_name: index_name,
+            table_alias: None,
+            joins: Vec::new(),
+            columns: Vec::new(),
+            select_all: false,
+            distinct: false,
+            where_clause: None,
+            having_clause: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
+            sample_by: None,
+            fill_clause: None,
+            window_functions: Vec::new(),
+            insert_columns: Vec::new(),
+            values: Vec::new(),
+            table_def: Vec::new(),
+            primary_key: None,
+            index_column: None,
+            index_type: None,
+            index_params: HashMap::new(),
             index_online,
             update_pairs: Vec::new(),
             ignore_duplicates: false,
@@ -2203,6 +2383,8 @@ impl SqlParser {
                 if self.match_keyword("BUILD") {
                     self.skip_whitespace();
                     if self.match_keyword("STATUS") {
+                        // 可选地解析 FOR <object_name>
+                        // 注意：这里不消费 FOR 部分，留给 parse_query 处理
                         Ok(QueryType::ShowIndexBuildStatus)
                     } else {
                         Ok(QueryType::Other)
@@ -2215,6 +2397,8 @@ impl SqlParser {
             } else {
                 Ok(QueryType::Other)
             }
+        } else if self.match_keyword("REINDEX") {
+            Ok(QueryType::Reindex)
         } else {
             Ok(QueryType::Other)
         }
@@ -2956,7 +3140,42 @@ impl SqlParser {
         }
     }
 
-    /// 解析ORDER BY子句（可选）
+}
+
+    /// 将表达式转换为ORDER BY子句用的字符串表示
+pub fn expression_to_order_by_string(expr: &Expression) -> String {
+    match expr {
+        Expression::Field { name, .. } => name.clone(),
+        Expression::BinaryOp { left, op, right, .. } => {
+            let left_name = match left.as_ref() {
+                Expression::Field { name, .. } => name.clone(),
+                _ => return String::new(),
+            };
+            let op_str = match op {
+                BinaryOperator::VectorL2 => "<->",
+                BinaryOperator::VectorIP => "<#>",
+                BinaryOperator::VectorCosine => "<=>",
+                _ => return String::new(),
+            };
+            let right_str = match right.as_ref() {
+                Expression::Constant { value, .. } => {
+                    match value {
+                        crate::sql::Value::Json(json_str) => json_str.clone(),
+                        crate::sql::Value::String(s) => s.clone(),
+                        _ => format!("{:?}", value),
+                    }
+                }
+                _ => format!("{:?}", right.as_ref()),
+            };
+            format!("{} {} {}", left_name, op_str, right_str)
+        }
+        Expression::Constant { value, .. } => format!("{:?}", value),
+        _ => format!("{:?}", expr),
+    }
+}
+
+/// 解析ORDER BY子句（可选）
+impl SqlParser {
     fn parse_order_by_clause(&mut self) -> Result<Option<OrderByClause>, QueryParseError> {
         self.skip_whitespace();
 
@@ -2965,18 +3184,18 @@ impl SqlParser {
             self.expect_keyword("BY")?;
 
             self.skip_whitespace();
-            // 解析ORDER BY子句中的字段，可以是标识符或位置索引（数字）
+            // 解析ORDER BY子句中的字段，可以是位置索引（数字）、字段名或向量表达式
             let field = if let Some(c) = self.peek_char() {
                 if c.is_ascii_digit() {
                     // 解析数字作为位置索引
                     self.parse_number()?.to_string()
                 } else {
-                    // 解析标识符作为字段名
-                    self.parse_identifier()?
+                    // 解析为向量表达式（支持简单字段名和向量距离表达式）
+                    let expr = self.parse_vector_expression()?;
+                    self::expression_to_order_by_string(&expr)
                 }
             } else {
-                // 解析标识符作为字段名
-                self.parse_identifier()?
+                return Err(QueryParseError::InvalidSyntax);
             };
 
             self.skip_whitespace();

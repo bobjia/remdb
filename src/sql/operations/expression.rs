@@ -225,6 +225,10 @@ pub fn evaluate_expression_with_depth(
                                             .collect::<Result<Vec<_>, _>>()
                                             .map_err(|_| QueryExecutionError::TypeMismatch)?;
                                         let vec2_f64: Vec<f64> = vec2_values.iter().map(|v| *v as f64).collect();
+                                        // Check for null vector pointer before dereferencing
+                                        if unsafe { left_val.value.vector.is_null() } {
+                                            return Err(QueryExecutionError::TypeMismatch);
+                                        }
                                         let result = match *op {
                                             BinaryOperator::VectorL2 => unsafe {
                                                 calculate_vector_l2_distance(left_val.value.vector, &vec2_f64, vector_dim)
@@ -473,7 +477,9 @@ pub fn evaluate_vector_binary_op(
                     dot / (norm1 * norm2)
                 }
             }
-            _ => unreachable!(),
+            _ => {
+                return Err(QueryExecutionError::TypeMismatch);
+            }
         }
     };
 

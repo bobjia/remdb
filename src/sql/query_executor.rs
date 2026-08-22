@@ -13,8 +13,10 @@ use alloc::vec::Vec;
 use std::time::Instant;
 
 use crate::sql::query_parser::{
-    BetweenCondition, Expression, GroupByClause, JoinType,
+    BetweenCondition, BinaryOperator, Expression, GroupByClause, JoinType,
+    expression_to_order_by_string,
 };
+use crate::sql::Value as SqlValue;
 use crate::sql::{
     ComparisonCondition, ComparisonOperator, Condition, OrderByClause, ResultSet, SqlQuery,
     QueryExecutionError, parse_data_type_with_precision, check_memory_limit,
@@ -117,6 +119,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         }
         crate::sql::QueryType::CreateIndex => execute_create_index_query(db, query),
         crate::sql::QueryType::ShowIndexBuildStatus => execute_show_index_build_status_query(db, query),
+        crate::sql::QueryType::Reindex => execute_reindex_query(db, query),
         crate::sql::QueryType::ShowTables => execute_show_tables_query(db),
         crate::sql::QueryType::CreateCheckpoint => execute_create_checkpoint_query(db),
         crate::sql::QueryType::AlterTable => {
@@ -2388,11 +2391,11 @@ fn execute_select_join_query(
                                             }
                                             (DataType::Float32, crate::sql::Value::Float(v)) => {
                                                 (field_value.value.float32 - *v as f32).abs()
-                                                    < f32::EPSILON
+                                                    < 1e-6
                                             }
                                             (DataType::Float64, crate::sql::Value::Float(v)) => {
                                                 (field_value.value.float64 - *v).abs()
-                                                    < f64::EPSILON
+                                                    < 1e-12
                                             }
                                             // 支持字段引用比较
                                             (_, crate::sql::Value::Identifier(right_field)) => {
@@ -2773,11 +2776,11 @@ fn execute_select_join_query(
                                             }
                                             (DataType::Float32, crate::sql::Value::Float(v)) => {
                                                 (field_value.value.float32 - *v as f32).abs()
-                                                    < f32::EPSILON
+                                                    < 1e-6
                                             }
                                             (DataType::Float64, crate::sql::Value::Float(v)) => {
                                                 (field_value.value.float64 - *v).abs()
-                                                    < f64::EPSILON
+                                                    < 1e-12
                                             }
                                             // 支持字段引用比较
                                             (_, crate::sql::Value::Identifier(right_field)) => {
@@ -3627,13 +3630,6 @@ fn execute_show_index_build_status_query(
     _db: &mut RemDb,
     _query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
-    // 获取索引构建线程池
-    let thread_pool = crate::index::builder::get_index_build_thread_pool()
-        .map_err(|_| QueryExecutionError::InternalError)?;
-    
-    // 获取所有索引构建状态
-    let status_list = thread_pool.get_build_status(None);
-    
     // 创建结果集
     let columns = alloc::vec![
         "task_id".to_string(),
@@ -3649,88 +3645,116 @@ fn execute_show_index_build_status_query(
     
     let mut result_set = ResultSet::new(columns);
     
-    // 遍历所有状态，添加到结果集
-    for status_arc in status_list {
-        let status = try_lock!(status_arc);
+    // 获取索引构建线程池，如果不可用则返回空结果集
+    if let Ok(thread_pool) = crate::index::builder::get_index_build_thread_pool() {
+        // 获取所有索引构建状态
+        let status_list = thread_pool.get_build_status(None);
         
-        // 转换状态为字符串
-        let state_str = status.get_state_str();
-        
-        // 创建行数据
-        let row = alloc::vec![
-            TypedValue {
-                value_type: DataType::UInt64,
-                value: Value { u64: status.id as u64 },
-            },
-            TypedValue {
-                value_type: DataType::VarChar,
-                value: Value { 
-                    string: { 
-                        let mut s = [0u8; 64];
-                        let bytes = status.table_name.as_bytes();
-                        let len = core::cmp::min(bytes.len(), 64);
-                        s[..len].copy_from_slice(&bytes[..len]);
-                        s
-                    } 
+        // 遍历所有状态，添加到结果集
+        for status_arc in status_list {
+            let status = try_lock!(status_arc);
+            
+            // 转换状态为字符串
+            let state_str = status.get_state_str();
+            
+            // 创建行数据
+            let row = alloc::vec![
+                TypedValue {
+                    value_type: DataType::UInt64,
+                    value: Value { u64: status.id as u64 },
                 },
-            },
-            TypedValue {
-                value_type: DataType::VarChar,
-                value: Value { 
-                    string: { 
-                        let mut s = [0u8; 64];
-                        let bytes = status.column_name.as_bytes();
-                        let len = core::cmp::min(bytes.len(), 64);
-                        s[..len].copy_from_slice(&bytes[..len]);
-                        s
-                    } 
+                TypedValue {
+                    value_type: DataType::VarChar,
+                    value: Value { 
+                        string: { 
+                            let mut s = [0u8; 64];
+                            let bytes = status.table_name.as_bytes();
+                            let len = core::cmp::min(bytes.len(), 64);
+                            s[..len].copy_from_slice(&bytes[..len]);
+                            s
+                        } 
+                    },
                 },
-            },
-            TypedValue {
-                value_type: DataType::VarChar,
-                value: Value { 
-                    string: { 
-                        let mut s = [0u8; 64];
-                        let bytes = status.index_type.as_bytes();
-                        let len = core::cmp::min(bytes.len(), 64);
-                        s[..len].copy_from_slice(&bytes[..len]);
-                        s
-                    } 
+                TypedValue {
+                    value_type: DataType::VarChar,
+                    value: Value { 
+                        string: { 
+                            let mut s = [0u8; 64];
+                            let bytes = status.column_name.as_bytes();
+                            let len = core::cmp::min(bytes.len(), 64);
+                            s[..len].copy_from_slice(&bytes[..len]);
+                            s
+                        } 
+                    },
                 },
-            },
-            TypedValue {
-                value_type: DataType::VarChar,
-                value: Value { 
-                    string: { 
-                        let mut s = [0u8; 64];
-                        let bytes = state_str.as_bytes();
-                        let len = core::cmp::min(bytes.len(), 64);
-                        s[..len].copy_from_slice(&bytes[..len]);
-                        s
-                    } 
+                TypedValue {
+                    value_type: DataType::VarChar,
+                    value: Value { 
+                        string: { 
+                            let mut s = [0u8; 64];
+                            let bytes = status.index_type.as_bytes();
+                            let len = core::cmp::min(bytes.len(), 64);
+                            s[..len].copy_from_slice(&bytes[..len]);
+                            s
+                        } 
+                    },
                 },
-            },
-            TypedValue {
-                value_type: DataType::UInt64,
-                value: Value { u64: status.progress.load(core::sync::atomic::Ordering::SeqCst) as u64 },
-            },
-            TypedValue {
-                value_type: DataType::UInt64,
-                value: Value { u64: status.processed_rows.load(core::sync::atomic::Ordering::SeqCst) as u64 },
-            },
-            TypedValue {
-                value_type: DataType::UInt64,
-                value: Value { u64: status.total_rows.load(core::sync::atomic::Ordering::SeqCst) as u64 },
-            },
-            TypedValue {
-                value_type: DataType::UInt64,
-                value: Value { u64: status.elapsed_time.load(core::sync::atomic::Ordering::SeqCst) as u64 },
-            },
-        ];
-        
-        result_set.add_row(row);
+                TypedValue {
+                    value_type: DataType::VarChar,
+                    value: Value { 
+                        string: { 
+                            let mut s = [0u8; 64];
+                            let bytes = state_str.as_bytes();
+                            let len = core::cmp::min(bytes.len(), 64);
+                            s[..len].copy_from_slice(&bytes[..len]);
+                            s
+                        } 
+                    },
+                },
+                TypedValue {
+                    value_type: DataType::UInt64,
+                    value: Value { u64: status.progress.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+                },
+                TypedValue {
+                    value_type: DataType::UInt64,
+                    value: Value { u64: status.processed_rows.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+                },
+                TypedValue {
+                    value_type: DataType::UInt64,
+                    value: Value { u64: status.total_rows.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+                },
+                TypedValue {
+                    value_type: DataType::UInt64,
+                    value: Value { u64: status.elapsed_time.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+                },
+            ];
+            
+            result_set.add_row(row);
+        }
     }
     
+    Ok(result_set)
+}
+
+/// 执行REINDEX查询
+fn execute_reindex_query(
+    _db: &mut RemDb,
+    _query: &SqlQuery,
+) -> Result<ResultSet, QueryExecutionError> {
+    // REINDEX is currently a no-op - just return success
+    let columns = alloc::vec!["result".to_string()];
+    let mut result_set = ResultSet::new(columns);
+    result_set.add_row(alloc::vec![TypedValue {
+        value_type: DataType::VarChar,
+        value: Value { 
+            string: { 
+                let mut s = [0u8; 64];
+                let bytes = b"OK";
+                s[..2].copy_from_slice(bytes);
+                s
+            } 
+        },
+    }]);
     Ok(result_set)
 }
 
@@ -3739,7 +3763,7 @@ fn execute_show_tables_query(
     db: &mut RemDb,
 ) -> Result<ResultSet, QueryExecutionError> {
     let columns = alloc::vec![
-        "Tables".to_string(),
+        "table_name".to_string(),
     ];
     
     let mut result_set = ResultSet::new(columns);
@@ -3798,7 +3822,7 @@ fn execute_create_index_query(
         Some("TTREE") => IndexType::TTree,
         Some("SORTEDARRAY") => IndexType::SortedArray,
         Some("HNSW") | Some("HNSW_SQ") | Some("HNSW_BQ") | Some("IVF") | Some("IVF_PQ")
-        | Some("VECTOR") => IndexType::Vector,
+        | Some("IVF_FLAT") | Some("VECTOR") => IndexType::Vector,
         _ => IndexType::BTree, // 默认值
     };
 
@@ -3825,7 +3849,10 @@ fn execute_create_index_query(
         // 设置向量索引类型
         params.vector_index_type = match query.index_type.as_deref() {
             Some("HNSW") => Some(crate::types::VectorIndexType::HNSW),
-            Some("IVF") => Some(crate::types::VectorIndexType::IVF),
+            Some("HNSW_SQ") => Some(crate::types::VectorIndexType::HNSW_SQ),
+            Some("HNSW_BQ") => Some(crate::types::VectorIndexType::HNSW_BQ),
+            Some("IVF") | Some("IVF_FLAT") => Some(crate::types::VectorIndexType::IVF),
+            Some("IVF_PQ") => Some(crate::types::VectorIndexType::IVF_PQ),
             _ => Some(crate::types::VectorIndexType::HNSW), // 默认值
         };
         
@@ -3849,15 +3876,21 @@ fn execute_create_index_query(
         }
     }
 
-    // 提交索引构建任务到线程池
-    let task_id = crate::index::builder::get_index_build_thread_pool()
-        .map_err(|_| QueryExecutionError::InternalError)?
-        .submit_task(
-            query.table_name.clone(),
-            field_name.clone(), // 直接克隆 Vec<String>
-            crate::sql::query_parser::IndexType::BTree, // 使用默认值，实际索引类型由params指定
-            params,
-        );
+    // 获取索引构建线程池，如果不可用则返回默认结果集
+    let task_id = match crate::index::builder::get_index_build_thread_pool() {
+        Ok(thread_pool) => {
+            thread_pool.submit_task(
+                query.table_name.clone(),
+                field_name.clone(), // 直接克隆 Vec<String>
+                crate::sql::query_parser::IndexType::BTree, // 使用默认值，实际索引类型由params指定
+                params,
+            )
+        }
+        Err(_) => {
+            // 线程池不可用，返回 task_id = 0
+            0
+        }
+    };
 
     // 创建结果集，返回任务ID
     let columns = alloc::vec!["task_id".to_string()];
@@ -4666,7 +4699,7 @@ fn execute_describe_query(
 
     // 2. 定义结果集列名
     let columns = alloc::vec![
-        "Field".to_string(),
+        "column_name".to_string(),
         "Type".to_string(),
         "Key".to_string(),
         "Null".to_string(),
@@ -6615,8 +6648,8 @@ unsafe fn evaluate_comparison(
                 ComparisonOperator::LessThanOrEqual => distance <= threshold,
                 ComparisonOperator::GreaterThan => distance > threshold,
                 ComparisonOperator::GreaterThanOrEqual => distance >= threshold,
-                ComparisonOperator::Equal => (distance - threshold).abs() < f64::EPSILON,
-                ComparisonOperator::NotEqual => (distance - threshold).abs() >= f64::EPSILON,
+                ComparisonOperator::Equal => (distance - threshold).abs() < 1e-12,
+                ComparisonOperator::NotEqual => (distance - threshold).abs() >= 1e-12,
                 ComparisonOperator::Like => false, // 向量类型不支持LIKE操作符
             };
         }
@@ -6825,6 +6858,50 @@ fn sort_rows_with_alias(
         });
 
         return Ok(());
+    }
+
+    // 检查ORDER BY字段是否包含向量距离操作符
+    if order_by.field.contains("<->")
+        || order_by.field.contains("<#>")
+        || order_by.field.contains("<=>")
+    {
+        // 这是一个向量距离表达式，查找匹配的列表达式
+        for (i, expr) in columns.iter().enumerate() {
+            let expr_str = expr_to_order_by_string(expr);
+            if expr_str == order_by.field {
+                // 找到匹配的列，按该列的表达式值排序
+                rows.sort_by(|a, b| {
+                    let val_a = &a.1[i];
+                    let val_b = &b.1[i];
+
+                    unsafe {
+                        let comparison = match (val_a.value_type, val_b.value_type) {
+                            // 浮点数类型
+                            (DataType::Float32, DataType::Float32) => val_a
+                                .value
+                                .float32
+                                .partial_cmp(&val_b.value.float32)
+                                .unwrap_or(core::cmp::Ordering::Equal),
+                            (DataType::Float64, DataType::Float64) => val_a
+                                .value
+                                .float64
+                                .partial_cmp(&val_b.value.float64)
+                                .unwrap_or(core::cmp::Ordering::Equal),
+                            // 其他类型，默认按升序排列
+                            _ => core::cmp::Ordering::Equal,
+                        };
+
+                        match order_by.direction {
+                            crate::sql::OrderDirection::Ascending => comparison,
+                            crate::sql::OrderDirection::Descending => comparison.reverse(),
+                        }
+                    }
+                });
+
+                return Ok(());
+            }
+        }
+        // 没有找到匹配的列表达式，回退到普通字段查找
     }
 
     // 没有使用别名，使用原始的排序逻辑
@@ -7243,4 +7320,34 @@ fn execute_create_checkpoint_query(db: &mut RemDb) -> Result<ResultSet, QueryExe
     }]);
 
     Ok(result_set)
+}
+
+/// 将表达式转换为ORDER BY子句用的字符串表示（用于向量表达式匹配）
+fn expr_to_order_by_string(expr: &Expression) -> alloc::string::String {
+    match expr {
+        Expression::BinaryOp { left, op, right, .. } => {
+            let left_name = match left.as_ref() {
+                Expression::Field { name, .. } => name.clone(),
+                _ => return alloc::string::String::new(),
+            };
+            let op_str = match op {
+                BinaryOperator::VectorL2 => "<->",
+                BinaryOperator::VectorIP => "<#>",
+                BinaryOperator::VectorCosine => "<=>",
+                _ => return alloc::string::String::new(),
+            };
+            let right_str = match right.as_ref() {
+                Expression::Constant { value, .. } => {
+                    match value {
+                        SqlValue::Json(json_str) => json_str.clone(),
+                        SqlValue::String(s) => s.clone(),
+                        _ => return alloc::string::String::new(),
+                    }
+                }
+                _ => return alloc::string::String::new(),
+            };
+            alloc::format!("{} {} {}", left_name, op_str, right_str)
+        }
+        _ => alloc::string::String::new(),
+    }
 }

@@ -431,7 +431,16 @@ impl From<crate::types::TypedValue> for RemDbTypedValue {
             DataType::VarChar | DataType::Char | DataType::Text => RemDbDataType::String,
             DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
             DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
-            DataType::Json => RemDbDataType::Json,     // 映射为Json类型
+            DataType::Json => {
+                // 内联JSON存储为String类型，以便C API直接读取
+                // 外部JSON仍使用Json类型，通过pool管理器访问
+                unsafe {
+                    match rust_value.value.json_storage {
+                        crate::types::JsonStorage::Inline(_) | crate::types::JsonStorage::Null => RemDbDataType::String,
+                        crate::types::JsonStorage::External { .. } => RemDbDataType::Json,
+                    }
+                }
+            }
         };
         
         let value = unsafe {
@@ -466,9 +475,20 @@ impl From<crate::types::TypedValue> for RemDbTypedValue {
                     }}
                 }
                 DataType::Json => {
-                    // JSON storage mapping to RemDbJsonValue
+                    // JSON storage mapping to C API value
                     let json_storage = rust_value.value.json_storage;
                     match json_storage {
+                        crate::types::JsonStorage::Inline(data) => {
+                            // Inline JSON: store as string for direct C API access
+                            let mut string = [0u8; REMDB_MAX_STRING_LEN];
+                            let actual_len = match data.iter().position(|&b| b == 0) {
+                                Some(pos) => pos,
+                                None => data.len(),
+                            };
+                            let copy_len = core::cmp::min(actual_len, REMDB_MAX_STRING_LEN);
+                            string[..copy_len].copy_from_slice(&data[..copy_len]);
+                            RemDbValue { string }
+                        }
                         crate::types::JsonStorage::External { pool_id, offset, length } => {
                             RemDbValue { json: RemDbJsonValue {
                                 pool_id,
@@ -476,11 +496,10 @@ impl From<crate::types::TypedValue> for RemDbTypedValue {
                                 length,
                             }}
                         }
-                        _ => RemDbValue { json: RemDbJsonValue {
-                            pool_id: 0,
-                            offset: 0,
-                            length: 0,
-                        }}
+                        crate::types::JsonStorage::Null => {
+                            // Null JSON: store as empty string
+                            RemDbValue { string: [0u8; REMDB_MAX_STRING_LEN] }
+                        }
                     }
                 }
             }
@@ -2056,60 +2075,111 @@ pub unsafe extern "C" fn remdb_get_json_string(
 
     let typed_value = &*value;
     
-    if typed_value.data_type != RemDbDataType::Json {
+    // Support both Json and String data types (inline JSON is stored as String)
+    if typed_value.data_type != RemDbDataType::Json && typed_value.data_type != RemDbDataType::String {
         return RemDbError::TypeMismatch;
     }
 
-    // 获取JSON元数据
-    let json_value = typed_value.value.json;
-    
-    // 获取全局JSON池管理器
-    let pool_manager = match crate::json::memory_pool::get_global_json_pool_manager() {
-        Some(manager) => manager,
-        None => return RemDbError::UnsupportedOperation,
-    };
-    
-    // 获取JSON池
-    let pool = match pool_manager.get_pool(json_value.pool_id) {
-        Some(p) => p,
-        None => return RemDbError::UnsupportedOperation,
-    };
-    
-    // 获取JSON数据
-    if let Some(data_ptr) = pool.get_block_data(json_value.offset as usize, 0) {
-        let data_slice = core::slice::from_raw_parts(data_ptr, json_value.length as usize);
+    // Helper function to copy a string from a byte array to allocated memory
+    let copy_string_from_bytes = |bytes: &[u8]| -> Result<(*const u8, usize), RemDbError> {
+        let actual_len = match bytes.iter().position(|&b| b == 0) {
+            Some(pos) => pos,
+            None => bytes.len(),
+        };
         
-        // 尝试解析JSON数据并转换为字符串
-        match crate::json::JsonDocument::from_binary(data_slice, json_value.length as usize) {
-            Ok(json_doc) => {
-                // 转换为JSON字符串
-                let json_str = match json_doc.to_json() {
-                    Ok(s) => s,
-                    Err(_) => return RemDbError::TypeMismatch,
-                };
-                
-                // 分配内存存储JSON字符串
-                let json_c_str = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<u8>(json_str.len() + 1).expect("failed to allocate memory"),
-                ) as *mut u8;
-                
-                if json_c_str.is_null() {
-                    return RemDbError::OutOfMemory;
-                }
-                
-                // 复制JSON字符串
-                core::ptr::copy_nonoverlapping(json_str.as_ptr(), json_c_str, json_str.len());
-                *json_c_str.offset(json_str.len() as isize) = 0; // 添加终止符
-                
-                *json_string = json_c_str as *const u8;
-                *length = json_str.len();
-                
+        let layout = match alloc::alloc::Layout::array::<u8>(actual_len + 1) {
+            Ok(l) => l,
+            Err(_) => return Err(RemDbError::OutOfMemory),
+        };
+        let json_c_str = alloc::alloc::alloc(layout) as *mut u8;
+        
+        if json_c_str.is_null() {
+            return Err(RemDbError::OutOfMemory);
+        }
+        
+        if actual_len > 0 {
+            core::ptr::copy_nonoverlapping(bytes.as_ptr(), json_c_str, actual_len);
+        }
+        *json_c_str.offset(actual_len as isize) = 0; // null terminator
+        
+        Ok((json_c_str as *const u8, actual_len))
+    };
+
+    // If stored as String (inline JSON), read directly from the string field
+    if typed_value.data_type == RemDbDataType::String {
+        match copy_string_from_bytes(&typed_value.value.string) {
+            Ok((ptr, len)) => {
+                *json_string = ptr;
+                *length = len;
                 RemDbError::Success
             }
-            Err(_) => RemDbError::TypeMismatch,
+            Err(e) => e,
         }
     } else {
-        RemDbError::UnsupportedOperation
+        // data_type is Json - use pool-based or inline detection
+        let json_value = typed_value.value.json;
+        
+        // Check for inline JSON (pool_id == 0, offset == 0, length == 0)
+        // Read from the string field directly since the union overlaps
+        if json_value.pool_id == 0 && json_value.offset == 0 && json_value.length == 0 {
+            match copy_string_from_bytes(&typed_value.value.string) {
+                Ok((ptr, len)) => {
+                    *json_string = ptr;
+                    *length = len;
+                    RemDbError::Success
+                }
+                Err(e) => e,
+            }
+        } else {
+            // 获取全局JSON池管理器
+            let pool_manager = match crate::json::memory_pool::get_global_json_pool_manager() {
+                Some(manager) => manager,
+                None => return RemDbError::UnsupportedOperation,
+            };
+            
+            // 获取JSON池
+            let pool = match pool_manager.get_pool(json_value.pool_id) {
+                Some(p) => p,
+                None => return RemDbError::UnsupportedOperation,
+            };
+            
+            // 获取JSON数据
+            if let Some(data_ptr) = pool.get_block_data(json_value.offset as usize, 0) {
+                let data_slice = core::slice::from_raw_parts(data_ptr, json_value.length as usize);
+                
+                // 尝试解析JSON数据并转换为字符串
+                match crate::json::JsonDocument::from_binary(data_slice, json_value.length as usize) {
+                    Ok(json_doc) => {
+                        // 转换为JSON字符串
+                        let json_str = match json_doc.to_json() {
+                            Ok(s) => s,
+                            Err(_) => return RemDbError::TypeMismatch,
+                        };
+                        
+                        // 分配内存存储JSON字符串
+                        let json_c_str = alloc::alloc::alloc(
+                            alloc::alloc::Layout::array::<u8>(json_str.len() + 1).expect("failed to allocate memory"),
+                        ) as *mut u8;
+                        
+                        if json_c_str.is_null() {
+                            return RemDbError::OutOfMemory;
+                        }
+                        
+                        // 复制JSON字符串
+                        core::ptr::copy_nonoverlapping(json_str.as_ptr(), json_c_str, json_str.len());
+                        *json_c_str.offset(json_str.len() as isize) = 0; // 添加终止符
+                        
+                        *json_string = json_c_str as *const u8;
+                        *length = json_str.len();
+                        
+                        RemDbError::Success
+                    }
+                    Err(_) => RemDbError::TypeMismatch,
+                }
+            } else {
+                RemDbError::UnsupportedOperation
+            }
+        }
     }
 }
 

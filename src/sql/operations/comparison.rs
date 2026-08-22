@@ -31,6 +31,8 @@ fn to_i64_for_comparison(val: &TypedValue) -> Option<i64> {
                     None
                 }
             }
+            DataType::Timestamp => Some(val.value.time.value),
+            DataType::TimestampTZ => Some(val.value.time.value),
             _ => None,
         }
     }
@@ -50,6 +52,8 @@ fn to_f64_for_comparison(val: &TypedValue) -> Option<f64> {
             DataType::UInt64 => Some(val.value.u64 as f64),
             DataType::Float32 => Some(val.value.float32 as f64),
             DataType::Float64 => Some(val.value.float64),
+            DataType::Timestamp => Some(val.value.time.value as f64),
+            DataType::TimestampTZ => Some(val.value.time.value as f64),
             _ => None,
         }
     }
@@ -78,8 +82,8 @@ pub fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
                 DataType::UInt16 => left.value.u16 == right.value.u16,
                 DataType::UInt32 => left.value.u32 == right.value.u32,
                 DataType::UInt64 => left.value.u64 == right.value.u64,
-                DataType::Float32 => (left.value.float32 - right.value.float32).abs() < f32::EPSILON,
-                DataType::Float64 => (left.value.float64 - right.value.float64).abs() < f64::EPSILON,
+                DataType::Float32 => (left.value.float32 - right.value.float32).abs() < 1e-6,
+                DataType::Float64 => (left.value.float64 - right.value.float64).abs() < 1e-12,
                 DataType::Bool => left.value.bool == right.value.bool,
                 DataType::VarChar | DataType::Char | DataType::Text => {
                     let left_str = core::str::from_utf8(&left.value.string)
@@ -99,6 +103,63 @@ pub fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
         }
     }
 
+    // Handle cross-type string comparison (VarChar, Char, Text are all string types)
+    let is_string_type = |dt: DataType| -> bool {
+        matches!(dt, DataType::VarChar | DataType::Char | DataType::Text)
+    };
+
+    if is_string_type(left.value_type) && is_string_type(right.value_type) {
+        unsafe {
+            let left_str = core::str::from_utf8(&left.value.string)
+                .unwrap_or("")
+                .trim_end_matches(char::from(0));
+            let right_str = core::str::from_utf8(&right.value.string)
+                .unwrap_or("")
+                .trim_end_matches(char::from(0));
+            return left_str == right_str;
+        }
+    }
+
+    // Handle Bool compared with Integer (0=false, non-zero=true)
+    if left.value_type == DataType::Bool && right.value_type == DataType::Int64 {
+        unsafe {
+            let c_bool = right.value.i64 != 0;
+            return left.value.bool == c_bool;
+        }
+    }
+    if left.value_type == DataType::Int64 && right.value_type == DataType::Bool {
+        unsafe {
+            let c_bool = left.value.i64 != 0;
+            return c_bool == right.value.bool;
+        }
+    }
+
+    // Handle Bool compared with String
+    if left.value_type == DataType::Bool && is_string_type(right.value_type) {
+        unsafe {
+            let right_str = core::str::from_utf8(&right.value.string)
+                .unwrap_or("")
+                .trim_end_matches(char::from(0));
+            let c_bool = matches!(
+                right_str.to_uppercase().as_str(),
+                "TRUE" | "1" | "YES" | "ON"
+            );
+            return left.value.bool == c_bool;
+        }
+    }
+    if is_string_type(left.value_type) && right.value_type == DataType::Bool {
+        unsafe {
+            let left_str = core::str::from_utf8(&left.value.string)
+                .unwrap_or("")
+                .trim_end_matches(char::from(0));
+            let c_bool = matches!(
+                left_str.to_uppercase().as_str(),
+                "TRUE" | "1" | "YES" | "ON"
+            );
+            return c_bool == right.value.bool;
+        }
+    }
+
     // Handle numeric type coercion - compare different numeric types
     if is_numeric_type(left.value_type) && is_numeric_type(right.value_type) {
         // If either is a float, compare as floats
@@ -106,18 +167,18 @@ pub fn compare_values(left: &TypedValue, right: &TypedValue) -> bool {
         let right_f64 = to_f64_for_comparison(right);
 
         if let (Some(l), Some(r)) = (left_f64, right_f64) {
-            return (l - r).abs() < f64::EPSILON;
+            return (l - r).abs() < 1e-12;
         }
 
         // If one is float and one is integer, convert integer to float
         if let (Some(l), None) = (left_f64, right_f64) {
             if let Some(r) = to_i64_for_comparison(right) {
-                return (l - r as f64).abs() < f64::EPSILON;
+                return (l - r as f64).abs() < 1e-12;
             }
         }
         if let (None, Some(r)) = (left_f64, right_f64) {
             if let Some(l) = to_i64_for_comparison(left) {
-                return (l as f64 - r).abs() < f64::EPSILON;
+                return (l as f64 - r).abs() < 1e-12;
             }
         }
 
@@ -251,6 +312,19 @@ pub fn compare_field_with_condition(
             let f_val = unsafe { field_value.bool };
             match condition_value {
                 crate::sql::Value::Boolean(c_bool) => compare_booleans(f_val, *c_bool, operator),
+                crate::sql::Value::Integer(c_int) => {
+                    // Treat 0 as false, non-zero as true
+                    let c_bool = *c_int != 0;
+                    compare_booleans(f_val, c_bool, operator)
+                }
+                crate::sql::Value::String(c_str) => {
+                    // Treat "true"/"1"/"yes" as true, anything else as false
+                    let c_bool = matches!(
+                        c_str.to_uppercase().as_str(),
+                        "TRUE" | "1" | "YES" | "ON"
+                    );
+                    compare_booleans(f_val, c_bool, operator)
+                }
                 _ => false,
             }
         }
@@ -744,8 +818,8 @@ pub unsafe fn evaluate_comparison_with_alias(
                     ComparisonOperator::LessThanOrEqual => distance <= threshold,
                     ComparisonOperator::GreaterThan => distance > threshold,
                     ComparisonOperator::GreaterThanOrEqual => distance >= threshold,
-                    ComparisonOperator::Equal => (distance - threshold).abs() < f64::EPSILON,
-                    ComparisonOperator::NotEqual => (distance - threshold).abs() >= f64::EPSILON,
+                    ComparisonOperator::Equal => (distance - threshold).abs() < 1e-12,
+                    ComparisonOperator::NotEqual => (distance - threshold).abs() >= 1e-12,
                     ComparisonOperator::Like => false,
                 };
             }
@@ -825,6 +899,8 @@ pub unsafe fn evaluate_comparison_with_alias(
                     DataType::UInt64 => field_value.value.u64 as f64,
                     DataType::Float32 => field_value.value.float32 as f64,
                     DataType::Float64 => field_value.value.float64,
+                    DataType::Timestamp => field_value.value.time.value as f64,
+                    DataType::TimestampTZ => field_value.value.time.value as f64,
                     _ => return false,
                 };
                 let right_num = match comparison_value.value_type {
@@ -849,6 +925,8 @@ pub unsafe fn evaluate_comparison_with_alias(
                     DataType::UInt64 => field_value.value.u64 as f64,
                     DataType::Float32 => field_value.value.float32 as f64,
                     DataType::Float64 => field_value.value.float64,
+                    DataType::Timestamp => field_value.value.time.value as f64,
+                    DataType::TimestampTZ => field_value.value.time.value as f64,
                     _ => return false,
                 };
                 let right_num = match comparison_value.value_type {
@@ -873,6 +951,8 @@ pub unsafe fn evaluate_comparison_with_alias(
                     DataType::UInt64 => field_value.value.u64 as f64,
                     DataType::Float32 => field_value.value.float32 as f64,
                     DataType::Float64 => field_value.value.float64,
+                    DataType::Timestamp => field_value.value.time.value as f64,
+                    DataType::TimestampTZ => field_value.value.time.value as f64,
                     _ => return false,
                 };
                 let right_num = match comparison_value.value_type {
@@ -886,8 +966,18 @@ pub unsafe fn evaluate_comparison_with_alias(
         ComparisonOperator::LessThanOrEqual => {
             unsafe {
                 let left_num = match field_value.value_type {
+                    DataType::Int8 => field_value.value.i8 as f64,
+                    DataType::Int16 => field_value.value.i16 as f64,
+                    DataType::Int32 => field_value.value.i32 as f64,
                     DataType::Int64 => field_value.value.i64 as f64,
+                    DataType::UInt8 => field_value.value.u8 as f64,
+                    DataType::UInt16 => field_value.value.u16 as f64,
+                    DataType::UInt32 => field_value.value.u32 as f64,
+                    DataType::UInt64 => field_value.value.u64 as f64,
+                    DataType::Float32 => field_value.value.float32 as f64,
                     DataType::Float64 => field_value.value.float64,
+                    DataType::Timestamp => field_value.value.time.value as f64,
+                    DataType::TimestampTZ => field_value.value.time.value as f64,
                     _ => return false,
                 };
                 let right_num = match comparison_value.value_type {
@@ -923,8 +1013,8 @@ pub unsafe fn evaluate_between_with_alias(
     between: &crate::sql::query_parser::BetweenCondition,
     alias_map: &BTreeMap<String, &crate::sql::query_parser::Expression>,
 ) -> bool {
-    use crate::sql::query_parser::Expression;
     use crate::sql::operations::expression::evaluate_expression;
+    use crate::sql::query_parser::Expression;
 
     let field_value = if alias_map.contains_key(&between.field) {
         let expr = alias_map.get(&between.field).unwrap();
@@ -935,7 +1025,7 @@ pub unsafe fn evaluate_between_with_alias(
                 false
             }
         });
-        
+
         if let Some(idx) = field_index {
             expr_values[idx].clone()
         } else {
@@ -954,6 +1044,44 @@ pub unsafe fn evaluate_between_with_alias(
         record_values[field_index].clone()
     };
 
+    // Handle string-based BETWEEN (e.g., name BETWEEN 'A' AND 'Z')
+    let is_string_type = |dt: DataType| -> bool {
+        matches!(dt, DataType::VarChar | DataType::Char | DataType::Text)
+    };
+
+    if is_string_type(field_value.value_type) {
+        let field_str = unsafe {
+            core::str::from_utf8(&field_value.value.string)
+                .unwrap_or("")
+                .trim_end_matches(char::from(0))
+                .to_string()
+        };
+        let low_str = match &between.min_value {
+            crate::sql::Value::String(s) => s.clone(),
+            _ => return false,
+        };
+        let high_str = match &between.max_value {
+            crate::sql::Value::String(s) => s.clone(),
+            _ => return false,
+        };
+        return field_str >= low_str && field_str <= high_str;
+    }
+
+    // Handle timestamp-based BETWEEN (e.g., ts BETWEEN 1000 AND 2000)
+    if matches!(field_value.value_type, DataType::Timestamp | DataType::TimestampTZ) {
+        let field_time = unsafe { field_value.value.time.value as u64 };
+        let low_time = match &between.min_value {
+            crate::sql::Value::Integer(i) => *i as u64,
+            _ => return false,
+        };
+        let high_time = match &between.max_value {
+            crate::sql::Value::Integer(i) => *i as u64,
+            _ => return false,
+        };
+        return field_time >= low_time && field_time <= high_time;
+    }
+
+    // Handle numeric-based BETWEEN
     let low_value = match &between.min_value {
         crate::sql::Value::Integer(i) => *i as f64,
         crate::sql::Value::Float(f) => *f,
