@@ -629,6 +629,12 @@ impl core::fmt::Display for QueryParseError {
     }
 }
 
+impl From<RemDbError> for QueryParseError {
+    fn from(_: RemDbError) -> Self {
+        QueryParseError::InvalidSyntax
+    }
+}
+
 impl core::error::Error for QueryParseError {}
 
 /// SQL查询解析器
@@ -3751,7 +3757,7 @@ impl SqlParser {
                 // 检查是否是完整的关键字（后面跟着非字母数字字符）
                 let next_char = self.input.as_bytes().get(end).map(|&b| b as char);
                 eprintln!("DEBUG match_keyword: next_char='{:?}'", next_char);
-                if next_char.is_none() || !next_char.ok_or(RemDbError::InvalidSqlQuery)?.is_ascii_alphanumeric() {
+                if next_char.is_none() || !next_char.unwrap_or(' ').is_ascii_alphanumeric() {
                     self.position = end;
                     self.column += keyword.len();
                     eprintln!("DEBUG match_keyword returning true for '{}'", keyword);

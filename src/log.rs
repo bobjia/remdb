@@ -207,7 +207,7 @@ pub fn init_logger_with_file(log_path: &str, debug_mode: bool) -> Result<(), std
     let file = Arc::new(Mutex::new(file));
 
     let env_filter = tracing_subscriber::EnvFilter::from_default_env()
-        .add_directive(format!("remdb={}", log_level).expect("failed to parse log level"))
+        .add_directive(format!("remdb={}", log_level).parse().expect("failed to parse log level"))
         .add_directive(format!("remdb_server={}", log_level).parse().unwrap());
 
     // 使用更简单的方法：为文件输出单独创建一个不带颜色的订阅者

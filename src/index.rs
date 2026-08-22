@@ -3306,7 +3306,7 @@ impl TTreeIndex {
             // 由于分裂逻辑复杂，我们暂时记录错误并返回，让上层处理
             #[cfg(feature = "log")]
             crate::log::error!("T-Tree recursion depth exceeded, potential infinite recursion");
-            return;
+            return Ok(());
         }
         let node_mut = node.as_mut();
 
@@ -3316,7 +3316,7 @@ impl TTreeIndex {
         if cmp == core::cmp::Ordering::Equal {
             // 键已存在，更新记录ID
             node_mut.keys[pos].record_id = key.record_id;
-            return;
+            return Ok(());
         }
 
         // 确定子树方向
@@ -3397,14 +3397,17 @@ impl TTreeIndex {
                 } else {
                     node_mut.right = Some(new_right);
                 }
+                Ok(())
             } else {
                 // 子节点未满，递归插入
-                self.insert_recursive_with_depth(child_node, key, depth + 1);
+                self.insert_recursive_with_depth(child_node, key, depth + 1)?;
+                Ok(())
             }
         } else {
             // 子节点不存在，直接插入到当前节点
             if node_mut.key_count < TTREE_ORDER as u8 {
                 self.insert_into_node(node, key);
+                Ok(())
             } else {
                 // 节点已满，需要分�?
                 // 简化实现：创建新节�?
@@ -3461,6 +3464,7 @@ impl TTreeIndex {
                 } else {
                     node_mut.right = Some(new_node);
                 }
+                Ok(())
             }
         }
     }

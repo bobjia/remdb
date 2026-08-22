@@ -2996,7 +2996,7 @@ impl TransactionManager {
         }
 
         // 初始化事务
-        let tx = tx_buffer.as_mut().ok_or(RemDbError::InternalError("Transaction buffer not initialized"))?;
+        let tx = tx_buffer.as_mut().ok_or(RemDbError::UnexpectedNone("Transaction buffer not initialized"))?;
         *tx = Transaction {
             id: tx_id,
             tx_type,
@@ -3383,7 +3383,7 @@ impl Transaction {
         }
         let log_item_ptr = self.log_items.as_ptr().add(self.log_item_count);
         // SAFETY: log_item_ptr is valid and non-null
-        let log_item = unsafe { log_item_ptr.as_mut() };
+        let log_item = unsafe { log_item_ptr.as_mut() }.unwrap();
         
         // 初始化日志项头部
         log_item.header.op_type = op_type;
@@ -3542,8 +3542,8 @@ pub unsafe fn begin_transaction() {
     let _ = TX_MANAGER.begin(
         TransactionType::ReadWrite,
         IsolationLevel::RepeatableRead,
-        &mut **TX_BUFFER.as_mut().ok_or(RemDbError::InternalError("TX buffer not initialized"))?,
-        LOG_BUFFER.as_mut().ok_or(RemDbError::InternalError("Log buffer not initialized"))?.as_mut_ptr(),
+        &mut **TX_BUFFER.as_mut().unwrap(),
+        LOG_BUFFER.as_mut().unwrap().as_mut_ptr(),
         1024,
     );
 }

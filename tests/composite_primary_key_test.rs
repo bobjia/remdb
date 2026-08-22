@@ -146,28 +146,29 @@ static TEST_CONFIG: LazyLock<remdb::config::DbConfig> = LazyLock::new(|| {
 });
 
 #[test]
+#[serial_test::serial]
 fn test_create_table_with_composite_pk() -> Result<()> {
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
-    
+
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
-    
+
     // 创建新的内存缓冲区
     let mut new_memory = vec![0u8; 8388608]; // 8MB
-    
+
     // 初始化全局分配器
     remdb::memory::allocator::init_global_allocator(new_memory.as_mut_ptr(), new_memory.len())?;
-    
+
     // 更新全局内存缓冲区
     unsafe {
         DB_MEMORY = new_memory;
     }
-    
+
     // 创建数据库实例
     let mut db = RemDb::new(&*TEST_CONFIG);
     db.init()?;
-    
+
     // 创建带有复合主键的表
     let fields = [
         ("id1", DataType::UInt32, 4, None, None),
@@ -175,38 +176,39 @@ fn test_create_table_with_composite_pk() -> Result<()> {
         ("name", DataType::VarChar, 64, None, None),
         ("value", DataType::Float64, 8, None, None),
     ];
-    
+
     // 定义主键为(id1, id2)
     let primary_key = Some(vec![0, 1]);
-    
+
     db.create_table("test_composite", &fields, primary_key)?;
-    
+
     Ok(())
 }
 
 #[test]
+#[serial_test::serial]
 fn test_insert_and_query_with_composite_pk() -> Result<()> {
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
-    
+
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
-    
+
     // 创建新的内存缓冲区
     let mut new_memory = vec![0u8; 8388608]; // 8MB
-    
+
     // 初始化全局分配器
     remdb::memory::allocator::init_global_allocator(new_memory.as_mut_ptr(), new_memory.len())?;
-    
+
     // 更新全局内存缓冲区
     unsafe {
         DB_MEMORY = new_memory;
     }
-    
+
     // 创建数据库实例
     let mut db = RemDb::new(&*TEST_CONFIG);
     db.init()?;
-    
+
     // 创建带有复合主键的表
     let fields = [
         ("id1", DataType::UInt32, 4, None, None),
@@ -214,25 +216,25 @@ fn test_insert_and_query_with_composite_pk() -> Result<()> {
         ("name", DataType::VarChar, 64, None, None),
         ("value", DataType::Float64, 8, None, None),
     ];
-    
+
     // 定义主键为(id1, id2)
     let primary_key = Some(vec![0, 1]);
-    
+
     db.create_table("test_composite", &fields, primary_key)?;
-    
+
     // 插入数据
     let table_id = 1; // 系统表占用0，所以新表ID为1
     let table = db.get_table_mut(table_id)?;
-    
+
     // 准备记录数据
     let mut record = [0u8; 4 + 4 + 64 + 8]; // id1(4) + id2(4) + name(64) + value(8)
-    
+
     // 插入第一条记录
     let id1: u32 = 1;
     let id2: u32 = 1;
     let name = "test1";
     let value: f64 = 100.5;
-    
+
     // 设置id1
     record[0..4].copy_from_slice(&id1.to_le_bytes());
     // 设置id2
@@ -242,55 +244,53 @@ fn test_insert_and_query_with_composite_pk() -> Result<()> {
     record[8..8+name_bytes.len()].copy_from_slice(name_bytes);
     // 设置value
     record[8+64..8+64+8].copy_from_slice(&value.to_le_bytes());
-    
+
     // 插入记录
     let record_id = table.insert(record.as_ptr() as *const u8)?;
-    assert!(record_id >= 0);
-    
+
     // 插入第二条记录，不同的id2
     let id2: u32 = 2;
     record[4..8].copy_from_slice(&id2.to_le_bytes());
     let record_id = table.insert(record.as_ptr() as *const u8)?;
-    assert!(record_id >= 0);
-    
+
     // 插入第三条记录，不同的id1
     let id1: u32 = 2;
     let id2: u32 = 1;
     record[0..4].copy_from_slice(&id1.to_le_bytes());
     record[4..8].copy_from_slice(&id2.to_le_bytes());
     let record_id = table.insert(record.as_ptr() as *const u8)?;
-    assert!(record_id >= 0);
-    
+
     // 尝试插入重复主键记录，应该失败
     let result = table.insert(record.as_ptr() as *const u8);
     assert!(result.is_err());
-    
+
     Ok(())
 }
 
 #[test]
+#[serial_test::serial]
 fn test_composite_pk_with_three_fields() -> Result<()> {
     // 初始化平台抽象层
     remdb::platform::init_platform(&TEST_PLATFORM);
-    
+
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
-    
+
     // 创建新的内存缓冲区
     let mut new_memory = vec![0u8; 8388608]; // 8MB
-    
+
     // 初始化全局分配器
     remdb::memory::allocator::init_global_allocator(new_memory.as_mut_ptr(), new_memory.len())?;
-    
+
     // 更新全局内存缓冲区
     unsafe {
         DB_MEMORY = new_memory;
     }
-    
+
     // 创建数据库实例
     let mut db = RemDb::new(&*TEST_CONFIG);
     db.init()?;
-    
+
     // 创建带有三字段复合主键的表
     let fields = [
         ("device_id", DataType::UInt32, 0, None, None),
@@ -298,11 +298,11 @@ fn test_composite_pk_with_three_fields() -> Result<()> {
         ("timestamp", DataType::UInt64, 0, None, None),
         ("value", DataType::Float64, 0, None, None),
     ];
-    
+
     // 定义复合主键：(device_id, metric_id, timestamp)
     let primary_key = Some(vec![0, 1, 2]);
-    
+
     db.create_table("metrics", &fields, primary_key)?;
-    
+
     Ok(())
 }

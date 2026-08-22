@@ -5,3 +5,7 @@ rustflags = [
   "--C", "target-cpu=cortex-m3",
   "--C", "panic=abort",
 ]
+
+[profile.test]
+# Tests share global state (DB_INSTANCE, GLOBAL_ALLOCATOR) so must run single-threaded
+test-threads = 1

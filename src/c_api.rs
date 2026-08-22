@@ -700,6 +700,13 @@ impl From<crate::RemDbError> for RemDbError {
             crate::RemDbError::CompressionError => RemDbError::ConfigError,
             crate::RemDbError::InvalidArgument => RemDbError::InvalidParameter,
             crate::RemDbError::InvalidState => RemDbError::InvalidParameter,
+            crate::RemDbError::PlatformNotInitialized => RemDbError::UnsupportedOperation,
+            crate::RemDbError::LockError => RemDbError::LockConflict,
+            crate::RemDbError::InvalidPointer => RemDbError::InvalidParameter,
+            crate::RemDbError::InvalidData(_) => RemDbError::InvalidParameter,
+            crate::RemDbError::VariableSizeType => RemDbError::UnsupportedOperation,
+            crate::RemDbError::ProtocolError(_) => RemDbError::UnsupportedOperation,
+            crate::RemDbError::UnexpectedNone(_) => RemDbError::UnsupportedOperation,
         }
     }
 }

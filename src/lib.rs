@@ -4505,7 +4505,7 @@ impl RemDb {
                             // 继续遍历
                             true
                         })
-                        .expect("iterator should not fail")?;
+                        .expect("iterator should not fail");
                 }
             }
         }
@@ -4690,7 +4690,7 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
         
         // 将新的数据库实例赋值给 DB_INSTANCE
         DB_INSTANCE = Some(db);
-        Ok(DB_INSTANCE.as_mut().ok_or(RemDbError::InternalError("DB not initialized"))?)
+        Ok(DB_INSTANCE.as_mut().ok_or(RemDbError::UnexpectedNone("DB not initialized"))?)
     }
 }
 
@@ -4715,6 +4715,8 @@ pub fn reset_global_db() {
         tx_manager.clear_log_manager();
         // 重置模型管理器，确保测试之间的完全隔离
         let _ = crate::model::model_manager::reset_global_model_manager();
+        // 重置全局分配器，确保测试之间的完全隔离
+        let _ = crate::memory::allocator::reset_global_allocator();
     }
 }
 
