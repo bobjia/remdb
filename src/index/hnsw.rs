@@ -519,7 +519,9 @@ impl HNSWIndex {
         let entry_vec = self.vectors.add(entry_node.vector_offset);
         let distance = self.calculate_distance(query_vec, entry_vec);        
         candidates.push((distance, entry_point));
-        results.push((distance, entry_point));        
+        results.push((distance, entry_point));
+        // 入口点必须标记为已访问，否则双向边回到入口点时会被重复加入结果
+        visited.push(entry_point);
         while let Some((current_dist, current_node)) = candidates.pop() {
             iteration_count += 1;
             if iteration_count > MAX_ITERATIONS {

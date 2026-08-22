@@ -1118,21 +1118,29 @@ impl VectorIndex {
     pub unsafe fn insert(
         &mut self,
         key: *const u8,
-        _key_size: usize,
+        key_size: usize,
         record_id: u16,
     ) -> Result<()> {
-        // 自旋锁保�?
+        // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
 
-        // 检查是否有足够的空�?
+        // 检查是否有足够的空间
         if self.item_count >= self.max_items {
             crate::platform::spin_unlock(&mut self.lock);
             return Err(RemDbError::OutOfMemory);
         }
 
-        // 复制向量数据到预分配的存�?
-        let vec_ptr = key as *const f32;
         let vec_len = self.dimension as usize;
+
+        // 校验键长度，避免越界读取
+        let needed = vec_len.saturating_mul(core::mem::size_of::<f32>());
+        if key_size < needed {
+            crate::platform::spin_unlock(&mut self.lock);
+            return Err(RemDbError::TypeMismatch);
+        }
+
+        // 复制向量数据到预分配的内存
+        let vec_ptr = key as *const f32;
         let start_offset = self.vector_count * vec_len;
 
         // 复制向量数据
@@ -1140,14 +1148,36 @@ impl VectorIndex {
             *self.vectors.add(start_offset + i) = *vec_ptr.add(i);
         }
 
-        // 创建索引�?
+        // 更新具体索引实现（锁内不使用 ?，失败时先释放锁并保持计数不变）
+        let impl_result = match &mut self.index_impl {
+            VectorIndexImpl::HNSW(Some(hnsw_index)) => {
+                hnsw_index.insert(start_offset, record_id)
+            }
+            VectorIndexImpl::IVFFlat(Some(ivf_index)) => {
+                ivf_index.insert(start_offset, record_id)
+            }
+            _ => {
+                // 线性搜索不需要额外操作
+                Ok(())
+            }
+        };
+
+        match impl_result {
+            Ok(()) => {}
+            Err(e) => {
+                crate::platform::spin_unlock(&mut self.lock);
+                return Err(e);
+            }
+        }
+
+        // 创建索引项
         let item_ptr = self.items.add(self.item_count);
         *item_ptr = VectorIndexItem {
             vector_offset: start_offset,
             record_id,
         };
 
-        // 更新计数（确保item_count和vector_count始终同步�?
+        // 更新计数（确保item_count和vector_count始终同步）
         self.item_count += 1;
         self.vector_count = self.item_count;
 
@@ -1155,19 +1185,6 @@ impl VectorIndex {
         self.stats.item_count += 1;
         self.stats.size +=
             core::mem::size_of::<VectorIndexItem>() + vec_len * core::mem::size_of::<f32>();
-        
-        // 根据索引类型插入到相应的索引实现�?
-        match &mut self.index_impl {
-            VectorIndexImpl::HNSW(Some(hnsw_index)) => {
-                hnsw_index.insert(start_offset, record_id)?;
-            },
-            VectorIndexImpl::IVFFlat(Some(ivf_index)) => {
-                ivf_index.insert(start_offset, record_id)?;
-            },
-            _ => {
-                // 线性搜索不需要额外操�?
-            }
-        }
 
         crate::platform::spin_unlock(&mut self.lock);
 
@@ -1179,66 +1196,77 @@ impl VectorIndex {
         // 更新统计信息
         self.stats.access_count += 1;
 
-        // 自旋锁保�?
-        crate::platform::spin_lock(&mut self.lock);
-
-        // 解析查询向量
+        // 解析查询向量（先于自旋锁完成，解析失败不会泄漏锁）
         let query_vec: *const f32;
-        let mut query_vec_buf: [f32; 1024];
+        let mut query_vec_buf = [0.0f32; 1024];
         let vec_len = self.dimension as usize;
 
         // 检查key是否是指向字符串的指针（向量字面量）
         if key_size > 4 && *key == b'[' {
-            // 解析向量字面�?[x1, x2, ..., xn]
-            let vec_str = core::str::from_utf8(core::slice::from_raw_parts(key, key_size))
-                .map_err(|_| RemDbError::TypeMismatch)?;
+            // 解析向量字面量 [x1, x2, ..., xn]
+            let vec_str =
+                match core::str::from_utf8(core::slice::from_raw_parts(key, key_size)) {
+                    Ok(s) => s,
+                    Err(_) => return Err(RemDbError::TypeMismatch),
+                };
 
             // 移除首尾的方括号
             let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
 
-            // 分割逗号，得到每个元素的字符�?
+            // 分割逗号，得到每个元素的字符串
             let elements: Vec<&str> = vec_str.split(',').map(|s| s.trim()).collect();
 
-            // 检查维度是否匹�?
+            // 检查维度是否匹配
             if elements.len() != vec_len {
-                crate::platform::spin_unlock(&mut self.lock);
                 return Err(RemDbError::TypeMismatch);
             }
 
             // 解析每个元素为f32
-            query_vec_buf = [0.0; 1024];
             for (i, elem) in elements.iter().enumerate() {
-                query_vec_buf[i] = elem.parse::<f32>().map_err(|_| RemDbError::TypeMismatch)?;
+                let parsed = match elem.parse::<f32>() {
+                    Ok(v) => v,
+                    Err(_) => return Err(RemDbError::TypeMismatch),
+                };
+                match query_vec_buf.get_mut(i) {
+                    Some(slot) => *slot = parsed,
+                    None => return Err(RemDbError::TypeMismatch),
+                }
             }
 
             query_vec = query_vec_buf.as_ptr();
         } else {
-            // 直接使用key作为f32指针
+            // 直接使用key作为f32指针：先校验字节数，避免越界读取
+            let needed = vec_len.saturating_mul(core::mem::size_of::<f32>());
+            if key_size < needed {
+                return Err(RemDbError::TypeMismatch);
+            }
             query_vec = key as *const f32;
         }
-        
-        // 根据索引类型使用相应的搜索方�?
+
+        // 自旋锁保护（锁持有期间不使用 ?，确保所有路径都释放锁）
+        crate::platform::spin_lock(&mut self.lock);
+
         let result = match &self.index_impl {
             VectorIndexImpl::HNSW(Some(hnsw_index)) => {
-                // 使用HNSW搜索
-                let results = hnsw_index.search(query_vec, 1)?;
-                if let Some((_, record_id)) = results.first() {
-                    Ok(*record_id)
-                } else {
-                    Err(RemDbError::RecordNotFound)
+                match hnsw_index.search(query_vec, 1) {
+                    Ok(results) => match results.first() {
+                        Some(&(_, record_id)) => Ok(record_id),
+                        None => Err(RemDbError::RecordNotFound),
+                    },
+                    Err(e) => Err(e),
                 }
-            },
+            }
             VectorIndexImpl::IVFFlat(Some(ivf_index)) => {
-                // 使用IVF_FLAT搜索
-                let results = ivf_index.search(query_vec, 1)?;
-                if let Some((_, record_id)) = results.first() {
-                    Ok(*record_id)
-                } else {
-                    Err(RemDbError::RecordNotFound)
+                match ivf_index.search(query_vec, 1) {
+                    Ok(results) => match results.first() {
+                        Some(&(_, record_id)) => Ok(record_id),
+                        None => Err(RemDbError::RecordNotFound),
+                    },
+                    Err(e) => Err(e),
                 }
-            },
+            }
             _ => {
-                // 线性搜索查找最相似的向�?
+                // 线性搜索查找最相似的向量
                 let mut min_distance = f32::MAX;
                 let mut best_record_id = 0;
                 let mut found = false;
@@ -1337,72 +1365,90 @@ impl VectorIndex {
         // 更新统计信息
         self.stats.access_count += 1;
 
-        // 自旋锁保�?
-        crate::platform::spin_lock(&mut self.lock);
-
-        // 解析查询向量
+        // 解析查询向量（先于自旋锁完成，解析失败不会泄漏锁）
         let query_vec: *const f32;
-        let mut query_vec_buf: [f32; 1024];
+        let mut query_vec_buf = [0.0f32; 1024];
         let vec_len = self.dimension as usize;
 
         // 检查key是否是指向字符串的指针（向量字面量）
         if _start_key_size > 4 && *start_key == b'[' {
-            // 解析向量字面�?[x1, x2, ..., xn]
-            let vec_str =
-                core::str::from_utf8(core::slice::from_raw_parts(start_key, _start_key_size))
-                    .map_err(|_| RemDbError::TypeMismatch)?;
+            // 解析向量字面量 [x1, x2, ..., xn]
+            let vec_str = match core::str::from_utf8(core::slice::from_raw_parts(
+                start_key,
+                _start_key_size,
+            )) {
+                Ok(s) => s,
+                Err(_) => return Err(RemDbError::TypeMismatch),
+            };
 
             // 移除首尾的方括号
             let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
 
-            // 分割逗号，得到每个元素的字符�?
+            // 分割逗号，得到每个元素的字符串
             let elements: Vec<&str> = vec_str.split(',').map(|s| s.trim()).collect();
 
-            // 检查维度是否匹�?
+            // 检查维度是否匹配
             if elements.len() != vec_len {
-                crate::platform::spin_unlock(&mut self.lock);
                 return Err(RemDbError::TypeMismatch);
             }
 
             // 解析每个元素为f32
-            query_vec_buf = [0.0; 1024];
             for (i, elem) in elements.iter().enumerate() {
-                query_vec_buf[i] = elem.parse::<f32>().map_err(|_| RemDbError::TypeMismatch)?;
+                let parsed = match elem.parse::<f32>() {
+                    Ok(v) => v,
+                    Err(_) => return Err(RemDbError::TypeMismatch),
+                };
+                match query_vec_buf.get_mut(i) {
+                    Some(slot) => *slot = parsed,
+                    None => return Err(RemDbError::TypeMismatch),
+                }
             }
 
             query_vec = query_vec_buf.as_ptr();
         } else {
-            // 直接使用key作为f32指针
+            // 直接使用key作为f32指针：先校验字节数，避免越界读取
+            let needed = vec_len.saturating_mul(core::mem::size_of::<f32>());
+            if _start_key_size < needed {
+                return Err(RemDbError::TypeMismatch);
+            }
             query_vec = start_key as *const f32;
         }
 
         // end_key是距离阈值，解析为f32
-        let range_value: f32;
-        if _end_key_size > 4 && *end_key == b'[' {
+        let range_value: f32 = if _end_key_size > 4 && *end_key == b'[' {
             // 解析向量字面量的距离（这种情况不常见，主要用于测试）
-            range_value = 1000.0; // 默认大值，返回所有向量
+            1000.0 // 默认大值，返回所有向量
         } else {
             // end_key是距离阈值的指针，正确转换并读取该值
-            range_value = core::ptr::read_unaligned(end_key as *const f32);
-        }
+            core::ptr::read_unaligned(end_key as *const f32)
+        };
+
+        // 自旋锁保护（锁持有期间不使用 ?，确保所有路径都释放锁）
+        crate::platform::spin_lock(&mut self.lock);
 
         // 线性搜索查找第一个匹配的向量
+        let mut found_record: Option<u16> = None;
         for i in 0..self.item_count {
             let item_ptr = self.items.add(i);
             let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
             let distance = self.calculate_distance(vec_ptr, query_vec);
 
-            // 检查向量是否在范围�?
+            // 检查向量是否在范围内
             if distance <= range_value {
-                crate::platform::spin_unlock(&mut self.lock);
-                self.stats.hit_count += 1;
-                return Ok((*item_ptr).record_id);
+                found_record = Some((*item_ptr).record_id);
+                break;
             }
         }
 
         crate::platform::spin_unlock(&mut self.lock);
 
-        Err(RemDbError::RecordNotFound)
+        match found_record {
+            Some(record_id) => {
+                self.stats.hit_count += 1;
+                Ok(record_id)
+            }
+            None => Err(RemDbError::RecordNotFound),
+        }
     }
 
     /// 向量范围查询（返回所有匹配项�?
@@ -1423,59 +1469,71 @@ impl VectorIndex {
             return Err(RemDbError::UnsupportedOperation);
         }
 
-        // 自旋锁保�?
-        crate::platform::spin_lock(&mut self.lock);
-
-        // 解析查询向量
+        // 解析查询向量（先于自旋锁完成，解析失败不会泄漏锁）
         let query_vec: *const f32;
-        let mut query_vec_buf: [f32; 1024];
+        let mut query_vec_buf = [0.0f32; 1024];
         let vec_len = self.dimension as usize;
 
         // 检查key是否是指向字符串的指针（向量字面量）
         if _start_key_size > 4 && *start_key == b'[' {
-            // 解析向量字面�?[x1, x2, ..., xn]
-            let vec_str =
-                core::str::from_utf8(core::slice::from_raw_parts(start_key, _start_key_size))
-                    .map_err(|_| RemDbError::TypeMismatch)?;
+            // 解析向量字面量 [x1, x2, ..., xn]
+            let vec_str = match core::str::from_utf8(core::slice::from_raw_parts(
+                start_key,
+                _start_key_size,
+            )) {
+                Ok(s) => s,
+                Err(_) => return Err(RemDbError::TypeMismatch),
+            };
 
             // 移除首尾的方括号
             let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
 
-            // 分割逗号，得到每个元素的字符�?
+            // 分割逗号，得到每个元素的字符串
             let elements: Vec<&str> = vec_str.split(',').map(|s| s.trim()).collect();
 
-            // 检查维度是否匹�?
+            // 检查维度是否匹配
             if elements.len() != vec_len {
-                crate::platform::spin_unlock(&mut self.lock);
                 return Err(RemDbError::TypeMismatch);
             }
 
             // 解析每个元素为f32
-            query_vec_buf = [0.0; 1024];
             for (i, elem) in elements.iter().enumerate() {
-                query_vec_buf[i] = elem.parse::<f32>().map_err(|_| RemDbError::TypeMismatch)?;
+                let parsed = match elem.parse::<f32>() {
+                    Ok(v) => v,
+                    Err(_) => return Err(RemDbError::TypeMismatch),
+                };
+                match query_vec_buf.get_mut(i) {
+                    Some(slot) => *slot = parsed,
+                    None => return Err(RemDbError::TypeMismatch),
+                }
             }
 
             query_vec = query_vec_buf.as_ptr();
         } else {
-            // 直接使用key作为f32指针
+            // 直接使用key作为f32指针：先校验字节数，避免越界读取
+            let needed = vec_len.saturating_mul(core::mem::size_of::<f32>());
+            if _start_key_size < needed {
+                return Err(RemDbError::TypeMismatch);
+            }
             query_vec = start_key as *const f32;
         }
 
         // end_key是距离阈值，解析为f32
-        let range_value: f32;
-        if _end_key_size > 4 && *end_key == b'[' {
+        let range_value: f32 = if _end_key_size > 4 && *end_key == b'[' {
             // 解析向量字面量的距离（这种情况不常见，主要用于测试）
-            range_value = 1000.0; // 默认大值，返回所有向量
+            1000.0 // 默认大值，返回所有向量
         } else {
             // end_key是距离阈值的指针，正确转换并读取该值
-            range_value = core::ptr::read_unaligned(end_key as *const f32);
-        }
+            core::ptr::read_unaligned(end_key as *const f32)
+        };
+
+        // 自旋锁保护（锁持有期间不使用 ?，确保所有路径都释放锁）
+        crate::platform::spin_lock(&mut self.lock);
 
         // 直接在输出缓冲区中存储结果，避免使用Vec
         let mut match_count = 0;
 
-        // 实现真正的范围查询：返回所有距离小于等于range_value的向�?
+        // 范围查询：返回所有距离小于等于range_value的向量
         for i in 0..self.item_count {
             if match_count >= max_records {
                 break;
@@ -1485,7 +1543,7 @@ impl VectorIndex {
             let vec_ptr = self.vectors.add((*item_ptr).vector_offset);
             let distance = self.calculate_distance(query_vec, vec_ptr);
 
-            // 检查距离是否在范围�?
+            // 检查距离是否在范围内
             if distance <= range_value {
                 *out_record_ids.add(match_count) = (*item_ptr).record_id;
                 match_count += 1;

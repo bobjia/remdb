@@ -2890,7 +2890,8 @@ impl DdlExecutor for RemDb {
             self.secondary_indices.push(None);
         }
         if self.secondary_indices[table_id].is_some() {
-            return Err(RemDbError::TwoMoreIndexNotSupported);
+            // 索引已存在，直接返回成功（幂等操作）
+            return Ok(());
         }
 
         // 6. 创建一个新的Arc<TableDef>，包含索引信息

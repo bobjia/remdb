@@ -1584,8 +1584,31 @@ fn execute_select_query(
             // 尝试获取表和索引
             match db.get_table_and_secondary_index_mut_by_name(&query.table_name) {
                 Ok((table_ref, index_ref)) => {
-                    // 成功获取表和索引
-                    (table_ref, Some((index_ref, indexed_field, index_operation)))
+                    // 只有当WHERE条件中的字段确实是索引字段时才使用索引，
+                    // 否则（例如对非索引列的等值条件）会错误地走向量/二级索引查找
+                    let field_is_indexed = table_ref
+                        .def
+                        .secondary_index
+                        .as_ref()
+                        .map(|indices| {
+                            indices.iter().any(|&idx| {
+                                table_ref
+                                    .def
+                                    .fields
+                                    .get(idx)
+                                    .map(|f| f.name == indexed_field)
+                                    .unwrap_or(false)
+                            })
+                        })
+                        .unwrap_or(false);
+
+                    if field_is_indexed {
+                        // 成功获取表和索引，且WHERE字段与索引字段匹配
+                        (table_ref, Some((index_ref, indexed_field, index_operation)))
+                    } else {
+                        // WHERE字段不是索引字段，退回全表扫描
+                        (table_ref, None)
+                    }
                 }
                 Err(_) => {
                     // 索引不存在，只获取表
