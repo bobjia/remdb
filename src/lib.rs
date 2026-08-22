@@ -4650,12 +4650,29 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
         let mut db = RemDb::new(config);
         
         // 从配置创建表
-        for table_def in &config.tables {
+        for (table_id, table_def) in config.tables.iter().enumerate() {
             // 创建表
-            let table = MemoryTable::new(alloc::sync::Arc::new(table_def.clone()))?;
+            let table_def_arc = alloc::sync::Arc::new(table_def.clone());
+            let table = MemoryTable::new(table_def_arc.clone())?;
             db.tables.push(Some(table));
-            // 创建空的索引项，后续会在需要时自动创建
-            db.primary_indices.push(None);
+            
+            // 创建主键索引
+            let hash_table_size = (table_def.max_records * 2).next_power_of_two();
+            let index_memory_size =
+                crate::index::PrimaryIndex::calculate_memory_size(table_def, hash_table_size, table_def.max_records);
+            let index_memory = crate::memory::allocator::alloc(index_memory_size)?;
+            let hash_table_start = index_memory.as_ptr() as *mut core::option::Option<core::ptr::NonNull<crate::index::PrimaryIndexItem>>;
+            let items_start = (index_memory.as_ptr() as usize
+                + hash_table_size * core::mem::size_of::<core::option::Option<core::ptr::NonNull<crate::index::PrimaryIndexItem>>>())
+                as *mut crate::index::PrimaryIndexItem;
+            let primary_index = crate::index::PrimaryIndex::new(
+                table_def_arc,
+                hash_table_start,
+                items_start,
+                hash_table_size,
+                table_def.max_records,
+            );
+            db.primary_indices.push(Some(primary_index));
             db.secondary_indices.push(None);
         }
         
@@ -4666,6 +4683,7 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
         let _ = db.database_manager.create_database("default", "", None);
         
         // 将新的数据库实例赋值给 DB_INSTANCE
+        // 旧实例会被自动丢弃（Option::Some -> Some 替换时旧值被 drop）
         DB_INSTANCE = Some(db);
         Ok(DB_INSTANCE.as_mut().ok_or(RemDbError::UnexpectedNone("DB not initialized"))?)
     }

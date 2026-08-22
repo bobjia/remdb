@@ -87,11 +87,26 @@ int main() {
         records[i].tags[1] = 200 + i;
     }
     
+    // 开始事务（时序批量写入要求存在活跃事务）
+    error = remdb_begin_transaction(handle, REMDB_TX_WRITE, REMDB_ISO_READ_COMMITTED);
+    if (error != REMDB_SUCCESS) {
+        printf("Failed to begin transaction: %d\n", error);
+        return 1;
+    }
+
     // 批量写入时序数据
     size_t written;
     error = remdb_time_series_batch_write(handle, table_id, records, num_records, &written);
     if (error != REMDB_SUCCESS) {
         printf("Failed to write time series data: %d\n", error);
+        remdb_rollback_transaction(handle);
+        return 1;
+    }
+
+    // 提交事务
+    error = remdb_commit_transaction(handle);
+    if (error != REMDB_SUCCESS) {
+        printf("Failed to commit transaction: %d\n", error);
         return 1;
     }
     

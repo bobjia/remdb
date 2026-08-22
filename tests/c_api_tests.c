@@ -454,11 +454,11 @@ static void test_error_handling() {
     printf("Testing error handling... ");
     
     // Test null pointer handling
-    RemDbHandle handle = NULL;
-    enum RemDbError err = remdb_get_global(&handle);
+    enum RemDbError err = remdb_get_global(NULL);
     assert(err == REMDB_ERROR_CONFIG_ERROR);
     
     // Initialize database with minimal config
+    RemDbHandle handle = NULL;
     RemDbTableDef tables[0] = {};
     RemDbConfig config = {
         .tables = tables,

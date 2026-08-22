@@ -45,6 +45,19 @@ impl From<RemDbDataType> for DataType {
 /// C API: 最大字符串长度
 pub const REMDB_MAX_STRING_LEN: usize = 64;
 
+/// 当前全局数据库中的用户表数量（不包含 db.init() 自动创建的系统表）。
+/// C API 的 table_id 只引用用户表，系统表属于数据库内部实现细节。
+static mut C_API_USER_TABLE_COUNT: usize = 0;
+
+/// 获取当前全局数据库中的用户表数量
+///
+/// # Safety
+///
+/// 访问全局静态变量，要求外部同步（C API 使用场景为单线程初始化）
+unsafe fn c_api_user_table_count() -> usize {
+    C_API_USER_TABLE_COUNT
+}
+
 /// C API: 通用值类型
 #[repr(C)]
 pub union RemDbValue {
@@ -945,6 +958,10 @@ pub unsafe extern "C" fn remdb_init_global(
         Ok(db) => {
             *handle = db as *mut _;
 
+            // 记录用户表数量：C API 的 table_id 只引用用户表，
+            // db.init() 内部追加创建的系统表对 C API 不可见
+            C_API_USER_TABLE_COUNT = c_config.tables_count;
+
             // 如果有时序表定义，需要初始化时序表
             let db_mut = &mut *(*handle);
 
@@ -1039,94 +1056,20 @@ pub unsafe extern "C" fn remdb_init_global(
     }
 }
 
-/// C API: 获取全局数据库实例
+/// C API: 获取全局数据库实例（需先调用 remdb_init_global）
 #[no_mangle]
 pub unsafe extern "C" fn remdb_get_global(handle: *mut RemDbHandle) -> RemDbError {
     if handle.is_null() {
         return RemDbError::ConfigError;
     }
 
-    // 初始化内存分配器
-    // 分配内存用于内存池
-    let total_memory = 1024 * 1024 * 1024; // 默认1GB
-    
-    // 检查内存大小是否足够
-    if total_memory < 1024 * 1024 { // 最小1MB
-        return RemDbError::OutOfMemory;
-    }
-    
-    // 分配内存缓冲区
-    let mut memory_buffer = alloc::vec::Vec::with_capacity(total_memory);
-    
-    // 尝试调整内存缓冲区大小
-    if let Err(_) = memory_buffer.try_reserve(total_memory) {
-        return RemDbError::OutOfMemory;
-    }
-    
-    // 调整大小并初始化
-    memory_buffer.resize(total_memory, 0);
-    let memory_ptr = memory_buffer.as_mut_ptr();
-    
-    // 泄漏内存，使其成为静态内存
-    core::mem::forget(memory_buffer);
-    
-    // 初始化全局内存分配器
-    if let Err(e) = crate::memory::allocator::init_global_allocator(memory_ptr, total_memory) {
-        return e.into();
-    }
-    
-    // 检查内存分配器是否初始化成功
-    let stats = crate::memory::allocator::get_memory_stats();
-    if stats.total < total_memory / 2 { // 至少应该有一半的内存可用
-        return RemDbError::OutOfMemory;
-    }
-    
-    // 创建默认数据库配置
-    let default_config = crate::config::DbConfig {
-        tables: vec![],
-        total_memory: total_memory,
-        default_max_records: 100000,
-        low_power_mode_supported: true,
-        low_power_max_records: Some(10000),
-        memory_allocator: &crate::config::DefaultMemoryAllocator,
-        wal_config: crate::config::WALConfig {
-            log_path: "remdb.wal",
-            log_mode: crate::config::LogMode::Sync,
-            checkpoint_interval_ms: 60000,
-            log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 16 * 1024 * 1024,
-            log_segment_size: 16 * 1024 * 1024,
-            retained_checkpoints: 2,
-            max_consecutive_invalid: 100,
-            skip_threshold: 20,
-            skip_block_size: 4096,
-            max_skip_attempts: 10,
-            compression_type: crate::config::WALCompressionType::None,
-            compression_level: 3,
-        },
-        time_series_defaults: crate::time_series::TimeSeriesConfig {
-            max_partitions: 100,
-            partition_duration_secs: 3600,
-            retention_period_secs: 86400 * 30,
-            compression: crate::time_series::CompressionType::None,
-        },
-        #[cfg(feature = "pubsub")]
-        pubsub_config: None,
-        ha_config: None,
-        #[cfg(feature = "model-runtime")]
-        model_worker_config: crate::config::ModelWorkerConfig::default(),
-    };
-
-    // 创建数据库实例
-    let mut db = crate::RemDb::new_with_name("default", Box::leak(Box::new(default_config)));
-    
-    // 初始化数据库
-    match db.init() {
-        Ok(_) => {
-            *handle = Box::leak(Box::new(db)) as *mut _;
+    // 尝试获取已存在的全局数据库实例
+    match crate::get_global_db() {
+        Some(db) => {
+            *handle = db as *mut _;
             RemDbError::Success
         }
-        Err(e) => e.into(),
+        None => RemDbError::ConfigError,
     }
 }
 
@@ -1185,18 +1128,33 @@ pub unsafe extern "C" fn remdb_begin_transaction(
     }
 
     let db = &mut *handle;
-    
-    // 创建本地的事务缓冲区和日志缓冲区
-    let mut tx_buffer = crate::transaction::Transaction::default();
-    let mut log_buffer = vec![crate::transaction::VariableSizeLogItem::default(); 1024];
 
-    match db.begin_transaction(
-        tx_type.into(),
-        isolation_level.into(),
-        &mut tx_buffer as *mut crate::transaction::Transaction,
-        log_buffer.as_mut_ptr(),
-        1024,
-    ) {
+    // 事务缓冲区必须比本次调用活得更久：全局 TX_MANAGER 会持有指向它们的指针
+    // 直到 commit/rollback。若使用本函数的栈局部变量或局部 Vec，函数返回后
+    // TX_MANAGER 将持有悬垂指针（栈帧被复用、Vec 被释放），后续任何
+    // 事务操作都会访问已释放/被复用的内存。因此使用静态缓冲区。
+    static mut TX_BUFFER: Option<Box<crate::transaction::Transaction>> = None;
+    static mut LOG_BUFFER: Option<Box<[crate::transaction::VariableSizeLogItem]>> = None;
+
+    if TX_BUFFER.is_none() {
+        TX_BUFFER = Some(Box::new(crate::transaction::Transaction::default()));
+    }
+    if LOG_BUFFER.is_none() {
+        LOG_BUFFER = Some(
+            vec![crate::transaction::VariableSizeLogItem::default(); 1024].into_boxed_slice(),
+        );
+    }
+
+    let tx_ptr = match TX_BUFFER.as_mut() {
+        Some(buf) => &mut **buf as *mut crate::transaction::Transaction,
+        None => return RemDbError::OutOfMemory,
+    };
+    let log_ptr = match LOG_BUFFER.as_mut() {
+        Some(buf) => buf.as_mut_ptr(),
+        None => return RemDbError::OutOfMemory,
+    };
+
+    match db.begin_transaction(tx_type.into(), isolation_level.into(), tx_ptr, log_ptr, 1024) {
         Ok(_) => RemDbError::Success,
         Err(e) => e.into(),
     }
@@ -1375,14 +1333,30 @@ pub unsafe extern "C" fn remdb_table_insert(
         return RemDbError::ConfigError;
     }
 
-    let db = &mut *handle;
-    match db.get_table_mut(table_id) {
-        Ok(table) => match table.insert(record) {
-            Ok(_) => RemDbError::Success,
-            Err(e) => e.into(),
-        },
-        Err(e) => e.into(),
+    // C API 的 table_id 只引用用户表；越界（含指向内部系统表的 ID）返回 TableNotFound
+    if table_id >= c_api_user_table_count() {
+        return RemDbError::TableNotFound;
     }
+
+    let db = &mut *handle;
+
+    // 1. 向表中插入记录，获取记录ID
+    let record_id = match db.get_table_mut(table_id) {
+        Ok(table) => match table.insert(record) {
+            Ok(id) => id,
+            Err(e) => return e.into(),
+        },
+        Err(e) => return e.into(),
+    };
+
+    // 2. 更新主键索引（table引用已释放，可重新借用db）
+    if let Ok(index) = db.get_primary_index_mut(table_id) {
+        if let Err(e) = index.insert_composite(record, record_id as u16) {
+            return e.into();
+        }
+    }
+
+    RemDbError::Success
 }
 
 /// C API: 从表中获取记录
@@ -1399,21 +1373,37 @@ pub unsafe extern "C" fn remdb_table_get(
 
     let db = &mut *handle;
 
-    // 1. 获取主键索引
+    // 1. 获取表定义以确定主键字段大小
+    let key_size = match db.get_table(table_id) {
+        Ok(table) => {
+            let def = &table.def;
+            let pk_idx = match def.primary_key.get(0) {
+                Some(idx) => *idx,
+                None => return RemDbError::ConfigError,
+            };
+            let pk_field = match def.fields.get(pk_idx) {
+                Some(f) => f,
+                None => return RemDbError::ConfigError,
+            };
+            pk_field.size
+        }
+        Err(e) => return e.into(),
+    };
+
+    // 2. 获取主键索引
     let primary_index = match db.get_primary_index_mut(table_id) {
         Ok(index) => index,
         Err(e) => return e.into(),
     };
 
-    // 2. 使用主键索引查找记录ID
+    // 3. 使用主键索引查找记录ID
     let key_ptr = key as *const u8;
-    let key_size = core::mem::size_of::<RemDbValue>();
     let record_id = match primary_index.find(key_ptr, key_size) {
         Ok(id) => id as usize,
         Err(e) => return e.into(),
     };
 
-    // 3. 获取表并读取记录
+    // 4. 获取表并读取记录
     let table = match db.get_table(table_id) {
         Ok(table) => table,
         Err(e) => return e.into(),
@@ -1437,23 +1427,44 @@ pub unsafe extern "C" fn remdb_table_update(
         return RemDbError::ConfigError;
     }
 
+    // C API 的 table_id 只引用用户表；越界（含指向内部系统表的 ID）返回 TableNotFound
+    if table_id >= c_api_user_table_count() {
+        return RemDbError::TableNotFound;
+    }
+
     let db = &mut *handle;
 
-    // 1. 获取主键索引
+    // 1. 获取表定义以确定主键字段大小
+    let key_size = match db.get_table(table_id) {
+        Ok(table) => {
+            let def = &table.def;
+            let pk_idx = match def.primary_key.get(0) {
+                Some(idx) => *idx,
+                None => return RemDbError::ConfigError,
+            };
+            let pk_field = match def.fields.get(pk_idx) {
+                Some(f) => f,
+                None => return RemDbError::ConfigError,
+            };
+            pk_field.size
+        }
+        Err(e) => return e.into(),
+    };
+
+    // 2. 获取主键索引
     let primary_index = match db.get_primary_index_mut(table_id) {
         Ok(index) => index,
         Err(e) => return e.into(),
     };
 
-    // 2. 使用主键索引查找记录ID
+    // 3. 使用主键索引查找记录ID
     let key_ptr = key as *const u8;
-    let key_size = core::mem::size_of::<RemDbValue>();
     let record_id = match primary_index.find(key_ptr, key_size) {
         Ok(id) => id as usize,
         Err(e) => return e.into(),
     };
 
-    // 3. 获取表并更新记录
+    // 4. 获取表并更新记录
     let table = match db.get_table_mut(table_id) {
         Ok(table) => table,
         Err(e) => return e.into(),
@@ -1476,23 +1487,47 @@ pub unsafe extern "C" fn remdb_table_delete(
         return RemDbError::ConfigError;
     }
 
+    // C API 的 table_id 只引用用户表；越界（含指向内部系统表的 ID）返回 TableNotFound
+    if table_id >= c_api_user_table_count() {
+        return RemDbError::TableNotFound;
+    }
+
     let db = &mut *handle;
 
-    // 1. 获取主键索引
-    let primary_index = match db.get_primary_index_mut(table_id) {
-        Ok(index) => index,
+    // 1. 获取表定义以确定主键字段大小
+    let key_size = match db.get_table(table_id) {
+        Ok(table) => {
+            let def = &table.def;
+            let pk_idx = match def.primary_key.get(0) {
+                Some(idx) => *idx,
+                None => return RemDbError::ConfigError,
+            };
+            let pk_field = match def.fields.get(pk_idx) {
+                Some(f) => f,
+                None => return RemDbError::ConfigError,
+            };
+            pk_field.size
+        }
         Err(e) => return e.into(),
     };
+
+    let key_ptr = key as *const u8;
 
     // 2. 使用主键索引查找记录ID
-    let key_ptr = key as *const u8;
-    let key_size = core::mem::size_of::<RemDbValue>();
-    let record_id = match primary_index.find(key_ptr, key_size) {
-        Ok(id) => id as usize,
+    let record_id = match db.get_primary_index_mut(table_id) {
+        Ok(index) => match index.find(key_ptr, key_size) {
+            Ok(id) => id as usize,
+            Err(e) => return e.into(),
+        },
         Err(e) => return e.into(),
     };
 
-    // 3. 获取表并删除记录
+    // 3. 从主键索引中删除（index引用已释放，可重新借用db）
+    if let Ok(index) = db.get_primary_index_mut(table_id) {
+        let _ = index.delete(key_ptr, key_size);
+    }
+
+    // 4. 从表中删除记录
     let table = match db.get_table_mut(table_id) {
         Ok(table) => table,
         Err(e) => return e.into(),
