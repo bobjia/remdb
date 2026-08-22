@@ -54,6 +54,10 @@ remdb is a lightweight embedded in-memory database designed for resource-constra
   - Support for time series data lifecycle management
   - Support for time series data indexing
 - **C Language Interface**: Provides C language API for C/C++ applications
+  - **RBAC Permission Management**: Role-based access control (RBAC) supporting user, role, and permission management for fine-grained data access control
+  - **AI Model Inference**: Integrated ONNX runtime for AI model inference, supporting built-in models and custom model loading
+  - **WAL Log Compression**: Supports LZ4 and Zstd WAL log compression algorithms to reduce log storage space
+  - **System Tables**: Provides system table management for database metadata query and system information monitoring
 
 ## Technical Characteristics
 
@@ -85,10 +89,16 @@ remdb = { path = "./remdb", default-features = false }
 |--------|--------------|-------------|
 | std | - | Enable standard library support |
 | posix | - | Enable POSIX platform support |
+| baremetal | log | Enable baremetal platform support (no standard library dependencies) |
 | pubsub | std | Enable UDP-based reliable data publish/subscribe functionality |
 | ha | pubsub | Enable high availability support (master-slave replication mechanism) |
 | log | - | Enable logging functionality |
 | debug | - | Enable debug level logging (only effective in debug builds) |
+| c-api | - | Enable C language API interface |
+| wal-compression-lz4 | lz4 | Enable LZ4 WAL log compression |
+| wal-compression-zstd | zstd | Enable Zstd WAL log compression |
+| model-runtime | ort, serde, bincode, tokio, ndarray | Enable ONNX runtime model inference |
+| model-download | reqwest, sha2, std, futures, ureq | Enable model download functionality |
 
 ### Logging Configuration
 
@@ -752,6 +762,98 @@ let similarity_result = db.sql_query(similarity_sql)?;
 let create_index_sql = "CREATE INDEX idx_products_embedding ON products (embedding) USING HNSW WITH (M=16, ef_construction=200)";
 db.sql_query(create_index_sql)?;
 ```
+## RBAC Permission Management
+
+remdb provides role-based access control (RBAC), supporting user, role, and permission management for fine-grained data access control.
+
+### Basic Usage
+
+```rust
+use remdb::rbac::{Permission, Role, User, RbacManager};
+
+// Create RBAC manager
+let mut rbac = RbacManager::new();
+
+// Create role
+let role = Role::new("admin", "Administrator");
+rbac.create_role(role);
+
+// Create user
+let user = User::new("alice", "password_hash");
+rbac.create_user(user);
+
+// Assign role to user
+rbac.assign_role("alice", "admin");
+
+// Grant permissions
+rbac.grant_permission("admin", Permission::Select("*"));
+rbac.grant_permission("admin", Permission::Insert("*"));
+rbac.grant_permission("admin", Permission::Delete("*"));
+
+// Check permission
+let has_permission = rbac.check_permission("alice", &Permission::Select("users"));
+```
+
+## AI Model Inference
+
+remdb integrates ONNX runtime, supporting AI model inference with built-in models and custom model loading.
+
+### Basic Usage
+
+```rust
+use remdb::model::{OnnxModel, ModelManager, ModelUDF};
+use remdb::model::builtin_models::{list_builtin_models, get_builtin_model};
+
+// List built-in models
+let models = list_builtin_models();
+
+// Load built-in model
+let model = get_builtin_model("bge-m3");
+
+// Create model manager
+let mut manager = ModelManager::new();
+let model_path = "models/model.onnx";
+let model = OnnxModel::load(model_path)?;
+manager.register_model("my_model", model);
+
+// Execute model inference
+let input = vec![0.1, 0.2, 0.3, 0.4];
+let output = manager.infer("my_model", &input)?;
+```
+
+## WAL Log Compression
+
+remdb supports LZ4 and Zstd WAL log compression algorithms to effectively reduce log storage space.
+
+### Configuration Example
+
+```rust
+use remdb::config::WALCompressionType;
+
+// Use LZ4 compression
+let mut config = DbConfig::default();
+config.wal_compression = WALCompressionType::Lz4;
+
+// Use Zstd compression
+config.wal_compression = WALCompressionType::Zstd;
+```
+
+## System Tables
+
+remdb provides system table management for database metadata query and system information monitoring.
+
+### Basic Usage
+
+```sql
+-- Query all table information
+SELECT * FROM information_schema.tables;
+
+-- Query table structure information
+SELECT * FROM information_schema.columns WHERE table_name = 'users';
+
+-- Query database status
+SELECT * FROM information_schema.database_status;
+```
 
 ## Platform Support
 
@@ -909,11 +1011,32 @@ remdb/
 │   ├── transaction.rs      # Transaction management
 │   ├── monitor.rs          # Database monitoring module
 │   ├── c_api.rs            # C language interface implementation
+│   ├── compression.rs      # Data compression module
+│   ├── log.rs              # Logging module
+│   ├── utf8.rs             # UTF8 character support
+│   ├── sync.rs             # Synchronization primitives
+│   ├── system_tables.rs    # System tables management
+│   ├── wal_compression.rs  # WAL log compression
 │   ├── sql/
 │   │   ├── mod.rs           # SQL query module
 │   │   ├── query_parser.rs  # SQL query parser
 │   │   ├── query_executor.rs # SQL query executor
-│   │   └── result_set.rs    # Result set handling
+│   │   ├── result_set.rs    # Result set handling
+│   │   ├── error.rs         # SQL error handling
+│   │   ├── utils.rs         # SQL utility functions
+│   │   ├── functions/       # SQL functions
+│   │   │   ├── mod.rs
+│   │   │   ├── aggregate.rs # Aggregate functions
+│   │   │   ├── math.rs      # Math functions
+│   │   │   ├── string.rs    # String functions
+│   │   │   ├── time.rs      # Time functions
+│   │   │   └── json.rs      # JSON functions
+│   │   └── operations/      # SQL operations
+│   │       ├── mod.rs
+│   │       ├── expression.rs # Expression handling
+│   │       ├── comparison.rs # Comparison operations
+│   │       ├── ddl.rs        # DDL operations
+│   │       └── vector.rs     # Vector operations
 │   ├── memory/
 │   │   ├── allocator.rs    # Static memory allocator
 │   │   ├── pool.rs         # Memory pool
@@ -940,6 +1063,27 @@ remdb/
 │   │   ├── topics.rs       # Predefined topics
 │   │   ├── ttl_ringbuffer.rs # TTL ring buffer
 │   │   └── crc32.rs        # CRC32 check implementation
+│   ├── json/
+│   │   ├── mod.rs          # JSON module entry
+│   │   ├── document.rs     # JSON document processing
+│   │   ├── path.rs         # JSON path query
+│   │   └── memory_pool.rs  # JSON memory pool
+│   ├── rbac/
+│   │   ├── mod.rs          # RBAC permission management module
+│   │   ├── user.rs         # User management
+│   │   ├── role.rs         # Role management
+│   │   ├── permission.rs   # Permission definitions
+│   │   └── manager.rs      # Permission manager
+│   ├── model/
+│   │   ├── mod.rs          # AI model module entry
+│   │   ├── model_manager.rs # Model manager
+│   │   ├── builtin_models.rs # Built-in models
+│   │   ├── onnx_runtime.rs  # ONNX runtime
+│   │   ├── model_udf.rs     # Model UDF function
+│   │   ├── cache.rs         # Model cache
+│   │   ├── downloader.rs    # Model downloader
+│   │   ├── worker_manager.rs # Worker process manager
+│   │   └── worker_protocol.rs # Worker process protocol
 │   └── time_series/
 │       ├── mod.rs          # Time series database module entry
 │       ├── table.rs        # Time series table implementation
@@ -949,7 +1093,13 @@ remdb/
 │       ├── lifecycle.rs    # Data lifecycle management
 │       └── config.rs       # Time series database configuration
 ├── examples/               # Example code
+│   ├── api/                # API usage examples
+│   ├── sql/                # SQL usage examples
+│   └── misc/               # Other examples
 ├── tests/                  # Test code
+├── include/                # C language header files
+├── models/                 # AI model files
+├── onnxruntime/            # ONNX runtime files
 ├── Cargo.toml              # Project configuration
 └── README.md               # Project documentation
 ```
@@ -965,7 +1115,7 @@ Issues and pull requests are welcome!
 ## Project Links
 - Domestic: https://gitee.com/totaltrust/remdb
 - Abroad: https://github.com/bobjia/remdb
-- Crates：https://crates.io/crates/remdb
+- Crates: https://crates.io/crates/remdb
 
 ## Notes
 
@@ -980,8 +1130,8 @@ Issues and pull requests are welcome!
 - Provide more index types
 - Add more examples and documentation
 - Implement more complex memory optimization algorithms
+- Implement more flexible memory allocation strategies
 - Complete runtime DDL configuration API, supporting full table and index creation functionality
 - Support ALTER TABLE statements
-- Implement more flexible memory allocation strategies
 - Optimize performance of runtime DDL operations
 - Support more complex index configuration options

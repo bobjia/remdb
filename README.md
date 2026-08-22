@@ -54,6 +54,10 @@ remdb是一个轻量级的嵌入式内存数据库，专为资源受限的嵌入
   - 支持时间序列数据生命周期管理
   - 支持时间序列数据索引
 - **C语言接口**：提供C语言API，方便C/C++应用程序使用
+  - **RBAC权限管理**：基于角色的访问控制（RBAC），支持用户、角色和权限管理，提供细粒度的数据访问控制
+  - **AI模型推理**：集成ONNX运行时，支持AI模型推理，提供内置模型和自定义模型加载
+  - **WAL日志压缩**：支持LZ4和Zstd两种WAL日志压缩算法，减少日志存储空间
+  - **系统表**：提供系统表管理，支持数据库元数据查询和系统信息监控
 
 ## 技术特点
 
@@ -85,10 +89,16 @@ remdb = { path = "./remdb", default-features = false }
 |-------|------|------|
 | std | - | 启用标准库支持 |
 | posix | - | 启用POSIX平台支持 |
+| baremetal | log | 启用裸机平台支持（无标准库依赖） |
 | pubsub | std | 启用基于UDP的高可靠数据订阅与发布功能 |
 | ha | pubsub | 启用高可用支持（主从复制机制） |
 | log | - | 启用日志功能 |
 | debug | - | 启用debug级别日志（仅在debug构建时生效） |
+| c-api | - | 启用C语言API接口 |
+| wal-compression-lz4 | lz4 | 启用LZ4 WAL日志压缩 |
+| wal-compression-zstd | zstd | 启用Zstd WAL日志压缩 |
+| model-runtime | ort, serde, bincode, tokio, ndarray | 启用ONNX运行时模型推理 |
+| model-download | reqwest, sha2, std, futures, ureq | 启用模型下载功能 |
 
 ### 日志配置
 
@@ -752,6 +762,98 @@ let similarity_result = db.sql_query(similarity_sql)?;
 let create_index_sql = "CREATE INDEX idx_products_embedding ON products (embedding) USING HNSW WITH (M=16, ef_construction=200)";
 db.sql_query(create_index_sql)?;
 ```
+## RBAC权限管理
+
+remdb提供基于角色的访问控制（RBAC），支持用户、角色和权限管理，提供细粒度的数据访问控制。
+
+### 基本使用
+
+```rust
+use remdb::rbac::{Permission, Role, User, RbacManager};
+
+// 创建RBAC管理器
+let mut rbac = RbacManager::new();
+
+// 创建角色
+let role = Role::new("admin", "Administrator");
+rbac.create_role(role);
+
+// 创建用户
+let user = User::new("alice", "password_hash");
+rbac.create_user(user);
+
+// 分配角色给用户
+rbac.assign_role("alice", "admin");
+
+// 授予权限
+rbac.grant_permission("admin", Permission::Select("*"));
+rbac.grant_permission("admin", Permission::Insert("*"));
+rbac.grant_permission("admin", Permission::Delete("*"));
+
+// 检查权限
+let has_permission = rbac.check_permission("alice", &Permission::Select("users"));
+```
+
+## AI模型推理
+
+remdb集成ONNX运行时，支持AI模型推理，提供内置模型和自定义模型加载功能。
+
+### 基本使用
+
+```rust
+use remdb::model::{OnnxModel, ModelManager, ModelUDF};
+use remdb::model::builtin_models::{list_builtin_models, get_builtin_model};
+
+// 列出内置模型
+let models = list_builtin_models();
+
+// 加载内置模型
+let model = get_builtin_model("bge-m3");
+
+// 创建模型管理器
+let mut manager = ModelManager::new();
+let model_path = "models/model.onnx";
+let model = OnnxModel::load(model_path)?;
+manager.register_model("my_model", model);
+
+// 执行模型推理
+let input = vec![0.1, 0.2, 0.3, 0.4];
+let output = manager.infer("my_model", &input)?;
+```
+
+## WAL日志压缩
+
+remdb支持LZ4和Zstd两种WAL日志压缩算法，有效减少日志存储空间。
+
+### 配置示例
+
+```rust
+use remdb::config::WALCompressionType;
+
+// 使用LZ4压缩
+let mut config = DbConfig::default();
+config.wal_compression = WALCompressionType::Lz4;
+
+// 使用Zstd压缩
+config.wal_compression = WALCompressionType::Zstd;
+```
+
+## 系统表
+
+remdb提供系统表管理功能，支持数据库元数据查询和系统信息监控。
+
+### 基本使用
+
+```sql
+-- 查询所有表信息
+SELECT * FROM information_schema.tables;
+
+-- 查询表结构信息
+SELECT * FROM information_schema.columns WHERE table_name = 'users';
+
+-- 查询数据库状态
+SELECT * FROM information_schema.database_status;
+```
 
 ## 平台支持
 
@@ -909,11 +1011,32 @@ remdb/
 │   ├── transaction.rs      # 事务管理
 │   ├── monitor.rs          # 数据库监控模块
 │   ├── c_api.rs            # C语言接口实现
+│   ├── compression.rs      # 数据压缩模块
+│   ├── log.rs              # 日志模块
+│   ├── utf8.rs             # UTF8字符支持
+│   ├── sync.rs             # 同步原语
+│   ├── system_tables.rs    # 系统表管理
+│   ├── wal_compression.rs  # WAL日志压缩
 │   ├── sql/
 │   │   ├── mod.rs           # SQL查询模块
 │   │   ├── query_parser.rs  # SQL查询解析器
 │   │   ├── query_executor.rs # SQL查询执行器
-│   │   └── result_set.rs    # 结果集处理
+│   │   ├── result_set.rs    # 结果集处理
+│   │   ├── error.rs         # SQL错误处理
+│   │   ├── utils.rs         # SQL工具函数
+│   │   ├── functions/       # SQL函数
+│   │   │   ├── mod.rs
+│   │   │   ├── aggregate.rs # 聚合函数
+│   │   │   ├── math.rs      # 数学函数
+│   │   │   ├── string.rs    # 字符串函数
+│   │   │   ├── time.rs      # 时间函数
+│   │   │   └── json.rs      # JSON函数
+│   │   └── operations/      # SQL操作
+│   │       ├── mod.rs
+│   │       ├── expression.rs # 表达式处理
+│   │       ├── comparison.rs # 比较操作
+│   │       ├── ddl.rs        # DDL操作
+│   │       └── vector.rs     # 向量操作
 │   ├── memory/
 │   │   ├── allocator.rs    # 静态内存分配器
 │   │   ├── pool.rs         # 内存池
@@ -940,6 +1063,27 @@ remdb/
 │   │   ├── topics.rs       # 预定义主题
 │   │   ├── ttl_ringbuffer.rs # TTL环形缓冲区
 │   │   └── crc32.rs        # CRC32校验实现
+│   ├── json/
+│   │   ├── mod.rs          # JSON模块入口
+│   │   ├── document.rs     # JSON文档处理
+│   │   ├── path.rs         # JSON路径查询
+│   │   └── memory_pool.rs  # JSON内存池
+│   ├── rbac/
+│   │   ├── mod.rs          # RBAC权限管理模块
+│   │   ├── user.rs         # 用户管理
+│   │   ├── role.rs         # 角色管理
+│   │   ├── permission.rs   # 权限定义
+│   │   └── manager.rs      # 权限管理器
+│   ├── model/
+│   │   ├── mod.rs          # AI模型模块入口
+│   │   ├── model_manager.rs # 模型管理器
+│   │   ├── builtin_models.rs # 内置模型
+│   │   ├── onnx_runtime.rs  # ONNX运行时
+│   │   ├── model_udf.rs     # 模型UDF函数
+│   │   ├── cache.rs         # 模型缓存
+│   │   ├── downloader.rs    # 模型下载器
+│   │   ├── worker_manager.rs # 工作进程管理
+│   │   └── worker_protocol.rs # 工作进程协议
 │   └── time_series/
 │       ├── mod.rs          # 时序数据库模块入口
 │       ├── table.rs        # 时序表实现
@@ -949,7 +1093,13 @@ remdb/
 │       ├── lifecycle.rs    # 数据生命周期管理
 │       └── config.rs       # 时序数据库配置
 ├── examples/               # 示例代码
+│   ├── api/                # API使用示例
+│   ├── sql/                # SQL使用示例
+│   └── misc/               # 其他示例
 ├── tests/                  # 测试代码
+├── include/                # C语言头文件
+├── models/                 # AI模型文件
+├── onnxruntime/            # ONNX运行时文件
 ├── Cargo.toml              # 项目配置
 └── README.md               # 项目说明文档
 ```
@@ -980,6 +1130,7 @@ MIT许可证
 - 提供更多的索引类型
 - 增加更多的示例和文档
 - 实现更复杂的内存优化算法
+- 实现更灵活的内存分配策略
 - 完善运行时DDL配置API，支持完整的表和索引创建功能
 - 支持ALTER TABLE语句
 - 优化运行时DDL操作的性能
