@@ -5270,6 +5270,13 @@ fn execute_insert_query(
                             // 忽略重复键，继续处理下一条记录
                             continue;
                         } else {
+                            // 自动创建的事务需要回滚，避免泄漏
+                            if !has_active_tx {
+                                unsafe {
+                                    crate::transaction::rollback()
+                                        .map_err(|_| QueryExecutionError::InternalError)?;
+                                }
+                            }
                             return Err(QueryExecutionError::ConstraintsConflicts);
                         }
                     }

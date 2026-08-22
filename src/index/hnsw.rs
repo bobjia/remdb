@@ -58,10 +58,12 @@ impl HNSWNode {
         max_level: usize,
     ) -> Self {
         let mut neighbor_counts = Vec::with_capacity(max_level + 1);
-        let neighbors = Vec::with_capacity((max_level + 1) * 32); // 每层最多32个邻居        
         for _ in 0..=max_level {
             neighbor_counts.push(0);
         }
+        // 预填充邻居数组：每层最多32个邻居，用NonNull::dangling()作为占位符
+        // 实际写入时add_neighbor_at_level会覆盖对应位置，读取时只访问已写入的范围
+        let neighbors = alloc::vec![NonNull::dangling(); (max_level + 1) * 32];
         
         HNSWNode {
             vector_offset,
@@ -74,8 +76,15 @@ impl HNSWNode {
     /// 获取节点在指定层的邻居列表
     pub unsafe fn get_neighbors_at_level(&self, level: usize) -> &[NonNull<HNSWNode>] {
         let start_offset = level * 32; // 每层最多32个邻居        
-        let count = self.neighbor_counts[level] as usize;
-        &self.neighbors[start_offset..start_offset + count]
+        let count = match self.neighbor_counts.get(level) {
+            Some(&c) => c as usize,
+            None => return &[],
+        };
+        let end = start_offset + count;
+        if end > self.neighbors.len() {
+            return &[];
+        }
+        &self.neighbors[start_offset..end]
     }
     
     /// 添加邻居节点到指定层
@@ -85,13 +94,21 @@ impl HNSWNode {
         neighbor: NonNull<HNSWNode>,
     ) -> Result<()> {
         let start_offset = level * 32;
-        let count = self.neighbor_counts[level] as usize;
+        let count = match self.neighbor_counts.get(level) {
+            Some(&c) => c as usize,
+            None => return Err(RemDbError::OutOfMemory),
+        };
         
         if count >= 32 {
             return Err(RemDbError::OutOfMemory);
         }
         
-        self.neighbors[start_offset + count] = neighbor;
+        let idx = start_offset + count;
+        if idx >= self.neighbors.len() {
+            return Err(RemDbError::OutOfMemory);
+        }
+        
+        self.neighbors[idx] = neighbor;
         self.neighbor_counts[level] += 1;
         
         Ok(())
@@ -131,20 +148,25 @@ impl HNSWIndex {
         max_nodes: usize,
     ) -> Result<Self> {
         // 计算最大层数
-        let max_level = (max_nodes as f64).ln() as usize;
+        let max_level = if max_nodes > 0 {
+            (max_nodes as f64).ln() as usize
+        } else {
+            0
+        };
         
         // 初始化节点池
-        let _node_size = core::mem::size_of::<HNSWNode>();
         let nodes = NonNull::new_unchecked(memory_start as *mut HNSWNode);
         
         // 初始化空闲节点链表
+        // 注意：insert不使用free_nodes，它总是追加到nodes[node_count]；
+        // 这里仍然用ptr::write初始化每个节点，确保池内存有效
+        // （delete会使用free_nodes将被删除节点放回空闲列表）
         let mut free_nodes = None;
         for i in (0..max_nodes).rev() {
             let node_ptr = nodes.as_ptr().add(i);
-            // 初始化节点
-            let _node = HNSWNode::new(0, 0, max_level);            
-            // 链接到空闲列表
-            let _next = free_nodes;
+            // 用ptr::write将初始化好的节点写入池内存
+            let node = HNSWNode::new(0, 0, max_level);
+            core::ptr::write(node_ptr, node);
             free_nodes = Some(NonNull::new_unchecked(node_ptr));
         }
         
@@ -550,8 +572,8 @@ impl HNSWIndex {
         // 从上到下遍历各层        
         while current_level > 0 {
             let results = self.search_layer(query_vec, current_point, 1, current_level);
-            if !results.is_empty() {
-                current_point = results[0].1;
+            if let Some(&(_dist, point)) = results.get(0) {
+                current_point = point;
             }
             current_level -= 1;
         }
@@ -577,32 +599,37 @@ impl HNSWIndex {
         let vec_ptr = self.vectors.add(vector_offset);        
         // 生成随机层号        
         let new_level = self.generate_random_level();        
-        // 创建新节点        
-        let mut new_node = HNSWNode::new(vector_offset, record_id, self.max_level);        
-        // 搜索路径        
+        // 在节点池中分配一个槽位
+        if self.node_count >= self.max_nodes {
+            return Err(RemDbError::OutOfMemory);
+        }
+        let node_ptr = self.nodes.as_ptr().add(self.node_count);
+        // 立即将节点写入池中（避免后续操作中指向栈变量的悬垂指针）
+        core::ptr::write(node_ptr, HNSWNode::new(vector_offset, record_id, self.max_level));
+        let pool_node = NonNull::new_unchecked(node_ptr);
+        
+        // 搜索路径（entry_point需要mut，因为我们在while循环中可能需要更新它）
         let mut entry_point = match self.enter_point {
-            Some(point) => point,            None => {
+            Some(point) => point,
+            None => {
                 // 第一个节点                
-                let node_ptr = self.nodes.as_ptr().add(self.node_count);                
-                *node_ptr = new_node;
-                let node = NonNull::new_unchecked(node_ptr);                
-                self.enter_point = Some(node);                
+                self.enter_point = Some(pool_node);                
                 for i in 0..=new_level {
-                    self.layer_enter_points[i] = Some(node);
+                    if let Some(ep) = self.layer_enter_points.get_mut(i) {
+                        *ep = Some(pool_node);
+                    }
                 }
-                
                 self.node_count += 1;
                 return Ok(());
             }
         };
         
         let mut current_level = self.max_level;
-        let _visited: Vec<NonNull<HNSWNode>> = Vec::new();        
         // 从上到下搜索插入位置        
         while current_level > new_level {
             let results = self.search_layer(vec_ptr, entry_point, 1, current_level);            
-            if !results.is_empty() {
-                entry_point = results[0].1;
+            if let Some(&(_dist, point)) = results.get(0) {
+                entry_point = point;
             }
             current_level -= 1;
         }
@@ -616,29 +643,32 @@ impl HNSWIndex {
             let m = self.meta.hnsw_m as usize;
             let selected_neighbors = neighbors.iter().take(m).map(|&(_d, n)| n).collect::<Vec<_>>();            
             // 将新节点连接到选中的邻居            
+            let node_mut = &mut *node_ptr; // 池中节点的可变引用
             for &neighbor in &selected_neighbors {
-                new_node.add_neighbor_at_level(current_level, neighbor)?;                
-                // 双向连接                
+                node_mut.add_neighbor_at_level(current_level, neighbor)?;                
+                // 双向连接：使用池中节点的稳定指针(NonNull)，而非栈变量
                 let neighbor_ptr = neighbor.as_ptr();
-                let neighbor_mut = unsafe { &mut *neighbor_ptr };
-                neighbor_mut.add_neighbor_at_level(current_level, NonNull::new_unchecked(&mut new_node))?;            }
+                let neighbor_mut = &mut *neighbor_ptr;
+                neighbor_mut.add_neighbor_at_level(current_level, pool_node)?;
+            }
             
-            // 更新层入口点            
-            if self.layer_enter_points[current_level].is_none() {
-                self.layer_enter_points[current_level] = Some(NonNull::new_unchecked(&mut new_node));
+            // 更新层入口点
+            let current_ep = self.layer_enter_points.get_mut(current_level);
+            if let Some(ep) = current_ep {
+                if ep.is_none() {
+                    *ep = Some(pool_node);
+                }
             }
             
             current_level += 1;
         }
         
-        // 将新节点添加到节点池        
-        let node_ptr = self.nodes.as_ptr().add(self.node_count);        
-        *node_ptr = new_node;
+        // 节点已写入池中，只需增加计数
         self.node_count += 1;
         
         // 更新全局入口点        
         if new_level >= self.max_level {
-            self.enter_point = Some(NonNull::new_unchecked(node_ptr));
+            self.enter_point = Some(pool_node);
         }
         
         Ok(())
@@ -673,16 +703,29 @@ impl HNSWIndex {
                 
                 // 遍历每层
                 for level in 0..=self.max_level {
-                    // 获取当前层的邻居列表
+                    // 获取当前层的邻居列表（使用边界检查）
                     let start_offset = level * 32;
-                    let count = node.neighbor_counts[level] as usize;
+                    let count = match node.neighbor_counts.get(level) {
+                        Some(&c) => c as usize,
+                        None => continue,
+                    };
+                    
+                    // 确保start_offset + count不超过neighbors长度
+                    let end = start_offset + count;
+                    if end > node.neighbors.len() {
+                        continue;
+                    }
                     
                     // 查找并移除目标节点
                     let mut new_neighbors = Vec::new();
                     let mut new_count = 0;
                     
                     for j in 0..count {
-                        let neighbor = node.neighbors[start_offset + j];
+                        let idx = start_offset + j;
+                        let neighbor = match node.neighbors.get(idx) {
+                            Some(&n) => n,
+                            None => continue,
+                        };
                         if neighbor != target_node {
                             new_neighbors.push(neighbor);
                             new_count += 1;
@@ -693,10 +736,15 @@ impl HNSWIndex {
                     if new_count < count {
                         // 复制新邻居列表
                         for (j, &neighbor) in new_neighbors.iter().enumerate() {
-                            node.neighbors[start_offset + j] = neighbor;
+                            let idx = start_offset + j;
+                            if idx < node.neighbors.len() {
+                                node.neighbors[idx] = neighbor;
+                            }
                         }
                         // 更新邻居数量
-                        node.neighbor_counts[level] = new_count as u8;
+                        if let Some(nc) = node.neighbor_counts.get_mut(level) {
+                            *nc = new_count as u8;
+                        }
                     }
                 }
             }
