@@ -9,7 +9,7 @@ use alloc::string::String;
 use crate::log::debug;
 use crate::sql::query_parser::ComparisonOperator;
 use crate::sql::{ComparisonCondition, Condition};
-use crate::types::{DataType, JsonStorage, RemDbError, TypedValue};
+use crate::types::{DataType, JsonStorage, TypedValue};
 use crate::{MemoryTable, Value};
 
 /// Helper function to convert a TypedValue to i64 for numeric comparison

@@ -1,4 +1,3 @@
-use crate::try_lock;
 use crate::try_read;
 use crate::try_write;
 

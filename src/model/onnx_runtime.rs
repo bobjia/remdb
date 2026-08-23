@@ -16,7 +16,7 @@ use ort::session::Session;
 use ort::value::Tensor;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, info, warn};
+use crate::log::{debug, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputType {

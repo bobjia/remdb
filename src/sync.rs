@@ -4,9 +4,6 @@
 //! 在 std 环境下包装 std::sync::Mutex/RwLock 并处理中毒情况，
 //! 在 no_std 环境下使用自旋锁实现。
 
-#[cfg(feature = "std")]
-use std::sync::{LockResult, PoisonError, TryLockError, TryLockResult};
-
 // ============================
 // Mutex
 // ============================

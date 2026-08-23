@@ -10,7 +10,6 @@ use crate::ha::{HAError, HARole, ReplicationMode, Result, SyncState};
 use crate::pubsub;
 use crate::pubsub::{init as pubsub_init, PubSubConfig, UdpMode};
 use crate::transaction::LogItem;
-use crate::RemDbError;
 
 #[cfg(feature = "log")]
 use crate::log::{debug, error, info};
