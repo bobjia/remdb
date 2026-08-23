@@ -35,9 +35,9 @@ jobs:
       - name: Run tests
         run: |
           for test in $(ls tests/*.rs | sed 's/tests\/\(.*\)\.rs/\1/' | grep -v ha_test); do
-            cargo test --all-features --verbose --test "$test"
+            cargo test --verbose --test "$test"
           done
-          cargo test --all-features --verbose --lib
+          cargo test --verbose --lib
 
   # ---------- 发布到 crates.io / Publish to crates.io ----------
   publish:
