@@ -103,7 +103,8 @@ fn test_vector_basic_support() {
     let result = db.sql_query("SELECT * FROM SIMPLE_TABLE LIMIT 1");
     assert!(result.is_ok(), "查询SIMPLE_TABLE应该成功");
 
-    let result = db.sql_query("INSERT INTO SIMPLE_TABLE (id, name, value) VALUES (1, 'test record', 1.23)");
+    let result =
+        db.sql_query("INSERT INTO SIMPLE_TABLE (id, name, value) VALUES (1, 'test record', 1.23)");
     assert!(result.is_ok(), "插入简单记录应该成功");
 
     let result = db.sql_query("SELECT id, name, value FROM SIMPLE_TABLE WHERE id = 1");
@@ -230,9 +231,36 @@ fn test_vector_operators_basic() {
     println!("包含多种向量字段的数据库初始化成功");
 
     let test_data = [
-        (1, [1.0, 2.0, 3.0], [1.0, 2.0, 3.0, 4.0], 10, 0.85, 1.75, true, "test1"),
-        (2, [2.0, 3.0, 4.0], [2.0, 3.0, 4.0, 5.0], 20, 0.92, 2.85, false, "test2"),
-        (3, [3.0, 4.0, 5.0], [3.0, 4.0, 5.0, 6.0], 30, 0.78, 3.95, true, "test3"),
+        (
+            1,
+            [1.0, 2.0, 3.0],
+            [1.0, 2.0, 3.0, 4.0],
+            10,
+            0.85,
+            1.75,
+            true,
+            "test1",
+        ),
+        (
+            2,
+            [2.0, 3.0, 4.0],
+            [2.0, 3.0, 4.0, 5.0],
+            20,
+            0.92,
+            2.85,
+            false,
+            "test2",
+        ),
+        (
+            3,
+            [3.0, 4.0, 5.0],
+            [3.0, 4.0, 5.0, 6.0],
+            30,
+            0.78,
+            3.95,
+            true,
+            "test3",
+        ),
     ];
 
     #[repr(C)]
@@ -269,14 +297,16 @@ fn test_vector_operators_basic() {
 
     println!("成功插入 {} 条测试数据", test_data.len());
 
-    let l2_result = db.sql_query("SELECT id FROM VECTOR_OPERATORS_TABLE WHERE vector3 <-> [1.0, 2.0, 3.0] < 1.0");
+    let l2_result = db
+        .sql_query("SELECT id FROM VECTOR_OPERATORS_TABLE WHERE vector3 <-> [1.0, 2.0, 3.0] < 1.0");
     if l2_result.is_ok() {
         println!("  L2 距离操作符 <-> 语法验证成功");
     } else {
         println!("  L2 距离操作符 <-> 语法验证失败");
     }
 
-    let ip_result = db.sql_query("SELECT id FROM VECTOR_OPERATORS_TABLE WHERE vector3 <#> [1.0, 2.0, 3.0] > 0.0");
+    let ip_result = db
+        .sql_query("SELECT id FROM VECTOR_OPERATORS_TABLE WHERE vector3 <#> [1.0, 2.0, 3.0] > 0.0");
     if ip_result.is_ok() {
         println!("  IP 距离操作符 <#> 语法验证成功");
     } else {
@@ -308,7 +338,12 @@ fn test_vector_search_functions() {
         let record = VectorOpsFuncRecord {
             id: i,
             vector3: [i as f32 * 1.0, i as f32 * 2.0, i as f32 * 3.0],
-            vector4: [i as f32 * 1.0, i as f32 * 2.0, i as f32 * 3.0, i as f32 * 4.0],
+            vector4: [
+                i as f32 * 1.0,
+                i as f32 * 2.0,
+                i as f32 * 3.0,
+                i as f32 * 4.0,
+            ],
             scalar: i as f32 * 0.5,
         };
 
@@ -319,12 +354,16 @@ fn test_vector_search_functions() {
 
     println!("成功插入5条测试数据");
 
-    let idx_result = db.sql_query("CREATE INDEX vector_search_func_idx ON VECTOR_OPS_FUNC_TABLE (vector4) USING HNSW");
+    let idx_result = db.sql_query(
+        "CREATE INDEX vector_search_func_idx ON VECTOR_OPS_FUNC_TABLE (vector4) USING HNSW",
+    );
     if idx_result.is_ok() {
         println!("成功创建向量索引");
     }
 
-    let similar_result = db.sql_query("SELECT id FROM VECTOR_OPS_FUNC_TABLE WHERE VECTOR_SIMILAR(vector3, [2.0, 4.0, 6.0])");
+    let similar_result = db.sql_query(
+        "SELECT id FROM VECTOR_OPS_FUNC_TABLE WHERE VECTOR_SIMILAR(vector3, [2.0, 4.0, 6.0])",
+    );
     if similar_result.is_ok() {
         println!("  VECTOR_SIMILAR 函数基本使用语法验证成功");
     } else {

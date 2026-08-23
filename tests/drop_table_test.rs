@@ -1,7 +1,10 @@
 extern crate alloc;
 
+use remdb::{
+    config::{DbConfig, DefaultMemoryAllocator, LogMode, WALConfig},
+    RemDb,
+};
 use std::sync::Mutex;
-use remdb::{config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode}, RemDb};
 
 // 互斥锁，确保测试串行执行
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
@@ -20,15 +23,16 @@ static mut DB_MEMORY7: [u8; 32 * 1024 * 1024] = [0; 32 * 1024 * 1024]; // 32MB
 fn test_drop_table_basic() {
     // 获取互斥锁，确保测试串行执行
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-    
+
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY1.fill(0);
     }
-    
+
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY1.as_mut_ptr(), DB_MEMORY1.len()).unwrap();
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY1.as_mut_ptr(), DB_MEMORY1.len())
+            .unwrap();
     }
 
     // 初始化数据库配置
@@ -64,6 +68,7 @@ fn test_drop_table_basic() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
     // 创建数据库实例
@@ -73,25 +78,23 @@ fn test_drop_table_basic() {
     // 创建表
     db.create_table(
         "test_table",
-        &[(
-            "id",
-            remdb::DataType::Int64,
-            0,
-            None,
-            None,
-        )],
+        &[("id", remdb::DataType::Int64, 0, None, None)],
         Some(vec![0]),
     )
     .unwrap();
 
     // 验证表存在
-    let table_index = db.get_all_tables().iter().position(|table_opt| {
-        if let Some(table) = table_opt {
-            table.def.name == "test_table"
-        } else {
-            false
-        }
-    }).unwrap();
+    let table_index = db
+        .get_all_tables()
+        .iter()
+        .position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == "test_table"
+            } else {
+                false
+            }
+        })
+        .unwrap();
     let table = db.get_table(table_index).unwrap();
     assert_eq!(table.def.name, "test_table");
 
@@ -108,15 +111,16 @@ fn test_drop_table_basic() {
 fn test_drop_table_vector_with_if_exists() {
     // 获取互斥锁，确保测试串行执行
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-    
+
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY7.fill(0);
     }
-    
+
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY7.as_mut_ptr(), DB_MEMORY7.len()).unwrap();
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY7.as_mut_ptr(), DB_MEMORY7.len())
+            .unwrap();
     }
 
     // 初始化数据库配置
@@ -152,6 +156,8 @@ fn test_drop_table_vector_with_if_exists() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
     // 创建数据库实例
@@ -164,13 +170,17 @@ fn test_drop_table_vector_with_if_exists() {
     remdb::sql::execute_query(&mut db, &create_query).unwrap();
 
     // 验证表存在
-    let table_index = db.get_all_tables().iter().position(|table_opt| {
-        if let Some(table) = table_opt {
-            table.def.name == "test_vector"
-        } else {
-            false
-        }
-    }).unwrap();
+    let table_index = db
+        .get_all_tables()
+        .iter()
+        .position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == "test_vector"
+            } else {
+                false
+            }
+        })
+        .unwrap();
     let table = db.get_table(table_index).unwrap();
     assert_eq!(table.def.name, "test_vector");
 
@@ -195,15 +205,16 @@ fn test_drop_table_vector_with_if_exists() {
 fn test_drop_table_if_exists() {
     // 获取互斥锁，确保测试串行执行
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-    
+
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY2.fill(0);
     }
-    
+
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY2.as_mut_ptr(), DB_MEMORY2.len()).unwrap();
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY2.as_mut_ptr(), DB_MEMORY2.len())
+            .unwrap();
     }
 
     // 初始化数据库配置
@@ -239,6 +250,8 @@ fn test_drop_table_if_exists() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
     // 创建数据库实例
@@ -259,15 +272,16 @@ fn test_drop_table_if_exists() {
 fn test_drop_table_sql() {
     // 获取互斥锁，确保测试串行执行
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-    
+
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY3.fill(0);
     }
-    
+
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY3.as_mut_ptr(), DB_MEMORY3.len()).unwrap();
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY3.as_mut_ptr(), DB_MEMORY3.len())
+            .unwrap();
     }
 
     // 初始化数据库配置
@@ -303,6 +317,8 @@ fn test_drop_table_sql() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
     // 创建数据库实例
@@ -315,13 +331,17 @@ fn test_drop_table_sql() {
     remdb::sql::execute_query(&mut db, &create_query).unwrap();
 
     // 验证表存在
-    let table_index = db.get_all_tables().iter().position(|table_opt| {
-        if let Some(table) = table_opt {
-            table.def.name == "test_table"
-        } else {
-            false
-        }
-    }).unwrap();
+    let table_index = db
+        .get_all_tables()
+        .iter()
+        .position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == "test_table"
+            } else {
+                false
+            }
+        })
+        .unwrap();
     let table = db.get_table(table_index).unwrap();
     assert_eq!(table.def.name, "test_table");
 
@@ -340,15 +360,16 @@ fn test_drop_table_sql() {
 fn test_drop_table_sql_if_exists() {
     // 获取互斥锁，确保测试串行执行
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-    
+
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY4.fill(0);
     }
-    
+
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY4.as_mut_ptr(), DB_MEMORY4.len()).unwrap();
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY4.as_mut_ptr(), DB_MEMORY4.len())
+            .unwrap();
     }
 
     // 初始化数据库配置
@@ -384,6 +405,8 @@ fn test_drop_table_sql_if_exists() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
     // 创建数据库实例
@@ -402,15 +425,16 @@ fn test_drop_table_sql_if_exists() {
 fn test_drop_table_in_transaction() {
     // 获取互斥锁，确保测试串行执行
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-    
+
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY5.fill(0);
     }
-    
+
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY5.as_mut_ptr(), DB_MEMORY5.len()).unwrap();
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY5.as_mut_ptr(), DB_MEMORY5.len())
+            .unwrap();
     }
 
     // 初始化数据库配置
@@ -446,6 +470,8 @@ fn test_drop_table_in_transaction() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
     // 创建数据库实例
@@ -455,25 +481,23 @@ fn test_drop_table_in_transaction() {
     // 创建表
     db.create_table(
         "test_table",
-        &[(
-            "id",
-            remdb::DataType::Int64,
-            0,
-            None,
-            None,
-        )],
+        &[("id", remdb::DataType::Int64, 0, None, None)],
         Some(vec![0]),
     )
     .unwrap();
 
     // 验证表存在
-    let table_index = db.get_all_tables().iter().position(|table_opt| {
-        if let Some(table) = table_opt {
-            table.def.name == "test_table"
-        } else {
-            false
-        }
-    }).unwrap();
+    let table_index = db
+        .get_all_tables()
+        .iter()
+        .position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == "test_table"
+            } else {
+                false
+            }
+        })
+        .unwrap();
     let table = db.get_table(table_index).unwrap();
     assert_eq!(table.def.name, "test_table");
 
@@ -490,15 +514,16 @@ fn test_drop_table_in_transaction() {
 fn test_drop_table_memory_recovery() {
     // 获取互斥锁，确保测试串行执行
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-    
+
     // 重置内存缓冲区
     unsafe {
         DB_MEMORY6.fill(0);
     }
-    
+
     // 初始化全局内存分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY6.as_mut_ptr(), DB_MEMORY6.len()).unwrap();
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY6.as_mut_ptr(), DB_MEMORY6.len())
+            .unwrap();
     }
 
     // 初始化数据库配置
@@ -534,6 +559,8 @@ fn test_drop_table_memory_recovery() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
     // 创建数据库实例
@@ -544,33 +571,25 @@ fn test_drop_table_memory_recovery() {
     db.create_table(
         "test_table",
         &[
-            (
-                "id",
-                remdb::DataType::Int64,
-                0,
-                None,
-                None,
-            ),
-            (
-                "name",
-                remdb::DataType::VarChar,
-                0,
-                None,
-                None,
-            ),
+            ("id", remdb::DataType::Int64, 0, None, None),
+            ("name", remdb::DataType::VarChar, 0, None, None),
         ],
         Some(vec![0]),
     )
     .unwrap();
 
     // 验证表存在
-    let table_index = db.get_all_tables().iter().position(|table_opt| {
-        if let Some(table) = table_opt {
-            table.def.name == "test_table"
-        } else {
-            false
-        }
-    }).unwrap();
+    let table_index = db
+        .get_all_tables()
+        .iter()
+        .position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.name == "test_table"
+            } else {
+                false
+            }
+        })
+        .unwrap();
 
     // 删除表
     db.drop_table("test_table", false, false).unwrap();

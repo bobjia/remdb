@@ -149,6 +149,8 @@ static TEST_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock:
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     }
 });
 
@@ -166,10 +168,10 @@ fn test_create_table() {
     platform::init_platform(&TEST_PLATFORM);
 
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result =
-        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
-            1024 * 1024
-        });
+    let result = memory::allocator::init_global_allocator(
+        unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 },
+        unsafe { 1024 * 1024 },
+    );
     assert!(
         result.is_ok(),
         "Failed to initialize global allocator: {:?}",
@@ -228,10 +230,10 @@ fn test_create_index() {
     platform::init_platform(&TEST_PLATFORM);
 
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result =
-        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
-            1024 * 1024
-        });
+    let result = memory::allocator::init_global_allocator(
+        unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 },
+        unsafe { 1024 * 1024 },
+    );
     assert!(
         result.is_ok(),
         "Failed to initialize global allocator: {:?}",
@@ -322,10 +324,10 @@ fn test_describe_table() {
     platform::init_platform(&TEST_PLATFORM);
 
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result =
-        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
-            1024 * 1024
-        });
+    let result = memory::allocator::init_global_allocator(
+        unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 },
+        unsafe { 1024 * 1024 },
+    );
     assert!(
         result.is_ok(),
         "Failed to initialize global allocator: {:?}",
@@ -363,7 +365,7 @@ fn test_describe_table() {
     // 验证结果集列名
     assert_eq!(
         result_set.columns,
-        ["Field", "Type", "Key", "Null", "Default"]
+        ["column_name", "Type", "Key", "Null", "Default"]
     );
 
     // 验证结果集行数（应该等于字段数）
@@ -542,7 +544,7 @@ fn test_describe_table() {
     let short_result_set = result.unwrap();
     assert_eq!(
         short_result_set.columns,
-        ["Field", "Type", "Key", "Null", "Default"]
+        ["column_name", "Type", "Key", "Null", "Default"]
     );
     assert_eq!(
         short_result_set.row_count(),
@@ -567,10 +569,10 @@ fn test_create_time_series_table() {
     platform::init_platform(&TEST_PLATFORM);
 
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result =
-        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
-            1024 * 1024
-        });
+    let result = memory::allocator::init_global_allocator(
+        unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 },
+        unsafe { 1024 * 1024 },
+    );
     assert!(
         result.is_ok(),
         "Failed to initialize global allocator: {:?}",
@@ -659,10 +661,10 @@ fn test_ddl_export_with_time_series() {
     platform::init_platform(&TEST_PLATFORM);
 
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result =
-        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
-            1024 * 1024
-        });
+    let result = memory::allocator::init_global_allocator(
+        unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 },
+        unsafe { 1024 * 1024 },
+    );
     assert!(
         result.is_ok(),
         "Failed to initialize global allocator: {:?}",
@@ -717,10 +719,10 @@ fn test_describe_time_series_table() {
     platform::init_platform(&TEST_PLATFORM);
 
     // 使用共享内存缓冲区初始化全局内存分配器
-    let result =
-        memory::allocator::init_global_allocator(unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 }, unsafe {
-            1024 * 1024
-        });
+    let result = memory::allocator::init_global_allocator(
+        unsafe { core::ptr::addr_of_mut!(DB_MEMORY) as *mut u8 },
+        unsafe { 1024 * 1024 },
+    );
     assert!(
         result.is_ok(),
         "Failed to initialize global allocator: {:?}",
@@ -757,7 +759,7 @@ fn test_describe_time_series_table() {
     // 验证结果集列名
     assert_eq!(
         result_set.columns,
-        ["Field", "Type", "Key", "Null", "Default"]
+        ["column_name", "Type", "Key", "Null", "Default"]
     );
 
     // 验证结果集行数（应该等于字段数）

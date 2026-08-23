@@ -1,5 +1,5 @@
 //! User module
-//! 
+//!
 //! This module defines the User struct for RBAC.
 
 use std::string::String;

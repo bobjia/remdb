@@ -2,10 +2,10 @@
 //!
 //! This module contains string-related function implementations like CONCAT, SUBSTRING, UPPER, LOWER, LENGTH.
 
+use crate::sql::QueryExecutionError;
 use crate::types::DataType;
 use crate::types::TypedValue;
 use crate::Value;
-use crate::sql::QueryExecutionError;
 use crate::MAX_STRING_LEN;
 
 /// 执行CONCAT函数
@@ -73,7 +73,7 @@ pub fn execute_substring(args: &[TypedValue]) -> Result<TypedValue, QueryExecuti
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0))
                     .to_string()
-            },
+            }
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
 
@@ -115,7 +115,9 @@ pub fn execute_substring(args: &[TypedValue]) -> Result<TypedValue, QueryExecuti
         if byte_start >= str_bytes.len() {
             return Ok(TypedValue {
                 value_type: DataType::VarChar,
-                value: Value { string: [0; MAX_STRING_LEN] },
+                value: Value {
+                    string: [0; MAX_STRING_LEN],
+                },
             });
         }
 
@@ -155,7 +157,7 @@ pub fn execute_upper(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionEr
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0))
                     .to_string()
-            },
+            }
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
 
@@ -190,7 +192,7 @@ pub fn execute_lower(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionEr
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0))
                     .to_string()
-            },
+            }
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
 
@@ -225,7 +227,7 @@ pub fn execute_length(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionE
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0))
                     .to_string()
-            },
+            }
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
 
@@ -253,7 +255,7 @@ pub fn execute_char_length(args: &[TypedValue]) -> Result<TypedValue, QueryExecu
                     .map_err(|_| QueryExecutionError::TypeMismatch)?
                     .trim_end_matches(char::from(0))
                     .to_string()
-            },
+            }
             _ => return Err(QueryExecutionError::TypeMismatch),
         };
 

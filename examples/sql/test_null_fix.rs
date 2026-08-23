@@ -1,7 +1,7 @@
+use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, WALConfig};
+use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
+use remdb::sql::{execute_query, parse_sql_query};
 use remdb::RemDb;
-use remdb::config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode};
-use remdb::platform::{init_platform, Platform, FileMode, FileHandle, FileResult, SeekWhence};
-use remdb::sql::{parse_sql_query, execute_query};
 
 /// Simple test platform implementation
 struct TestPlatform;
@@ -74,7 +74,12 @@ impl Platform for TestPlatform {
         Err(())
     }
 
-    fn file_write(&self, _handle: FileHandle, _buffer: *const u8, _size: usize) -> FileResult<usize> {
+    fn file_write(
+        &self,
+        _handle: FileHandle,
+        _buffer: *const u8,
+        _size: usize,
+    ) -> FileResult<usize> {
         Err(())
     }
 
@@ -103,7 +108,7 @@ fn main() {
     // Initialize platform
     static TEST_PLATFORM: TestPlatform = TestPlatform;
     init_platform(&TEST_PLATFORM);
-    
+
     // Initialize global memory allocator
     let memory_size = 1024 * 1024 * 500; // 500MB
     let mut memory = vec![0u8; memory_size];
@@ -112,15 +117,15 @@ fn main() {
         println!("Failed to initialize memory allocator: {:?}", e);
         return;
     }
-    
+
     // Leak the memory to prevent it from being freed
     std::mem::forget(memory);
-    
+
     // Create database config
     static MEMORY_ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
-    
+
     static DB_CONFIG: DbConfig = DbConfig {
-        tables: vec!(),
+        tables: vec![],
         total_memory: 1024 * 1024 * 500, // 500MB
         low_power_mode_supported: false,
         low_power_max_records: None,
@@ -142,7 +147,7 @@ fn main() {
             compression_level: 3,
         },
         time_series_defaults: remdb::time_series::TimeSeriesConfig {
-            partition_duration_secs: 3600, // 1 hour
+            partition_duration_secs: 3600,         // 1 hour
             retention_period_secs: 30 * 24 * 3600, // 30 days
             compression: remdb::time_series::CompressionType::None,
             max_partitions: 1000,
@@ -151,11 +156,12 @@ fn main() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
-    
+
     // Create a temporary database for testing
     let mut db = RemDb::new(&DB_CONFIG);
-    
+
     // Create the test table
     let create_table_sql = "CREATE TABLE test_null_values ( 
              id INTEGER PRIMARY KEY, 
@@ -165,64 +171,56 @@ fn main() {
              bool_val BOOLEAN, 
              ts_val TIMESTAMP 
          )";
-    
+
     match parse_sql_query(create_table_sql) {
-        Ok(query) => {
-            match execute_query(&mut db, &query) {
-                Ok(_) => println!("Create table result: Success"),
-                Err(e) => println!("Create table error: {:?}", e),
-            }
-        }
+        Ok(query) => match execute_query(&mut db, &query) {
+            Ok(_) => println!("Create table result: Success"),
+            Err(e) => println!("Create table error: {:?}", e),
+        },
         Err(e) => {
             println!("Parse error: {:?}", e);
         }
     }
-    
+
     // Insert test data
     let insert_sql = "INSERT INTO test_null_values (id, int_val, text_val, bool_val) 
              VALUES (2, 100, 'test', TRUE)";
-    
+
     match parse_sql_query(insert_sql) {
-        Ok(query) => {
-            match execute_query(&mut db, &query) {
-                Ok(_) => println!("Insert result: Success"),
-                Err(e) => println!("Insert error: {:?}", e),
-            }
-        }
+        Ok(query) => match execute_query(&mut db, &query) {
+            Ok(_) => println!("Insert result: Success"),
+            Err(e) => println!("Insert error: {:?}", e),
+        },
         Err(e) => {
             println!("Parse error: {:?}", e);
         }
     }
-    
+
     // Test IS NULL operation - this was failing before the fix
     let select_sql = "SELECT int_val IS NULL as int_null, text_val IS NULL as text_null FROM test_null_values ORDER BY id";
-    
+
     match parse_sql_query(select_sql) {
-        Ok(query) => {
-            match execute_query(&mut db, &query) {
-                Ok(_) => println!("Select IS NULL result: Success"),
-                Err(e) => println!("Select IS NULL error: {:?}", e),
-            }
-        }
+        Ok(query) => match execute_query(&mut db, &query) {
+            Ok(_) => println!("Select IS NULL result: Success"),
+            Err(e) => println!("Select IS NULL error: {:?}", e),
+        },
         Err(e) => {
             println!("Parse error: {:?}", e);
         }
     }
-    
+
     // Also test IS NOT NULL for completeness
     let select_not_null_sql = "SELECT int_val IS NOT NULL as int_not_null, text_val IS NOT NULL as text_not_null FROM test_null_values ORDER BY id";
-    
+
     match parse_sql_query(select_not_null_sql) {
-        Ok(query) => {
-            match execute_query(&mut db, &query) {
-                Ok(_) => println!("Select IS NOT NULL result: Success"),
-                Err(e) => println!("Select IS NOT NULL error: {:?}", e),
-            }
-        }
+        Ok(query) => match execute_query(&mut db, &query) {
+            Ok(_) => println!("Select IS NOT NULL result: Success"),
+            Err(e) => println!("Select IS NOT NULL error: {:?}", e),
+        },
         Err(e) => {
             println!("Parse error: {:?}", e);
         }
     }
-    
+
     println!("Test completed successfully!");
 }

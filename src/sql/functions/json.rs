@@ -2,9 +2,9 @@
 //!
 //! This module contains JSON-related function implementations like JSON_EXTRACT, JSON_VALUE, JSON_QUERY, JSON_SET, etc.
 
-use crate::types::{DataType, TypedValue, JsonStorage};
-use crate::Value;
 use crate::sql::QueryExecutionError;
+use crate::types::{DataType, JsonStorage, TypedValue};
+use crate::Value;
 use crate::MAX_STRING_LEN;
 
 /// 从TypedValue中提取JSON字符串
@@ -18,14 +18,20 @@ fn typed_value_to_json_string(arg: &TypedValue) -> Result<String, QueryExecution
                     let result = String::from_utf8_lossy(&data[..len]).to_string();
                     Ok(result)
                 }
-                JsonStorage::External { pool_id, offset, length } => {
+                JsonStorage::External {
+                    pool_id,
+                    offset,
+                    length,
+                } => {
                     let pool_manager = crate::json::memory_pool::get_global_json_pool_manager()
                         .ok_or(QueryExecutionError::InternalError)?;
-                    let pool = pool_manager.get_pool(*pool_id)
+                    let pool = pool_manager
+                        .get_pool(*pool_id)
                         .ok_or(QueryExecutionError::InternalError)?;
 
                     if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
-                        let data = unsafe { core::slice::from_raw_parts(data_ptr, *length as usize) };
+                        let data =
+                            unsafe { core::slice::from_raw_parts(data_ptr, *length as usize) };
                         Ok(String::from_utf8_lossy(data).to_string())
                     } else {
                         Err(QueryExecutionError::InternalError)
@@ -46,42 +52,18 @@ fn typed_value_to_string(arg: &TypedValue) -> Result<String, QueryExecutionError
             let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
             Ok(String::from_utf8_lossy(&data[..len]).to_string())
         }
-        DataType::Int8 => {
-            Ok(unsafe { arg.value.i8 }.to_string())
-        }
-        DataType::Int16 => {
-            Ok(unsafe { arg.value.i16 }.to_string())
-        }
-        DataType::Int32 => {
-            Ok(unsafe { arg.value.i32 }.to_string())
-        }
-        DataType::Int64 => {
-            Ok(unsafe { arg.value.i64 }.to_string())
-        }
-        DataType::UInt8 => {
-            Ok(unsafe { arg.value.u8 }.to_string())
-        }
-        DataType::UInt16 => {
-            Ok(unsafe { arg.value.u16 }.to_string())
-        }
-        DataType::UInt32 => {
-            Ok(unsafe { arg.value.u32 }.to_string())
-        }
-        DataType::UInt64 => {
-            Ok(unsafe { arg.value.u64 }.to_string())
-        }
-        DataType::Float32 => {
-            Ok(unsafe { arg.value.float32 }.to_string())
-        }
-        DataType::Float64 => {
-            Ok(unsafe { arg.value.float64 }.to_string())
-        }
-        DataType::Bool => {
-            Ok(unsafe { arg.value.bool }.to_string())
-        }
-        DataType::Json => {
-            typed_value_to_json_string(arg)
-        }
+        DataType::Int8 => Ok(unsafe { arg.value.i8 }.to_string()),
+        DataType::Int16 => Ok(unsafe { arg.value.i16 }.to_string()),
+        DataType::Int32 => Ok(unsafe { arg.value.i32 }.to_string()),
+        DataType::Int64 => Ok(unsafe { arg.value.i64 }.to_string()),
+        DataType::UInt8 => Ok(unsafe { arg.value.u8 }.to_string()),
+        DataType::UInt16 => Ok(unsafe { arg.value.u16 }.to_string()),
+        DataType::UInt32 => Ok(unsafe { arg.value.u32 }.to_string()),
+        DataType::UInt64 => Ok(unsafe { arg.value.u64 }.to_string()),
+        DataType::Float32 => Ok(unsafe { arg.value.float32 }.to_string()),
+        DataType::Float64 => Ok(unsafe { arg.value.float64 }.to_string()),
+        DataType::Bool => Ok(unsafe { arg.value.bool }.to_string()),
+        DataType::Json => typed_value_to_json_string(arg),
         _ => Err(QueryExecutionError::TypeMismatch),
     }
 }
@@ -134,12 +116,15 @@ pub fn execute_json_extract(args: &[TypedValue]) -> Result<TypedValue, QueryExec
             buf[..len].copy_from_slice(result_json.as_bytes());
             Ok(TypedValue {
                 value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
+                value: Value {
+                    json_storage: JsonStorage::Inline(buf),
+                },
             })
         }
         crate::json::document::JsonQueryResult::Array(arr) => {
             // Properly serialize array elements: quote strings, leave numbers/booleans unquoted
-            let json_str = arr.iter()
+            let json_str = arr
+                .iter()
                 .map(|item| match item {
                     crate::json::document::JsonQueryResult::Scalar(s) => {
                         if s == "true" || s == "false" || s == "null" || s.parse::<f64>().is_ok() {
@@ -158,14 +143,18 @@ pub fn execute_json_extract(args: &[TypedValue]) -> Result<TypedValue, QueryExec
             buf[..len].copy_from_slice(result_json.as_bytes());
             Ok(TypedValue {
                 value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
+                value: Value {
+                    json_storage: JsonStorage::Inline(buf),
+                },
             })
         }
         crate::json::document::JsonQueryResult::None => {
             let buf = [0u8; 256];
             Ok(TypedValue {
                 value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
+                value: Value {
+                    json_storage: JsonStorage::Inline(buf),
+                },
             })
         }
     }
@@ -217,18 +206,20 @@ pub fn execute_json_query(args: &[TypedValue]) -> Result<TypedValue, QueryExecut
 
     match crate::json::document::json_extract(&doc, &path) {
         crate::json::document::JsonQueryResult::Object(obj_doc) => {
-            let result_json = obj_doc.to_json()
-                .unwrap_or_else(|_| "null".to_string());
+            let result_json = obj_doc.to_json().unwrap_or_else(|_| "null".to_string());
             let mut buf = [0u8; 256];
             let len = core::cmp::min(result_json.len(), 256);
             buf[..len].copy_from_slice(result_json.as_bytes());
             Ok(TypedValue {
                 value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
+                value: Value {
+                    json_storage: JsonStorage::Inline(buf),
+                },
             })
         }
         crate::json::document::JsonQueryResult::Array(arr) => {
-            let json_str = arr.iter()
+            let json_str = arr
+                .iter()
                 .map(|item| match item {
                     crate::json::document::JsonQueryResult::Scalar(s) => {
                         if s == "true" || s == "false" || s == "null" || s.parse::<f64>().is_ok() {
@@ -247,14 +238,18 @@ pub fn execute_json_query(args: &[TypedValue]) -> Result<TypedValue, QueryExecut
             buf[..len].copy_from_slice(result_json.as_bytes());
             Ok(TypedValue {
                 value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
+                value: Value {
+                    json_storage: JsonStorage::Inline(buf),
+                },
             })
         }
         _ => {
             let buf = [0u8; 256];
             Ok(TypedValue {
                 value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
+                value: Value {
+                    json_storage: JsonStorage::Inline(buf),
+                },
             })
         }
     }
@@ -319,9 +314,7 @@ pub fn execute_json_set(args: &[TypedValue]) -> Result<TypedValue, QueryExecutio
     // Convert the value to proper JSON format based on its type
     let value_json_str = unsafe {
         match args[2].value_type {
-            DataType::Json => {
-                typed_value_to_json_string(&args[2])?
-            }
+            DataType::Json => typed_value_to_json_string(&args[2])?,
             DataType::VarChar | DataType::Char | DataType::Text => {
                 let data = &args[2].value.string;
                 let len = data.iter().rposition(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
@@ -339,7 +332,11 @@ pub fn execute_json_set(args: &[TypedValue]) -> Result<TypedValue, QueryExecutio
             DataType::Float32 => format!("{}", args[2].value.float32),
             DataType::Float64 => format!("{}", args[2].value.float64),
             DataType::Bool => {
-                if args[2].value.bool { "true".to_string() } else { "false".to_string() }
+                if args[2].value.bool {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
             }
             _ => "null".to_string(),
         }
@@ -351,7 +348,8 @@ pub fn execute_json_set(args: &[TypedValue]) -> Result<TypedValue, QueryExecutio
     crate::json::document::json_set(&mut doc, &path, &value_json_str)
         .map_err(|_| QueryExecutionError::InternalError)?;
 
-    let new_json_str = doc.to_json()
+    let new_json_str = doc
+        .to_json()
         .map_err(|_| QueryExecutionError::InternalError)?;
 
     let mut buf = [0u8; 256];
@@ -359,7 +357,9 @@ pub fn execute_json_set(args: &[TypedValue]) -> Result<TypedValue, QueryExecutio
     buf[..len].copy_from_slice(new_json_str.as_bytes());
     Ok(TypedValue {
         value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
+        value: Value {
+            json_storage: JsonStorage::Inline(buf),
+        },
     })
 }
 
@@ -378,7 +378,8 @@ pub fn execute_json_remove(args: &[TypedValue]) -> Result<TypedValue, QueryExecu
     crate::json::document::json_remove(&mut doc, &path)
         .map_err(|_| QueryExecutionError::InternalError)?;
 
-    let new_json_str = doc.to_json()
+    let new_json_str = doc
+        .to_json()
         .map_err(|_| QueryExecutionError::InternalError)?;
 
     let mut buf = [0u8; 256];
@@ -386,7 +387,9 @@ pub fn execute_json_remove(args: &[TypedValue]) -> Result<TypedValue, QueryExecu
     buf[..len].copy_from_slice(new_json_str.as_bytes());
     Ok(TypedValue {
         value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
+        value: Value {
+            json_storage: JsonStorage::Inline(buf),
+        },
     })
 }
 
@@ -401,9 +404,7 @@ pub fn execute_json_merge_patch(args: &[TypedValue]) -> Result<TypedValue, Query
     // Convert the patch to proper JSON format based on its type
     let patch_json_str = unsafe {
         match args[1].value_type {
-            DataType::Json => {
-                typed_value_to_json_string(&args[1])?
-            }
+            DataType::Json => typed_value_to_json_string(&args[1])?,
             DataType::VarChar | DataType::Char | DataType::Text => {
                 let data = &args[1].value.string;
                 let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
@@ -421,7 +422,11 @@ pub fn execute_json_merge_patch(args: &[TypedValue]) -> Result<TypedValue, Query
             DataType::Float32 => format!("{}", args[1].value.float32),
             DataType::Float64 => format!("{}", args[1].value.float64),
             DataType::Bool => {
-                if args[1].value.bool { "true".to_string() } else { "false".to_string() }
+                if args[1].value.bool {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
             }
             _ => "null".to_string(),
         }
@@ -433,7 +438,8 @@ pub fn execute_json_merge_patch(args: &[TypedValue]) -> Result<TypedValue, Query
     crate::json::document::json_merge_patch(&mut doc, &patch_json_str)
         .map_err(|_| QueryExecutionError::InternalError)?;
 
-    let new_json_str = doc.to_json()
+    let new_json_str = doc
+        .to_json()
         .map_err(|_| QueryExecutionError::InternalError)?;
 
     let mut buf = [0u8; 256];
@@ -441,7 +447,9 @@ pub fn execute_json_merge_patch(args: &[TypedValue]) -> Result<TypedValue, Query
     buf[..len].copy_from_slice(new_json_str.as_bytes());
     Ok(TypedValue {
         value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
+        value: Value {
+            json_storage: JsonStorage::Inline(buf),
+        },
     })
 }
 
@@ -457,9 +465,7 @@ pub fn execute_json_array_append(args: &[TypedValue]) -> Result<TypedValue, Quer
     // Convert the value to proper JSON format based on its type
     let value_json_str = unsafe {
         match args[2].value_type {
-            DataType::Json => {
-                typed_value_to_json_string(&args[2])?
-            }
+            DataType::Json => typed_value_to_json_string(&args[2])?,
             DataType::VarChar | DataType::Char | DataType::Text => {
                 let data = &args[2].value.string;
                 let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
@@ -477,7 +483,11 @@ pub fn execute_json_array_append(args: &[TypedValue]) -> Result<TypedValue, Quer
             DataType::Float32 => format!("{}", args[2].value.float32),
             DataType::Float64 => format!("{}", args[2].value.float64),
             DataType::Bool => {
-                if args[2].value.bool { "true".to_string() } else { "false".to_string() }
+                if args[2].value.bool {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
             }
             _ => "null".to_string(),
         }
@@ -489,7 +499,8 @@ pub fn execute_json_array_append(args: &[TypedValue]) -> Result<TypedValue, Quer
     crate::json::document::json_set(&mut doc, &path, &value_json_str)
         .map_err(|_| QueryExecutionError::InternalError)?;
 
-    let new_json_str = doc.to_json()
+    let new_json_str = doc
+        .to_json()
         .map_err(|_| QueryExecutionError::InternalError)?;
 
     let mut buf = [0u8; 256];
@@ -497,7 +508,9 @@ pub fn execute_json_array_append(args: &[TypedValue]) -> Result<TypedValue, Quer
     buf[..len].copy_from_slice(new_json_str.as_bytes());
     Ok(TypedValue {
         value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
+        value: Value {
+            json_storage: JsonStorage::Inline(buf),
+        },
     })
 }
 
@@ -520,12 +533,10 @@ pub fn execute_json_array_length(args: &[TypedValue]) -> Result<TypedValue, Quer
                 value: Value { u64: length },
             })
         }
-        _ => {
-            Ok(TypedValue {
-                value_type: DataType::UInt64,
-                value: Value { u64: 0 },
-            })
-        }
+        _ => Ok(TypedValue {
+            value_type: DataType::UInt64,
+            value: Value { u64: 0 },
+        }),
     }
 }
 
@@ -549,19 +560,24 @@ pub fn execute_json_keys(args: &[TypedValue]) -> Result<TypedValue, QueryExecuti
 
     match crate::json::document::json_keys(&doc, &path) {
         crate::json::document::JsonQueryResult::Array(keys) => {
-            let key_strings: Vec<String> = keys.iter().map(|key| match key {
-                crate::json::document::JsonQueryResult::Scalar(s) => {
-                    format!("\"{}\"", s)
-                }
-                _ => "null".to_string(),
-            }).collect();
+            let key_strings: Vec<String> = keys
+                .iter()
+                .map(|key| match key {
+                    crate::json::document::JsonQueryResult::Scalar(s) => {
+                        format!("\"{}\"", s)
+                    }
+                    _ => "null".to_string(),
+                })
+                .collect();
             let result_json = format!("[{}]", key_strings.join(","));
             let mut buf = [0u8; 256];
             let len = core::cmp::min(result_json.len(), 256);
             buf[..len].copy_from_slice(result_json.as_bytes());
             Ok(TypedValue {
                 value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
+                value: Value {
+                    json_storage: JsonStorage::Inline(buf),
+                },
             })
         }
         _ => {
@@ -572,7 +588,9 @@ pub fn execute_json_keys(args: &[TypedValue]) -> Result<TypedValue, QueryExecuti
             buf[..len].copy_from_slice(json_str.as_bytes());
             Ok(TypedValue {
                 value_type: DataType::Json,
-                value: Value { json_storage: JsonStorage::Inline(buf) },
+                value: Value {
+                    json_storage: JsonStorage::Inline(buf),
+                },
             })
         }
     }
@@ -587,7 +605,9 @@ pub fn execute_json_array(args: &[TypedValue]) -> Result<TypedValue, QueryExecut
         buf[..len].copy_from_slice(json_str.as_bytes());
         return Ok(TypedValue {
             value_type: DataType::Json,
-            value: Value { json_storage: JsonStorage::Inline(buf) },
+            value: Value {
+                json_storage: JsonStorage::Inline(buf),
+            },
         });
     }
 
@@ -595,9 +615,7 @@ pub fn execute_json_array(args: &[TypedValue]) -> Result<TypedValue, QueryExecut
     for arg in args {
         let item_str: String = unsafe {
             match arg.value_type {
-                DataType::Json => {
-                    typed_value_to_json_string(arg)?
-                }
+                DataType::Json => typed_value_to_json_string(arg)?,
                 DataType::VarChar | DataType::Char | DataType::Text => {
                     let data = &arg.value.string;
                     let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
@@ -615,7 +633,11 @@ pub fn execute_json_array(args: &[TypedValue]) -> Result<TypedValue, QueryExecut
                 DataType::Float32 => format!("{}", arg.value.float32),
                 DataType::Float64 => format!("{}", arg.value.float64),
                 DataType::Bool => {
-                    if arg.value.bool { "true".to_string() } else { "false".to_string() }
+                    if arg.value.bool {
+                        "true".to_string()
+                    } else {
+                        "false".to_string()
+                    }
                 }
                 _ => "null".to_string(),
             }
@@ -629,7 +651,9 @@ pub fn execute_json_array(args: &[TypedValue]) -> Result<TypedValue, QueryExecut
     buf[..len].copy_from_slice(json_str.as_bytes());
     Ok(TypedValue {
         value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
+        value: Value {
+            json_storage: JsonStorage::Inline(buf),
+        },
     })
 }
 
@@ -644,9 +668,7 @@ pub fn execute_json_object(args: &[TypedValue]) -> Result<TypedValue, QueryExecu
         let key_str = typed_value_to_string(&args[i])?;
         let value_str: String = unsafe {
             match args[i + 1].value_type {
-                DataType::Json => {
-                    typed_value_to_json_string(&args[i + 1])?
-                }
+                DataType::Json => typed_value_to_json_string(&args[i + 1])?,
                 DataType::VarChar | DataType::Char | DataType::Text => {
                     let data = &args[i + 1].value.string;
                     let len = data.iter().position(|&b| b == 0).unwrap_or(MAX_STRING_LEN);
@@ -664,7 +686,11 @@ pub fn execute_json_object(args: &[TypedValue]) -> Result<TypedValue, QueryExecu
                 DataType::Float32 => format!("{}", args[i + 1].value.float32),
                 DataType::Float64 => format!("{}", args[i + 1].value.float64),
                 DataType::Bool => {
-                    if args[i + 1].value.bool { "true".to_string() } else { "false".to_string() }
+                    if args[i + 1].value.bool {
+                        "true".to_string()
+                    } else {
+                        "false".to_string()
+                    }
                 }
                 _ => "null".to_string(),
             }
@@ -678,6 +704,8 @@ pub fn execute_json_object(args: &[TypedValue]) -> Result<TypedValue, QueryExecu
     buf[..len].copy_from_slice(json_str.as_bytes());
     Ok(TypedValue {
         value_type: DataType::Json,
-        value: Value { json_storage: JsonStorage::Inline(buf) },
+        value: Value {
+            json_storage: JsonStorage::Inline(buf),
+        },
     })
 }

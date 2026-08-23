@@ -1,12 +1,12 @@
 //! Built-in models
-//! 
+//!
 //! This module provides built-in embedding models that are available
 //! out of the box without additional configuration.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::model::{ModelManager, ModelError};
+use crate::model::{ModelError, ModelManager};
 
 #[cfg(feature = "log")]
 use crate::log::{debug, error, info, warn};
@@ -63,15 +63,18 @@ pub fn list_builtin_models() -> &'static [BuiltinModel] {
 pub fn get_builtin_model_path(model: &BuiltinModel) -> String {
     #[cfg(feature = "std")]
     {
-        let exe_path = std::env::current_exe()
-            .unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let exe_dir = exe_path.parent()
+        let exe_path = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let exe_dir = exe_path
+            .parent()
             .unwrap_or_else(|| std::path::Path::new("."));
-        
+
         let models_dir = exe_dir.join("models");
-        models_dir.join(model.file_name).to_string_lossy().to_string()
+        models_dir
+            .join(model.file_name)
+            .to_string_lossy()
+            .to_string()
     }
-    
+
     #[cfg(not(feature = "std"))]
     {
         format!("models/{}", model.file_name)
@@ -81,15 +84,21 @@ pub fn get_builtin_model_path(model: &BuiltinModel) -> String {
 pub fn register_builtin_models(manager: &mut ModelManager) -> Result<(), ModelError> {
     for model in BUILTIN_MODELS {
         let model_path = get_builtin_model_path(model);
-        
+
         #[cfg(feature = "log")]
-        debug!("Checking for built-in model: {} at {}", model.name, model_path);
+        debug!(
+            "Checking for built-in model: {} at {}",
+            model.name, model_path
+        );
 
         #[cfg(feature = "std")]
         {
             if !std::path::Path::new(&model_path).exists() {
                 #[cfg(feature = "log")]
-                info!("Built-in model {} not found at {}, skipping", model.name, model_path);
+                info!(
+                    "Built-in model {} not found at {}, skipping",
+                    model.name, model_path
+                );
                 continue;
             }
         }
@@ -98,13 +107,19 @@ pub fn register_builtin_models(manager: &mut ModelManager) -> Result<(), ModelEr
             model.name.to_string(),
             model_path,
             vec![("text".to_string(), "STRING".to_string())],
-            ("embedding".to_string(), format!("VECTOR({})", model.dimensions)),
+            (
+                "embedding".to_string(),
+                format!("VECTOR({})", model.dimensions),
+            ),
         );
 
         match result {
             Ok(()) => {
                 #[cfg(feature = "log")]
-                info!("Registered built-in model: {} ({} dimensions)", model.name, model.dimensions);
+                info!(
+                    "Registered built-in model: {} ({} dimensions)",
+                    model.name, model.dimensions
+                );
             }
             Err(ModelError::ModelAlreadyExists) => {
                 #[cfg(feature = "log")]
@@ -121,16 +136,15 @@ pub fn register_builtin_models(manager: &mut ModelManager) -> Result<(), ModelEr
 }
 
 pub fn text_embedding(text: &str, model_name: &str) -> Result<Vec<f32>, ModelError> {
-    let model = get_builtin_model(model_name)
-        .ok_or(ModelError::ModelNotFound)?;
+    let model = get_builtin_model(model_name).ok_or(ModelError::ModelNotFound)?;
 
     let model_path = get_builtin_model_path(model);
-    
+
     let onnx_model = crate::model::OnnxModel::load(&model_path)?;
-    
+
     let input = vec![0.0f32; model.dimensions];
     let result = onnx_model.execute(&[input])?;
-    
+
     Ok(result)
 }
 

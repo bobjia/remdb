@@ -1,6 +1,9 @@
 extern crate alloc;
 use remdb::platform::*;
-use remdb::{DatabaseStatus, RemDb, Result, config::DbConfig, config::WALConfig, config::LogMode, time_series::TimeSeriesConfig, time_series::CompressionType, DataType, FieldDef, TableDef};
+use remdb::{
+    config::DbConfig, config::LogMode, config::WALConfig, time_series::CompressionType,
+    time_series::TimeSeriesConfig, DataType, DatabaseStatus, FieldDef, RemDb, Result, TableDef,
+};
 use std::sync::Mutex;
 
 mod common;
@@ -38,6 +41,7 @@ static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        model_worker_config: Default::default(),
     }
 });
 
@@ -59,7 +63,10 @@ fn test_databases_command() -> Result<()> {
     assert!(!databases.is_empty());
 
     // 验证返回的数据库信息 - 找到我们创建的数据库
-    let db_info = databases.iter().find(|info| info.name == "test_db").expect("test_db database not found");
+    let db_info = databases
+        .iter()
+        .find(|info| info.name == "test_db")
+        .expect("test_db database not found");
     assert_eq!(db_info.name, "test_db");
     assert_eq!(db_info.database_type, "RemDb");
     assert_eq!(db_info.status, DatabaseStatus::Created);

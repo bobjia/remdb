@@ -1,5 +1,5 @@
 //! JSON文档处理
-//! 
+//!
 //! 该模块实现了JSON文档的二进制存储和操作，支持：
 //! - 二进制JSON格式（MessagePack/CBOR）
 //! - 零拷贝访问
@@ -57,20 +57,20 @@ impl JsonDocument {
                 size: 0,
             });
         }
-        
+
         // 检查JSON字符串长度，限制为10KB
         const MAX_JSON_SIZE: usize = 10 * 1024; // 10KB
         if json_str.len() > MAX_JSON_SIZE {
             return Err("JSON too large (max 10KB)");
         }
-        
+
         // 直接存储原始JSON字符串，不序列化为MessagePack/CBOR
         let data = json_str.as_bytes();
         let size = data.len();
-        
+
         Self::from_binary(data, size)
     }
-    
+
     /// 从二进制数据创建文档
     pub fn from_binary(data: &[u8], size: usize) -> Result<Self, &'static str> {
         if size == 0 {
@@ -79,37 +79,44 @@ impl JsonDocument {
                 size: 0,
             });
         }
-        
+
         // 检查二进制数据长度，限制为10KB
         const MAX_JSON_SIZE: usize = 10 * 1024; // 10KB
         if size > MAX_JSON_SIZE {
             return Err("JSON too large (max 10KB)");
         }
-        
+
         if size <= 256 {
             // 使用内联存储
             let mut inline_data = [0u8; 256];
             inline_data[..size].copy_from_slice(data);
-            
+
             Ok(Self {
                 storage: JsonStorage::Inline(inline_data),
                 size,
             })
         } else {
             // 使用外部存储
-            let pool_manager = get_global_json_pool_manager().ok_or("JSON pool manager not initialized")?;
-            
+            let pool_manager =
+                get_global_json_pool_manager().ok_or("JSON pool manager not initialized")?;
+
             // 获取默认内存池（ID 0）
-            let pool = pool_manager.get_pool_mut(0).ok_or("Default JSON pool not found")?;
-            
+            let pool = pool_manager
+                .get_pool_mut(0)
+                .ok_or("Default JSON pool not found")?;
+
             match pool.allocate(size) {
                 Some((block_idx, offset)) => {
                     // 复制数据到内存池
                     if let Some(data_ptr) = pool.get_block_data(block_idx, offset) {
                         unsafe {
-                            core::ptr::copy_nonoverlapping(data.as_ptr(), data_ptr as *mut u8, size);
+                            core::ptr::copy_nonoverlapping(
+                                data.as_ptr(),
+                                data_ptr as *mut u8,
+                                size,
+                            );
                         }
-                        
+
                         Ok(Self {
                             storage: JsonStorage::External {
                                 pool_id: 0,
@@ -122,13 +129,11 @@ impl JsonDocument {
                         Err("Failed to get block data")
                     }
                 }
-                None => {
-                    Err("Failed to allocate JSON memory")
-                }
+                None => Err("Failed to allocate JSON memory"),
             }
         }
     }
-    
+
     /// 直接设置JSON字符串内容（避免创建新的JsonDocument）
     pub fn set_json_string(&mut self, json_str: &str) -> Result<(), &'static str> {
         // 检查JSON字符串长度，限制为10KB
@@ -136,39 +141,44 @@ impl JsonDocument {
         if json_str.len() > MAX_JSON_SIZE {
             return Err("JSON too large (max 10KB)");
         }
-        
+
         // 直接存储原始JSON字符串，始终使用内联存储
         let data = json_str.as_bytes();
         let size = data.len();
-        
+
         // 始终使用内联存储（最多256字节）
         if size > 256 {
             return Err("JSON too large for inline storage (max 256 bytes)");
         }
-        
+
         let mut inline_data = [0u8; 256];
         inline_data[..size].copy_from_slice(data);
-        
+
         self.storage = JsonStorage::Inline(inline_data);
         self.size = size;
         Ok(())
     }
-    
+
     /// 序列化为MessagePack
-    fn serialize_to_messagepack(json_str: &str) -> Result<(alloc::vec::Vec<u8>, usize), &'static str> {
+    fn serialize_to_messagepack(
+        json_str: &str,
+    ) -> Result<(alloc::vec::Vec<u8>, usize), &'static str> {
         // 首先解析JSON字符串为JsonValue
         let json_value = Self::parse_json_str(json_str)?;
-        
+
         // 序列化JsonValue为MessagePack
         let mut buffer = alloc::vec::Vec::new();
         Self::serialize_value_to_msgpack(&json_value, &mut buffer)?;
-        
+
         let size = buffer.len();
         Ok((buffer, size))
     }
-    
+
     /// 将JsonValue序列化为MessagePack
-    fn serialize_value_to_msgpack(value: &JsonValue, buffer: &mut alloc::vec::Vec<u8>) -> Result<(), &'static str> {
+    fn serialize_value_to_msgpack(
+        value: &JsonValue,
+        buffer: &mut alloc::vec::Vec<u8>,
+    ) -> Result<(), &'static str> {
         match value {
             JsonValue::Null => {
                 buffer.push(0xc0); // nil
@@ -197,7 +207,12 @@ impl JsonDocument {
                 } else {
                     // str 32
                     buffer.push(0xdb);
-                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                    buffer.extend_from_slice(&[
+                        (len >> 24) as u8,
+                        (len >> 16) as u8,
+                        (len >> 8) as u8,
+                        len as u8,
+                    ]);
                 }
                 buffer.extend_from_slice(s.as_bytes());
             }
@@ -222,13 +237,24 @@ impl JsonDocument {
                     } else if i >= -2147483648 && i < 2147483648 {
                         // int 32
                         buffer.push(0xd2);
-                        buffer.extend_from_slice(&[(i >> 24) as u8, (i >> 16) as u8, (i >> 8) as u8, i as u8]);
+                        buffer.extend_from_slice(&[
+                            (i >> 24) as u8,
+                            (i >> 16) as u8,
+                            (i >> 8) as u8,
+                            i as u8,
+                        ]);
                     } else {
                         // int 64
                         buffer.push(0xd3);
                         buffer.extend_from_slice(&[
-                            (i >> 56) as u8, (i >> 48) as u8, (i >> 40) as u8, (i >> 32) as u8,
-                            (i >> 24) as u8, (i >> 16) as u8, (i >> 8) as u8, i as u8
+                            (i >> 56) as u8,
+                            (i >> 48) as u8,
+                            (i >> 40) as u8,
+                            (i >> 32) as u8,
+                            (i >> 24) as u8,
+                            (i >> 16) as u8,
+                            (i >> 8) as u8,
+                            i as u8,
                         ]);
                     }
                 } else if let Ok(f) = n.parse::<f64>() {
@@ -252,7 +278,12 @@ impl JsonDocument {
                 } else {
                     // array 32
                     buffer.push(0xdd);
-                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                    buffer.extend_from_slice(&[
+                        (len >> 24) as u8,
+                        (len >> 16) as u8,
+                        (len >> 8) as u8,
+                        len as u8,
+                    ]);
                 }
                 // 序列化数组元素
                 for item in arr {
@@ -272,7 +303,12 @@ impl JsonDocument {
                 } else {
                     // map 32
                     buffer.push(0xdf);
-                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                    buffer.extend_from_slice(&[
+                        (len >> 24) as u8,
+                        (len >> 16) as u8,
+                        (len >> 8) as u8,
+                        len as u8,
+                    ]);
                 }
                 // 序列化键值对
                 for (key, val) in obj {
@@ -285,22 +321,25 @@ impl JsonDocument {
         }
         Ok(())
     }
-    
+
     /// 序列化为CBOR
     fn serialize_to_cbor(json_str: &str) -> Result<(alloc::vec::Vec<u8>, usize), &'static str> {
         // 首先解析JSON字符串为JsonValue
         let json_value = Self::parse_json_str(json_str)?;
-        
+
         // 序列化JsonValue为CBOR
         let mut buffer = alloc::vec::Vec::new();
         Self::serialize_value_to_cbor(&json_value, &mut buffer)?;
-        
+
         let size = buffer.len();
         Ok((buffer, size))
     }
-    
+
     /// 将JsonValue序列化为CBOR
-    fn serialize_value_to_cbor(value: &JsonValue, buffer: &mut alloc::vec::Vec<u8>) -> Result<(), &'static str> {
+    fn serialize_value_to_cbor(
+        value: &JsonValue,
+        buffer: &mut alloc::vec::Vec<u8>,
+    ) -> Result<(), &'static str> {
         match value {
             JsonValue::Null => {
                 buffer.push(0xf6); // null
@@ -329,7 +368,12 @@ impl JsonDocument {
                 } else {
                     // 32位长度字符串
                     buffer.push(0x7a);
-                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                    buffer.extend_from_slice(&[
+                        (len >> 24) as u8,
+                        (len >> 16) as u8,
+                        (len >> 8) as u8,
+                        len as u8,
+                    ]);
                 }
                 buffer.extend_from_slice(s.as_bytes());
             }
@@ -348,12 +392,23 @@ impl JsonDocument {
                             buffer.extend_from_slice(&[(i >> 8) as u8, i as u8]);
                         } else if i < 4294967296 {
                             buffer.push(0x1a);
-                            buffer.extend_from_slice(&[(i >> 24) as u8, (i >> 16) as u8, (i >> 8) as u8, i as u8]);
+                            buffer.extend_from_slice(&[
+                                (i >> 24) as u8,
+                                (i >> 16) as u8,
+                                (i >> 8) as u8,
+                                i as u8,
+                            ]);
                         } else {
                             buffer.push(0x1b);
                             buffer.extend_from_slice(&[
-                                (i >> 56) as u8, (i >> 48) as u8, (i >> 40) as u8, (i >> 32) as u8,
-                                (i >> 24) as u8, (i >> 16) as u8, (i >> 8) as u8, i as u8
+                                (i >> 56) as u8,
+                                (i >> 48) as u8,
+                                (i >> 40) as u8,
+                                (i >> 32) as u8,
+                                (i >> 24) as u8,
+                                (i >> 16) as u8,
+                                (i >> 8) as u8,
+                                i as u8,
                             ]);
                         }
                     } else {
@@ -369,12 +424,23 @@ impl JsonDocument {
                             buffer.extend_from_slice(&[(abs_i >> 8) as u8, abs_i as u8]);
                         } else if abs_i < 4294967296 {
                             buffer.push(0x3a);
-                            buffer.extend_from_slice(&[(abs_i >> 24) as u8, (abs_i >> 16) as u8, (abs_i >> 8) as u8, abs_i as u8]);
+                            buffer.extend_from_slice(&[
+                                (abs_i >> 24) as u8,
+                                (abs_i >> 16) as u8,
+                                (abs_i >> 8) as u8,
+                                abs_i as u8,
+                            ]);
                         } else {
                             buffer.push(0x3b);
                             buffer.extend_from_slice(&[
-                                (abs_i >> 56) as u8, (abs_i >> 48) as u8, (abs_i >> 40) as u8, (abs_i >> 32) as u8,
-                                (abs_i >> 24) as u8, (abs_i >> 16) as u8, (abs_i >> 8) as u8, abs_i as u8
+                                (abs_i >> 56) as u8,
+                                (abs_i >> 48) as u8,
+                                (abs_i >> 40) as u8,
+                                (abs_i >> 32) as u8,
+                                (abs_i >> 24) as u8,
+                                (abs_i >> 16) as u8,
+                                (abs_i >> 8) as u8,
+                                abs_i as u8,
                             ]);
                         }
                     }
@@ -403,7 +469,12 @@ impl JsonDocument {
                 } else {
                     // 32位长度数组
                     buffer.push(0x9a);
-                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                    buffer.extend_from_slice(&[
+                        (len >> 24) as u8,
+                        (len >> 16) as u8,
+                        (len >> 8) as u8,
+                        len as u8,
+                    ]);
                 }
                 // 序列化数组元素
                 for item in arr {
@@ -427,7 +498,12 @@ impl JsonDocument {
                 } else {
                     // 32位长度映射
                     buffer.push(0xba);
-                    buffer.extend_from_slice(&[(len >> 24) as u8, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+                    buffer.extend_from_slice(&[
+                        (len >> 24) as u8,
+                        (len >> 16) as u8,
+                        (len >> 8) as u8,
+                        len as u8,
+                    ]);
                 }
                 // 序列化键值对
                 for (key, val) in obj {
@@ -440,55 +516,64 @@ impl JsonDocument {
         }
         Ok(())
     }
-    
+
     /// 反序列化为JSON字符串
     pub fn to_json(&self) -> Result<alloc::string::String, &'static str> {
         match &self.storage {
             JsonStorage::Inline(data) => {
-                
                 // 需要反序列化MessagePack/CBOR数据为JsonValue，然后转换为JSON字符串
                 // 暂时使用parse_json_str解析原始JSON字符串（如果存储的是JSON）
-                let json_str = alloc::string::String::from_utf8_lossy(&data[..self.size]).to_string();
+                let json_str =
+                    alloc::string::String::from_utf8_lossy(&data[..self.size]).to_string();
                 Ok(json_str)
             }
-            JsonStorage::External { pool_id, offset, length } => {
-                let pool_manager = get_global_json_pool_manager().ok_or("JSON pool manager not initialized")?;
-                let pool = pool_manager.get_pool(*pool_id).ok_or("JSON pool not found")?;
-                
+            JsonStorage::External {
+                pool_id,
+                offset,
+                length,
+            } => {
+                let pool_manager =
+                    get_global_json_pool_manager().ok_or("JSON pool manager not initialized")?;
+                let pool = pool_manager
+                    .get_pool(*pool_id)
+                    .ok_or("JSON pool not found")?;
+
                 if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
                     let data = unsafe { core::slice::from_raw_parts(data_ptr, *length as usize) };
-                    
+
                     let json_str = alloc::string::String::from_utf8_lossy(data).to_string();
                     Ok(json_str)
                 } else {
                     Err("Failed to get block data")
                 }
             }
-            JsonStorage::Null => {
-                Ok("null".to_string())
-            }
+            JsonStorage::Null => Ok("null".to_string()),
         }
     }
-    
+
     /// 获取存储方式
     pub fn storage(&self) -> &JsonStorage {
         &self.storage
     }
-    
+
     /// 获取大小
     pub fn size(&self) -> usize {
         self.size
     }
-    
+
     /// 检查是否为null
     pub fn is_null(&self) -> bool {
         matches!(self.storage, JsonStorage::Null)
     }
-    
+
     /// 增加引用计数
     pub fn add_ref(&self) {
         match &self.storage {
-            JsonStorage::External { pool_id: _, offset: _, length: _ } => {
+            JsonStorage::External {
+                pool_id: _,
+                offset: _,
+                length: _,
+            } => {
                 let pool_manager = get_global_json_pool_manager();
                 if let Some(_manager) = pool_manager {
                     // 暂时不实现引用计数，因为内存池还没有相应的方法
@@ -497,11 +582,15 @@ impl JsonDocument {
             _ => {}
         }
     }
-    
+
     /// 减少引用计数
     pub fn release(&self) {
         match &self.storage {
-            JsonStorage::External { pool_id: _, offset: _, length: _ } => {
+            JsonStorage::External {
+                pool_id: _,
+                offset: _,
+                length: _,
+            } => {
                 let pool_manager = get_global_json_pool_manager();
                 if let Some(_manager) = pool_manager {
                     // 暂时不实现引用计数，因为内存池还没有相应的方法
@@ -510,13 +599,13 @@ impl JsonDocument {
             _ => {}
         }
     }
-    
+
     /// 解析JSON数据为JsonValue
     pub fn parse_json(&self) -> Result<JsonValue, &'static str> {
         let json_str = self.to_json()?;
         Self::parse_json_str(&json_str)
     }
-    
+
     /// 解析JSON字符串
     pub fn parse_json_str(s: &str) -> Result<JsonValue, &'static str> {
         let trimmed = s.trim();
@@ -527,15 +616,18 @@ impl JsonDocument {
         let mut index = 0;
         Self::parse_value(&mut chars, &mut index)
     }
-    
+
     /// 解析JSON值
-    fn parse_value(chars: &mut alloc::vec::Vec<char>, index: &mut usize) -> Result<JsonValue, &'static str> {
+    fn parse_value(
+        chars: &mut alloc::vec::Vec<char>,
+        index: &mut usize,
+    ) -> Result<JsonValue, &'static str> {
         Self::skip_whitespace(chars, index);
-        
+
         if *index >= chars.len() {
             return Err("Unexpected end of JSON");
         }
-        
+
         match chars[*index] {
             '"' => Self::parse_string(chars, index),
             '{' => Self::parse_object(chars, index),
@@ -547,12 +639,15 @@ impl JsonDocument {
             _ => Err("Invalid JSON value"),
         }
     }
-    
+
     /// 解析字符串
-    fn parse_string(chars: &mut alloc::vec::Vec<char>, index: &mut usize) -> Result<JsonValue, &'static str> {
+    fn parse_string(
+        chars: &mut alloc::vec::Vec<char>,
+        index: &mut usize,
+    ) -> Result<JsonValue, &'static str> {
         *index += 1; // 跳过开始引号
         let mut s = alloc::string::String::new();
-        
+
         while *index < chars.len() {
             match chars[*index] {
                 '"' => {
@@ -585,7 +680,8 @@ impl JsonDocument {
                                 if !c.is_ascii_hexdigit() {
                                     return Err("Invalid Unicode escape");
                                 }
-                                code = code * 16 + c.to_digit(16).expect("invalid hex digit") as u32;
+                                code =
+                                    code * 16 + c.to_digit(16).expect("invalid hex digit") as u32;
                                 *index += 1;
                             }
                             if let Some(c) = char::from_u32(code) {
@@ -601,110 +697,119 @@ impl JsonDocument {
             }
             *index += 1;
         }
-        
+
         Err("Unterminated string")
     }
-    
+
     /// 解析对象
-    fn parse_object(chars: &mut alloc::vec::Vec<char>, index: &mut usize) -> Result<JsonValue, &'static str> {
+    fn parse_object(
+        chars: &mut alloc::vec::Vec<char>,
+        index: &mut usize,
+    ) -> Result<JsonValue, &'static str> {
         *index += 1; // 跳过开始大括号
         let mut obj = alloc::collections::BTreeMap::new();
-        
+
         loop {
             Self::skip_whitespace(chars, index);
-            
+
             if *index >= chars.len() {
                 return Err("Unexpected end of JSON");
             }
-            
+
             if chars[*index] == '}' {
                 *index += 1;
                 return Ok(JsonValue::Object(obj));
             }
-            
+
             // 解析键
             let key = match Self::parse_string(chars, index) {
                 Ok(JsonValue::String(s)) => s,
                 _ => return Err("Invalid object key"),
             };
-            
+
             Self::skip_whitespace(chars, index);
-            
+
             if *index >= chars.len() || chars[*index] != ':' {
                 return Err("Expected colon after object key");
             }
             *index += 1;
-            
+
             // 解析值
             let value = Self::parse_value(chars, index)?;
             obj.insert(key, value);
-            
+
             Self::skip_whitespace(chars, index);
-            
+
             if *index >= chars.len() {
                 return Err("Unexpected end of JSON");
             }
-            
+
             if chars[*index] == '}' {
                 *index += 1;
                 return Ok(JsonValue::Object(obj));
             }
-            
+
             if chars[*index] != ',' {
                 return Err("Expected comma after object value");
             }
             *index += 1;
         }
     }
-    
+
     /// 解析数组
-    fn parse_array(chars: &mut alloc::vec::Vec<char>, index: &mut usize) -> Result<JsonValue, &'static str> {
+    fn parse_array(
+        chars: &mut alloc::vec::Vec<char>,
+        index: &mut usize,
+    ) -> Result<JsonValue, &'static str> {
         *index += 1; // 跳过开始中括号
         let mut arr = alloc::vec::Vec::new();
-        
+
         loop {
             Self::skip_whitespace(chars, index);
-            
+
             if *index >= chars.len() {
                 return Err("Unexpected end of JSON");
             }
-            
+
             if chars[*index] == ']' {
                 *index += 1;
                 return Ok(JsonValue::Array(arr));
             }
-            
+
             // 解析值
             let value = Self::parse_value(chars, index)?;
             arr.push(value);
-            
+
             Self::skip_whitespace(chars, index);
-            
+
             if *index >= chars.len() {
                 return Err("Unexpected end of JSON");
             }
-            
+
             if chars[*index] == ']' {
                 *index += 1;
                 return Ok(JsonValue::Array(arr));
             }
-            
+
             if chars[*index] != ',' {
                 return Err("Expected comma after array value");
             }
             *index += 1;
         }
     }
-    
+
     /// 解析数字
-    fn parse_number(chars: &mut alloc::vec::Vec<char>, index: &mut usize) -> Result<JsonValue, &'static str> {
+    fn parse_number(
+        chars: &mut alloc::vec::Vec<char>,
+        index: &mut usize,
+    ) -> Result<JsonValue, &'static str> {
         let start = *index;
-        
+
         // 解析负号
         if chars[*index] == '-' {
             *index += 1;
         }
-        
+
         // 解析整数部分
         if *index < chars.len() && chars[*index] == '0' {
             *index += 1;
@@ -716,7 +821,7 @@ impl JsonDocument {
         } else {
             return Err("Invalid number");
         }
-        
+
         // 解析小数部分
         if *index < chars.len() && chars[*index] == '.' {
             *index += 1;
@@ -727,7 +832,7 @@ impl JsonDocument {
                 *index += 1;
             }
         }
-        
+
         // 解析指数部分
         if *index < chars.len() && (chars[*index] == 'e' || chars[*index] == 'E') {
             *index += 1;
@@ -741,13 +846,18 @@ impl JsonDocument {
                 *index += 1;
             }
         }
-        
+
         let num_str: alloc::string::String = chars[start..*index].iter().collect();
         Ok(JsonValue::Number(num_str))
     }
-    
+
     /// 解析字面量
-    fn parse_literal(chars: &mut alloc::vec::Vec<char>, index: &mut usize, literal: &str, value: JsonValue) -> Result<JsonValue, &'static str> {
+    fn parse_literal(
+        chars: &mut alloc::vec::Vec<char>,
+        index: &mut usize,
+        literal: &str,
+        value: JsonValue,
+    ) -> Result<JsonValue, &'static str> {
         for (i, c) in literal.chars().enumerate() {
             if *index + i >= chars.len() || chars[*index + i] != c {
                 return Err(alloc::format!("Expected {}", literal).leak());
@@ -756,7 +866,7 @@ impl JsonDocument {
         *index += literal.len();
         Ok(value)
     }
-    
+
     /// 跳过空白字符
     fn skip_whitespace(chars: &mut alloc::vec::Vec<char>, index: &mut usize) {
         while *index < chars.len() && chars[*index].is_ascii_whitespace() {
@@ -795,10 +905,7 @@ impl PartialEq for JsonDocument {
     }
 }
 
-impl Eq for JsonDocument {
-}
-
-
+impl Eq for JsonDocument {}
 
 /// JSON路径查询
 pub fn json_extract(doc: &JsonDocument, path: &str) -> JsonQueryResult {
@@ -816,7 +923,8 @@ pub fn json_keys(doc: &JsonDocument, path: &str) -> JsonQueryResult {
             // Parse the extracted object to get its keys
             match obj_doc.parse_json() {
                 Ok(JsonValue::Object(map)) => {
-                    let keys: alloc::vec::Vec<JsonQueryResult> = map.keys()
+                    let keys: alloc::vec::Vec<JsonQueryResult> = map
+                        .keys()
                         .map(|k| JsonQueryResult::Scalar(k.clone()))
                         .collect();
                     JsonQueryResult::Array(keys)
@@ -829,7 +937,8 @@ pub fn json_keys(doc: &JsonDocument, path: &str) -> JsonQueryResult {
             if s.starts_with('{') {
                 match JsonDocument::parse_json_str(&s) {
                     Ok(JsonValue::Object(map)) => {
-                        let keys: alloc::vec::Vec<JsonQueryResult> = map.keys()
+                        let keys: alloc::vec::Vec<JsonQueryResult> = map
+                            .keys()
                             .map(|k| JsonQueryResult::Scalar(k.clone()))
                             .collect();
                         JsonQueryResult::Array(keys)
@@ -847,12 +956,10 @@ pub fn json_keys(doc: &JsonDocument, path: &str) -> JsonQueryResult {
 /// 检查路径是否存在
 pub fn json_has(doc: &JsonDocument, path: &str) -> bool {
     match crate::json::path::parse_json_path(path) {
-        Ok(json_path) => {
-            match json_path.execute(doc) {
-                JsonQueryResult::None => false,
-                _ => true,
-            }
-        }
+        Ok(json_path) => match json_path.execute(doc) {
+            JsonQueryResult::None => false,
+            _ => true,
+        },
         Err(_) => false,
     }
 }
@@ -860,24 +967,22 @@ pub fn json_has(doc: &JsonDocument, path: &str) -> bool {
 /// 获取路径对应的值类型
 pub fn json_type(doc: &JsonDocument, path: &str) -> &'static str {
     match crate::json::path::parse_json_path(path) {
-        Ok(json_path) => {
-            match json_path.execute(doc) {
-                JsonQueryResult::Scalar(s) => {
-                    if s == "true" || s == "false" {
-                        "boolean"
-                    } else if s == "null" {
-                        "null"
-                    } else if s.parse::<f64>().is_ok() {
-                        "number"
-                    } else {
-                        "string"
-                    }
+        Ok(json_path) => match json_path.execute(doc) {
+            JsonQueryResult::Scalar(s) => {
+                if s == "true" || s == "false" {
+                    "boolean"
+                } else if s == "null" {
+                    "null"
+                } else if s.parse::<f64>().is_ok() {
+                    "number"
+                } else {
+                    "string"
                 }
-                JsonQueryResult::Object(_) => "object",
-                JsonQueryResult::Array(_) => "array",
-                JsonQueryResult::None => "null",
             }
-        }
+            JsonQueryResult::Object(_) => "object",
+            JsonQueryResult::Array(_) => "array",
+            JsonQueryResult::None => "null",
+        },
         Err(_) => "null",
     }
 }
@@ -908,25 +1013,24 @@ pub fn json_extract_float(doc: &JsonDocument, path: &str) -> Option<f64> {
 
 /// 设置JSON路径对应的值
 pub fn json_set(doc: &mut JsonDocument, path: &str, value: &str) -> Result<(), &'static str> {
-    
     // 1. 解析原始JSON文档为JsonValue树
     let mut json_value = doc.parse_json()?;
-    
+
     // 2. 将值字符串解析为JsonValue
     let new_value = JsonDocument::parse_json_str(value)?;
-    
+
     // 3. 解析路径为键的向量
     let keys = parse_simple_json_path(path)?;
-    
+
     // 4. 在JsonValue树中设置值
     set_value_at_path(&mut json_value, &keys, new_value)?;
-    
+
     // 5. 将修改后的JsonValue序列化为JSON字符串
     let new_json_str = json_value.to_json_string();
-    
+
     // 6. 直接设置JsonDocument的内容，避免创建新的JsonDocument
     doc.set_json_string(&new_json_str)?;
-    
+
     Ok(())
 }
 
@@ -935,20 +1039,20 @@ fn parse_simple_json_path(path: &str) -> Result<Vec<String>, &'static str> {
     if !path.starts_with('$') {
         return Err("Path must start with $");
     }
-    
+
     let mut result = Vec::new();
     let mut current = &path[1..]; // 去除$
-    
+
     // 如果路径是"$"，则返回空向量（根路径）
     if current.is_empty() {
         return Ok(result);
     }
-    
+
     // 检查是否有"."前缀
     if current.starts_with('.') {
         current = &current[1..];
     }
-    
+
     // 分割剩余部分为键
     for part in current.split('.') {
         if part.is_empty() {
@@ -956,30 +1060,34 @@ fn parse_simple_json_path(path: &str) -> Result<Vec<String>, &'static str> {
         }
         // 检查键是否被引号包围
         let key = if part.starts_with('"') && part.ends_with('"') {
-            part[1..part.len()-1].to_string()
+            part[1..part.len() - 1].to_string()
         } else if part.starts_with('\'') && part.ends_with('\'') {
-            part[1..part.len()-1].to_string()
+            part[1..part.len() - 1].to_string()
         } else {
             part.to_string()
         };
         result.push(key);
     }
-    
+
     Ok(result)
 }
 
 /// 在JsonValue树中设置路径对应的值
-fn set_value_at_path(root: &mut JsonValue, keys: &[String], value: JsonValue) -> Result<(), &'static str> {
+fn set_value_at_path(
+    root: &mut JsonValue,
+    keys: &[String],
+    value: JsonValue,
+) -> Result<(), &'static str> {
     if keys.is_empty() {
         // 设置根值
         *root = value;
         return Ok(());
     }
-    
+
     let mut current = root;
     for (i, key) in keys.iter().enumerate() {
         let is_last = i == keys.len() - 1;
-        
+
         match current {
             JsonValue::Object(obj) => {
                 if is_last {
@@ -1034,7 +1142,7 @@ fn set_value_at_path(root: &mut JsonValue, keys: &[String], value: JsonValue) ->
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -1056,19 +1164,19 @@ pub fn json_replace(doc: &mut JsonDocument, path: &str, value: &str) -> Result<(
 pub fn json_remove(doc: &mut JsonDocument, path: &str) -> Result<(), &'static str> {
     // 1. 解析原始JSON文档为JsonValue树
     let mut json_value = doc.parse_json()?;
-    
+
     // 2. 解析路径为键的向量
     let keys = parse_simple_json_path(path)?;
-    
+
     // 3. 在JsonValue树中删除值
     remove_value_at_path(&mut json_value, &keys)?;
-    
+
     // 4. 将修改后的JsonValue序列化为JSON字符串
     let new_json_str = json_value.to_json_string();
-    
+
     // 5. 创建新的JsonDocument替换原来的
     let new_doc = JsonDocument::from_json(&new_json_str)?;
-    
+
     // 替换存储
     *doc = new_doc;
     Ok(())
@@ -1078,19 +1186,19 @@ pub fn json_remove(doc: &mut JsonDocument, path: &str) -> Result<(), &'static st
 pub fn json_merge_patch(doc: &mut JsonDocument, patch: &str) -> Result<(), &'static str> {
     // 1. 解析原始JSON文档为JsonValue树
     let mut json_value = doc.parse_json()?;
-    
+
     // 2. 解析补丁为JsonValue
     let patch_value = JsonDocument::parse_json_str(patch)?;
-    
+
     // 3. 合并补丁到JsonValue树
     merge_json_patch(&mut json_value, &patch_value)?;
-    
+
     // 4. 将修改后的JsonValue序列化为JSON字符串
     let new_json_str = json_value.to_json_string();
-    
+
     // 5. 创建新的JsonDocument替换原来的
     let new_doc = JsonDocument::from_json(&new_json_str)?;
-    
+
     // 替换存储
     *doc = new_doc;
     Ok(())
@@ -1103,11 +1211,11 @@ fn remove_value_at_path(root: &mut JsonValue, keys: &[String]) -> Result<(), &'s
         *root = JsonValue::Null;
         return Ok(());
     }
-    
+
     let mut current = root;
     for (i, key) in keys.iter().enumerate() {
         let is_last = i == keys.len() - 1;
-        
+
         match current {
             JsonValue::Object(obj) => {
                 if is_last {
@@ -1151,7 +1259,7 @@ fn remove_value_at_path(root: &mut JsonValue, keys: &[String]) -> Result<(), &'s
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -1192,7 +1300,13 @@ impl JsonValue {
     pub fn to_json_string(&self) -> alloc::string::String {
         match self {
             JsonValue::Null => "null".to_string(),
-            JsonValue::Boolean(b) => if *b { "true".to_string() } else { "false".to_string() },
+            JsonValue::Boolean(b) => {
+                if *b {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
+            }
             JsonValue::String(s) => {
                 // 转义字符串：需要转义引号、反斜杠、控制字符
                 let mut result = alloc::string::String::with_capacity(s.len() + 2);

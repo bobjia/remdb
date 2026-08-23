@@ -51,6 +51,8 @@ fn main() {
                 replication_port: 5556,
             }),
             time_series_defaults: config::TimeSeriesConfig::DEFAULT,
+
+            model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
         };
 
         // 初始化数据库
@@ -86,10 +88,26 @@ fn main() {
             ("name", DataType::VarChar, 50, None, None),
         ];
         let constraints = &[
-            FieldConstraint { primary_key: true, not_null: true, unique: true, auto_increment: true },
-            FieldConstraint { primary_key: false, not_null: false, unique: false, auto_increment: false },
+            FieldConstraint {
+                primary_key: true,
+                not_null: true,
+                unique: true,
+                auto_increment: true,
+            },
+            FieldConstraint {
+                primary_key: false,
+                not_null: false,
+                unique: false,
+                auto_increment: false,
+            },
         ];
-        match db.create_table_with_constraints("api_test", fields, Some(constraints), Some(vec![0]), None) {
+        match db.create_table_with_constraints(
+            "api_test",
+            fields,
+            Some(constraints),
+            Some(vec![0]),
+            None,
+        ) {
             Ok(_) => {
                 println!("✅ API创建表成功: api_test");
             }

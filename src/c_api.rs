@@ -143,7 +143,7 @@ impl From<&FieldDef> for RemDbFieldDef {
                 DataType::VarChar | DataType::Char | DataType::Text => RemDbDataType::String,
                 DataType::Interval => RemDbDataType::UInt64, // 映射为UInt64
                 DataType::Vector => RemDbDataType::Vector,   // 映射为Vector类型
-                DataType::Json => RemDbDataType::Json,     // 映射为Json类型
+                DataType::Json => RemDbDataType::Json,       // 映射为Json类型
             },
             size: rust_field.size,
             offset: rust_field.offset,
@@ -413,7 +413,7 @@ pub struct RemDbTypedValue {
 impl From<crate::types::TypedValue> for RemDbTypedValue {
     fn from(rust_value: crate::types::TypedValue) -> Self {
         use crate::DataType;
-        
+
         let data_type = match rust_value.value_type {
             DataType::UInt8 => RemDbDataType::UInt8,
             DataType::UInt16 => RemDbDataType::UInt16,
@@ -436,29 +436,59 @@ impl From<crate::types::TypedValue> for RemDbTypedValue {
                 // 外部JSON仍使用Json类型，通过pool管理器访问
                 unsafe {
                     match rust_value.value.json_storage {
-                        crate::types::JsonStorage::Inline(_) | crate::types::JsonStorage::Null => RemDbDataType::String,
+                        crate::types::JsonStorage::Inline(_) | crate::types::JsonStorage::Null => {
+                            RemDbDataType::String
+                        }
                         crate::types::JsonStorage::External { .. } => RemDbDataType::Json,
                     }
                 }
             }
         };
-        
+
         let value = unsafe {
             match rust_value.value_type {
-                DataType::UInt8 => RemDbValue { u8: rust_value.value.u8 },
-                DataType::UInt16 => RemDbValue { u16: rust_value.value.u16 },
-                DataType::UInt32 => RemDbValue { u32: rust_value.value.u32 },
-                DataType::UInt64 => RemDbValue { u64: rust_value.value.u64 },
-                DataType::Int8 => RemDbValue { u8: rust_value.value.i8 as u8 },
-                DataType::Int16 => RemDbValue { u16: rust_value.value.i16 as u16 },
-                DataType::Int32 => RemDbValue { u32: rust_value.value.i32 as u32 },
-                DataType::Int64 => RemDbValue { u64: rust_value.value.i64 as u64 },
-                DataType::Float32 => RemDbValue { float32: rust_value.value.float32 },
-                DataType::Float64 => RemDbValue { float64: rust_value.value.float64 },
-                DataType::Bool => RemDbValue { boolean: rust_value.value.bool as u8 },
-                DataType::Timestamp => RemDbValue { timestamp: rust_value.value.timestamp },
-                DataType::TimestampTZ => RemDbValue { timestamp: rust_value.value.timestamp },
-                DataType::Interval => RemDbValue { u64: rust_value.value.interval.value as u64 },
+                DataType::UInt8 => RemDbValue {
+                    u8: rust_value.value.u8,
+                },
+                DataType::UInt16 => RemDbValue {
+                    u16: rust_value.value.u16,
+                },
+                DataType::UInt32 => RemDbValue {
+                    u32: rust_value.value.u32,
+                },
+                DataType::UInt64 => RemDbValue {
+                    u64: rust_value.value.u64,
+                },
+                DataType::Int8 => RemDbValue {
+                    u8: rust_value.value.i8 as u8,
+                },
+                DataType::Int16 => RemDbValue {
+                    u16: rust_value.value.i16 as u16,
+                },
+                DataType::Int32 => RemDbValue {
+                    u32: rust_value.value.i32 as u32,
+                },
+                DataType::Int64 => RemDbValue {
+                    u64: rust_value.value.i64 as u64,
+                },
+                DataType::Float32 => RemDbValue {
+                    float32: rust_value.value.float32,
+                },
+                DataType::Float64 => RemDbValue {
+                    float64: rust_value.value.float64,
+                },
+                DataType::Bool => RemDbValue {
+                    boolean: rust_value.value.bool as u8,
+                },
+                DataType::Timestamp => RemDbValue {
+                    timestamp: rust_value.value.timestamp,
+                },
+                DataType::TimestampTZ => RemDbValue {
+                    timestamp: rust_value.value.timestamp,
+                },
+                DataType::Interval => RemDbValue {
+                    u64: rust_value.value.interval.value as u64,
+                },
                 DataType::VarChar | DataType::Char | DataType::Text => {
                     let mut string = [0u8; REMDB_MAX_STRING_LEN];
                     let src = &rust_value.value.string;
@@ -468,11 +498,13 @@ impl From<crate::types::TypedValue> for RemDbTypedValue {
                 }
                 DataType::Vector => {
                     // Vector storage mapping to RemDbVectorValue
-                    RemDbValue { vector: RemDbVectorValue {
-                        pool_id: 0,
-                        offset: 0,
-                        length: 0,
-                    }}
+                    RemDbValue {
+                        vector: RemDbVectorValue {
+                            pool_id: 0,
+                            offset: 0,
+                            length: 0,
+                        },
+                    }
                 }
                 DataType::Json => {
                     // JSON storage mapping to C API value
@@ -489,26 +521,29 @@ impl From<crate::types::TypedValue> for RemDbTypedValue {
                             string[..copy_len].copy_from_slice(&data[..copy_len]);
                             RemDbValue { string }
                         }
-                        crate::types::JsonStorage::External { pool_id, offset, length } => {
-                            RemDbValue { json: RemDbJsonValue {
+                        crate::types::JsonStorage::External {
+                            pool_id,
+                            offset,
+                            length,
+                        } => RemDbValue {
+                            json: RemDbJsonValue {
                                 pool_id,
                                 offset,
                                 length,
-                            }}
-                        }
+                            },
+                        },
                         crate::types::JsonStorage::Null => {
                             // Null JSON: store as empty string
-                            RemDbValue { string: [0u8; REMDB_MAX_STRING_LEN] }
+                            RemDbValue {
+                                string: [0u8; REMDB_MAX_STRING_LEN],
+                            }
                         }
                     }
                 }
             }
         };
-        
-        RemDbTypedValue {
-            data_type,
-            value,
-        }
+
+        RemDbTypedValue { data_type, value }
     }
 }
 
@@ -726,8 +761,8 @@ impl From<crate::RemDbError> for RemDbError {
             crate::RemDbError::NoRecordsToOverwrite => RemDbError::RecordNotFound,
             crate::RemDbError::TwoMoreIndexNotSupported => RemDbError::ConfigError, // 映射为ConfigError
             crate::RemDbError::DatabaseNotFound => RemDbError::ConfigError, // 映射为ConfigError
-            crate::RemDbError::DatabaseExists => RemDbError::DuplicateKey, // 映射为DuplicateKey
-            crate::RemDbError::DatabaseClosed => RemDbError::ConfigError, // 映射为ConfigError
+            crate::RemDbError::DatabaseExists => RemDbError::DuplicateKey,  // 映射为DuplicateKey
+            crate::RemDbError::DatabaseClosed => RemDbError::ConfigError,   // 映射为ConfigError
             crate::RemDbError::MaxDatabasesReached => RemDbError::ConfigError, // 映射为ConfigError
             crate::RemDbError::InvalidConfig(_) => RemDbError::ConfigError,
             crate::RemDbError::CompressionError => RemDbError::ConfigError,
@@ -814,35 +849,37 @@ pub unsafe extern "C" fn remdb_init_global(
     // 初始化内存分配器
     // 分配内存用于内存池
     let total_memory = c_config.total_memory;
-    
+
     // 检查内存大小是否足够
-    if total_memory < 1024 * 1024 { // 最小1MB
+    if total_memory < 1024 * 1024 {
+        // 最小1MB
         return RemDbError::OutOfMemory;
     }
-    
+
     // 分配内存缓冲区
     let mut memory_buffer = alloc::vec::Vec::with_capacity(total_memory);
-    
+
     // 尝试调整内存缓冲区大小
     if let Err(_) = memory_buffer.try_reserve(total_memory) {
         return RemDbError::OutOfMemory;
     }
-    
+
     // 调整大小并初始化
     memory_buffer.resize(total_memory, 0);
     let memory_ptr = memory_buffer.as_mut_ptr();
-    
+
     // 泄漏内存，使其成为静态内存
     core::mem::forget(memory_buffer);
-    
+
     // 初始化全局内存分配器
     if let Err(e) = crate::memory::allocator::init_global_allocator(memory_ptr, total_memory) {
         return e.into();
     }
-    
+
     // 检查内存分配器是否初始化成功
     let stats = crate::memory::allocator::get_memory_stats();
-    if stats.total < total_memory / 2 { // 至少应该有一半的内存可用
+    if stats.total < total_memory / 2 {
+        // 至少应该有一半的内存可用
         return RemDbError::OutOfMemory;
     }
 
@@ -859,7 +896,8 @@ pub unsafe extern "C" fn remdb_init_global(
                 name: core::str::from_utf8_unchecked(core::slice::from_raw_parts(
                     c_field.name,
                     _c_strlen(c_field.name),
-                )).to_string(),
+                ))
+                .to_string(),
                 data_type: c_field.data_type.into(),
                 size: c_field.size,
                 string_length: None,
@@ -879,7 +917,8 @@ pub unsafe extern "C" fn remdb_init_global(
             name: core::str::from_utf8_unchecked(core::slice::from_raw_parts(
                 c_table.name,
                 _c_strlen(c_table.name),
-            )).to_string(),
+            ))
+            .to_string(),
             fields: rust_fields,
             primary_key: vec![c_table.primary_key],
             secondary_index: if c_table.secondary_index == -1 {
@@ -966,7 +1005,7 @@ pub unsafe extern "C" fn remdb_init_global(
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
         ha_config,
-        #[cfg(feature = "model-runtime")]
+
         model_worker_config: crate::config::ModelWorkerConfig::default(),
     };
 
@@ -995,7 +1034,8 @@ pub unsafe extern "C" fn remdb_init_global(
                         name: core::str::from_utf8_unchecked(core::slice::from_raw_parts(
                             c_field.name,
                             _c_strlen(c_field.name),
-                        )).to_string(),
+                        ))
+                        .to_string(),
                         data_type: c_field.data_type.into(),
                         size: c_field.size,
                         string_length: None,
@@ -1023,7 +1063,8 @@ pub unsafe extern "C" fn remdb_init_global(
                     name: core::str::from_utf8_unchecked(core::slice::from_raw_parts(
                         c_time_series_table.name,
                         _c_strlen(c_time_series_table.name),
-                    )).to_string(),
+                    ))
+                    .to_string(),
                     fields: rust_fields,
                     primary_key: vec![c_time_series_table.primary_key],
                     secondary_index: if c_time_series_table.secondary_index == -1 {
@@ -1159,9 +1200,8 @@ pub unsafe extern "C" fn remdb_begin_transaction(
         TX_BUFFER = Some(Box::new(crate::transaction::Transaction::default()));
     }
     if LOG_BUFFER.is_none() {
-        LOG_BUFFER = Some(
-            vec![crate::transaction::VariableSizeLogItem::default(); 1024].into_boxed_slice(),
-        );
+        LOG_BUFFER =
+            Some(vec![crate::transaction::VariableSizeLogItem::default(); 1024].into_boxed_slice());
     }
 
     let tx_ptr = match TX_BUFFER.as_mut() {
@@ -1173,7 +1213,13 @@ pub unsafe extern "C" fn remdb_begin_transaction(
         None => return RemDbError::OutOfMemory,
     };
 
-    match db.begin_transaction(tx_type.into(), isolation_level.into(), tx_ptr, log_ptr, 1024) {
+    match db.begin_transaction(
+        tx_type.into(),
+        isolation_level.into(),
+        tx_ptr,
+        log_ptr,
+        1024,
+    ) {
         Ok(_) => RemDbError::Success,
         Err(e) => e.into(),
     }
@@ -1869,9 +1915,12 @@ pub unsafe extern "C" fn remdb_sql_query(
     match db.sql_query(&rust_sql) {
         Ok(rust_result_set) => {
             #[cfg(feature = "log")]
-            debug!("sql_query succeeded, columns: {:?}, rows_count: {}",
-                rust_result_set.columns, rust_result_set.rows.len());
-            
+            debug!(
+                "sql_query succeeded, columns: {:?}, rows_count: {}",
+                rust_result_set.columns,
+                rust_result_set.rows.len()
+            );
+
             // 分配内存存储结果集
             let c_result_set = alloc::alloc::alloc(alloc::alloc::Layout::new::<RemDbResultSet>())
                 as *mut RemDbResultSet;
@@ -1881,7 +1930,8 @@ pub unsafe extern "C" fn remdb_sql_query(
 
             // 分配内存存储列名
             let columns = alloc::alloc::alloc(
-                alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).expect("failed to allocate memory"),
+                alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len())
+                    .expect("failed to allocate memory"),
             ) as *mut *const u8;
             if columns.is_null() {
                 alloc::alloc::dealloc(
@@ -1894,7 +1944,8 @@ pub unsafe extern "C" fn remdb_sql_query(
             // 转换列名
             for (i, column) in rust_result_set.columns.iter().enumerate() {
                 let column_str = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<u8>(column.len() + 1).expect("failed to allocate memory"),
+                    alloc::alloc::Layout::array::<u8>(column.len() + 1)
+                        .expect("failed to allocate memory"),
                 ) as *mut u8;
                 if column_str.is_null() {
                     // 释放已分配的内存
@@ -1902,7 +1953,8 @@ pub unsafe extern "C" fn remdb_sql_query(
                         let col = *columns.offset(j as isize);
                         alloc::alloc::dealloc(
                             col as *mut u8,
-                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
+                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
+                                .expect("failed to allocate memory"),
                         );
                     }
                     alloc::alloc::dealloc(
@@ -1925,7 +1977,8 @@ pub unsafe extern "C" fn remdb_sql_query(
 
             // 分配内存存储行
             let rows = alloc::alloc::alloc(
-                alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len()).expect("failed to allocate memory"),
+                alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len())
+                    .expect("failed to allocate memory"),
             ) as *mut RemDbResultRow;
             if rows.is_null() {
                 // 释放已分配的内存
@@ -1933,7 +1986,8 @@ pub unsafe extern "C" fn remdb_sql_query(
                     let col = *columns.offset(i as isize);
                     alloc::alloc::dealloc(
                         col as *mut u8,
-                        alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
+                        alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
+                            .expect("failed to allocate memory"),
                     );
                 }
                 alloc::alloc::dealloc(
@@ -1952,7 +2006,8 @@ pub unsafe extern "C" fn remdb_sql_query(
             for (i, row) in rust_result_set.rows.iter().enumerate() {
                 // 分配内存存储值
                 let values = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<RemDbTypedValue>(row.values.len()).expect("failed to allocate memory"),
+                    alloc::alloc::Layout::array::<RemDbTypedValue>(row.values.len())
+                        .expect("failed to allocate memory"),
                 ) as *mut RemDbTypedValue;
                 if values.is_null() {
                     // 释放已分配的内存
@@ -1960,7 +2015,8 @@ pub unsafe extern "C" fn remdb_sql_query(
                         let r = &*rows.offset(j as isize);
                         alloc::alloc::dealloc(
                             r.values as *mut u8,
-                            alloc::alloc::Layout::array::<RemDbTypedValue>(r.values_count).expect("failed to allocate memory"),
+                            alloc::alloc::Layout::array::<RemDbTypedValue>(r.values_count)
+                                .expect("failed to allocate memory"),
                         );
                     }
                     alloc::alloc::dealloc(
@@ -1972,7 +2028,8 @@ pub unsafe extern "C" fn remdb_sql_query(
                         let col = *columns.offset(j as isize);
                         alloc::alloc::dealloc(
                             col as *mut u8,
-                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
+                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
+                                .expect("failed to allocate memory"),
                         );
                     }
                     alloc::alloc::dealloc(
@@ -1988,11 +2045,11 @@ pub unsafe extern "C" fn remdb_sql_query(
                 }
 
                 // 转换值
-            for (j, value) in row.values.iter().enumerate() {
-                #[cfg(feature = "log")]
-                debug!("row {}, value {}: type={:?}", i, j, value.value_type);
-                *values.offset(j as isize) = value.clone().into();
-            }
+                for (j, value) in row.values.iter().enumerate() {
+                    #[cfg(feature = "log")]
+                    debug!("row {}, value {}: type={:?}", i, j, value.value_type);
+                    *values.offset(j as isize) = value.clone().into();
+                }
 
                 // 设置行数据
                 let row_ptr = rows.offset(i as isize);
@@ -2028,13 +2085,15 @@ pub unsafe extern "C" fn remdb_free_result_set(result_set: *mut RemDbResultSet) 
         if !col.is_null() {
             alloc::alloc::dealloc(
                 col as *mut u8,
-                alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
+                alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
+                    .expect("failed to allocate memory"),
             );
         }
     }
     alloc::alloc::dealloc(
         rs.columns as *mut u8,
-        alloc::alloc::Layout::array::<*const u8>(rs.columns_count).expect("failed to allocate memory"),
+        alloc::alloc::Layout::array::<*const u8>(rs.columns_count)
+            .expect("failed to allocate memory"),
     );
 
     // 释放行数据
@@ -2043,13 +2102,15 @@ pub unsafe extern "C" fn remdb_free_result_set(result_set: *mut RemDbResultSet) 
         if !row.values.is_null() {
             alloc::alloc::dealloc(
                 row.values as *mut u8,
-                alloc::alloc::Layout::array::<RemDbTypedValue>(row.values_count).expect("failed to allocate memory"),
+                alloc::alloc::Layout::array::<RemDbTypedValue>(row.values_count)
+                    .expect("failed to allocate memory"),
             );
         }
     }
     alloc::alloc::dealloc(
         rs.rows as *mut u8,
-        alloc::alloc::Layout::array::<RemDbResultRow>(rs.rows_count).expect("failed to allocate memory"),
+        alloc::alloc::Layout::array::<RemDbResultRow>(rs.rows_count)
+            .expect("failed to allocate memory"),
     );
 
     // 释放结果集本身
@@ -2074,9 +2135,11 @@ pub unsafe extern "C" fn remdb_get_json_string(
     }
 
     let typed_value = &*value;
-    
+
     // Support both Json and String data types (inline JSON is stored as String)
-    if typed_value.data_type != RemDbDataType::Json && typed_value.data_type != RemDbDataType::String {
+    if typed_value.data_type != RemDbDataType::Json
+        && typed_value.data_type != RemDbDataType::String
+    {
         return RemDbError::TypeMismatch;
     }
 
@@ -2086,22 +2149,22 @@ pub unsafe extern "C" fn remdb_get_json_string(
             Some(pos) => pos,
             None => bytes.len(),
         };
-        
+
         let layout = match alloc::alloc::Layout::array::<u8>(actual_len + 1) {
             Ok(l) => l,
             Err(_) => return Err(RemDbError::OutOfMemory),
         };
         let json_c_str = alloc::alloc::alloc(layout) as *mut u8;
-        
+
         if json_c_str.is_null() {
             return Err(RemDbError::OutOfMemory);
         }
-        
+
         if actual_len > 0 {
             core::ptr::copy_nonoverlapping(bytes.as_ptr(), json_c_str, actual_len);
         }
         *json_c_str.offset(actual_len as isize) = 0; // null terminator
-        
+
         Ok((json_c_str as *const u8, actual_len))
     };
 
@@ -2118,7 +2181,7 @@ pub unsafe extern "C" fn remdb_get_json_string(
     } else {
         // data_type is Json - use pool-based or inline detection
         let json_value = typed_value.value.json;
-        
+
         // Check for inline JSON (pool_id == 0, offset == 0, length == 0)
         // Read from the string field directly since the union overlaps
         if json_value.pool_id == 0 && json_value.offset == 0 && json_value.length == 0 {
@@ -2136,42 +2199,48 @@ pub unsafe extern "C" fn remdb_get_json_string(
                 Some(manager) => manager,
                 None => return RemDbError::UnsupportedOperation,
             };
-            
+
             // 获取JSON池
             let pool = match pool_manager.get_pool(json_value.pool_id) {
                 Some(p) => p,
                 None => return RemDbError::UnsupportedOperation,
             };
-            
+
             // 获取JSON数据
             if let Some(data_ptr) = pool.get_block_data(json_value.offset as usize, 0) {
                 let data_slice = core::slice::from_raw_parts(data_ptr, json_value.length as usize);
-                
+
                 // 尝试解析JSON数据并转换为字符串
-                match crate::json::JsonDocument::from_binary(data_slice, json_value.length as usize) {
+                match crate::json::JsonDocument::from_binary(data_slice, json_value.length as usize)
+                {
                     Ok(json_doc) => {
                         // 转换为JSON字符串
                         let json_str = match json_doc.to_json() {
                             Ok(s) => s,
                             Err(_) => return RemDbError::TypeMismatch,
                         };
-                        
+
                         // 分配内存存储JSON字符串
                         let json_c_str = alloc::alloc::alloc(
-                            alloc::alloc::Layout::array::<u8>(json_str.len() + 1).expect("failed to allocate memory"),
+                            alloc::alloc::Layout::array::<u8>(json_str.len() + 1)
+                                .expect("failed to allocate memory"),
                         ) as *mut u8;
-                        
+
                         if json_c_str.is_null() {
                             return RemDbError::OutOfMemory;
                         }
-                        
+
                         // 复制JSON字符串
-                        core::ptr::copy_nonoverlapping(json_str.as_ptr(), json_c_str, json_str.len());
+                        core::ptr::copy_nonoverlapping(
+                            json_str.as_ptr(),
+                            json_c_str,
+                            json_str.len(),
+                        );
                         *json_c_str.offset(json_str.len() as isize) = 0; // 添加终止符
-                        
+
                         *json_string = json_c_str as *const u8;
                         *length = json_str.len();
-                        
+
                         RemDbError::Success
                     }
                     Err(_) => RemDbError::TypeMismatch,
@@ -2189,12 +2258,12 @@ pub unsafe extern "C" fn remdb_free_string(s: *const u8) -> RemDbError {
     if s.is_null() {
         return RemDbError::Success;
     }
-    
+
     alloc::alloc::dealloc(
         s as *mut u8,
         alloc::alloc::Layout::array::<u8>(_c_strlen(s) + 1).expect("failed to allocate memory"),
     );
-    
+
     RemDbError::Success
 }
 
@@ -2258,7 +2327,8 @@ pub unsafe extern "C" fn remdb_execute_query(
 
             // 分配内存存储列名
             let columns_ptr = alloc::alloc::alloc(
-                alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len()).expect("failed to allocate memory"),
+                alloc::alloc::Layout::array::<*const u8>(rust_result_set.columns.len())
+                    .expect("failed to allocate memory"),
             ) as *mut *const u8;
             if columns_ptr.is_null() {
                 alloc::alloc::dealloc(
@@ -2271,7 +2341,8 @@ pub unsafe extern "C" fn remdb_execute_query(
             // 转换列名
             for (i, column) in rust_result_set.columns.iter().enumerate() {
                 let column_str = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<u8>(column.len() + 1).expect("failed to allocate memory"),
+                    alloc::alloc::Layout::array::<u8>(column.len() + 1)
+                        .expect("failed to allocate memory"),
                 ) as *mut u8;
                 if column_str.is_null() {
                     // 释放已分配的内存
@@ -2279,7 +2350,8 @@ pub unsafe extern "C" fn remdb_execute_query(
                         let col = *columns_ptr.offset(j as isize);
                         alloc::alloc::dealloc(
                             col as *mut u8,
-                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
+                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
+                                .expect("failed to allocate memory"),
                         );
                     }
                     alloc::alloc::dealloc(
@@ -2302,7 +2374,8 @@ pub unsafe extern "C" fn remdb_execute_query(
 
             // 分配内存存储行
             let rows_ptr = alloc::alloc::alloc(
-                alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len()).expect("failed to allocate memory"),
+                alloc::alloc::Layout::array::<RemDbResultRow>(rust_result_set.rows.len())
+                    .expect("failed to allocate memory"),
             ) as *mut RemDbResultRow;
             if rows_ptr.is_null() {
                 // 释放已分配的内存
@@ -2310,7 +2383,8 @@ pub unsafe extern "C" fn remdb_execute_query(
                     let col = *columns_ptr.offset(i as isize);
                     alloc::alloc::dealloc(
                         col as *mut u8,
-                        alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
+                        alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
+                            .expect("failed to allocate memory"),
                     );
                 }
                 alloc::alloc::dealloc(
@@ -2329,7 +2403,8 @@ pub unsafe extern "C" fn remdb_execute_query(
             for (i, row) in rust_result_set.rows.iter().enumerate() {
                 // 分配内存存储值
                 let values_ptr = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<RemDbTypedValue>(row.values.len()).expect("failed to allocate memory"),
+                    alloc::alloc::Layout::array::<RemDbTypedValue>(row.values.len())
+                        .expect("failed to allocate memory"),
                 ) as *mut RemDbTypedValue;
                 if values_ptr.is_null() {
                     // 释放已分配的内存
@@ -2352,7 +2427,8 @@ pub unsafe extern "C" fn remdb_execute_query(
                         let col = *columns_ptr.offset(j as isize);
                         alloc::alloc::dealloc(
                             col as *mut u8,
-                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1).expect("failed to allocate memory"),
+                            alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
+                                .expect("failed to allocate memory"),
                         );
                     }
                     alloc::alloc::dealloc(
@@ -2385,10 +2461,10 @@ pub unsafe extern "C" fn remdb_execute_query(
             (*c_result_set).rows_count = rust_result_set.rows.len();
 
             *result_set = c_result_set;
-    RemDbError::Success
-}
-Err(e) => e.into(),
-}
+            RemDbError::Success
+        }
+        Err(e) => e.into(),
+    }
 }
 
 // 向量索引相关C API函数声明
@@ -2400,7 +2476,7 @@ pub enum RemDbVectorIndexType {
     HNSW = 0,
     HNSW_SQ = 1,
     HNSW_BQ = 2,
-    IVF = 3,          // IVF_FLAT
+    IVF = 3, // IVF_FLAT
     IVF_PQ = 4,
 }
 
@@ -2431,9 +2507,7 @@ pub struct RemDbVectorMetadata {
 
 /// C API: 初始化索引构建线程池
 #[no_mangle]
-pub unsafe extern "C" fn remdb_init_index_build_thread_pool(
-    thread_count: u32,
-) -> RemDbError {
+pub unsafe extern "C" fn remdb_init_index_build_thread_pool(thread_count: u32) -> RemDbError {
     crate::index::builder::init_index_build_thread_pool(thread_count as usize);
     RemDbError::Success
 }
@@ -2505,12 +2579,18 @@ pub unsafe extern "C" fn remdb_vector_search(
     query_vector: *const f32,
     _vector_dim: u16,
     k: u32,
-    results: *mut *mut u32, // 返回匹配的记录ID数组
+    results: *mut *mut u32,   // 返回匹配的记录ID数组
     distances: *mut *mut f32, // 返回距离数组
-    result_count: *mut u32, // 实际返回的结果数量
+    result_count: *mut u32,   // 实际返回的结果数量
 ) -> RemDbError {
-    if handle.is_null() || table_name.is_null() || field_name.is_null() || query_vector.is_null() || 
-       results.is_null() || distances.is_null() || result_count.is_null() {
+    if handle.is_null()
+        || table_name.is_null()
+        || field_name.is_null()
+        || query_vector.is_null()
+        || results.is_null()
+        || distances.is_null()
+        || result_count.is_null()
+    {
         return RemDbError::ConfigError;
     }
 
@@ -2535,23 +2615,27 @@ pub unsafe extern "C" fn remdb_vector_search(
             if actual_count > 0 {
                 // 分配内存存储结果
                 let result_ids = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<u32>(actual_count).expect("failed to allocate memory"),
+                    alloc::alloc::Layout::array::<u32>(actual_count)
+                        .expect("failed to allocate memory"),
                 ) as *mut u32;
                 let result_distances = alloc::alloc::alloc(
-                    alloc::alloc::Layout::array::<f32>(actual_count).expect("failed to allocate memory"),
+                    alloc::alloc::Layout::array::<f32>(actual_count)
+                        .expect("failed to allocate memory"),
                 ) as *mut f32;
 
                 if result_ids.is_null() || result_distances.is_null() {
                     if !result_ids.is_null() {
                         alloc::alloc::dealloc(
                             result_ids as *mut u8,
-                            alloc::alloc::Layout::array::<u32>(actual_count).expect("failed to allocate memory"),
+                            alloc::alloc::Layout::array::<u32>(actual_count)
+                                .expect("failed to allocate memory"),
                         );
                     }
                     if !result_distances.is_null() {
                         alloc::alloc::dealloc(
                             result_distances as *mut u8,
-                            alloc::alloc::Layout::array::<f32>(actual_count).expect("failed to allocate memory"),
+                            alloc::alloc::Layout::array::<f32>(actual_count)
+                                .expect("failed to allocate memory"),
                         );
                     }
                     return RemDbError::OutOfMemory;
@@ -2566,19 +2650,22 @@ pub unsafe extern "C" fn remdb_vector_search(
                         let distance_value = &row.values[1];
 
                         // 提取id值
-                        if let crate::types::DataType::UInt32 | 
-                           crate::types::DataType::Int32 | 
-                           crate::types::DataType::UInt64 | 
-                           crate::types::DataType::Int64 = id_value.value_type {
+                        if let crate::types::DataType::UInt32
+                        | crate::types::DataType::Int32
+                        | crate::types::DataType::UInt64
+                        | crate::types::DataType::Int64 = id_value.value_type
+                        {
                             *result_ids.offset(i as isize) = unsafe { id_value.value.u32 };
                         } else {
                             *result_ids.offset(i as isize) = 0;
                         }
 
                         // 提取distance值
-                        if let crate::types::DataType::Float32 | 
-                           crate::types::DataType::Float64 = distance_value.value_type {
-                            *result_distances.offset(i as isize) = unsafe { distance_value.value.float32 };
+                        if let crate::types::DataType::Float32 | crate::types::DataType::Float64 =
+                            distance_value.value_type
+                        {
+                            *result_distances.offset(i as isize) =
+                                unsafe { distance_value.value.float32 };
                         } else {
                             *result_distances.offset(i as isize) = 0.0;
                         }
@@ -2628,8 +2715,12 @@ pub unsafe extern "C" fn remdb_get_index_build_status(
     is_building: *mut u8,
     progress: *mut u32, // 0-100
 ) -> RemDbError {
-    if handle.is_null() || table_name.is_null() || field_name.is_null() || 
-       is_building.is_null() || progress.is_null() {
+    if handle.is_null()
+        || table_name.is_null()
+        || field_name.is_null()
+        || is_building.is_null()
+        || progress.is_null()
+    {
         return RemDbError::ConfigError;
     }
 
@@ -2661,8 +2752,9 @@ pub unsafe extern "C" fn remdb_get_index_build_status(
                     }
 
                     // 提取progress值
-                    if let crate::types::DataType::UInt32 | 
-                       crate::types::DataType::Int32 = progress_value.value_type {
+                    if let crate::types::DataType::UInt32 | crate::types::DataType::Int32 =
+                        progress_value.value_type
+                    {
                         *progress = unsafe { progress_value.value.u32 };
                     } else {
                         *progress = 0;
@@ -2979,12 +3071,17 @@ pub unsafe extern "C" fn remdb_create_database(
 
     // 检查数据库名称长度
     let name_len = _c_strlen(name);
-    if name_len == 0 || name_len > 128 { // 限制数据库名称长度为128个字符
+    if name_len == 0 || name_len > 128 {
+        // 限制数据库名称长度为128个字符
         return RemDbError::ConfigError;
     }
 
     let rust_name = c_str_to_rust(name);
-    let rust_schema = if schema.is_null() { "" } else { &*Box::leak(Box::new(c_str_to_rust(schema))) };
+    let rust_schema = if schema.is_null() {
+        ""
+    } else {
+        &*Box::leak(Box::new(c_str_to_rust(schema)))
+    };
 
     // 转换数据库配置
     let rust_config = if config.is_null() {
@@ -2992,12 +3089,36 @@ pub unsafe extern "C" fn remdb_create_database(
     } else {
         let c_config = &*config;
         Some(crate::DatabaseConfig {
-            name: if c_config.name.is_null() { rust_name.clone() } else { c_str_to_rust(c_config.name) },
-            memory_limit: if c_config.memory_limit.is_null() { None } else { Some(*c_config.memory_limit) },
-            max_tables: if c_config.max_tables.is_null() { None } else { Some(*c_config.max_tables) },
-            wal_mode: if c_config.wal_mode.is_null() { None } else { Some(c_str_to_rust(c_config.wal_mode)) },
-            default_index_type: if c_config.default_index_type.is_null() { None } else { Some(crate::types::IndexType::Hash) },
-            temp_store: if c_config.temp_store.is_null() { None } else { Some(c_str_to_rust(c_config.temp_store)) },
+            name: if c_config.name.is_null() {
+                rust_name.clone()
+            } else {
+                c_str_to_rust(c_config.name)
+            },
+            memory_limit: if c_config.memory_limit.is_null() {
+                None
+            } else {
+                Some(*c_config.memory_limit)
+            },
+            max_tables: if c_config.max_tables.is_null() {
+                None
+            } else {
+                Some(*c_config.max_tables)
+            },
+            wal_mode: if c_config.wal_mode.is_null() {
+                None
+            } else {
+                Some(c_str_to_rust(c_config.wal_mode))
+            },
+            default_index_type: if c_config.default_index_type.is_null() {
+                None
+            } else {
+                Some(crate::types::IndexType::Hash)
+            },
+            temp_store: if c_config.temp_store.is_null() {
+                None
+            } else {
+                Some(c_str_to_rust(c_config.temp_store))
+            },
         })
     };
 
@@ -3012,17 +3133,15 @@ pub unsafe extern "C" fn remdb_create_database(
 
 /// C API: 使用指定数据库
 #[no_mangle]
-pub unsafe extern "C" fn remdb_use_database(
-    handle: RemDbHandle,
-    name: *const u8,
-) -> RemDbError {
+pub unsafe extern "C" fn remdb_use_database(handle: RemDbHandle, name: *const u8) -> RemDbError {
     if handle.is_null() || name.is_null() {
         return RemDbError::ConfigError;
     }
 
     // 检查数据库名称长度
     let name_len = _c_strlen(name);
-    if name_len == 0 || name_len > 128 { // 限制数据库名称长度为128个字符
+    if name_len == 0 || name_len > 128 {
+        // 限制数据库名称长度为128个字符
         return RemDbError::ConfigError;
     }
 
@@ -3037,17 +3156,15 @@ pub unsafe extern "C" fn remdb_use_database(
 
 /// C API: 关闭指定数据库
 #[no_mangle]
-pub unsafe extern "C" fn remdb_close_database(
-    handle: RemDbHandle,
-    name: *const u8,
-) -> RemDbError {
+pub unsafe extern "C" fn remdb_close_database(handle: RemDbHandle, name: *const u8) -> RemDbError {
     if handle.is_null() || name.is_null() {
         return RemDbError::ConfigError;
     }
 
     // 检查数据库名称长度
     let name_len = _c_strlen(name);
-    if name_len == 0 || name_len > 128 { // 限制数据库名称长度为128个字符
+    if name_len == 0 || name_len > 128 {
+        // 限制数据库名称长度为128个字符
         return RemDbError::ConfigError;
     }
 
@@ -3062,17 +3179,15 @@ pub unsafe extern "C" fn remdb_close_database(
 
 /// C API: 删除指定数据库
 #[no_mangle]
-pub unsafe extern "C" fn remdb_drop_database(
-    handle: RemDbHandle,
-    name: *const u8,
-) -> RemDbError {
+pub unsafe extern "C" fn remdb_drop_database(handle: RemDbHandle, name: *const u8) -> RemDbError {
     if handle.is_null() || name.is_null() {
         return RemDbError::ConfigError;
     }
 
     // 检查数据库名称长度
     let name_len = _c_strlen(name);
-    if name_len == 0 || name_len > 128 { // 限制数据库名称长度为128个字符
+    if name_len == 0 || name_len > 128 {
+        // 限制数据库名称长度为128个字符
         return RemDbError::ConfigError;
     }
 
@@ -3102,7 +3217,8 @@ pub unsafe extern "C" fn remdb_get_databases(
         Ok(rust_databases) => {
             // 分配内存存储数据库信息
             let c_databases = alloc::alloc::alloc(
-                alloc::alloc::Layout::array::<RemDbDatabaseInfo>(rust_databases.len()).expect("failed to allocate memory"),
+                alloc::alloc::Layout::array::<RemDbDatabaseInfo>(rust_databases.len())
+                    .expect("failed to allocate memory"),
             ) as *mut RemDbDatabaseInfo;
 
             if c_databases.is_null() {
@@ -3132,7 +3248,8 @@ pub unsafe extern "C" fn remdb_free_databases(
     if !databases.is_null() {
         alloc::alloc::dealloc(
             databases as *mut u8,
-            alloc::alloc::Layout::array::<RemDbDatabaseInfo>(count).expect("failed to allocate memory"),
+            alloc::alloc::Layout::array::<RemDbDatabaseInfo>(count)
+                .expect("failed to allocate memory"),
         );
     }
     RemDbError::Success

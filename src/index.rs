@@ -1,4 +1,12 @@
-pub mod builder; mod hnsw; mod ivf; use crate::platform::{memcpy, memset}; use crate::types::{DataType, DistanceType, IndexType, RemDbError, Result, TableDef, VectorIndexType, VectorMetadata}; use core::ptr::NonNull;
+pub mod builder;
+mod hnsw;
+mod ivf;
+use crate::platform::{memcpy, memset};
+use crate::types::{
+    DataType, DistanceType, IndexType, RemDbError, Result, TableDef, VectorIndexType,
+    VectorMetadata,
+};
+use core::ptr::NonNull;
 
 pub use builder::init_index_build_thread_pool;
 
@@ -158,71 +166,74 @@ unsafe fn encode_composite_key(
     primary_key_fields: &[&crate::types::FieldDef],
 ) -> (Vec<u8>, usize) {
     let mut encoded_key = Vec::new();
-    
+
     for field in primary_key_fields {
         let field_ptr = record_ptr.add(field.offset);
         match field.data_type {
             crate::types::DataType::UInt8 => {
                 let value = core::ptr::read_unaligned(field_ptr as *const u8);
                 encoded_key.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             crate::types::DataType::UInt16 => {
                 let value = core::ptr::read_unaligned(field_ptr as *const u16);
                 encoded_key.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             crate::types::DataType::UInt32 => {
                 let value = core::ptr::read_unaligned(field_ptr as *const u32);
                 encoded_key.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             crate::types::DataType::UInt64 => {
                 let value = core::ptr::read_unaligned(field_ptr as *const u64);
                 encoded_key.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             crate::types::DataType::Int8 => {
                 let value = core::ptr::read_unaligned(field_ptr as *const i8);
                 encoded_key.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             crate::types::DataType::Int16 => {
                 let value = core::ptr::read_unaligned(field_ptr as *const i16);
                 encoded_key.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             crate::types::DataType::Int32 => {
                 let value = core::ptr::read_unaligned(field_ptr as *const i32);
                 encoded_key.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             crate::types::DataType::Int64 => {
                 let value = core::ptr::read_unaligned(field_ptr as *const i64);
                 encoded_key.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             crate::types::DataType::Float32 => {
                 let value = core::ptr::read_unaligned(field_ptr as *const f32);
                 encoded_key.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             crate::types::DataType::Float64 => {
                 let value = core::ptr::read_unaligned(field_ptr as *const f64);
                 encoded_key.extend_from_slice(&value.to_le_bytes());
-            },
+            }
             crate::types::DataType::Bool => {
                 let value = core::ptr::read_unaligned(field_ptr as *const bool);
                 encoded_key.push(value as u8);
-            },
+            }
             crate::types::DataType::Timestamp => {
-                let value = core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp);
+                let value =
+                    core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp);
                 encoded_key.extend_from_slice(&value.value.to_le_bytes());
-            },
-            crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => {
+            }
+            crate::types::DataType::VarChar
+            | crate::types::DataType::Char
+            | crate::types::DataType::Text => {
                 // 字符串类型：编码为长度前缀 + 内容
                 let str_slice = core::slice::from_raw_parts(field_ptr, field.size);
                 let str_len = str_slice.iter().position(|&c| c == 0).unwrap_or(field.size);
                 encoded_key.push(str_len as u8);
                 encoded_key.extend_from_slice(&str_slice[0..str_len]);
-            },
+            }
             _ => {
                 // 其他类型暂不支持作为主键
             }
         }
     }
-    
+
     let len = encoded_key.len();
     (encoded_key, len)
 }
@@ -352,14 +363,16 @@ impl PrimaryIndex {
     /// 插入复合主键索引�?
     pub unsafe fn insert_composite(&mut self, record_ptr: *const u8, record_id: u16) -> Result<()> {
         // 获取主键字段列表
-        let primary_key_fields: Vec<&crate::types::FieldDef> = self.def.primary_key
+        let primary_key_fields: Vec<&crate::types::FieldDef> = self
+            .def
+            .primary_key
             .iter()
             .map(|&idx| &self.def.fields[idx])
             .collect();
-        
+
         // 编码复合键
         let (encoded_key, key_size) = encode_composite_key(record_ptr, &primary_key_fields);
-        
+
         // 调用普通插入方法
         self.insert(encoded_key.as_ptr(), key_size, record_id)
     }
@@ -404,14 +417,16 @@ impl PrimaryIndex {
     /// 根据记录指针查找复合主键对应的记录ID
     pub unsafe fn find_composite(&mut self, record_ptr: *const u8) -> Result<u16> {
         // 获取主键字段列表
-        let primary_key_fields: Vec<&crate::types::FieldDef> = self.def.primary_key
+        let primary_key_fields: Vec<&crate::types::FieldDef> = self
+            .def
+            .primary_key
             .iter()
             .map(|&idx| &self.def.fields[idx])
             .collect();
-        
+
         // 编码复合�?
         let (encoded_key, key_size) = encode_composite_key(record_ptr, &primary_key_fields);
-        
+
         // 调用普通查找方�?
         self.find(encoded_key.as_ptr(), key_size)
     }
@@ -476,14 +491,16 @@ impl PrimaryIndex {
     /// 根据记录指针删除复合主键索引�?
     pub unsafe fn delete_composite(&mut self, record_ptr: *const u8) -> Result<()> {
         // 获取主键字段列表
-        let primary_key_fields: Vec<&crate::types::FieldDef> = self.def.primary_key
+        let primary_key_fields: Vec<&crate::types::FieldDef> = self
+            .def
+            .primary_key
             .iter()
             .map(|&idx| &self.def.fields[idx])
             .collect();
-        
+
         // 编码复合�?
         let (encoded_key, key_size) = encode_composite_key(record_ptr, &primary_key_fields);
-        
+
         // 调用普通删除方�?
         self.delete(encoded_key.as_ptr(), key_size)
     }
@@ -581,7 +598,10 @@ impl VectorIndex {
         let mut vector_index_type = VectorIndexType::HNSW;
 
         // 验证是否有有效的辅助索引字段
-        let secondary_index = def.secondary_index.as_ref().ok_or(RemDbError::TypeMismatch)?;
+        let secondary_index = def
+            .secondary_index
+            .as_ref()
+            .ok_or(RemDbError::TypeMismatch)?;
         if secondary_index.len() != 1 {
             return Err(RemDbError::TypeMismatch);
         }
@@ -609,7 +629,7 @@ impl VectorIndex {
                 distance_type = meta.distance_type;
                 vector_index_type = meta.index_type;
                 meta
-            },
+            }
             None => {
                 #[cfg(feature = "log")]
                 error!("TypeMismatch: field.vector_metadata is None");
@@ -627,7 +647,7 @@ impl VectorIndex {
         // 计算内存布局
         let items_size = max_items * core::mem::size_of::<VectorIndexItem>();
         let vectors_size = max_items * dimension as usize * core::mem::size_of::<f32>();
-        
+
         // 初始化索引项数组
         let items = memory_start as *mut VectorIndexItem;
         // 使用安全的方式初始化索引项数�?
@@ -646,20 +666,26 @@ impl VectorIndex {
             let vec_ptr = unsafe { vectors.add(i) };
             *vec_ptr = 0.0;
         }
-        
+
         // 初始化索引实�?
         let index_impl = match vector_index_type {
             VectorIndexType::HNSW | VectorIndexType::HNSW_SQ | VectorIndexType::HNSW_BQ => {
                 // 创建HNSW索引
                 let hnsw_memory = (memory_start.add(items_size + vectors_size)) as *mut u8;
-                let hnsw_index = hnsw::HNSWIndex::new(*vector_meta, vectors, hnsw_memory, max_items)?;
+                let hnsw_index =
+                    hnsw::HNSWIndex::new(*vector_meta, vectors, hnsw_memory, max_items)?;
                 VectorIndexImpl::HNSW(Some(hnsw_index))
-            },
+            }
             VectorIndexType::IVF | VectorIndexType::IVF_PQ => {
                 // 创建IVF_FLAT索引
-                let ivf_index = ivf::IVFIndex::new(*vector_meta, vectors, vector_meta.ivf_nlist, vector_meta.ivf_nprobe)?;
+                let ivf_index = ivf::IVFIndex::new(
+                    *vector_meta,
+                    vectors,
+                    vector_meta.ivf_nlist,
+                    vector_meta.ivf_nprobe,
+                )?;
                 VectorIndexImpl::IVFFlat(Some(ivf_index))
-            },
+            }
             _ => {
                 // 默认使用线性搜�?
                 VectorIndexImpl::LinearSearch
@@ -716,7 +742,7 @@ impl VectorIndex {
 
         // 确保返回的内存大小至少为1，避免alloc分配0内存
         let base_size = items_size + vectors_size;
-        
+
         let index_impl_size = if let Some(secondary_index) = def.secondary_index.as_ref() {
             if !secondary_index.is_empty() {
                 let secondary_index = secondary_index[0];
@@ -740,33 +766,34 @@ impl VectorIndex {
         } else {
             0
         };
-        
+
         core::cmp::max(base_size + index_impl_size, 1)
     }
-    
+
     fn calculate_index_impl_memory_size(meta: &VectorMetadata, max_items: usize) -> usize {
         match meta.index_type {
             VectorIndexType::HNSW | VectorIndexType::HNSW_SQ | VectorIndexType::HNSW_BQ => {
                 let max_level = (max_items as f64).ln() as usize;
                 let max_level = core::cmp::max(max_level, 1);
-                
+
                 let base_node_size = core::mem::size_of::<usize>() + core::mem::size_of::<u16>();
                 let neighbor_counts_capacity = max_level + 1;
                 let neighbors_capacity = (max_level + 1) * 32;
-                
+
                 let vec_overhead = 3 * core::mem::size_of::<usize>();
                 let neighbor_counts_size = vec_overhead + neighbor_counts_capacity;
-                let neighbors_size = vec_overhead + neighbors_capacity * core::mem::size_of::<NonNull<()>>();
-                
+                let neighbors_size =
+                    vec_overhead + neighbors_capacity * core::mem::size_of::<NonNull<()>>();
+
                 let node_total_size = base_node_size + neighbor_counts_size + neighbors_size;
                 max_items * node_total_size
-            },
+            }
             VectorIndexType::IVF | VectorIndexType::IVF_PQ => {
                 let nlist = meta.ivf_nlist as usize;
                 let nlist = core::cmp::max(nlist, 1);
                 let centroid_size = meta.dimension as usize * core::mem::size_of::<f32>();
                 nlist * centroid_size + nlist * core::mem::size_of::<usize>()
-            },
+            }
             _ => 0,
         }
     }
@@ -796,7 +823,7 @@ impl VectorIndex {
                 let mut dot = 0.0;
                 let mut norm1 = 0.0;
                 let mut norm2 = 0.0;
-                
+
                 for i in 0..self.dimension {
                     let v1 = *vec1.add(i as usize);
                     let v2 = *vec2.add(i as usize);
@@ -804,10 +831,10 @@ impl VectorIndex {
                     norm1 += v1 * v1;
                     norm2 += v2 * v2;
                 }
-                
+
                 let norm1 = norm1.sqrt();
                 let norm2 = norm2.sqrt();
-                
+
                 if norm1 == 0.0 || norm2 == 0.0 {
                     0.0
                 } else {
@@ -816,17 +843,16 @@ impl VectorIndex {
             }
         }
     }
-    
+
     /// 保存索引到磁�?
     #[cfg(feature = "std")]
     pub fn save(&self, file_path: &str) -> Result<()> {
         use std::fs::File;
         use std::io::Write;
-        
+
         // 打开文件用于写入
-        let mut file = File::create(file_path)
-            .map_err(|_| RemDbError::FileIoError)?;
-        
+        let mut file = File::create(file_path).map_err(|_| RemDbError::FileIoError)?;
+
         // 保存索引元数�?
         // 写入索引类型
         file.write_all(&[self.vector_index_type as u8])
@@ -846,7 +872,7 @@ impl VectorIndex {
         // 写入当前向量数量
         file.write_all(&self.vector_count.to_le_bytes())
             .map_err(|_| RemDbError::FileIoError)?;
-        
+
         // 保存索引�?
         unsafe {
             for i in 0..self.item_count {
@@ -859,7 +885,7 @@ impl VectorIndex {
                     .map_err(|_| RemDbError::FileIoError)?;
             }
         }
-        
+
         // 保存向量数据
         unsafe {
             let vector_size = self.vector_count * self.dimension as usize;
@@ -867,13 +893,13 @@ impl VectorIndex {
             let vec_bytes = unsafe {
                 core::slice::from_raw_parts(
                     vec_slice.as_ptr() as *const u8,
-                    vector_size * core::mem::size_of::<f32>()
+                    vector_size * core::mem::size_of::<f32>(),
                 )
             };
             file.write_all(vec_bytes)
                 .map_err(|_| RemDbError::FileIoError)?;
         }
-        
+
         // 保存具体索引实现数据
         match &self.index_impl {
             VectorIndexImpl::HNSW(Some(hnsw_index)) => {
@@ -886,10 +912,10 @@ impl VectorIndex {
                 // 线性搜索不需要保存额外数�?
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// 从磁盘加载索�?
     #[cfg(feature = "std")]
     pub unsafe fn load(
@@ -899,11 +925,10 @@ impl VectorIndex {
     ) -> Result<Self> {
         use std::fs::File;
         use std::io::Read;
-        
+
         // 打开文件用于读取
-        let mut file = File::open(file_path)
-            .map_err(|_| RemDbError::FileIoError)?;
-        
+        let mut file = File::open(file_path).map_err(|_| RemDbError::FileIoError)?;
+
         // 读取索引元数�?
         // 读取索引类型
         let mut index_type_byte = [0u8; 1];
@@ -917,87 +942,87 @@ impl VectorIndex {
             4 => VectorIndexType::IVF_PQ,
             _ => VectorIndexType::HNSW, // 默认�?
         };
-        
+
         // 读取距离类型
         let mut distance_type_byte = [0u8; 1];
         file.read_exact(&mut distance_type_byte)
             .map_err(|_| RemDbError::FileIoError)?;
         let distance_type = match distance_type_byte[0] {
-                0 => DistanceType::L2,
-                1 => DistanceType::InnerProduct,
-                2 => DistanceType::Cosine,
-                _ => DistanceType::L2, // 默认�?
-            };
-        
+            0 => DistanceType::L2,
+            1 => DistanceType::InnerProduct,
+            2 => DistanceType::Cosine,
+            _ => DistanceType::L2, // 默认�?
+        };
+
         // 读取向量维度
         let mut dimension_bytes = [0u8; 2];
         file.read_exact(&mut dimension_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         let dimension = u16::from_le_bytes(dimension_bytes);
-        
+
         // 读取最大项数量
         let mut max_items_bytes = [0u8; 8];
         file.read_exact(&mut max_items_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         let max_items = usize::from_le_bytes(max_items_bytes);
-        
+
         // 读取当前项数�?
         let mut item_count_bytes = [0u8; 8];
         file.read_exact(&mut item_count_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         let item_count = usize::from_le_bytes(item_count_bytes);
-        
+
         // 读取当前向量数量
         let mut vector_count_bytes = [0u8; 8];
         file.read_exact(&mut vector_count_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
         let vector_count = usize::from_le_bytes(vector_count_bytes);
-        
+
         // 计算内存布局
         let items_size = max_items * core::mem::size_of::<VectorIndexItem>();
         let vectors_size = max_items * dimension as usize * core::mem::size_of::<f32>();
-        
+
         // 初始化索引项数组
         let items = memory_start as *mut VectorIndexItem;
-        
+
         // 读取索引�?
         for i in 0..item_count {
             let mut item = VectorIndexItem {
                 vector_offset: 0,
                 record_id: 0,
             };
-            
+
             // 读取向量偏移�?
             let mut offset_bytes = [0u8; 8];
             file.read_exact(&mut offset_bytes)
                 .map_err(|_| RemDbError::FileIoError)?;
             item.vector_offset = usize::from_le_bytes(offset_bytes);
-            
+
             // 读取记录ID
             let mut record_id_bytes = [0u8; 2];
             file.read_exact(&mut record_id_bytes)
                 .map_err(|_| RemDbError::FileIoError)?;
             item.record_id = u16::from_le_bytes(record_id_bytes);
-            
+
             // 保存到内�?
             *items.add(i) = item;
         }
-        
+
         // 初始化向量数据数�?
         let vectors = (memory_start.add(items_size)) as *mut f32;
-        
+
         // 读取向量数据
         let vector_size = vector_count * dimension as usize;
         let vec_slice = core::slice::from_raw_parts_mut(vectors, vector_size);
         let vec_bytes = unsafe {
             core::slice::from_raw_parts_mut(
                 vec_slice.as_mut_ptr() as *mut u8,
-                vector_size * core::mem::size_of::<f32>()
+                vector_size * core::mem::size_of::<f32>(),
             )
         };
         file.read_exact(vec_bytes)
             .map_err(|_| RemDbError::FileIoError)?;
-        
+
         // 加载具体索引实现
         let index_impl = match vector_index_type {
             VectorIndexType::HNSW | VectorIndexType::HNSW_SQ | VectorIndexType::HNSW_BQ => {
@@ -1010,20 +1035,15 @@ impl VectorIndex {
                     compression_enabled: false,
                     compression_scheme: 0,
                     compression_level: 3,
-                    hnsw_m: 16, // 默认值，实际值会从文件加�?
+                    hnsw_m: 16,                // 默认值，实际值会从文件加�?
                     hnsw_ef_construction: 200, // 默认值，实际值会从文件加�?
-                    hnsw_ef_search: 100, // 默认值，实际值会从文件加�?
-                    ivf_nlist: 100, // 默认值，实际值会从文件加�?
-                    ivf_nprobe: 10, // 默认值，实际值会从文件加�?
+                    hnsw_ef_search: 100,       // 默认值，实际值会从文件加�?
+                    ivf_nlist: 100,            // 默认值，实际值会从文件加�?
+                    ivf_nprobe: 10,            // 默认值，实际值会从文件加�?
                 };
-                let hnsw_index = hnsw::HNSWIndex::load(
-                    vector_meta,
-                    vectors,
-                    hnsw_memory,
-                    max_items,
-                    &mut file
-                )
-                .map_err(|_| RemDbError::FileIoError)?;
+                let hnsw_index =
+                    hnsw::HNSWIndex::load(vector_meta, vectors, hnsw_memory, max_items, &mut file)
+                        .map_err(|_| RemDbError::FileIoError)?;
                 VectorIndexImpl::HNSW(Some(hnsw_index))
             }
             VectorIndexType::IVF | VectorIndexType::IVF_PQ => {
@@ -1035,23 +1055,19 @@ impl VectorIndex {
                     compression_enabled: false,
                     compression_scheme: 0,
                     compression_level: 3,
-                    hnsw_m: 16, // 默认�?
+                    hnsw_m: 16,                // 默认�?
                     hnsw_ef_construction: 200, // 默认�?
-                    hnsw_ef_search: 100, // 默认�?
-                    ivf_nlist: 100, // 默认值，实际值会从文件加�?
-                    ivf_nprobe: 10, // 默认值，实际值会从文件加�?
+                    hnsw_ef_search: 100,       // 默认�?
+                    ivf_nlist: 100,            // 默认值，实际值会从文件加�?
+                    ivf_nprobe: 10,            // 默认值，实际值会从文件加�?
                 };
-                let ivf_index = ivf::IVFIndex::load(
-                    vector_meta,
-                    vectors,
-                    &mut file
-                )
-                .map_err(|_| RemDbError::FileIoError)?;
+                let ivf_index = ivf::IVFIndex::load(vector_meta, vectors, &mut file)
+                    .map_err(|_| RemDbError::FileIoError)?;
                 VectorIndexImpl::IVFFlat(Some(ivf_index))
             }
             _ => VectorIndexImpl::LinearSearch,
         };
-        
+
         Ok(VectorIndex {
             def,
             stats: IndexStats::default(),
@@ -1067,7 +1083,7 @@ impl VectorIndex {
             index_impl,
         })
     }
-    
+
     /// 计算两个向量之间的距离（旧实现，保留用于兼容性）
     unsafe fn calculate_distance_old(&self, vec1: *const f32, vec2: *const f32) -> f32 {
         match self.distance_type {
@@ -1115,12 +1131,7 @@ impl VectorIndex {
     }
 
     /// 插入向量索引�?
-    pub unsafe fn insert(
-        &mut self,
-        key: *const u8,
-        key_size: usize,
-        record_id: u16,
-    ) -> Result<()> {
+    pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
 
@@ -1150,12 +1161,8 @@ impl VectorIndex {
 
         // 更新具体索引实现（锁内不使用 ?，失败时先释放锁并保持计数不变）
         let impl_result = match &mut self.index_impl {
-            VectorIndexImpl::HNSW(Some(hnsw_index)) => {
-                hnsw_index.insert(start_offset, record_id)
-            }
-            VectorIndexImpl::IVFFlat(Some(ivf_index)) => {
-                ivf_index.insert(start_offset, record_id)
-            }
+            VectorIndexImpl::HNSW(Some(hnsw_index)) => hnsw_index.insert(start_offset, record_id),
+            VectorIndexImpl::IVFFlat(Some(ivf_index)) => ivf_index.insert(start_offset, record_id),
             _ => {
                 // 线性搜索不需要额外操作
                 Ok(())
@@ -1204,11 +1211,10 @@ impl VectorIndex {
         // 检查key是否是指向字符串的指针（向量字面量）
         if key_size > 4 && *key == b'[' {
             // 解析向量字面量 [x1, x2, ..., xn]
-            let vec_str =
-                match core::str::from_utf8(core::slice::from_raw_parts(key, key_size)) {
-                    Ok(s) => s,
-                    Err(_) => return Err(RemDbError::TypeMismatch),
-                };
+            let vec_str = match core::str::from_utf8(core::slice::from_raw_parts(key, key_size)) {
+                Ok(s) => s,
+                Err(_) => return Err(RemDbError::TypeMismatch),
+            };
 
             // 移除首尾的方括号
             let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
@@ -1247,24 +1253,20 @@ impl VectorIndex {
         crate::platform::spin_lock(&mut self.lock);
 
         let result = match &self.index_impl {
-            VectorIndexImpl::HNSW(Some(hnsw_index)) => {
-                match hnsw_index.search(query_vec, 1) {
-                    Ok(results) => match results.first() {
-                        Some(&(_, record_id)) => Ok(record_id),
-                        None => Err(RemDbError::RecordNotFound),
-                    },
-                    Err(e) => Err(e),
-                }
-            }
-            VectorIndexImpl::IVFFlat(Some(ivf_index)) => {
-                match ivf_index.search(query_vec, 1) {
-                    Ok(results) => match results.first() {
-                        Some(&(_, record_id)) => Ok(record_id),
-                        None => Err(RemDbError::RecordNotFound),
-                    },
-                    Err(e) => Err(e),
-                }
-            }
+            VectorIndexImpl::HNSW(Some(hnsw_index)) => match hnsw_index.search(query_vec, 1) {
+                Ok(results) => match results.first() {
+                    Some(&(_, record_id)) => Ok(record_id),
+                    None => Err(RemDbError::RecordNotFound),
+                },
+                Err(e) => Err(e),
+            },
+            VectorIndexImpl::IVFFlat(Some(ivf_index)) => match ivf_index.search(query_vec, 1) {
+                Ok(results) => match results.first() {
+                    Some(&(_, record_id)) => Ok(record_id),
+                    None => Err(RemDbError::RecordNotFound),
+                },
+                Err(e) => Err(e),
+            },
             _ => {
                 // 线性搜索查找最相似的向量
                 let mut min_distance = f32::MAX;
@@ -1340,9 +1342,8 @@ impl VectorIndex {
                     all_results.push((distance, (*item_ptr).record_id));
                 }
                 // Sort by distance ascending
-                all_results.sort_by(|a, b| {
-                    a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal)
-                });
+                all_results
+                    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal));
                 all_results.truncate(k);
                 crate::platform::spin_unlock(&mut self.lock);
                 all_results
@@ -1373,13 +1374,12 @@ impl VectorIndex {
         // 检查key是否是指向字符串的指针（向量字面量）
         if _start_key_size > 4 && *start_key == b'[' {
             // 解析向量字面量 [x1, x2, ..., xn]
-            let vec_str = match core::str::from_utf8(core::slice::from_raw_parts(
-                start_key,
-                _start_key_size,
-            )) {
-                Ok(s) => s,
-                Err(_) => return Err(RemDbError::TypeMismatch),
-            };
+            let vec_str =
+                match core::str::from_utf8(core::slice::from_raw_parts(start_key, _start_key_size))
+                {
+                    Ok(s) => s,
+                    Err(_) => return Err(RemDbError::TypeMismatch),
+                };
 
             // 移除首尾的方括号
             let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
@@ -1477,13 +1477,12 @@ impl VectorIndex {
         // 检查key是否是指向字符串的指针（向量字面量）
         if _start_key_size > 4 && *start_key == b'[' {
             // 解析向量字面量 [x1, x2, ..., xn]
-            let vec_str = match core::str::from_utf8(core::slice::from_raw_parts(
-                start_key,
-                _start_key_size,
-            )) {
-                Ok(s) => s,
-                Err(_) => return Err(RemDbError::TypeMismatch),
-            };
+            let vec_str =
+                match core::str::from_utf8(core::slice::from_raw_parts(start_key, _start_key_size))
+                {
+                    Ok(s) => s,
+                    Err(_) => return Err(RemDbError::TypeMismatch),
+                };
 
             // 移除首尾的方括号
             let vec_str = vec_str.trim_start_matches('[').trim_end_matches(']');
@@ -1658,10 +1657,10 @@ impl JsonIndex {
     ) -> Result<Self> {
         // 创建底层B-Tree索引
         let btree = BTreeIndex::new(def.clone(), memory_start as *mut BTreeNode, max_items);
-        
+
         // 检查是否为JSON字段索引
         let json_path = None; // 暂时不提取JSON路径，简化实现
-        
+
         Ok(JsonIndex {
             def,
             btree,
@@ -1670,43 +1669,47 @@ impl JsonIndex {
             lock: 0,
         })
     }
-    
+
     /// 计算JSON索引所需的内存大小
     pub fn calculate_memory_size(max_items: usize) -> usize {
         // 使用B-Tree索引的内存大小
         BTreeIndex::calculate_memory_size(max_items)
     }
-    
+
     /// 编码JSON路径和值为索引键（暂未实现）
-    fn encode_json_key(&self, _json_doc: &crate::json::JsonDocument, _path: &str) -> Result<(Vec<u8>, usize)> {
+    fn encode_json_key(
+        &self,
+        _json_doc: &crate::json::JsonDocument,
+        _path: &str,
+    ) -> Result<(Vec<u8>, usize)> {
         // 暂未实现JSON路径编码
         Err(RemDbError::UnsupportedOperation)
     }
-    
+
     /// 插入JSON索引项
     pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
-        
+
         // 直接使用提供的键（已经编码）
         let result = self.btree.insert(key, key_size, record_id);
-        
+
         crate::platform::spin_unlock(&mut self.lock);
         result
     }
-    
+
     /// 根据键查找记录ID
     pub unsafe fn find(&mut self, key: *const u8, key_size: usize) -> Result<u16> {
         // 更新统计信息
         self.stats.access_count += 1;
-        
+
         let result = self.btree.find(key, key_size);
         if result.is_ok() {
             self.stats.hit_count += 1;
         }
         result
     }
-    
+
     /// 范围查询（返回第一个匹配项）
     pub unsafe fn find_range(
         &mut self,
@@ -1717,14 +1720,16 @@ impl JsonIndex {
     ) -> Result<u16> {
         // 更新统计信息
         self.stats.access_count += 1;
-        
-        let result = self.btree.find_range(start_key, start_key_size, end_key, end_key_size);
+
+        let result = self
+            .btree
+            .find_range(start_key, start_key_size, end_key, end_key_size);
         if result.is_ok() {
             self.stats.hit_count += 1;
         }
         result
     }
-    
+
     /// 范围查询（返回所有匹配项）
     pub unsafe fn find_range_all(
         &mut self,
@@ -1737,37 +1742,41 @@ impl JsonIndex {
     ) -> Result<usize> {
         // 更新统计信息
         self.stats.access_count += 1;
-        
+
         let result = self.btree.find_range_all(
-            start_key, start_key_size, end_key, end_key_size,
-            out_record_ids, max_records,
+            start_key,
+            start_key_size,
+            end_key,
+            end_key_size,
+            out_record_ids,
+            max_records,
         );
-        
+
         if let Ok(count) = result {
             if count > 0 {
                 self.stats.hit_count += count;
             }
         }
-        
+
         result
     }
-    
+
     /// 删除索引项
     pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
-        
+
         let result = self.btree.delete(key, key_size);
-        
+
         crate::platform::spin_unlock(&mut self.lock);
         result
     }
-    
+
     /// 获取索引统计信息
     pub fn stats(&self) -> &IndexStats {
         &self.stats
     }
-    
+
     /// 重置索引统计信息
     pub fn reset_stats(&mut self) {
         self.stats = IndexStats::default();
@@ -2035,11 +2044,16 @@ impl SecondaryIndex {
             if let Some(field_index) = secondary_index.first() {
                 if *field_index < self.def.fields.len() {
                     let field = &self.def.fields[*field_index];
-                    if field.data_type == crate::types::DataType::VarChar || field.data_type == crate::types::DataType::Char || field.data_type == crate::types::DataType::Text {
+                    if field.data_type == crate::types::DataType::VarChar
+                        || field.data_type == crate::types::DataType::Char
+                        || field.data_type == crate::types::DataType::Text
+                    {
                         // 尝试使用UTF-8处理器比较字符串
                         if let (Some(str1), Some(str2)) = (
-                            crate::utf8::get_global_utf8_processor().to_string(&item1.key_data[..item1.key_size as usize]),
-                            crate::utf8::get_global_utf8_processor().to_string(&item2.key_data[..item2.key_size as usize])
+                            crate::utf8::get_global_utf8_processor()
+                                .to_string(&item1.key_data[..item1.key_size as usize]),
+                            crate::utf8::get_global_utf8_processor()
+                                .to_string(&item2.key_data[..item2.key_size as usize]),
                         ) {
                             let cmp = str1.cmp(str2);
                             if cmp != core::cmp::Ordering::Equal {
@@ -2612,11 +2626,16 @@ impl BTreeIndex {
             if let Some(field_index) = secondary_index.first() {
                 if *field_index < self.def.fields.len() {
                     let field = &self.def.fields[*field_index];
-                    if field.data_type == crate::types::DataType::VarChar || field.data_type == crate::types::DataType::Char || field.data_type == crate::types::DataType::Text {
+                    if field.data_type == crate::types::DataType::VarChar
+                        || field.data_type == crate::types::DataType::Char
+                        || field.data_type == crate::types::DataType::Text
+                    {
                         // 尝试使用UTF-8处理器比较字符串
                         if let (Some(str1), Some(str2)) = (
-                            crate::utf8::get_global_utf8_processor().to_string(&item1.key_data[..item1.key_size as usize]),
-                            crate::utf8::get_global_utf8_processor().to_string(&item2.key_data[..item2.key_size as usize])
+                            crate::utf8::get_global_utf8_processor()
+                                .to_string(&item1.key_data[..item1.key_size as usize]),
+                            crate::utf8::get_global_utf8_processor()
+                                .to_string(&item2.key_data[..item2.key_size as usize]),
                         ) {
                             let cmp = str1.cmp(str2);
                             if cmp != core::cmp::Ordering::Equal {
@@ -2697,7 +2716,11 @@ impl BTreeIndex {
     }
 
     /// 插入键到非满节点
-    unsafe fn insert_non_full(&mut self, mut node: NonNull<BTreeNode>, key: SecondaryIndexItem) -> Result<()> {
+    unsafe fn insert_non_full(
+        &mut self,
+        mut node: NonNull<BTreeNode>,
+        key: SecondaryIndexItem,
+    ) -> Result<()> {
         let node_mut = node.as_mut();
         let mut pos = self.find_key_position(node_mut, &key);
 
@@ -2711,7 +2734,8 @@ impl BTreeIndex {
             self.stats.item_count += 1;
         } else {
             // 内部节点，递归插入
-            let child = node_mut.children[pos].ok_or(RemDbError::InvalidData("Child node not found"))?;
+            let child =
+                node_mut.children[pos].ok_or(RemDbError::InvalidData("Child node not found"))?;
 
             // 如果子节点已满，先分�?
             if child.as_ref().key_count == BTREE_ORDER as u8 {
@@ -2724,7 +2748,8 @@ impl BTreeIndex {
             }
 
             self.insert_non_full(
-                node_mut.children[pos].ok_or(RemDbError::InvalidData("Child node not found after split"))?,
+                node_mut.children[pos]
+                    .ok_or(RemDbError::InvalidData("Child node not found after split"))?,
                 key,
             )?;
         }
@@ -2754,20 +2779,20 @@ impl BTreeIndex {
 
         if self.root.is_none() {
             // 空树，创建根节点
-            let mut root_node = self
-                .allocate_node()?;
+            let mut root_node = self.allocate_node()?;
             let root_mut = root_node.as_mut();
 
             root_mut.keys[0] = new_item;
             root_mut.key_count = 1;
             self.root = Some(root_node);
         } else {
-            let root = self.root.ok_or(RemDbError::InvalidData("Root node missing"))?;
+            let root = self
+                .root
+                .ok_or(RemDbError::InvalidData("Root node missing"))?;
 
             // 如果根节点已满，分裂根节�?
             if root.as_ref().key_count == BTREE_ORDER as u8 {
-                let mut new_root = self
-                    .allocate_node()?;
+                let mut new_root = self.allocate_node()?;
                 let new_root_mut = new_root.as_mut();
 
                 new_root_mut.is_leaf = false;
@@ -3330,21 +3355,21 @@ impl TTreeIndex {
 
         if self.root.is_none() {
             // 空树，创建根节点
-            let mut root_node = self
-                .allocate_node()?;
+            let mut root_node = self.allocate_node()?;
             let root_mut = root_node.as_mut();
 
             root_mut.keys[0] = new_item;
             root_mut.key_count = 1;
             self.root = Some(root_node);
         } else {
-            let mut root = self.root.ok_or(RemDbError::InvalidData("Root node missing"))?;
+            let mut root = self
+                .root
+                .ok_or(RemDbError::InvalidData("Root node missing"))?;
 
             // 如果根节点已满，需要分�?
             if root.as_ref().key_count == TTREE_ORDER as u8 {
                 // 简化实现：创建新根节点，将原根节点作为左子节点
-                let mut new_root = self
-                    .allocate_node()?;
+                let mut new_root = self.allocate_node()?;
                 let new_root_mut = new_root.as_mut();
 
                 // 将新键插入到适当的位�?
@@ -3374,8 +3399,7 @@ impl TTreeIndex {
                 }
 
                 // 创建右子节点
-                let mut right_node = self
-                    .allocate_node()?;
+                let mut right_node = self.allocate_node()?;
                 let right_mut = right_node.as_mut();
 
                 // 分配键到左右子节�?
@@ -3412,7 +3436,12 @@ impl TTreeIndex {
     }
 
     /// 递归插入索引�?
-    unsafe fn insert_recursive_with_depth(&mut self, mut node: NonNull<TTreeNode>, key: SecondaryIndexItem, depth: usize) -> Result<()> {
+    unsafe fn insert_recursive_with_depth(
+        &mut self,
+        mut node: NonNull<TTreeNode>,
+        key: SecondaryIndexItem,
+        depth: usize,
+    ) -> Result<()> {
         const MAX_RECURSION_DEPTH: usize = 100;
         if depth > MAX_RECURSION_DEPTH {
             // 递归深度过大，强制分裂当前节点以避免栈溢出
@@ -3471,8 +3500,7 @@ impl TTreeIndex {
                 }
 
                 // 创建新的右子节点
-                let mut new_right = self
-                    .allocate_node()?;
+                let mut new_right = self.allocate_node()?;
                 let new_right_mut = new_right.as_mut();
 
                 // 分配键到左右子节�?
@@ -3524,8 +3552,7 @@ impl TTreeIndex {
             } else {
                 // 节点已满，需要分�?
                 // 简化实现：创建新节�?
-                let mut new_node = self
-                    .allocate_node()?;
+                let mut new_node = self.allocate_node()?;
                 let new_node_mut = new_node.as_mut();
 
                 // 将当前节点的键和新键合并

@@ -64,6 +64,7 @@ static CONFIG: DbConfig = DbConfig {
         master_port: None,
         replication_port: 5556,
     }),
+    model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
 };
 
 fn main() {

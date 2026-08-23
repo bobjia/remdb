@@ -223,6 +223,7 @@ fn test_large_table_performance() {
             master_port: None,
             replication_port: 5556,
         }),
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     });
 
     unsafe {

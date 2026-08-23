@@ -298,44 +298,47 @@ fn test_time_series_batch_performance() {
         let _ = memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
 
         // 创建默认的DbConfig
-        static TEST_CONFIG: std::sync::LazyLock<crate::config::DbConfig> = std::sync::LazyLock::new(|| crate::config::DbConfig {
-            tables: vec![],
-            total_memory: 2097152,
-            low_power_mode_supported: false,
-            low_power_max_records: None,
-            default_max_records: 10000,
-            memory_allocator: &crate::config::DefaultMemoryAllocator,
-            wal_config: crate::config::WALConfig {
-                log_path: "./wal",
-                log_mode: crate::config::LogMode::Async,
-                checkpoint_interval_ms: 60000,
-                log_file_size_limit: 16 * 1024 * 1024,
-                log_prealloc_size: 0,
-                log_segment_size: 16 * 1024 * 1024,
-                retained_checkpoints: 3,
-                max_consecutive_invalid: 100,
-                skip_threshold: 1000,
-                skip_block_size: 1024 * 1024,
-                max_skip_attempts: 3,
-                compression_type: WALCompressionType::None,
-                compression_level: 3,
-            },
-            time_series_defaults: TimeSeriesConfig::DEFAULT,
-            #[cfg(feature = "pubsub")]
-            pubsub_config: None,
-            #[cfg(feature = "ha")]
-            ha_config: Some(crate::config::HAConfig {
-                node_id: 1, // 默认节点ID为1
-                ha_role: crate::ha::HARole::Auto,
-                replication_mode: crate::ha::ReplicationMode::Async,
-                heartbeat_interval_ms: 1000,
-                failure_detection_ms: 5000,
-                sync_timeout_ms: 5000,
-                master_address: None,
-                master_port: None,
-                replication_port: 5556,
-            }),
-        });
+        static TEST_CONFIG: std::sync::LazyLock<crate::config::DbConfig> =
+            std::sync::LazyLock::new(|| crate::config::DbConfig {
+                tables: vec![],
+                total_memory: 2097152,
+                low_power_mode_supported: false,
+                low_power_max_records: None,
+                default_max_records: 10000,
+                memory_allocator: &crate::config::DefaultMemoryAllocator,
+                wal_config: crate::config::WALConfig {
+                    log_path: "./wal",
+                    log_mode: crate::config::LogMode::Async,
+                    checkpoint_interval_ms: 60000,
+                    log_file_size_limit: 16 * 1024 * 1024,
+                    log_prealloc_size: 0,
+                    log_segment_size: 16 * 1024 * 1024,
+                    retained_checkpoints: 3,
+                    max_consecutive_invalid: 100,
+                    skip_threshold: 1000,
+                    skip_block_size: 1024 * 1024,
+                    max_skip_attempts: 3,
+                    compression_type: WALCompressionType::None,
+                    compression_level: 3,
+                },
+                time_series_defaults: TimeSeriesConfig::DEFAULT,
+                #[cfg(feature = "pubsub")]
+                pubsub_config: None,
+                #[cfg(feature = "ha")]
+                ha_config: Some(crate::config::HAConfig {
+                    node_id: 1, // 默认节点ID为1
+                    ha_role: crate::ha::HARole::Auto,
+                    replication_mode: crate::ha::ReplicationMode::Async,
+                    heartbeat_interval_ms: 1000,
+                    failure_detection_ms: 5000,
+                    sync_timeout_ms: 5000,
+                    master_address: None,
+                    master_port: None,
+                    replication_port: 5556,
+                }),
+
+                model_worker_config: Default::default(),
+            });
         let config = &*TEST_CONFIG;
 
         // 创建RemDb实例

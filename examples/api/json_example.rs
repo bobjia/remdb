@@ -45,6 +45,8 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -67,7 +69,7 @@ fn main() -> Result<()> {
 
     // 2. 插入包含 JSON 数据的记录
     println!("\n2. 插入包含 JSON 数据的记录");
-    
+
     let insert_sql = r#"
         INSERT INTO users (id, name, profile, settings) VALUES 
         (1, 'Alice', '{"age": 30, "city": "Beijing", "skills": ["Rust", "Python"]}', '{"theme": "dark", "notifications": true}'),
@@ -85,23 +87,26 @@ fn main() -> Result<()> {
 
     // 4. JSON 路径查询 - 提取特定字段
     println!("\n4. JSON 路径查询");
-    
+
     // 使用 JSON 提取函数
-    let result = db.sql_query(r#"SELECT id, name, JSON_EXTRACT(profile, '$.city') AS city FROM users"#)?;
+    let result =
+        db.sql_query(r#"SELECT id, name, JSON_EXTRACT(profile, '$.city') AS city FROM users"#)?;
     println!("   提取城市信息:");
     println!("{}", result.to_string());
 
     // 5. JSON 条件查询
     println!("\n5. JSON 条件查询");
-    
+
     // 查询年龄大于 30 的用户
-    let result = db.sql_query(r#"SELECT id, name, profile FROM users WHERE JSON_EXTRACT(profile, '$.age') > 30"#)?;
+    let result = db.sql_query(
+        r#"SELECT id, name, profile FROM users WHERE JSON_EXTRACT(profile, '$.age') > 30"#,
+    )?;
     println!("   年龄大于 30 的用户:");
     println!("{}", result.to_string());
 
     // 6. JSON 数组操作
     println!("\n6. JSON 数组操作");
-    
+
     // 查询包含特定技能的用户
     let result = db.sql_query(r#"SELECT id, name FROM users WHERE JSON_CONTAINS(JSON_EXTRACT(profile, '$.skills'), '"Rust"')"#)?;
     println!("   拥有 Rust 技能的用户:");
@@ -111,16 +116,18 @@ fn main() -> Result<()> {
     println!("\n7. 更新 JSON 字段");
     db.sql_query(r#"UPDATE users SET profile = '{"age": 31, "city": "Shenzhen", "skills": ["Rust", "Python", "Go"]}' WHERE id = 1"#)?;
     println!("   更新 Alice 的 profile");
-    
+
     let result = db.sql_query("SELECT id, name, profile FROM users WHERE id = 1")?;
     println!("   更新后的数据:");
     println!("{}", result.to_string());
 
     // 8. JSON 函数示例
     println!("\n8. JSON 函数示例");
-    
+
     // JSON_KEYS - 获取 JSON 对象的所有键
-    let result = db.sql_query(r#"SELECT id, name, JSON_KEYS(profile) AS profile_keys FROM users WHERE id = 1"#)?;
+    let result = db.sql_query(
+        r#"SELECT id, name, JSON_KEYS(profile) AS profile_keys FROM users WHERE id = 1"#,
+    )?;
     println!("   profile 字段的所有键:");
     println!("{}", result.to_string());
 
@@ -131,7 +138,7 @@ fn main() -> Result<()> {
 
     // 9. 嵌套 JSON 查询
     println!("\n9. 嵌套 JSON 查询");
-    
+
     // 插入嵌套 JSON 数据
     let insert_nested = r#"
         INSERT INTO users (id, name, profile, settings) VALUES 
@@ -139,7 +146,7 @@ fn main() -> Result<()> {
     "#;
     db.sql_query(insert_nested)?;
     println!("   插入嵌套 JSON 数据");
-    
+
     // 查询嵌套字段
     let result = db.sql_query(r#"SELECT id, name, JSON_EXTRACT(profile, '$.address.city') AS city FROM users WHERE id = 4"#)?;
     println!("   查询嵌套城市字段:");
@@ -147,7 +154,7 @@ fn main() -> Result<()> {
 
     // 10. JSON 聚合
     println!("\n10. JSON 聚合统计");
-    
+
     // 统计不同主题设置的用户数
     let result = db.sql_query(r#"SELECT JSON_EXTRACT(settings, '$.theme') AS theme, COUNT(*) AS count FROM users GROUP BY JSON_EXTRACT(settings, '$.theme')"#)?;
     println!("   按主题设置统计用户数:");

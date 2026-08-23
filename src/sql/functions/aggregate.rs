@@ -188,7 +188,9 @@ pub fn execute_var(args: &[TypedValue]) -> Result<TypedValue, crate::sql::QueryE
 }
 
 /// 执行STDDEV_SAMP函数
-pub fn execute_stddev_samp(args: &[TypedValue]) -> Result<TypedValue, crate::sql::QueryExecutionError> {
+pub fn execute_stddev_samp(
+    args: &[TypedValue],
+) -> Result<TypedValue, crate::sql::QueryExecutionError> {
     if args.is_empty() {
         return Err(crate::sql::QueryExecutionError::TypeMismatch);
     }
@@ -198,7 +200,9 @@ pub fn execute_stddev_samp(args: &[TypedValue]) -> Result<TypedValue, crate::sql
 }
 
 /// 执行VAR_SAMP函数
-pub fn execute_var_samp(args: &[TypedValue]) -> Result<TypedValue, crate::sql::QueryExecutionError> {
+pub fn execute_var_samp(
+    args: &[TypedValue],
+) -> Result<TypedValue, crate::sql::QueryExecutionError> {
     if args.is_empty() {
         return Err(crate::sql::QueryExecutionError::TypeMismatch);
     }
@@ -208,7 +212,9 @@ pub fn execute_var_samp(args: &[TypedValue]) -> Result<TypedValue, crate::sql::Q
 }
 
 /// 执行MOVING_AVERAGE函数
-pub fn execute_moving_average(args: &[TypedValue]) -> Result<TypedValue, crate::sql::QueryExecutionError> {
+pub fn execute_moving_average(
+    args: &[TypedValue],
+) -> Result<TypedValue, crate::sql::QueryExecutionError> {
     if args.len() < 2 {
         return Err(crate::sql::QueryExecutionError::TypeMismatch);
     }
@@ -219,7 +225,9 @@ pub fn execute_moving_average(args: &[TypedValue]) -> Result<TypedValue, crate::
 }
 
 /// 执行MOVING_SUM函数
-pub fn execute_moving_sum(args: &[TypedValue]) -> Result<TypedValue, crate::sql::QueryExecutionError> {
+pub fn execute_moving_sum(
+    args: &[TypedValue],
+) -> Result<TypedValue, crate::sql::QueryExecutionError> {
     if args.len() < 2 {
         return Err(crate::sql::QueryExecutionError::TypeMismatch);
     }

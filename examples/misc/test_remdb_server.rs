@@ -135,7 +135,7 @@ fn main() {
 
     // 定义数据库配置
     let config = Box::leak(Box::new(DbConfig {
-        tables: vec![],                   // 空的数据库配置
+        tables: vec![],                // 空的数据库配置
         total_memory: 4 * 1024 * 1024, // 4MB，与全局缓冲区大小一致
         low_power_mode_supported: false,
         low_power_max_records: None,
@@ -176,6 +176,7 @@ fn main() {
             compression: CompressionType::None,
             max_partitions: 100,
         },
+        model_worker_config: Default::default(),
     }));
 
     // 创建数据库实例

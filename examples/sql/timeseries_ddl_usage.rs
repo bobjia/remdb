@@ -73,6 +73,8 @@ fn main() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     unsafe {

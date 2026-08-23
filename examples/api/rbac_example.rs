@@ -46,6 +46,8 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -73,18 +75,18 @@ fn main() -> Result<()> {
 
     // 3. 授予权限给角色
     println!("\n3. 授予权限给角色");
-    
+
     // admin 角色拥有所有权限
     db.grant_permission("admin", Permission::Admin, None, None)?;
     println!("   授予 admin 角色管理员权限");
-    
+
     // developer 角色拥有读写权限
     db.grant_permission("developer", Permission::Insert, None, None)?;
     db.grant_permission("developer", Permission::Select, None, None)?;
     db.grant_permission("developer", Permission::Update, None, None)?;
     db.grant_permission("developer", Permission::Delete, None, None)?;
     println!("   授予 developer 角色读写权限");
-    
+
     // readonly 角色只有读取权限
     db.grant_permission("readonly", Permission::Select, None, None)?;
     println!("   授予 readonly 角色读取权限");
@@ -100,29 +102,38 @@ fn main() -> Result<()> {
 
     // 5. 检查权限
     println!("\n5. 检查权限");
-    
+
     // alice (admin) 应该有所有权限
     let has_insert = db.check_permission("alice", &Permission::Insert, &None, &None)?;
     let has_select = db.check_permission("alice", &Permission::Select, &None, &None)?;
     let has_update = db.check_permission("alice", &Permission::Update, &None, &None)?;
-    println!("   alice (admin): Insert={}, Select={}, Update={}", has_insert, has_select, has_update);
-    
+    println!(
+        "   alice (admin): Insert={}, Select={}, Update={}",
+        has_insert, has_select, has_update
+    );
+
     // bob (developer) 应该有读写权限
     let has_insert = db.check_permission("bob", &Permission::Insert, &None, &None)?;
     let has_select = db.check_permission("bob", &Permission::Select, &None, &None)?;
     let has_admin = db.check_permission("bob", &Permission::Admin, &None, &None)?;
-    println!("   bob (developer): Insert={}, Select={}, Admin={}", has_insert, has_select, has_admin);
-    
+    println!(
+        "   bob (developer): Insert={}, Select={}, Admin={}",
+        has_insert, has_select, has_admin
+    );
+
     // charlie (readonly) 应该只有读取权限
     let has_select = db.check_permission("charlie", &Permission::Select, &None, &None)?;
     let has_delete = db.check_permission("charlie", &Permission::Delete, &None, &None)?;
-    println!("   charlie (readonly): Select={}, Delete={}", has_select, has_delete);
+    println!(
+        "   charlie (readonly): Select={}, Delete={}",
+        has_select, has_delete
+    );
 
     // 6. 撤销权限
     println!("\n6. 撤销权限");
     db.revoke_permission("developer", &Permission::Delete, &None, &None)?;
     println!("   撤销 developer 角色的删除权限");
-    
+
     let has_delete = db.check_permission("bob", &Permission::Delete, &None, &None)?;
     println!("   bob 现在是否有删除权限: {}", has_delete);
 
@@ -130,7 +141,7 @@ fn main() -> Result<()> {
     println!("\n7. 撤销用户角色");
     db.revoke_role("bob", "developer")?;
     println!("   撤销 bob 的 developer 角色");
-    
+
     // bob 现在没有任何权限
     let has_select = db.check_permission("bob", &Permission::Select, &None, &None)?;
     println!("   bob 现在是否有读取权限: {}", has_select);
@@ -144,19 +155,29 @@ fn main() -> Result<()> {
 
     // 9. 表级别权限
     println!("\n9. 表级别权限");
-    
+
     // 先创建一个表
     db.sql_query("CREATE TABLE sensitive_data (id INT32 PRIMARY KEY, value TEXT)")?;
     println!("   创建表: sensitive_data");
-    
+
     // 授予 developer 角色对特定表的读取权限
-    db.grant_permission("developer", Permission::Select, Some("sensitive_data".to_string()), None)?;
+    db.grant_permission(
+        "developer",
+        Permission::Select,
+        Some("sensitive_data".to_string()),
+        None,
+    )?;
     println!("   授予 developer 角色对 sensitive_data 表的读取权限");
-    
+
     // 重新给 bob 分配 developer 角色
     db.grant_role("bob", "developer")?;
-    
-    let has_select = db.check_permission("bob", &Permission::Select, &Some("sensitive_data".to_string()), &None)?;
+
+    let has_select = db.check_permission(
+        "bob",
+        &Permission::Select,
+        &Some("sensitive_data".to_string()),
+        &None,
+    )?;
     println!("   bob 是否有读取 sensitive_data 表的权限: {}", has_select);
 
     println!("\n=== RBAC 示例完成 ===");

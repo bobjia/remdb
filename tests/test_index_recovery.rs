@@ -4,7 +4,7 @@ use remdb::platform::{FileHandle, FileMode, FileResult, Platform, SeekWhence};
 use remdb::types::Result;
 
 // 定义测试用的内存缓冲区
-static mut DB_MEMORY: [u8; 2* 1024 * 1024] = [0u8; 2* 1024 * 1024]; // 2MB内存
+static mut DB_MEMORY: [u8; 2 * 1024 * 1024] = [0u8; 2 * 1024 * 1024]; // 2MB内存
 
 // 定义测试平台
 struct TestPlatform;
@@ -119,34 +119,37 @@ fn test_index_recovery() -> Result<()> {
 
     // 使用全局初始化函数初始化数据库
     // 创建静态数据库配置
-    static TEST_DB_CONFIG: std::sync::LazyLock<remdb::config::DbConfig> = std::sync::LazyLock::new(|| remdb::config::DbConfig {
-        tables: vec![],
-        total_memory: 1024 * 1024, // 1MB
-        low_power_mode_supported: false,
-        low_power_max_records: None,
-        default_max_records: 1000,
-        memory_allocator: &remdb::config::DefaultMemoryAllocator,
-        wal_config: remdb::config::WALConfig {
-            log_path: "./wal",
-            log_mode: remdb::config::LogMode::Sync,
-            checkpoint_interval_ms: 60000,
-            log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
-            log_segment_size: 16 * 1024 * 1024,
-            retained_checkpoints: 3,
-            max_consecutive_invalid: 100,
-            skip_threshold: 1000,
-            skip_block_size: 1024 * 1024,
-            max_skip_attempts: 3,
-            compression_type: remdb::config::WALCompressionType::None,
-            compression_level: 3,            
-        },
-        time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
-        #[cfg(feature = "pubsub")]
-        pubsub_config: None,
-        #[cfg(feature = "ha")]
-        ha_config: None,
-    });
+    static TEST_DB_CONFIG: std::sync::LazyLock<remdb::config::DbConfig> =
+        std::sync::LazyLock::new(|| remdb::config::DbConfig {
+            tables: vec![],
+            total_memory: 1024 * 1024, // 1MB
+            low_power_mode_supported: false,
+            low_power_max_records: None,
+            default_max_records: 1000,
+            memory_allocator: &remdb::config::DefaultMemoryAllocator,
+            wal_config: remdb::config::WALConfig {
+                log_path: "./wal",
+                log_mode: remdb::config::LogMode::Sync,
+                checkpoint_interval_ms: 60000,
+                log_file_size_limit: 16 * 1024 * 1024,
+                log_prealloc_size: 1 * 1024 * 1024,
+                log_segment_size: 16 * 1024 * 1024,
+                retained_checkpoints: 3,
+                max_consecutive_invalid: 100,
+                skip_threshold: 1000,
+                skip_block_size: 1024 * 1024,
+                max_skip_attempts: 3,
+                compression_type: remdb::config::WALCompressionType::None,
+                compression_level: 3,
+            },
+            time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
+            #[cfg(feature = "pubsub")]
+            pubsub_config: None,
+            #[cfg(feature = "ha")]
+            ha_config: None,
+
+            model_worker_config: Default::default(),
+        });
 
     let db = remdb::init_global_db(&TEST_DB_CONFIG)?;
 

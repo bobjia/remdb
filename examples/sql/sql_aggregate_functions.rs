@@ -43,6 +43,8 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -69,35 +71,36 @@ fn main() -> Result<()> {
 
     // 3. COUNT function
     println!("\n3. COUNT function");
-    
+
     let result = db.sql_query("SELECT COUNT(*) AS total_count FROM sales")?;
     println!("   Total records:");
     println!("{}", result.to_string());
 
     // 4. SUM function
     println!("\n4. SUM function");
-    
+
     let result = db.sql_query("SELECT SUM(quantity) AS total_quantity FROM sales")?;
     println!("   Total quantity:");
     println!("{}", result.to_string());
 
     // 5. AVG function
     println!("\n5. AVG function");
-    
+
     let result = db.sql_query("SELECT AVG(price) AS avg_price FROM sales")?;
     println!("   Average price:");
     println!("{}", result.to_string());
 
     // 6. MIN and MAX functions
     println!("\n6. MIN and MAX functions");
-    
-    let result = db.sql_query("SELECT MIN(price) AS min_price, MAX(price) AS max_price FROM sales")?;
+
+    let result =
+        db.sql_query("SELECT MIN(price) AS min_price, MAX(price) AS max_price FROM sales")?;
     println!("   Min and max price:");
     println!("{}", result.to_string());
 
     // 7. Combined aggregate functions
     println!("\n7. Combined aggregate functions");
-    
+
     let result = db.sql_query(
         "SELECT COUNT(*) AS count, SUM(quantity) AS total_qty, AVG(price) AS avg_price, MIN(price) AS min_price, MAX(price) AS max_price FROM sales"
     )?;
@@ -106,7 +109,7 @@ fn main() -> Result<()> {
 
     // 8. GROUP BY + aggregate functions
     println!("\n8. GROUP BY + aggregate functions");
-    
+
     let result = db.sql_query(
         "SELECT category, COUNT(*) AS count, SUM(quantity) AS total_qty, AVG(price) AS avg_price FROM sales GROUP BY category"
     )?;
@@ -115,7 +118,7 @@ fn main() -> Result<()> {
 
     // 9. GROUP BY + ORDER BY
     println!("\n9. GROUP BY + ORDER BY");
-    
+
     let result = db.sql_query(
         "SELECT category, SUM(quantity * price) AS total_revenue FROM sales GROUP BY category ORDER BY total_revenue DESC"
     )?;
@@ -124,9 +127,9 @@ fn main() -> Result<()> {
 
     // 10. GROUP BY + HAVING
     println!("\n10. GROUP BY + HAVING");
-    
+
     let result = db.sql_query(
-        "SELECT category, COUNT(*) AS count FROM sales GROUP BY category HAVING count >= 3"
+        "SELECT category, COUNT(*) AS count FROM sales GROUP BY category HAVING count >= 3",
     )?;
     println!("   Categories with 3+ records:");
     println!("{}", result.to_string());

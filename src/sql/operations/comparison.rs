@@ -2,15 +2,15 @@
 //!
 //! This module contains comparison and condition evaluation logic.
 
-use alloc::string::String;
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 
+#[cfg(feature = "log")]
+use crate::log::debug;
 use crate::sql::query_parser::ComparisonOperator;
 use crate::sql::{ComparisonCondition, Condition};
 use crate::types::{DataType, JsonStorage, RemDbError, TypedValue};
 use crate::{MemoryTable, Value};
-#[cfg(feature = "log")]
-use crate::log::debug;
 
 /// Helper function to convert a TypedValue to i64 for numeric comparison
 fn to_i64_for_comparison(val: &TypedValue) -> Option<i64> {
@@ -63,9 +63,16 @@ fn to_f64_for_comparison(val: &TypedValue) -> Option<f64> {
 fn is_numeric_type(dt: DataType) -> bool {
     matches!(
         dt,
-        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
-        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
-        DataType::Float32 | DataType::Float64
+        DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Float32
+            | DataType::Float64
     )
 }
 
@@ -319,10 +326,8 @@ pub fn compare_field_with_condition(
                 }
                 crate::sql::Value::String(c_str) => {
                     // Treat "true"/"1"/"yes" as true, anything else as false
-                    let c_bool = matches!(
-                        c_str.to_uppercase().as_str(),
-                        "TRUE" | "1" | "YES" | "ON"
-                    );
+                    let c_bool =
+                        matches!(c_str.to_uppercase().as_str(), "TRUE" | "1" | "YES" | "ON");
                     compare_booleans(f_val, c_bool, operator)
                 }
                 _ => false,
@@ -372,8 +377,14 @@ pub fn compare_field_with_condition(
         DataType::Json => {
             #[cfg(feature = "log")]
             {
-                debug!("compare_field_with_condition: JSON type comparison, field_value={:?}", field_value);
-                debug!("compare_field_with_condition: operator={:?}, condition_value={:?}", operator, condition_value);
+                debug!(
+                    "compare_field_with_condition: JSON type comparison, field_value={:?}",
+                    field_value
+                );
+                debug!(
+                    "compare_field_with_condition: operator={:?}, condition_value={:?}",
+                    operator, condition_value
+                );
             }
             false
         }
@@ -416,20 +427,20 @@ pub fn compare_strings(f: &str, c: &str, operator: &ComparisonOperator) -> bool 
 pub fn like_pattern_match(string: &str, pattern: &str) -> bool {
     let mut string_iter = string.chars().peekable();
     let mut pattern_iter = pattern.chars().peekable();
-    
+
     while let Some(p_char) = pattern_iter.next() {
         match p_char {
             '%' => {
                 while pattern_iter.peek() == Some(&'%') {
                     pattern_iter.next();
                 }
-                
+
                 if pattern_iter.peek().is_none() {
                     return true;
                 }
-                
+
                 let remaining_pattern: String = pattern_iter.collect();
-                
+
                 let mut pos = 0;
                 while pos <= string.len() {
                     if let Some(substring) = string.get(pos..) {
@@ -441,16 +452,16 @@ pub fn like_pattern_match(string: &str, pattern: &str) -> bool {
                     }
                     pos += 1;
                 }
-                
+
                 return false;
             }
-            
+
             '_' => {
                 if string_iter.next().is_none() {
                     return false;
                 }
             }
-            
+
             '\\' => {
                 if let Some(next_p_char) = pattern_iter.next() {
                     if let Some(s_char) = string_iter.next() {
@@ -466,7 +477,7 @@ pub fn like_pattern_match(string: &str, pattern: &str) -> bool {
                     }
                 }
             }
-            
+
             _ => {
                 if let Some(s_char) = string_iter.next() {
                     if s_char != p_char {
@@ -478,7 +489,7 @@ pub fn like_pattern_match(string: &str, pattern: &str) -> bool {
             }
         }
     }
-    
+
     string_iter.next().is_none()
 }
 
@@ -541,16 +552,14 @@ pub unsafe fn evaluate_condition_with_alias(
                 alias_map,
             )
         }
-        Condition::Not(inner) => {
-            !evaluate_condition_with_alias(
-                table,
-                record_values,
-                columns,
-                expr_values,
-                inner,
-                alias_map,
-            )
-        }
+        Condition::Not(inner) => !evaluate_condition_with_alias(
+            table,
+            record_values,
+            columns,
+            expr_values,
+            inner,
+            alias_map,
+        ),
     }
 }
 
@@ -562,8 +571,8 @@ pub unsafe fn evaluate_comparison_with_alias(
     comp: &ComparisonCondition,
     alias_map: &BTreeMap<String, &crate::sql::query_parser::Expression>,
 ) -> bool {
-    use crate::sql::query_parser::Expression;
     use crate::sql::operations::expression::evaluate_expression;
+    use crate::sql::query_parser::Expression;
 
     // Special handling for JSON functions in WHERE clause
     // The field is a Debug format of Expression enum, like:
@@ -611,14 +620,26 @@ pub unsafe fn evaluate_comparison_with_alias(
                             match json_storage {
                                 JsonStorage::Inline(data) => {
                                     let len = data.iter().position(|&b| b == 0).unwrap_or(256);
-                                    core::str::from_utf8(&data[..len]).unwrap_or("").trim_end_matches(char::from(0))
+                                    core::str::from_utf8(&data[..len])
+                                        .unwrap_or("")
+                                        .trim_end_matches(char::from(0))
                                 }
-                                JsonStorage::External { pool_id, offset, length } => {
-                                    let pool_manager = crate::json::memory_pool::get_global_json_pool_manager();
+                                JsonStorage::External {
+                                    pool_id,
+                                    offset,
+                                    length,
+                                } => {
+                                    let pool_manager =
+                                        crate::json::memory_pool::get_global_json_pool_manager();
                                     if let Some(manager) = pool_manager {
                                         if let Some(pool) = manager.get_pool(*pool_id) {
-                                            if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
-                                                let data = core::slice::from_raw_parts(data_ptr, *length as usize);
+                                            if let Some(data_ptr) =
+                                                pool.get_block_data(*offset as usize, 0)
+                                            {
+                                                let data = core::slice::from_raw_parts(
+                                                    data_ptr,
+                                                    *length as usize,
+                                                );
                                                 core::str::from_utf8(data).unwrap_or("")
                                             } else {
                                                 ""
@@ -661,7 +682,10 @@ pub unsafe fn evaluate_comparison_with_alias(
     }
 
     // Handle JSON_EXTRACT function
-    if comp.field.contains("JSON_EXTRACT") && comp.field.contains("data") && comp.field.contains("$.age") {
+    if comp.field.contains("JSON_EXTRACT")
+        && comp.field.contains("data")
+        && comp.field.contains("$.age")
+    {
         // Find the data field index
         let data_field_index = table.def.fields.iter().position(|f| f.name == "data");
         if let Some(idx) = data_field_index {
@@ -674,15 +698,29 @@ pub unsafe fn evaluate_comparison_with_alias(
                         match json_storage {
                             JsonStorage::Inline(data) => {
                                 let len = data.iter().position(|&b| b == 0).unwrap_or(256);
-                                core::str::from_utf8(&data[..len]).unwrap_or("").trim_end_matches(char::from(0))
+                                core::str::from_utf8(&data[..len])
+                                    .unwrap_or("")
+                                    .trim_end_matches(char::from(0))
                             }
-                            JsonStorage::External { pool_id, offset, length } => {
-                                let pool_manager = crate::json::memory_pool::get_global_json_pool_manager();
+                            JsonStorage::External {
+                                pool_id,
+                                offset,
+                                length,
+                            } => {
+                                let pool_manager =
+                                    crate::json::memory_pool::get_global_json_pool_manager();
                                 if let Some(manager) = pool_manager {
                                     if let Some(pool) = manager.get_pool(*pool_id) {
-                                        if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
-                                            let data = core::slice::from_raw_parts(data_ptr, *length as usize);
-                                            core::str::from_utf8(data).unwrap_or("").trim_end_matches(char::from(0))
+                                        if let Some(data_ptr) =
+                                            pool.get_block_data(*offset as usize, 0)
+                                        {
+                                            let data = core::slice::from_raw_parts(
+                                                data_ptr,
+                                                *length as usize,
+                                            );
+                                            core::str::from_utf8(data)
+                                                .unwrap_or("")
+                                                .trim_end_matches(char::from(0))
                                         } else {
                                             ""
                                         }
@@ -699,7 +737,9 @@ pub unsafe fn evaluate_comparison_with_alias(
                     DataType::VarChar | DataType::Char | DataType::Text => {
                         let data = &data_value.value.string;
                         let len = data.iter().position(|&b| b == 0).unwrap_or(64);
-                        core::str::from_utf8(&data[..len]).unwrap_or("").trim_end_matches(char::from(0))
+                        core::str::from_utf8(&data[..len])
+                            .unwrap_or("")
+                            .trim_end_matches(char::from(0))
                     }
                     _ => "",
                 }
@@ -773,45 +813,54 @@ pub unsafe fn evaluate_comparison_with_alias(
 
     // Handle vector distance expressions like "vector <-> [1.0, 2.0, 3.0]"
     if comp.field.contains("<->") || comp.field.contains("<#>") || comp.field.contains("<=>") {
-        use crate::sql::operations::vector::{calculate_vector_l2_distance, calculate_vector_inner_product, calculate_vector_cosine_similarity, parse_vector_distance_expression};
-        
+        use crate::sql::operations::vector::{
+            calculate_vector_cosine_similarity, calculate_vector_inner_product,
+            calculate_vector_l2_distance, parse_vector_distance_expression,
+        };
+
         if let Some((field_name, op, compare_vec)) = parse_vector_distance_expression(&comp.field) {
             // Find the vector field index
             let field_index = table.def.fields.iter().position(|f| f.name == field_name);
             if let Some(idx) = field_index {
                 let field = &table.def.fields[idx];
-                
+
                 // Check if it's a vector type
                 if !matches!(field.data_type, DataType::Vector) {
                     return false;
                 }
-                
+
                 // Get vector dimension
                 let dimension = if let Some(metadata) = field.vector_metadata {
                     metadata.dimension
                 } else {
                     return false;
                 };
-                
+
                 // Get vector field value
                 let vector_field_value = &record_values[idx];
                 let vector_ptr = vector_field_value.value.vector;
-                
+
                 // Get threshold (distance threshold, not vector value)
                 let threshold = match &comp.value {
                     crate::sql::Value::Float(f) => *f,
                     crate::sql::Value::Integer(i) => *i as f64,
                     _ => return false,
                 };
-                
+
                 // Calculate distance
                 let distance = match op {
-                    "<->" => unsafe { calculate_vector_l2_distance(vector_ptr, &compare_vec, dimension) },
-                    "<#>" => unsafe { calculate_vector_inner_product(vector_ptr, &compare_vec, dimension) },
-                    "<=>" => unsafe { calculate_vector_cosine_similarity(vector_ptr, &compare_vec, dimension) },
+                    "<->" => unsafe {
+                        calculate_vector_l2_distance(vector_ptr, &compare_vec, dimension)
+                    },
+                    "<#>" => unsafe {
+                        calculate_vector_inner_product(vector_ptr, &compare_vec, dimension)
+                    },
+                    "<=>" => unsafe {
+                        calculate_vector_cosine_similarity(vector_ptr, &compare_vec, dimension)
+                    },
                     _ => return false,
                 };
-                
+
                 // Compare distance with threshold
                 return match comp.operator {
                     ComparisonOperator::LessThan => distance < threshold,
@@ -824,7 +873,7 @@ pub unsafe fn evaluate_comparison_with_alias(
                 };
             }
         }
-        
+
         return false;
     }
 
@@ -963,33 +1012,34 @@ pub unsafe fn evaluate_comparison_with_alias(
                 left_num < right_num
             }
         }
-        ComparisonOperator::LessThanOrEqual => {
-            unsafe {
-                let left_num = match field_value.value_type {
-                    DataType::Int8 => field_value.value.i8 as f64,
-                    DataType::Int16 => field_value.value.i16 as f64,
-                    DataType::Int32 => field_value.value.i32 as f64,
-                    DataType::Int64 => field_value.value.i64 as f64,
-                    DataType::UInt8 => field_value.value.u8 as f64,
-                    DataType::UInt16 => field_value.value.u16 as f64,
-                    DataType::UInt32 => field_value.value.u32 as f64,
-                    DataType::UInt64 => field_value.value.u64 as f64,
-                    DataType::Float32 => field_value.value.float32 as f64,
-                    DataType::Float64 => field_value.value.float64,
-                    DataType::Timestamp => field_value.value.time.value as f64,
-                    DataType::TimestampTZ => field_value.value.time.value as f64,
-                    _ => return false,
-                };
-                let right_num = match comparison_value.value_type {
-                    DataType::Int64 => comparison_value.value.i64 as f64,
-                    DataType::Float64 => comparison_value.value.float64,
-                    _ => return false,
-                };
-                left_num <= right_num
-            }
-        }
+        ComparisonOperator::LessThanOrEqual => unsafe {
+            let left_num = match field_value.value_type {
+                DataType::Int8 => field_value.value.i8 as f64,
+                DataType::Int16 => field_value.value.i16 as f64,
+                DataType::Int32 => field_value.value.i32 as f64,
+                DataType::Int64 => field_value.value.i64 as f64,
+                DataType::UInt8 => field_value.value.u8 as f64,
+                DataType::UInt16 => field_value.value.u16 as f64,
+                DataType::UInt32 => field_value.value.u32 as f64,
+                DataType::UInt64 => field_value.value.u64 as f64,
+                DataType::Float32 => field_value.value.float32 as f64,
+                DataType::Float64 => field_value.value.float64,
+                DataType::Timestamp => field_value.value.time.value as f64,
+                DataType::TimestampTZ => field_value.value.time.value as f64,
+                _ => return false,
+            };
+            let right_num = match comparison_value.value_type {
+                DataType::Int64 => comparison_value.value.i64 as f64,
+                DataType::Float64 => comparison_value.value.float64,
+                _ => return false,
+            };
+            left_num <= right_num
+        },
         ComparisonOperator::Like => {
-            if matches!(field_value.value_type, DataType::VarChar | DataType::Char | DataType::Text) {
+            if matches!(
+                field_value.value_type,
+                DataType::VarChar | DataType::Char | DataType::Text
+            ) {
                 let field_str = core::str::from_utf8(&field_value.value.string)
                     .unwrap_or("")
                     .trim_end_matches(char::from(0));
@@ -1068,7 +1118,10 @@ pub unsafe fn evaluate_between_with_alias(
     }
 
     // Handle timestamp-based BETWEEN (e.g., ts BETWEEN 1000 AND 2000)
-    if matches!(field_value.value_type, DataType::Timestamp | DataType::TimestampTZ) {
+    if matches!(
+        field_value.value_type,
+        DataType::Timestamp | DataType::TimestampTZ
+    ) {
         let field_time = unsafe { field_value.value.time.value as u64 };
         let low_time = match &between.min_value {
             crate::sql::Value::Integer(i) => *i as u64,
@@ -1118,7 +1171,7 @@ fn extract_age_from_json(json_str: &str) -> Option<i64> {
     // Simple parsing: look for "age": followed by a number
     if let Some(age_start) = json_str.find("\"age\":") {
         let after_colon = &json_str[age_start + 6..]; // Skip "\"age\":"
-        // Find the next number
+                                                      // Find the next number
         let num_str: String = after_colon
             .chars()
             .skip_while(|c| !c.is_ascii_digit() && *c != '-')

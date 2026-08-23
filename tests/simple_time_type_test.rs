@@ -110,45 +110,48 @@ impl remdb::platform::Platform for TestPlatform {
 static TEST_PLATFORM: TestPlatform = TestPlatform;
 
 /// 创建测试用的DbConfig
-static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| config::DbConfig {
-    tables: vec![],
-    total_memory: 104857600,
-    default_max_records: 100,
-    low_power_mode_supported: false,
-    low_power_max_records: None,
-    // 添加缺少的字段
-    memory_allocator: &config::DefaultMemoryAllocator,
-    wal_config: WALConfig {
-        log_path: "./wal",
-        log_mode: config::LogMode::Async,
-        log_prealloc_size: 0,
-        log_file_size_limit: 104857600,
-        log_segment_size: 1048576,
-        checkpoint_interval_ms: 30000,
-        retained_checkpoints: 2,
-        max_consecutive_invalid: 100,
-        skip_threshold: 1000,
-        skip_block_size: 1024 * 1024,
-        max_skip_attempts: 3,
-        compression_type: remdb::config::WALCompressionType::None,
-        compression_level: 3,
-    },
-    time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
-    #[cfg(feature = "pubsub")]
-    pubsub_config: None,
-    #[cfg(feature = "ha")]
-    ha_config: Some(config::HAConfig {
-        node_id: 1,
-        ha_role: remdb::ha::HARole::Auto,
-        replication_mode: remdb::ha::ReplicationMode::Async,
-        heartbeat_interval_ms: 1000,
-        failure_detection_ms: 3000,
-        sync_timeout_ms: 1000,
-        master_address: None,
-        master_port: None,
-        replication_port: 5556,
-    }),
-});
+static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> =
+    std::sync::LazyLock::new(|| config::DbConfig {
+        tables: vec![],
+        total_memory: 104857600,
+        default_max_records: 100,
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        // 添加缺少的字段
+        memory_allocator: &config::DefaultMemoryAllocator,
+        wal_config: WALConfig {
+            log_path: "./wal",
+            log_mode: config::LogMode::Async,
+            log_prealloc_size: 0,
+            log_file_size_limit: 104857600,
+            log_segment_size: 1048576,
+            checkpoint_interval_ms: 30000,
+            retained_checkpoints: 2,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
+        },
+        time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: Some(config::HAConfig {
+            node_id: 1,
+            ha_role: remdb::ha::HARole::Auto,
+            replication_mode: remdb::ha::ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 1000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+        }),
+
+        model_worker_config: Default::default(),
+    });
 
 #[test]
 fn test_create_table_with_time_types() {

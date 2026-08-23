@@ -1,6 +1,6 @@
+use crate::utf8::get_global_utf8_processor;
 use core::fmt;
 use core::mem::size_of;
-use crate::utf8::get_global_utf8_processor;
 
 // 引入alloc模块
 extern crate alloc;
@@ -88,7 +88,7 @@ impl VectorMetadata {
             ivf_nprobe: 16,
         }
     }
-    
+
     /// 创建向量元数据，支持部分字段初始化
     pub const fn with_compression(
         dimension: u16,
@@ -114,7 +114,7 @@ impl VectorMetadata {
             ivf_nprobe: 16,
         }
     }
-    
+
     /// 创建向量元数据，支持完整参数初始化
     pub const fn with_all_params(
         dimension: u16,
@@ -187,7 +187,7 @@ impl JsonMetadata {
             index_config: JsonIndexConfig::default(),
         }
     }
-    
+
     /// 创建带有虚拟生成列的JSON元数据
     pub fn with_virtual_column(path: String, column_name: String) -> Self {
         Self {
@@ -198,12 +198,9 @@ impl JsonMetadata {
             index_config: JsonIndexConfig::default(),
         }
     }
-    
+
     /// 创建带有索引配置的JSON元数据
-    pub fn with_index_config(
-        path: String,
-        index_config: JsonIndexConfig,
-    ) -> Self {
+    pub fn with_index_config(path: String, index_config: JsonIndexConfig) -> Self {
         Self {
             path,
             value_type: None,
@@ -250,7 +247,16 @@ impl From<(u16, DistanceType, VectorIndexType)> for VectorMetadata {
 
 /// 允许使用元组语法初始化VectorMetadata，包含压缩字段
 impl From<(u16, DistanceType, VectorIndexType, bool, u8, u8)> for VectorMetadata {
-    fn from((dimension, distance_type, index_type, compression_enabled, compression_scheme, compression_level): (u16, DistanceType, VectorIndexType, bool, u8, u8)) -> Self {
+    fn from(
+        (
+            dimension,
+            distance_type,
+            index_type,
+            compression_enabled,
+            compression_scheme,
+            compression_level,
+        ): (u16, DistanceType, VectorIndexType, bool, u8, u8),
+    ) -> Self {
         Self {
             dimension,
             distance_type,
@@ -270,8 +276,48 @@ impl From<(u16, DistanceType, VectorIndexType, bool, u8, u8)> for VectorMetadata
 }
 
 /// 允许使用元组语法初始化VectorMetadata，包含完整参数
-impl From<(u16, DistanceType, VectorIndexType, bool, u8, u8, u8, u32, u32, u32, u32)> for VectorMetadata {
-    fn from((dimension, distance_type, index_type, compression_enabled, compression_scheme, compression_level, hnsw_m, hnsw_ef_construction, hnsw_ef_search, ivf_nlist, ivf_nprobe): (u16, DistanceType, VectorIndexType, bool, u8, u8, u8, u32, u32, u32, u32)) -> Self {
+impl
+    From<(
+        u16,
+        DistanceType,
+        VectorIndexType,
+        bool,
+        u8,
+        u8,
+        u8,
+        u32,
+        u32,
+        u32,
+        u32,
+    )> for VectorMetadata
+{
+    fn from(
+        (
+            dimension,
+            distance_type,
+            index_type,
+            compression_enabled,
+            compression_scheme,
+            compression_level,
+            hnsw_m,
+            hnsw_ef_construction,
+            hnsw_ef_search,
+            ivf_nlist,
+            ivf_nprobe,
+        ): (
+            u16,
+            DistanceType,
+            VectorIndexType,
+            bool,
+            u8,
+            u8,
+            u8,
+            u32,
+            u32,
+            u32,
+            u32,
+        ),
+    ) -> Self {
         Self {
             dimension,
             distance_type,
@@ -385,10 +431,10 @@ impl DataType {
             DataType::TimestampTZ => Some(core::mem::size_of::<db_timestamp>()), // 实际大小，包括精度和时区偏移
             DataType::Interval => Some(core::mem::size_of::<db_interval>()), // 实际大小，包括精度和标志
             DataType::VarChar => None, // VarChar size is variable at compile time
-            DataType::Char => None, // Char size is variable at compile time
-            DataType::Text => None, // Text size is variable at compile time
-            DataType::Vector => None, // Vector size depends on dimension at runtime
-            DataType::Json => None, // Json size is variable at runtime
+            DataType::Char => None,    // Char size is variable at compile time
+            DataType::Text => None,    // Text size is variable at compile time
+            DataType::Vector => None,  // Vector size depends on dimension at runtime
+            DataType::Json => None,    // Json size is variable at runtime
         }
     }
 
@@ -762,9 +808,7 @@ impl Clone for Value {
         // 对于union，我们需要复制整个内存区域
         // 这是安全的，因为我们只是复制原始数据，不涉及指针解引用
         // 对于指针类型，我们只是复制指针值，不涉及所有权转移
-        unsafe {
-            core::mem::transmute_copy(self)
-        }
+        unsafe { core::mem::transmute_copy(self) }
     }
 }
 
@@ -801,9 +845,9 @@ impl Clone for TypedValue {
     fn clone(&self) -> Self {
         let mut new_value = Value {
             // Initialize with a default value
-            u64: 0
+            u64: 0,
         };
-        
+
         unsafe {
             // Copy the appropriate field based on the value_type
             match self.value_type {
@@ -821,7 +865,9 @@ impl Clone for TypedValue {
                 DataType::Timestamp => new_value.time = self.value.time,
                 DataType::TimestampTZ => new_value.time = self.value.time,
                 DataType::Interval => new_value.interval = self.value.interval,
-                DataType::VarChar | DataType::Char | DataType::Text => new_value.string = self.value.string,
+                DataType::VarChar | DataType::Char | DataType::Text => {
+                    new_value.string = self.value.string
+                }
                 DataType::Vector => {
                     // For vectors, we don't copy the actual vector data,
                     // just copy the pointer
@@ -833,7 +879,7 @@ impl Clone for TypedValue {
                 }
             }
         }
-        
+
         TypedValue {
             value_type: self.value_type,
             value: new_value,
@@ -1028,15 +1074,15 @@ impl PartialOrd for TypedValue {
                             }
                         }
                         DataType::Interval => {
-                    Some(self.value.interval.value.cmp(&other.value.interval.value))
-                }
-                DataType::VarChar | DataType::Char | DataType::Text => {
-                    // 使用UTF-8处理器比较字符串
-                    let a_str = self.value.string.as_ref();
-                    let b_str = other.value.string.as_ref();
-                    Some(get_global_utf8_processor().compare(a_str, b_str))
-                }
-                DataType::Vector => {
+                            Some(self.value.interval.value.cmp(&other.value.interval.value))
+                        }
+                        DataType::VarChar | DataType::Char | DataType::Text => {
+                            // 使用UTF-8处理器比较字符串
+                            let a_str = self.value.string.as_ref();
+                            let b_str = other.value.string.as_ref();
+                            Some(get_global_utf8_processor().compare(a_str, b_str))
+                        }
+                        DataType::Vector => {
                             // 向量比较：比较向量指针
                             // 注意：实际使用中可能需要比较向量的距离或相似度
                             Some(self.value.vector.cmp(&other.value.vector))
@@ -1057,12 +1103,11 @@ impl PartialOrd for TypedValue {
 /// 手动实现Ord trait，用于在BTreeMap中用作键
 impl Ord for TypedValue {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other)
-            .unwrap_or_else(|| {
-                // 处理无法比较的情况（如NaN），将它们视为相等
-                // 这确保在BTreeMap中NaN值不会导致崩溃
-                core::cmp::Ordering::Equal
-            })
+        self.partial_cmp(other).unwrap_or_else(|| {
+            // 处理无法比较的情况（如NaN），将它们视为相等
+            // 这确保在BTreeMap中NaN值不会导致崩溃
+            core::cmp::Ordering::Equal
+        })
     }
 }
 
@@ -1154,7 +1199,8 @@ impl fmt::Debug for TypedValue {
                     )
                 }
                 DataType::VarChar | DataType::Char | DataType::Text => {
-                    let s = get_global_utf8_processor().to_string(&self.value.string)
+                    let s = get_global_utf8_processor()
+                        .to_string(&self.value.string)
                         .unwrap_or("")
                         .trim_end_matches(char::from(0));
                     write!(
@@ -1173,11 +1219,7 @@ impl fmt::Debug for TypedValue {
                     )
                 }
                 DataType::Vector => {
-                    write!(
-                        f,
-                        "TypedValue(Vector, pointer: {:?})",
-                        self.value.vector
-                    )
+                    write!(f, "TypedValue(Vector, pointer: {:?})", self.value.vector)
                 }
                 DataType::Json => {
                     write!(
@@ -1277,7 +1319,8 @@ impl FieldDef {
             unsafe {
                 match self.data_type {
                     DataType::VarChar | DataType::Char | DataType::Text => {
-                        let s = get_global_utf8_processor().to_string(&default.string)
+                        let s = get_global_utf8_processor()
+                            .to_string(&default.string)
                             .unwrap_or("")
                             .trim_end_matches(char::from(0));
                         constraints.push_str(&alloc::format!("'{}'", s));

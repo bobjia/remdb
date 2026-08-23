@@ -1,24 +1,24 @@
 //! Model Worker Binary
-//! 
+//!
 //! This is the standalone model worker process that handles model loading
 //! and inference requests from the main database process.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::io::{Read, Write};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
-use std::os::unix::net::{UnixStream, UnixListener};
+use std::os::unix::net::{UnixListener, UnixStream};
 
 #[cfg(windows)]
 use std::fs::OpenOptions;
 
-use remdb::model::{OnnxModel, ModelInfo};
 use remdb::model::worker_protocol::{
-    ModelRequest, ModelResponse, ModelMetadataMsg, ModelInput, ModelOutput,
-    ErrorCode, WorkerConfig, serialize_response, deserialize_request,
+    deserialize_request, serialize_response, ErrorCode, ModelInput, ModelMetadataMsg, ModelOutput,
+    ModelRequest, ModelResponse, WorkerConfig,
 };
+use remdb::model::{ModelInfo, OnnxModel};
 
 struct WorkerState {
     models: HashMap<String, Arc<OnnxModel>>,
@@ -43,32 +43,23 @@ impl WorkerState {
         self.requests_processed += 1;
 
         match request {
-            ModelRequest::LoadModel { name, path, inputs, output } => {
-                self.load_model(name, path, inputs, output)
-            }
-            ModelRequest::Execute { model_name, inputs } => {
-                self.execute_model(&model_name, inputs)
-            }
+            ModelRequest::LoadModel {
+                name,
+                path,
+                inputs,
+                output,
+            } => self.load_model(name, path, inputs, output),
+            ModelRequest::Execute { model_name, inputs } => self.execute_model(&model_name, inputs),
             ModelRequest::ExecuteBatch { model_name, inputs } => {
                 self.execute_batch(&model_name, inputs)
             }
-            ModelRequest::UnloadModel { name } => {
-                self.unload_model(&name)
-            }
-            ModelRequest::ListModels => {
-                ModelResponse::ModelList {
-                    models: self.models.keys().cloned().collect(),
-                }
-            }
-            ModelRequest::GetModelInfo { name } => {
-                self.get_model_info(&name)
-            }
-            ModelRequest::Ping => {
-                ModelResponse::Pong
-            }
-            ModelRequest::Shutdown => {
-                ModelResponse::Success
-            }
+            ModelRequest::UnloadModel { name } => self.unload_model(&name),
+            ModelRequest::ListModels => ModelResponse::ModelList {
+                models: self.models.keys().cloned().collect(),
+            },
+            ModelRequest::GetModelInfo { name } => self.get_model_info(&name),
+            ModelRequest::Ping => ModelResponse::Pong,
+            ModelRequest::Shutdown => ModelResponse::Success,
         }
     }
 
@@ -89,7 +80,10 @@ impl WorkerState {
         if self.models.len() >= self.config.max_models {
             return ModelResponse::Error {
                 code: ErrorCode::LoadFailed,
-                message: format!("Maximum number of models ({}) reached", self.config.max_models),
+                message: format!(
+                    "Maximum number of models ({}) reached",
+                    self.config.max_models
+                ),
             };
         }
 
@@ -99,10 +93,13 @@ impl WorkerState {
                 let metadata = ModelMetadataMsg {
                     name: name.clone(),
                     path: path.clone(),
-                    inputs: inputs.iter().map(|(n, t)| ModelInput {
-                        name: n.clone(),
-                        data_type: t.clone(),
-                    }).collect(),
+                    inputs: inputs
+                        .iter()
+                        .map(|(n, t)| ModelInput {
+                            name: n.clone(),
+                            data_type: t.clone(),
+                        })
+                        .collect(),
                     output: ModelOutput {
                         name: output.0.clone(),
                         data_type: output.1.clone(),
@@ -114,26 +111,22 @@ impl WorkerState {
 
                 ModelResponse::ModelLoaded { metadata }
             }
-            Err(e) => {
-                ModelResponse::Error {
-                    code: ErrorCode::LoadFailed,
-                    message: format!("Failed to load model: {}", e),
-                }
-            }
+            Err(e) => ModelResponse::Error {
+                code: ErrorCode::LoadFailed,
+                message: format!("Failed to load model: {}", e),
+            },
         }
     }
 
     fn execute_model(&mut self, model_name: &str, inputs: Vec<Vec<f32>>) -> ModelResponse {
         match self.models.get(model_name) {
-            Some(model) => {
-                match model.execute(&inputs) {
-                    Ok(output) => ModelResponse::ExecutionResult { output },
-                    Err(e) => ModelResponse::Error {
-                        code: ErrorCode::ExecutionFailed,
-                        message: format!("Model execution failed: {}", e),
-                    },
-                }
-            }
+            Some(model) => match model.execute(&inputs) {
+                Ok(output) => ModelResponse::ExecutionResult { output },
+                Err(e) => ModelResponse::Error {
+                    code: ErrorCode::ExecutionFailed,
+                    message: format!("Model execution failed: {}", e),
+                },
+            },
             None => ModelResponse::Error {
                 code: ErrorCode::ModelNotFound,
                 message: format!("Model '{}' not found", model_name),
@@ -143,15 +136,13 @@ impl WorkerState {
 
     fn execute_batch(&mut self, model_name: &str, inputs: Vec<Vec<f32>>) -> ModelResponse {
         match self.models.get(model_name) {
-            Some(model) => {
-                match model.execute_batch(&inputs) {
-                    Ok(outputs) => ModelResponse::BatchExecutionResult { outputs },
-                    Err(e) => ModelResponse::Error {
-                        code: ErrorCode::ExecutionFailed,
-                        message: format!("Batch execution failed: {}", e),
-                    },
-                }
-            }
+            Some(model) => match model.execute_batch(&inputs) {
+                Ok(outputs) => ModelResponse::BatchExecutionResult { outputs },
+                Err(e) => ModelResponse::Error {
+                    code: ErrorCode::ExecutionFailed,
+                    message: format!("Batch execution failed: {}", e),
+                },
+            },
             None => ModelResponse::Error {
                 code: ErrorCode::ModelNotFound,
                 message: format!("Model '{}' not found", model_name),
@@ -210,7 +201,7 @@ fn parse_args() -> (String, WorkerConfig) {
                 if i + 1 < args.len() {
                     let limit_str = &args[i + 1];
                     if limit_str.ends_with('m') || limit_str.ends_with('M') {
-                        if let Ok(v) = limit_str[..limit_str.len()-1].parse() {
+                        if let Ok(v) = limit_str[..limit_str.len() - 1].parse() {
                             config.memory_limit_mb = v;
                         }
                     }
@@ -252,8 +243,7 @@ fn run_server(socket_path: &str, config: WorkerConfig) {
 
     let _ = std::fs::remove_file(socket_path);
 
-    let listener = UnixListener::bind(socket_path)
-        .expect("Failed to bind to socket");
+    let listener = UnixListener::bind(socket_path).expect("Failed to bind to socket");
 
     println!("Model worker listening on {}", socket_path);
 
@@ -335,7 +325,10 @@ fn run_server(pipe_name: &str, config: WorkerConfig) {
 }
 
 #[cfg(windows)]
-fn handle_connection_pipe(pipe: &mut std::fs::File, state: &mut WorkerState) -> std::io::Result<()> {
+fn handle_connection_pipe(
+    pipe: &mut std::fs::File,
+    state: &mut WorkerState,
+) -> std::io::Result<()> {
     let mut len_buf = [0u8; 4];
     pipe.read_exact(&mut len_buf)?;
     let request_len = u32::from_be_bytes(len_buf) as usize;

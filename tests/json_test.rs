@@ -1,4 +1,4 @@
-use remdb::json::{JsonDocument};
+use remdb::json::JsonDocument;
 
 #[test]
 fn test_json_document_creation() {
@@ -14,7 +14,7 @@ fn test_json_to_string() {
     // 测试JSON文档转换为字符串
     let json_str = r#"{"name": "test", "age": 25}"#;
     let doc = JsonDocument::from_json(json_str).unwrap();
-    
+
     let result = doc.to_json();
     assert!(result.is_ok());
     let json_result = result.unwrap();
@@ -57,7 +57,7 @@ fn test_json_clone() {
     let json_str = r#"{"name": "test", "age": 25}"#;
     let doc1 = JsonDocument::from_json(json_str).unwrap();
     let doc2 = doc1.clone();
-    
+
     assert_eq!(doc1.size(), doc2.size());
     assert_eq!(doc1, doc2);
 }
@@ -68,7 +68,7 @@ fn test_json_equality() {
     let json_str = r#"{"name": "test", "age": 25}"#;
     let doc1 = JsonDocument::from_json(json_str).unwrap();
     let doc2 = JsonDocument::from_json(json_str).unwrap();
-    
+
     assert_eq!(doc1, doc2);
 }
 

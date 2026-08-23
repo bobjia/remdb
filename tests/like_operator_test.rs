@@ -1,4 +1,9 @@
-use remdb::{config::{DbConfig, DefaultMemoryAllocator, WALConfig, LogMode}, RemDb, sql::execute_query, sql::parse_sql_query};
+use remdb::{
+    config::{DbConfig, DefaultMemoryAllocator, LogMode, WALConfig},
+    sql::execute_query,
+    sql::parse_sql_query,
+    RemDb,
+};
 use serial_test::serial;
 
 // 测试内存缓冲区
@@ -40,6 +45,7 @@ static TEST_CONFIG: DbConfig = DbConfig {
     pubsub_config: None,
     #[cfg(feature = "ha")]
     ha_config: None,
+    model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
 };
 
 #[test]
@@ -48,7 +54,8 @@ fn test_like_operator() {
     // 初始化内存缓冲区
     unsafe {
         DB_MEMORY.fill(0);
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).expect("init_global_allocator failed");
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
+            .expect("init_global_allocator failed");
     }
 
     // 创建数据库
@@ -118,7 +125,8 @@ fn test_like_pattern_match_various_cases() {
     // 初始化内存缓冲区
     unsafe {
         DB_MEMORY.fill(0);
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).expect("init_global_allocator failed");
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
+            .expect("init_global_allocator failed");
     }
 
     // 创建数据库
@@ -136,7 +144,7 @@ fn test_like_pattern_match_various_cases() {
     execute_query(&mut db, &insert_query).expect("execute INSERT failed");
 
     // 测试各种模式
-    let test_cases = vec!(
+    let test_cases = vec![
         ("test%", true),    // 以'test'开头
         ("%test", true),    // 以'test'结尾
         ("%test%", true),   // 包含'test'
@@ -146,13 +154,17 @@ fn test_like_pattern_match_various_cases() {
         ("_est", true),     // 匹配长度为4，后3个字符为'est' - 应该匹配
         ("t_st", true),     // 匹配长度为4，第1个为't'，第3个为's'，第4个为't' - 应该匹配
         ("\\%", false),     // 匹配字面量'%' - 应该不匹配
-    );
+    ];
 
     for (pattern, expected) in test_cases {
         let sql = format!("SELECT * FROM test WHERE name LIKE '{}';", pattern);
         let query = parse_sql_query(&sql).expect("parse SELECT failed");
         let result = execute_query(&mut db, &query).expect("execute SELECT failed");
         let actual = !result.rows.is_empty();
-        assert_eq!(actual, expected, "Pattern '{}' failed: expected {}, got {}", pattern, expected, actual);
+        assert_eq!(
+            actual, expected,
+            "Pattern '{}' failed: expected {}, got {}",
+            pattern, expected, actual
+        );
     }
 }

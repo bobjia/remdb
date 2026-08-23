@@ -184,6 +184,7 @@ pub fn generate_code(table_defs: Vec<TableDef>) -> proc_macro::TokenStream {
                     replication_port: 5556,
                 }),
                 time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
+                model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
             }
         });
     };
@@ -229,7 +230,10 @@ fn generate_field_defs(
         let auto_increment = col.auto_increment || is_integer_primary_key;
 
         // 计算 string_length
-        let string_length = if col.typ.to_lowercase().contains("varchar") || col.typ.to_lowercase().contains("text") || col.typ.to_lowercase().contains("string") {
+        let string_length = if col.typ.to_lowercase().contains("varchar")
+            || col.typ.to_lowercase().contains("text")
+            || col.typ.to_lowercase().contains("string")
+        {
             quote!(Some(#size))
         } else {
             quote!(None)

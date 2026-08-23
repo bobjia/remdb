@@ -126,17 +126,30 @@ fn main() {
         let columns = &["id", "name"];
         let values = &["1", "Alice"];
         let affected_rows = db.insert_record("users", columns, values).unwrap();
-        println!("   ✓ Inserted record 'Alice' with DEFAULT values, affected rows: {}", affected_rows);
+        println!(
+            "   ✓ Inserted record 'Alice' with DEFAULT values, affected rows: {}",
+            affected_rows
+        );
 
         let values2 = &["2", "Bob"];
         let affected_rows2 = db.insert_record("users", columns, values2).unwrap();
-        println!("   ✓ Inserted record 'Bob' with DEFAULT values, affected rows: {}", affected_rows2);
+        println!(
+            "   ✓ Inserted record 'Bob' with DEFAULT values, affected rows: {}",
+            affected_rows2
+        );
 
         println!("   ✓ All records inserted successfully");
 
         // 查询数据，验证默认值
         println!("2. Querying records to verify values...");
-        let result = db.execute_query("users", &["id", "name", "age", "active", "score"], None, None).unwrap();
+        let result = db
+            .execute_query(
+                "users",
+                &["id", "name", "age", "active", "score"],
+                None,
+                None,
+            )
+            .unwrap();
         println!("   ✓ Query executed successfully");
         println!("   {}", result.to_string());
 

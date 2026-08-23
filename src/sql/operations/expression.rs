@@ -6,17 +6,15 @@ use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use crate::sql::query_parser::{
-    BinaryOperator, Expression, LogicalOperator, UnaryOperator,
-};
-use crate::sql::{QueryExecutionError};
-use crate::types::{DataType, TypedValue, JsonStorage};
-use crate::{MemoryTable, Value, MAX_STRING_LEN, RemDb};
 use crate::sql::functions as sql_functions;
 use crate::sql::operations::vector::{
-    calculate_vector_l2_distance, calculate_vector_inner_product,
-    calculate_vector_cosine_similarity,
+    calculate_vector_cosine_similarity, calculate_vector_inner_product,
+    calculate_vector_l2_distance,
 };
+use crate::sql::query_parser::{BinaryOperator, Expression, LogicalOperator, UnaryOperator};
+use crate::sql::QueryExecutionError;
+use crate::types::{DataType, JsonStorage, TypedValue};
+use crate::{MemoryTable, RemDb, Value, MAX_STRING_LEN};
 
 const MAX_RECURSION_DEPTH: usize = 100;
 
@@ -25,62 +23,68 @@ pub fn evaluate_unary_op(
     operand: TypedValue,
 ) -> Result<TypedValue, QueryExecutionError> {
     match op {
-        UnaryOperator::Not => {
-            unsafe {
-                let bool_value = match operand.value_type {
-                    DataType::Bool => operand.value.bool,
-                    DataType::Int8 => operand.value.i8 != 0,
-                    DataType::Int16 => operand.value.i16 != 0,
-                    DataType::Int32 => operand.value.i32 != 0,
-                    DataType::Int64 => operand.value.i64 != 0,
-                    DataType::UInt8 => operand.value.u8 != 0,
-                    DataType::UInt16 => operand.value.u16 != 0,
-                    DataType::UInt32 => operand.value.u32 != 0,
-                    DataType::UInt64 => operand.value.u64 != 0,
-                    DataType::Float32 => operand.value.float32 != 0.0,
-                    DataType::Float64 => operand.value.float64 != 0.0,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
-                Ok(TypedValue {
-                    value_type: DataType::Bool,
-                    value: Value { bool: !bool_value },
-                })
+        UnaryOperator::Not => unsafe {
+            let bool_value = match operand.value_type {
+                DataType::Bool => operand.value.bool,
+                DataType::Int8 => operand.value.i8 != 0,
+                DataType::Int16 => operand.value.i16 != 0,
+                DataType::Int32 => operand.value.i32 != 0,
+                DataType::Int64 => operand.value.i64 != 0,
+                DataType::UInt8 => operand.value.u8 != 0,
+                DataType::UInt16 => operand.value.u16 != 0,
+                DataType::UInt32 => operand.value.u32 != 0,
+                DataType::UInt64 => operand.value.u64 != 0,
+                DataType::Float32 => operand.value.float32 != 0.0,
+                DataType::Float64 => operand.value.float64 != 0.0,
+                _ => return Err(QueryExecutionError::TypeMismatch),
+            };
+            Ok(TypedValue {
+                value_type: DataType::Bool,
+                value: Value { bool: !bool_value },
+            })
+        },
+        UnaryOperator::Minus => unsafe {
+            match operand.value_type {
+                DataType::Int8 => Ok(TypedValue {
+                    value_type: DataType::Int8,
+                    value: Value {
+                        i8: -operand.value.i8,
+                    },
+                }),
+                DataType::Int16 => Ok(TypedValue {
+                    value_type: DataType::Int16,
+                    value: Value {
+                        i16: -operand.value.i16,
+                    },
+                }),
+                DataType::Int32 => Ok(TypedValue {
+                    value_type: DataType::Int32,
+                    value: Value {
+                        i32: -operand.value.i32,
+                    },
+                }),
+                DataType::Int64 => Ok(TypedValue {
+                    value_type: DataType::Int64,
+                    value: Value {
+                        i64: -operand.value.i64,
+                    },
+                }),
+                DataType::Float32 => Ok(TypedValue {
+                    value_type: DataType::Float32,
+                    value: Value {
+                        float32: -operand.value.float32,
+                    },
+                }),
+                DataType::Float64 => Ok(TypedValue {
+                    value_type: DataType::Float64,
+                    value: Value {
+                        float64: -operand.value.float64,
+                    },
+                }),
+                _ => Err(QueryExecutionError::TypeMismatch),
             }
-        }
-        UnaryOperator::Minus => {
-            unsafe {
-                match operand.value_type {
-                    DataType::Int8 => Ok(TypedValue {
-                        value_type: DataType::Int8,
-                        value: Value { i8: -operand.value.i8 },
-                    }),
-                    DataType::Int16 => Ok(TypedValue {
-                        value_type: DataType::Int16,
-                        value: Value { i16: -operand.value.i16 },
-                    }),
-                    DataType::Int32 => Ok(TypedValue {
-                        value_type: DataType::Int32,
-                        value: Value { i32: -operand.value.i32 },
-                    }),
-                    DataType::Int64 => Ok(TypedValue {
-                        value_type: DataType::Int64,
-                        value: Value { i64: -operand.value.i64 },
-                    }),
-                    DataType::Float32 => Ok(TypedValue {
-                        value_type: DataType::Float32,
-                        value: Value { float32: -operand.value.float32 },
-                    }),
-                    DataType::Float64 => Ok(TypedValue {
-                        value_type: DataType::Float64,
-                        value: Value { float64: -operand.value.float64 },
-                    }),
-                    _ => Err(QueryExecutionError::TypeMismatch),
-                }
-            }
-        }
-        UnaryOperator::Plus => {
-            Ok(operand)
-        }
+        },
+        UnaryOperator::Plus => Ok(operand),
     }
 }
 
@@ -109,7 +113,10 @@ pub fn evaluate_expression_with_depth(
                 Ok(record_values[0].clone())
             } else {
                 let actual_field_name = if field_name.contains('.') {
-                    field_name.split('.').last().expect("field name must contain '.'")
+                    field_name
+                        .split('.')
+                        .last()
+                        .expect("field name must contain '.'")
                 } else {
                     field_name
                 };
@@ -127,11 +134,20 @@ pub fn evaluate_expression_with_depth(
         Expression::FunctionCall { name, args, .. } => {
             let mut arg_values = Vec::with_capacity(args.len());
             for arg in args {
-                arg_values.push(evaluate_expression_with_depth(table, record_values, arg, depth + 1)?);
+                arg_values.push(evaluate_expression_with_depth(
+                    table,
+                    record_values,
+                    arg,
+                    depth + 1,
+                )?);
             }
 
             #[cfg(feature = "log")]
-            crate::log::debug!("evaluate_expression: calling execute_function_call with name={}, args.len={}", name, arg_values.len());
+            crate::log::debug!(
+                "evaluate_expression: calling execute_function_call with name={}, args.len={}",
+                name,
+                arg_values.len()
+            );
             let result = execute_function_call(name, &arg_values);
             result
         }
@@ -150,7 +166,12 @@ pub fn evaluate_expression_with_depth(
                     (DataType::VarChar, Value { string: buf })
                 }
                 SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
-                SqlValue::Null => (DataType::Json, Value { json_storage: crate::types::JsonStorage::Null }),
+                SqlValue::Null => (
+                    DataType::Json,
+                    Value {
+                        json_storage: crate::types::JsonStorage::Null,
+                    },
+                ),
                 SqlValue::Identifier(s) => {
                     let mut buf = [0; MAX_STRING_LEN];
                     let len = core::cmp::min(s.len(), MAX_STRING_LEN);
@@ -211,33 +232,57 @@ pub fn evaluate_expression_with_depth(
                     // Handle the case where the right operand is a Json with Null storage
                     // (the vector string was too large for the inline buffer)
                     if matches!(right_val.value_type, DataType::Json) {
-                        if let crate::types::JsonStorage::Null = unsafe { right_val.value.json_storage } {
+                        if let crate::types::JsonStorage::Null =
+                            unsafe { right_val.value.json_storage }
+                        {
                             // Try to extract the original string from the Constant expression
-                            if let Expression::Constant { value: crate::sql::Value::Json(json_str), .. } = right.as_ref() {
+                            if let Expression::Constant {
+                                value: crate::sql::Value::Json(json_str),
+                                ..
+                            } = right.as_ref()
+                            {
                                 // Parse the vector directly from the string
                                 let trimmed = json_str.trim();
                                 if trimmed.starts_with('[') && trimmed.ends_with(']') {
-                                    let inner = &trimmed[1..trimmed.len()-1];
-                                    let elements: Vec<&str> = inner.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+                                    let inner = &trimmed[1..trimmed.len() - 1];
+                                    let elements: Vec<&str> = inner
+                                        .split(',')
+                                        .map(|s| s.trim())
+                                        .filter(|s| !s.is_empty())
+                                        .collect();
                                     if elements.len() == vector_dim as usize {
-                                        let vec2_values: Vec<f32> = elements.iter()
+                                        let vec2_values: Vec<f32> = elements
+                                            .iter()
                                             .map(|s| s.parse::<f32>())
                                             .collect::<Result<Vec<_>, _>>()
                                             .map_err(|_| QueryExecutionError::TypeMismatch)?;
-                                        let vec2_f64: Vec<f64> = vec2_values.iter().map(|v| *v as f64).collect();
+                                        let vec2_f64: Vec<f64> =
+                                            vec2_values.iter().map(|v| *v as f64).collect();
                                         // Check for null vector pointer before dereferencing
                                         if unsafe { left_val.value.vector.is_null() } {
                                             return Err(QueryExecutionError::TypeMismatch);
                                         }
                                         let result = match *op {
                                             BinaryOperator::VectorL2 => unsafe {
-                                                calculate_vector_l2_distance(left_val.value.vector, &vec2_f64, vector_dim)
+                                                calculate_vector_l2_distance(
+                                                    left_val.value.vector,
+                                                    &vec2_f64,
+                                                    vector_dim,
+                                                )
                                             },
                                             BinaryOperator::VectorIP => unsafe {
-                                                calculate_vector_inner_product(left_val.value.vector, &vec2_f64, vector_dim)
+                                                calculate_vector_inner_product(
+                                                    left_val.value.vector,
+                                                    &vec2_f64,
+                                                    vector_dim,
+                                                )
                                             },
                                             BinaryOperator::VectorCosine => unsafe {
-                                                calculate_vector_cosine_similarity(left_val.value.vector, &vec2_f64, vector_dim)
+                                                calculate_vector_cosine_similarity(
+                                                    left_val.value.vector,
+                                                    &vec2_f64,
+                                                    vector_dim,
+                                                )
                                             },
                                             _ => return Err(QueryExecutionError::TypeMismatch),
                                         };
@@ -259,10 +304,7 @@ pub fn evaluate_expression_with_depth(
             evaluate_binary_op(left_val, *op, right_val)
         }
         Expression::LogicalOp {
-            left,
-            op,
-            right,
-            ..
+            left, op, right, ..
         } => {
             let left_val = evaluate_expression_with_depth(table, record_values, left, depth + 1)?;
             let right_val = evaluate_expression_with_depth(table, record_values, right, depth + 1)?;
@@ -311,12 +353,9 @@ pub fn evaluate_expression_with_depth(
                 value: Value { bool: result },
             })
         }
-        Expression::UnaryOp {
-            op,
-            operand,
-            ..
-        } => {
-            let operand_val = evaluate_expression_with_depth(table, record_values, operand, depth + 1)?;
+        Expression::UnaryOp { op, operand, .. } => {
+            let operand_val =
+                evaluate_expression_with_depth(table, record_values, operand, depth + 1)?;
             evaluate_unary_op(*op, operand_val)
         }
     }
@@ -354,7 +393,10 @@ pub fn evaluate_vector_binary_op(
             let vec_slice = core::slice::from_raw_parts(vec2_ptr, vector_dim as usize);
             vec_slice.to_vec()
         };
-    } else if matches!(right.value_type, DataType::VarChar | DataType::Char | DataType::Text) {
+    } else if matches!(
+        right.value_type,
+        DataType::VarChar | DataType::Char | DataType::Text
+    ) {
         let vec_str = unsafe {
             core::str::from_utf8(&right.value.string)
                 .map_err(|_| QueryExecutionError::TypeMismatch)?
@@ -500,167 +542,42 @@ pub fn evaluate_binary_op(
         | BinaryOperator::LessThan
         | BinaryOperator::LessThanOrEqual
         | BinaryOperator::GreaterThan
-        | BinaryOperator::GreaterThanOrEqual => {
-            unsafe {
-                if right.value_type == DataType::Int64 && right.value.i64 == 0 {
-                    let is_null = match left.value_type {
-                        DataType::UInt8 => left.value.u8 == 0,
-                        DataType::UInt16 => left.value.u16 == 0,
-                        DataType::UInt32 => left.value.u32 == 0,
-                        DataType::UInt64 => left.value.u64 == 0,
-                        DataType::Int8 => left.value.i8 == 0,
-                        DataType::Int16 => left.value.i16 == 0,
-                        DataType::Int32 => left.value.i32 == 0,
-                        DataType::Int64 => left.value.i64 == 0,
-                        DataType::Float32 => left.value.float32 == 0.0,
-                        DataType::Float64 => left.value.float64 == 0.0,
-                        DataType::Bool => !left.value.bool,
-                        DataType::VarChar | DataType::Char | DataType::Text => {
-                            let mut is_empty = true;
-                            for &byte in &left.value.string {
-                                if byte != 0 {
-                                    is_empty = false;
-                                    break;
-                                }
+        | BinaryOperator::GreaterThanOrEqual => unsafe {
+            if right.value_type == DataType::Int64 && right.value.i64 == 0 {
+                let is_null = match left.value_type {
+                    DataType::UInt8 => left.value.u8 == 0,
+                    DataType::UInt16 => left.value.u16 == 0,
+                    DataType::UInt32 => left.value.u32 == 0,
+                    DataType::UInt64 => left.value.u64 == 0,
+                    DataType::Int8 => left.value.i8 == 0,
+                    DataType::Int16 => left.value.i16 == 0,
+                    DataType::Int32 => left.value.i32 == 0,
+                    DataType::Int64 => left.value.i64 == 0,
+                    DataType::Float32 => left.value.float32 == 0.0,
+                    DataType::Float64 => left.value.float64 == 0.0,
+                    DataType::Bool => !left.value.bool,
+                    DataType::VarChar | DataType::Char | DataType::Text => {
+                        let mut is_empty = true;
+                        for &byte in &left.value.string {
+                            if byte != 0 {
+                                is_empty = false;
+                                break;
                             }
-                            is_empty
                         }
-                        DataType::Timestamp => left.value.time.value == 0,
-                        DataType::TimestampTZ => left.value.time.value == 0,
-                        DataType::Interval => left.value.interval.value == 0,
-                        DataType::Vector => left.value.vector.is_null(),
-                        DataType::Json => {
-                            matches!(left.value.json_storage, JsonStorage::Null)
-                        },
-                    };
-                    
-                    let result = match op {
-                        BinaryOperator::Equal => is_null,
-                        BinaryOperator::NotEqual => !is_null,
-                        _ => return Err(QueryExecutionError::TypeMismatch),
-                    };
-                    
-                    return Ok(TypedValue {
-                        value_type: DataType::Bool,
-                        value: Value { bool: result },
-                    });
-                }
-                
-                if matches!(left.value_type, DataType::VarChar | DataType::Char | DataType::Text) && matches!(right.value_type, DataType::VarChar | DataType::Char | DataType::Text) {
-                    let left_str = core::str::from_utf8(&left.value.string)
-                        .map_err(|_| QueryExecutionError::TypeMismatch)?
-                        .trim_end_matches(char::from(0));
-                    let right_str = core::str::from_utf8(&right.value.string)
-                        .map_err(|_| QueryExecutionError::TypeMismatch)?
-                        .trim_end_matches(char::from(0));
-                    
-                    let result = match op {
-                        BinaryOperator::Equal => left_str == right_str,
-                        BinaryOperator::NotEqual => left_str != right_str,
-                        BinaryOperator::LessThan => left_str < right_str,
-                        BinaryOperator::LessThanOrEqual => left_str <= right_str,
-                        BinaryOperator::GreaterThan => left_str > right_str,
-                        BinaryOperator::GreaterThanOrEqual => left_str >= right_str,
-                        _ => return Err(QueryExecutionError::TypeMismatch),
-                    };
-                    
-                    return Ok(TypedValue {
-                        value_type: DataType::Bool,
-                        value: Value { bool: result },
-                    });
-                }
-                
-                let left_val = match left.value_type {
-                    DataType::UInt8 => left.value.u8 as f64,
-                    DataType::UInt16 => left.value.u16 as f64,
-                    DataType::UInt32 => left.value.u32 as f64,
-                    DataType::UInt64 => left.value.u64 as f64,
-                    DataType::Int8 => left.value.i8 as f64,
-                    DataType::Int16 => left.value.i16 as f64,
-                    DataType::Int32 => left.value.i32 as f64,
-                    DataType::Int64 => left.value.i64 as f64,
-                    DataType::Float32 => left.value.float32 as f64,
-                    DataType::Float64 => left.value.float64,
-                    DataType::Bool => left.value.bool as u8 as f64,
-                    DataType::Timestamp => left.value.time.value as f64,
-                    DataType::TimestampTZ => left.value.time.value as f64,
-                    DataType::Json => {
-                        let json_str = unsafe {
-                            match &left.value.json_storage {
-                                JsonStorage::Inline(data) => {
-                                    let len = data.iter().rposition(|&b| b == 0).unwrap_or(256);
-                                    String::from_utf8_lossy(&data[..len]).to_string()
-                                }
-                                JsonStorage::External { pool_id, offset, length } => {
-                                    let pool_manager = crate::json::memory_pool::get_global_json_pool_manager()
-                                        .ok_or(QueryExecutionError::InternalError)?;
-                                    let pool = pool_manager.get_pool(*pool_id)
-                                        .ok_or(QueryExecutionError::InternalError)?;
-                                    if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
-                                        let data = unsafe { core::slice::from_raw_parts(data_ptr, *length as usize) };
-                                        let len = data.iter().position(|&b| b == 0).unwrap_or(data.len());
-                                        String::from_utf8_lossy(&data[..len]).to_string()
-                                    } else {
-                                        return Err(QueryExecutionError::InternalError);
-                                    }
-                                }
-                                JsonStorage::Null => "null".to_string(),
-                            }
-                        };
-                        json_str.parse::<f64>().unwrap_or(0.0)
+                        is_empty
                     }
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
-
-                let right_val = match right.value_type {
-                    DataType::UInt8 => right.value.u8 as f64,
-                    DataType::UInt16 => right.value.u16 as f64,
-                    DataType::UInt32 => right.value.u32 as f64,
-                    DataType::UInt64 => right.value.u64 as f64,
-                    DataType::Int8 => right.value.i8 as f64,
-                    DataType::Int16 => right.value.i16 as f64,
-                    DataType::Int32 => right.value.i32 as f64,
-                    DataType::Int64 => right.value.i64 as f64,
-                    DataType::Float32 => right.value.float32 as f64,
-                    DataType::Float64 => right.value.float64,
-                    DataType::Bool => right.value.bool as u8 as f64,
-                    DataType::Timestamp => right.value.time.value as f64,
-                    DataType::TimestampTZ => right.value.time.value as f64,
+                    DataType::Timestamp => left.value.time.value == 0,
+                    DataType::TimestampTZ => left.value.time.value == 0,
+                    DataType::Interval => left.value.interval.value == 0,
+                    DataType::Vector => left.value.vector.is_null(),
                     DataType::Json => {
-                        let json_str = unsafe {
-                            match &right.value.json_storage {
-                                JsonStorage::Inline(data) => {
-                                    let len = data.iter().rposition(|&b| b == 0).unwrap_or(256);
-                                    String::from_utf8_lossy(&data[..len]).to_string()
-                                }
-                                JsonStorage::External { pool_id, offset, length } => {
-                                    let pool_manager = crate::json::memory_pool::get_global_json_pool_manager()
-                                        .ok_or(QueryExecutionError::InternalError)?;
-                                    let pool = pool_manager.get_pool(*pool_id)
-                                        .ok_or(QueryExecutionError::InternalError)?;
-                                    if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
-                                        let data = unsafe { core::slice::from_raw_parts(data_ptr, *length as usize) };
-                                        let len = data.iter().position(|&b| b == 0).unwrap_or(data.len());
-                                        String::from_utf8_lossy(&data[..len]).to_string()
-                                    } else {
-                                        return Err(QueryExecutionError::InternalError);
-                                    }
-                                }
-                                JsonStorage::Null => "null".to_string(),
-                            }
-                        };
-                        json_str.parse::<f64>().unwrap_or(0.0)
+                        matches!(left.value.json_storage, JsonStorage::Null)
                     }
-                    _ => return Err(QueryExecutionError::TypeMismatch),
                 };
 
                 let result = match op {
-                    BinaryOperator::Equal => left_val == right_val,
-                    BinaryOperator::NotEqual => left_val != right_val,
-                    BinaryOperator::LessThan => left_val < right_val,
-                    BinaryOperator::LessThanOrEqual => left_val <= right_val,
-                    BinaryOperator::GreaterThan => left_val > right_val,
-                    BinaryOperator::GreaterThanOrEqual => left_val >= right_val,
+                    BinaryOperator::Equal => is_null,
+                    BinaryOperator::NotEqual => !is_null,
                     _ => return Err(QueryExecutionError::TypeMismatch),
                 };
 
@@ -669,7 +586,154 @@ pub fn evaluate_binary_op(
                     value: Value { bool: result },
                 });
             }
-        }
+
+            if matches!(
+                left.value_type,
+                DataType::VarChar | DataType::Char | DataType::Text
+            ) && matches!(
+                right.value_type,
+                DataType::VarChar | DataType::Char | DataType::Text
+            ) {
+                let left_str = core::str::from_utf8(&left.value.string)
+                    .map_err(|_| QueryExecutionError::TypeMismatch)?
+                    .trim_end_matches(char::from(0));
+                let right_str = core::str::from_utf8(&right.value.string)
+                    .map_err(|_| QueryExecutionError::TypeMismatch)?
+                    .trim_end_matches(char::from(0));
+
+                let result = match op {
+                    BinaryOperator::Equal => left_str == right_str,
+                    BinaryOperator::NotEqual => left_str != right_str,
+                    BinaryOperator::LessThan => left_str < right_str,
+                    BinaryOperator::LessThanOrEqual => left_str <= right_str,
+                    BinaryOperator::GreaterThan => left_str > right_str,
+                    BinaryOperator::GreaterThanOrEqual => left_str >= right_str,
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+
+                return Ok(TypedValue {
+                    value_type: DataType::Bool,
+                    value: Value { bool: result },
+                });
+            }
+
+            let left_val = match left.value_type {
+                DataType::UInt8 => left.value.u8 as f64,
+                DataType::UInt16 => left.value.u16 as f64,
+                DataType::UInt32 => left.value.u32 as f64,
+                DataType::UInt64 => left.value.u64 as f64,
+                DataType::Int8 => left.value.i8 as f64,
+                DataType::Int16 => left.value.i16 as f64,
+                DataType::Int32 => left.value.i32 as f64,
+                DataType::Int64 => left.value.i64 as f64,
+                DataType::Float32 => left.value.float32 as f64,
+                DataType::Float64 => left.value.float64,
+                DataType::Bool => left.value.bool as u8 as f64,
+                DataType::Timestamp => left.value.time.value as f64,
+                DataType::TimestampTZ => left.value.time.value as f64,
+                DataType::Json => {
+                    let json_str = unsafe {
+                        match &left.value.json_storage {
+                            JsonStorage::Inline(data) => {
+                                let len = data.iter().rposition(|&b| b == 0).unwrap_or(256);
+                                String::from_utf8_lossy(&data[..len]).to_string()
+                            }
+                            JsonStorage::External {
+                                pool_id,
+                                offset,
+                                length,
+                            } => {
+                                let pool_manager =
+                                    crate::json::memory_pool::get_global_json_pool_manager()
+                                        .ok_or(QueryExecutionError::InternalError)?;
+                                let pool = pool_manager
+                                    .get_pool(*pool_id)
+                                    .ok_or(QueryExecutionError::InternalError)?;
+                                if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
+                                    let data = unsafe {
+                                        core::slice::from_raw_parts(data_ptr, *length as usize)
+                                    };
+                                    let len =
+                                        data.iter().position(|&b| b == 0).unwrap_or(data.len());
+                                    String::from_utf8_lossy(&data[..len]).to_string()
+                                } else {
+                                    return Err(QueryExecutionError::InternalError);
+                                }
+                            }
+                            JsonStorage::Null => "null".to_string(),
+                        }
+                    };
+                    json_str.parse::<f64>().unwrap_or(0.0)
+                }
+                _ => return Err(QueryExecutionError::TypeMismatch),
+            };
+
+            let right_val = match right.value_type {
+                DataType::UInt8 => right.value.u8 as f64,
+                DataType::UInt16 => right.value.u16 as f64,
+                DataType::UInt32 => right.value.u32 as f64,
+                DataType::UInt64 => right.value.u64 as f64,
+                DataType::Int8 => right.value.i8 as f64,
+                DataType::Int16 => right.value.i16 as f64,
+                DataType::Int32 => right.value.i32 as f64,
+                DataType::Int64 => right.value.i64 as f64,
+                DataType::Float32 => right.value.float32 as f64,
+                DataType::Float64 => right.value.float64,
+                DataType::Bool => right.value.bool as u8 as f64,
+                DataType::Timestamp => right.value.time.value as f64,
+                DataType::TimestampTZ => right.value.time.value as f64,
+                DataType::Json => {
+                    let json_str = unsafe {
+                        match &right.value.json_storage {
+                            JsonStorage::Inline(data) => {
+                                let len = data.iter().rposition(|&b| b == 0).unwrap_or(256);
+                                String::from_utf8_lossy(&data[..len]).to_string()
+                            }
+                            JsonStorage::External {
+                                pool_id,
+                                offset,
+                                length,
+                            } => {
+                                let pool_manager =
+                                    crate::json::memory_pool::get_global_json_pool_manager()
+                                        .ok_or(QueryExecutionError::InternalError)?;
+                                let pool = pool_manager
+                                    .get_pool(*pool_id)
+                                    .ok_or(QueryExecutionError::InternalError)?;
+                                if let Some(data_ptr) = pool.get_block_data(*offset as usize, 0) {
+                                    let data = unsafe {
+                                        core::slice::from_raw_parts(data_ptr, *length as usize)
+                                    };
+                                    let len =
+                                        data.iter().position(|&b| b == 0).unwrap_or(data.len());
+                                    String::from_utf8_lossy(&data[..len]).to_string()
+                                } else {
+                                    return Err(QueryExecutionError::InternalError);
+                                }
+                            }
+                            JsonStorage::Null => "null".to_string(),
+                        }
+                    };
+                    json_str.parse::<f64>().unwrap_or(0.0)
+                }
+                _ => return Err(QueryExecutionError::TypeMismatch),
+            };
+
+            let result = match op {
+                BinaryOperator::Equal => left_val == right_val,
+                BinaryOperator::NotEqual => left_val != right_val,
+                BinaryOperator::LessThan => left_val < right_val,
+                BinaryOperator::LessThanOrEqual => left_val <= right_val,
+                BinaryOperator::GreaterThan => left_val > right_val,
+                BinaryOperator::GreaterThanOrEqual => left_val >= right_val,
+                _ => return Err(QueryExecutionError::TypeMismatch),
+            };
+
+            return Ok(TypedValue {
+                value_type: DataType::Bool,
+                value: Value { bool: result },
+            });
+        },
         _ => {}
     }
 
@@ -759,7 +823,7 @@ pub fn evaluate_binary_op(
                         return Err(QueryExecutionError::InternalError);
                     }
                     left_val / right_val
-                },
+                }
                 _ => return Err(QueryExecutionError::TypeMismatch),
             };
 
@@ -782,111 +846,95 @@ pub fn evaluate_binary_op(
     };
 
     match op {
-        BinaryOperator::Add => {
-            unsafe {
-                match left.value_type {
-                    DataType::Timestamp => {
-                        let timestamp = left.value.time.value;
-                        let new_timestamp = timestamp + interval_micros;
+        BinaryOperator::Add => unsafe {
+            match left.value_type {
+                DataType::Timestamp => {
+                    let timestamp = left.value.time.value;
+                    let new_timestamp = timestamp + interval_micros;
 
-                        Ok(TypedValue {
-                            value_type: DataType::Timestamp,
-                            value: Value {
-                                time: crate::types::db_timestamp::new(new_timestamp, 0, 6, 0),
-                            },
-                        })
-                    }
-                    DataType::TimestampTZ => {
-                        let timestamp = left.value.time.value;
-                        let tz_offset = left.value.time.tz_offset;
-                        let new_timestamp = timestamp + interval_micros;
-
-                        Ok(TypedValue {
-                            value_type: DataType::TimestampTZ,
-                            value: Value {
-                                time: crate::types::db_timestamp::new(
-                                    new_timestamp,
-                                    tz_offset,
-                                    6,
-                                    0,
-                                ),
-                            },
-                        })
-                    }
-                    _ => Err(QueryExecutionError::TypeMismatch),
+                    Ok(TypedValue {
+                        value_type: DataType::Timestamp,
+                        value: Value {
+                            time: crate::types::db_timestamp::new(new_timestamp, 0, 6, 0),
+                        },
+                    })
                 }
-            }
-        }
-        BinaryOperator::Subtract => {
-            unsafe {
-                match left.value_type {
-                    DataType::Timestamp => {
-                        let timestamp = left.value.time.value;
-                        let new_timestamp = timestamp - interval_micros;
+                DataType::TimestampTZ => {
+                    let timestamp = left.value.time.value;
+                    let tz_offset = left.value.time.tz_offset;
+                    let new_timestamp = timestamp + interval_micros;
 
-                        Ok(TypedValue {
-                            value_type: DataType::Timestamp,
-                            value: Value {
-                                time: crate::types::db_timestamp::new(new_timestamp, 0, 6, 0),
-                            },
-                        })
-                    }
-                    DataType::TimestampTZ => {
-                        let timestamp = left.value.time.value;
-                        let tz_offset = left.value.time.tz_offset;
-                        let new_timestamp = timestamp - interval_micros;
-
-                        Ok(TypedValue {
-                            value_type: DataType::TimestampTZ,
-                            value: Value {
-                                time: crate::types::db_timestamp::new(
-                                    new_timestamp,
-                                    tz_offset,
-                                    6,
-                                    0,
-                                ),
-                            },
-                        })
-                    }
-                    _ => Err(QueryExecutionError::TypeMismatch),
+                    Ok(TypedValue {
+                        value_type: DataType::TimestampTZ,
+                        value: Value {
+                            time: crate::types::db_timestamp::new(new_timestamp, tz_offset, 6, 0),
+                        },
+                    })
                 }
+                _ => Err(QueryExecutionError::TypeMismatch),
             }
-        }
+        },
+        BinaryOperator::Subtract => unsafe {
+            match left.value_type {
+                DataType::Timestamp => {
+                    let timestamp = left.value.time.value;
+                    let new_timestamp = timestamp - interval_micros;
+
+                    Ok(TypedValue {
+                        value_type: DataType::Timestamp,
+                        value: Value {
+                            time: crate::types::db_timestamp::new(new_timestamp, 0, 6, 0),
+                        },
+                    })
+                }
+                DataType::TimestampTZ => {
+                    let timestamp = left.value.time.value;
+                    let tz_offset = left.value.time.tz_offset;
+                    let new_timestamp = timestamp - interval_micros;
+
+                    Ok(TypedValue {
+                        value_type: DataType::TimestampTZ,
+                        value: Value {
+                            time: crate::types::db_timestamp::new(new_timestamp, tz_offset, 6, 0),
+                        },
+                    })
+                }
+                _ => Err(QueryExecutionError::TypeMismatch),
+            }
+        },
         BinaryOperator::Equal
         | BinaryOperator::NotEqual
         | BinaryOperator::LessThan
         | BinaryOperator::LessThanOrEqual
         | BinaryOperator::GreaterThan
-        | BinaryOperator::GreaterThanOrEqual => {
-            unsafe {
-                let t1 = match left.value_type {
-                    DataType::Timestamp => left.value.time.value,
-                    DataType::TimestampTZ => left.value.time.value,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+        | BinaryOperator::GreaterThanOrEqual => unsafe {
+            let t1 = match left.value_type {
+                DataType::Timestamp => left.value.time.value,
+                DataType::TimestampTZ => left.value.time.value,
+                _ => return Err(QueryExecutionError::TypeMismatch),
+            };
 
-                let t2 = match right.value_type {
-                    DataType::Timestamp => right.value.time.value,
-                    DataType::TimestampTZ => right.value.time.value,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+            let t2 = match right.value_type {
+                DataType::Timestamp => right.value.time.value,
+                DataType::TimestampTZ => right.value.time.value,
+                _ => return Err(QueryExecutionError::TypeMismatch),
+            };
 
-                let result = match op {
-                    BinaryOperator::Equal => t1 == t2,
-                    BinaryOperator::NotEqual => t1 != t2,
-                    BinaryOperator::LessThan => t1 < t2,
-                    BinaryOperator::LessThanOrEqual => t1 <= t2,
-                    BinaryOperator::GreaterThan => t1 > t2,
-                    BinaryOperator::GreaterThanOrEqual => t1 >= t2,
-                    _ => return Err(QueryExecutionError::TypeMismatch),
-                };
+            let result = match op {
+                BinaryOperator::Equal => t1 == t2,
+                BinaryOperator::NotEqual => t1 != t2,
+                BinaryOperator::LessThan => t1 < t2,
+                BinaryOperator::LessThanOrEqual => t1 <= t2,
+                BinaryOperator::GreaterThan => t1 > t2,
+                BinaryOperator::GreaterThanOrEqual => t1 >= t2,
+                _ => return Err(QueryExecutionError::TypeMismatch),
+            };
 
-                Ok(TypedValue {
-                    value_type: DataType::Bool,
-                    value: Value { bool: result },
-                })
-            }
-        }
+            Ok(TypedValue {
+                value_type: DataType::Bool,
+                value: Value { bool: result },
+            })
+        },
         _ => Err(QueryExecutionError::TypeMismatch),
     }
 }
@@ -896,7 +944,11 @@ pub fn execute_function_call(
     args: &[TypedValue],
 ) -> Result<TypedValue, QueryExecutionError> {
     #[cfg(feature = "log")]
-    crate::log::debug!("execute_function_call: name={}, args.len={}", name, args.len());
+    crate::log::debug!(
+        "execute_function_call: name={}, args.len={}",
+        name,
+        args.len()
+    );
     match name.to_uppercase().as_str() {
         "COUNT" => sql_functions::execute_count(args),
         "SUM" => sql_functions::execute_sum(args),
@@ -943,12 +995,8 @@ pub fn execute_function_call(
         "JSON_KEYS" => sql_functions::execute_json_keys(args),
         "JSON_ARRAY" => sql_functions::execute_json_array(args),
         "JSON_OBJECT" => sql_functions::execute_json_object(args),
-        _ => {
-            crate::model::model_udf::execute_model_udf(name, args)
-                .or_else(|_| {
-                    Err(QueryExecutionError::UnsupportedFunction(name.to_string()))
-                })
-        }
+        _ => crate::model::model_udf::execute_model_udf(name, args)
+            .or_else(|_| Err(QueryExecutionError::UnsupportedFunction(name.to_string()))),
     }
 }
 
@@ -970,73 +1018,73 @@ pub fn evaluate_expression_without_table_with_depth(
     match expr {
         Expression::Field {
             name: _field_name, ..
-        } => {
-            Err(QueryExecutionError::FieldNotFound)
-        }
+        } => Err(QueryExecutionError::FieldNotFound),
         Expression::FunctionCall { name, args, .. } => {
             let mut evaluated_args = Vec::with_capacity(args.len());
             for arg in args {
-                evaluated_args.push(evaluate_expression_without_table_with_depth(db, arg, depth + 1)?);
+                evaluated_args.push(evaluate_expression_without_table_with_depth(
+                    db,
+                    arg,
+                    depth + 1,
+                )?);
             }
 
             execute_function_call(name, &evaluated_args)
         }
-        Expression::Constant { value, .. } => {
-            match value {
-                crate::sql::query_parser::Value::Integer(i) => {
-                    Ok(TypedValue {
-                        value_type: DataType::Int64,
-                        value: Value { i64: *i },
-                    })
-                }
-                crate::sql::query_parser::Value::Float(f) => {
-                    Ok(TypedValue {
-                        value_type: DataType::Float64,
-                        value: Value { float64: *f },
-                    })
-                }
-                crate::sql::query_parser::Value::String(s) => {
-                    let mut buf = [0; MAX_STRING_LEN];
-                    let len = core::cmp::min(s.len(), MAX_STRING_LEN);
-                    buf[..len].copy_from_slice(s.as_bytes());
-                    Ok(TypedValue {
-                        value_type: DataType::VarChar,
-                        value: Value { string: buf },
-                    })
-                }
-                crate::sql::query_parser::Value::Boolean(b) => {
-                    Ok(TypedValue {
-                        value_type: DataType::Bool,
-                        value: Value { bool: *b },
-                    })
-                }
-                crate::sql::query_parser::Value::Null => {
-                    Ok(TypedValue {
-                        value_type: DataType::Json,
-                        value: Value { json_storage: JsonStorage::Null },
-                    })
-                }
-                crate::sql::query_parser::Value::Identifier(_) => {
-                    Err(QueryExecutionError::InvalidValue)
-                }
-                crate::sql::query_parser::Value::Json(s) => {
-                    let mut buf = [0u8; 256];
-                    let len = core::cmp::min(s.len(), 256);
-                    buf[..len].copy_from_slice(s.as_bytes());
-                    Ok(TypedValue {
-                        value_type: DataType::Json,
-                        value: Value { json_storage: JsonStorage::Inline(buf) },
-                    })
-                }
+        Expression::Constant { value, .. } => match value {
+            crate::sql::query_parser::Value::Integer(i) => Ok(TypedValue {
+                value_type: DataType::Int64,
+                value: Value { i64: *i },
+            }),
+            crate::sql::query_parser::Value::Float(f) => Ok(TypedValue {
+                value_type: DataType::Float64,
+                value: Value { float64: *f },
+            }),
+            crate::sql::query_parser::Value::String(s) => {
+                let mut buf = [0; MAX_STRING_LEN];
+                let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                buf[..len].copy_from_slice(s.as_bytes());
+                Ok(TypedValue {
+                    value_type: DataType::VarChar,
+                    value: Value { string: buf },
+                })
             }
-        }
-        Expression::BinaryOp { op, left, right, .. } => {
+            crate::sql::query_parser::Value::Boolean(b) => Ok(TypedValue {
+                value_type: DataType::Bool,
+                value: Value { bool: *b },
+            }),
+            crate::sql::query_parser::Value::Null => Ok(TypedValue {
+                value_type: DataType::Json,
+                value: Value {
+                    json_storage: JsonStorage::Null,
+                },
+            }),
+            crate::sql::query_parser::Value::Identifier(_) => {
+                Err(QueryExecutionError::InvalidValue)
+            }
+            crate::sql::query_parser::Value::Json(s) => {
+                let mut buf = [0u8; 256];
+                let len = core::cmp::min(s.len(), 256);
+                buf[..len].copy_from_slice(s.as_bytes());
+                Ok(TypedValue {
+                    value_type: DataType::Json,
+                    value: Value {
+                        json_storage: JsonStorage::Inline(buf),
+                    },
+                })
+            }
+        },
+        Expression::BinaryOp {
+            op, left, right, ..
+        } => {
             let left_val = evaluate_expression_without_table_with_depth(db, left, depth + 1)?;
             let right_val = evaluate_expression_without_table_with_depth(db, right, depth + 1)?;
 
             evaluate_binary_op(left_val, *op, right_val)
         }
-        Expression::LogicalOp { op, left, right, .. } => {
+        Expression::LogicalOp {
+            op, left, right, ..
+        } => {
             let left_val = evaluate_expression_without_table_with_depth(db, left, depth + 1)?;
             let right_val = evaluate_expression_without_table_with_depth(db, right, depth + 1)?;
 

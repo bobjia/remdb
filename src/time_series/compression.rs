@@ -36,7 +36,7 @@ pub fn decompress_delta(compressed: &[u8], count: usize) -> Vec<u64> {
 
     for i in 0..count {
         let start = i * 8;
-        // SAFETY: 
+        // SAFETY:
         // - The slice is guaranteed to be at least 8 bytes because the caller
         //   provides a valid buffer of the correct size.
         // - The loop index i is bounded by count, which is the number of elements.

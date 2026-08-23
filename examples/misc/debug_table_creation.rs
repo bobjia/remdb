@@ -51,6 +51,8 @@ fn main() {
                 replication_port: 5556,
             }),
             time_series_defaults: config::TimeSeriesConfig::DEFAULT,
+
+            model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
         };
 
         // 初始化数据库

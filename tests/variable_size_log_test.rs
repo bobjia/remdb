@@ -1,9 +1,11 @@
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig, WALCompressionType};
+use remdb::config::{
+    DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALCompressionType, WALConfig,
+};
 use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
 use remdb::transaction::{LogItem, LogManager, LogOperation, VariableSizeLogItem};
 
 mod common;
-use common::{setup_test_db_with_posix};
+use common::setup_test_db_with_posix;
 
 #[cfg(windows)]
 fn get_test_wal_path(name: &str) -> &'static str {
@@ -52,6 +54,7 @@ fn test_variable_size_log_item_write_and_read() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        model_worker_config: Default::default(),
     };
 
     unsafe {
@@ -74,11 +77,18 @@ fn test_variable_size_log_item_write_and_read() {
             new_data: small_new_data,
         };
 
-        let calculated_checksum = unsafe { remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&small_log_item) };
+        let calculated_checksum = unsafe {
+            remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                &small_log_item,
+            )
+        };
         small_log_item.header.checksum = calculated_checksum;
 
         let result = log_manager.write_variable_size_log_item(&small_log_item);
-        assert!(result.is_ok(), "Failed to write small variable size log item");
+        assert!(
+            result.is_ok(),
+            "Failed to write small variable size log item"
+        );
 
         // 测试2：创建大型可变大小日志项（大于512字节）
         let mut large_new_data = vec![0u8; 1024];
@@ -100,11 +110,18 @@ fn test_variable_size_log_item_write_and_read() {
             new_data: large_new_data,
         };
 
-        let calculated_checksum = unsafe { remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&large_log_item) };
+        let calculated_checksum = unsafe {
+            remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                &large_log_item,
+            )
+        };
         large_log_item.header.checksum = calculated_checksum;
 
         let result = log_manager.write_variable_size_log_item(&large_log_item);
-        assert!(result.is_ok(), "Failed to write large variable size log item");
+        assert!(
+            result.is_ok(),
+            "Failed to write large variable size log item"
+        );
 
         // 测试3：创建带有旧数据的可变大小日志项
         let old_data = vec![1u8, 2, 3, 4];
@@ -124,15 +141,25 @@ fn test_variable_size_log_item_write_and_read() {
             new_data,
         };
 
-        let calculated_checksum = unsafe { remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&update_log_item) };
+        let calculated_checksum = unsafe {
+            remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                &update_log_item,
+            )
+        };
         update_log_item.header.checksum = calculated_checksum;
 
         let result = log_manager.write_variable_size_log_item(&update_log_item);
-        assert!(result.is_ok(), "Failed to write update variable size log item");
+        assert!(
+            result.is_ok(),
+            "Failed to write update variable size log item"
+        );
 
         // 测试4：读取并验证日志项
         let read_small = log_manager.read_variable_size_log_item(0);
-        assert!(read_small.is_ok(), "Failed to read small variable size log item");
+        assert!(
+            read_small.is_ok(),
+            "Failed to read small variable size log item"
+        );
         let read_small = read_small.unwrap();
         assert_eq!(read_small.header.op_type, LogOperation::Insert);
         assert_eq!(read_small.header.table_id, 0);
@@ -142,7 +169,10 @@ fn test_variable_size_log_item_write_and_read() {
         assert_eq!(read_small.new_data, vec![1u8, 2, 3, 4, 5, 6, 7, 8]);
 
         let read_large = log_manager.read_variable_size_log_item(1);
-        assert!(read_large.is_ok(), "Failed to read large variable size log item");
+        assert!(
+            read_large.is_ok(),
+            "Failed to read large variable size log item"
+        );
         let read_large = read_large.unwrap();
         assert_eq!(read_large.header.op_type, LogOperation::Insert);
         assert_eq!(read_large.header.table_id, 0);
@@ -154,7 +184,10 @@ fn test_variable_size_log_item_write_and_read() {
         }
 
         let read_update = log_manager.read_variable_size_log_item(2);
-        assert!(read_update.is_ok(), "Failed to read update variable size log item");
+        assert!(
+            read_update.is_ok(),
+            "Failed to read update variable size log item"
+        );
         let read_update = read_update.unwrap();
         assert_eq!(read_update.header.op_type, LogOperation::Update);
         assert_eq!(read_update.header.table_id, 0);
@@ -203,6 +236,7 @@ fn test_variable_size_log_item_large_record() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        model_worker_config: Default::default(),
     };
 
     unsafe {
@@ -229,7 +263,11 @@ fn test_variable_size_log_item_large_record() {
             new_data: large_data,
         };
 
-        let calculated_checksum = unsafe { remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&large_log_item) };
+        let calculated_checksum = unsafe {
+            remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                &large_log_item,
+            )
+        };
         large_log_item.header.checksum = calculated_checksum;
 
         let result = log_manager.write_variable_size_log_item(&large_log_item);
@@ -268,11 +306,15 @@ fn test_variable_size_log_item_checksum() {
         new_data: new_data.clone(),
     };
 
-    let calculated_checksum = unsafe { remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&log_item) };
+    let calculated_checksum = unsafe {
+        remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&log_item)
+    };
     log_item.header.checksum = calculated_checksum;
 
     // 验证校验和一致性
-    let recalculated_checksum = unsafe { remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&log_item) };
+    let recalculated_checksum = unsafe {
+        remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&log_item)
+    };
     assert_eq!(log_item.header.checksum, recalculated_checksum);
 
     println!("✅ 校验和计算测试通过！");

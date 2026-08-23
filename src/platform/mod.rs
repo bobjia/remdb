@@ -152,8 +152,11 @@ pub fn reset_platform() {
         // 重置initialized标志
         #[cfg(not(feature = "std"))]
         {
-            let platform_ptr = &PLATFORM as *const OnceLock<&'static dyn Platform> as *mut OnceLock<&'static dyn Platform>;
-            (*platform_ptr).initialized.store(false, core::sync::atomic::Ordering::Release);
+            let platform_ptr = &PLATFORM as *const OnceLock<&'static dyn Platform>
+                as *mut OnceLock<&'static dyn Platform>;
+            (*platform_ptr)
+                .initialized
+                .store(false, core::sync::atomic::Ordering::Release);
             // 清空数据
             *(*platform_ptr).data.get() = None;
         }

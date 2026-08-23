@@ -1,9 +1,11 @@
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig, WALCompressionType};
+use remdb::config::{
+    DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALCompressionType, WALConfig,
+};
 use remdb::platform::{file_size, get_timestamp_us};
 use remdb::transaction::{LogItem, LogManager, LogOperation, VariableSizeLogItem};
 
 mod common;
-use common::{setup_test_db_with_posix};
+use common::setup_test_db_with_posix;
 
 #[cfg(windows)]
 fn get_test_wal_path(name: &str) -> &'static str {
@@ -52,6 +54,8 @@ fn test_wal_compression(compression_type: WALCompressionType, test_name: &str) {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+
+        model_worker_config: Default::default(),
     };
 
     unsafe {
@@ -74,11 +78,18 @@ fn test_wal_compression(compression_type: WALCompressionType, test_name: &str) {
             new_data: small_new_data,
         };
 
-        let calculated_checksum = remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&small_log_item);
+        let calculated_checksum =
+            remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                &small_log_item,
+            );
         small_log_item.header.checksum = calculated_checksum;
 
         let result = log_manager.write_variable_size_log_item(&small_log_item);
-        assert!(result.is_ok(), "Failed to write small variable size log item with {:?} compression", compression_type);
+        assert!(
+            result.is_ok(),
+            "Failed to write small variable size log item with {:?} compression",
+            compression_type
+        );
 
         // 测试2：创建大型可变大小日志项（大于512字节）
         let mut large_new_data = vec![0u8; 1024];
@@ -100,15 +111,26 @@ fn test_wal_compression(compression_type: WALCompressionType, test_name: &str) {
             new_data: large_new_data,
         };
 
-        let calculated_checksum = remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&large_log_item);
+        let calculated_checksum =
+            remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                &large_log_item,
+            );
         large_log_item.header.checksum = calculated_checksum;
 
         let result = log_manager.write_variable_size_log_item(&large_log_item);
-        assert!(result.is_ok(), "Failed to write large variable size log item with {:?} compression", compression_type);
+        assert!(
+            result.is_ok(),
+            "Failed to write large variable size log item with {:?} compression",
+            compression_type
+        );
 
         // 测试3：读取并验证日志项
         let read_small = log_manager.read_variable_size_log_item(0);
-        assert!(read_small.is_ok(), "Failed to read small variable size log item with {:?} compression", compression_type);
+        assert!(
+            read_small.is_ok(),
+            "Failed to read small variable size log item with {:?} compression",
+            compression_type
+        );
         let read_small = read_small.unwrap();
         assert_eq!(read_small.header.op_type, LogOperation::Insert);
         assert_eq!(read_small.header.table_id, 0);
@@ -118,7 +140,11 @@ fn test_wal_compression(compression_type: WALCompressionType, test_name: &str) {
         assert_eq!(read_small.new_data, vec![1u8, 2, 3, 4, 5, 6, 7, 8]);
 
         let read_large = log_manager.read_variable_size_log_item(1);
-        assert!(read_large.is_ok(), "Failed to read large variable size log item with {:?} compression", compression_type);
+        assert!(
+            read_large.is_ok(),
+            "Failed to read large variable size log item with {:?} compression",
+            compression_type
+        );
         let read_large = read_large.unwrap();
         assert_eq!(read_large.header.op_type, LogOperation::Insert);
         assert_eq!(read_large.header.table_id, 0);
@@ -131,7 +157,11 @@ fn test_wal_compression(compression_type: WALCompressionType, test_name: &str) {
 
         // 测试4：创建检查点并验证
         let result = log_manager.create_checkpoint();
-        assert!(result.is_ok(), "Failed to create checkpoint with {:?} compression", compression_type);
+        assert!(
+            result.is_ok(),
+            "Failed to create checkpoint with {:?} compression",
+            compression_type
+        );
 
         println!("✅ {:?} compression test passed!", compression_type);
     }
@@ -200,6 +230,8 @@ fn test_wal_compression_storage_impact() {
             pubsub_config: None,
             #[cfg(feature = "ha")]
             ha_config: None,
+
+            model_worker_config: Default::default(),
         };
 
         unsafe {
@@ -228,17 +260,27 @@ fn test_wal_compression_storage_impact() {
                     new_data: repeated_data.clone(),
                 };
 
-                let calculated_checksum = remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&log_item);
+                let calculated_checksum =
+                    remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                        &log_item,
+                    );
                 log_item.header.checksum = calculated_checksum;
 
                 let result = log_manager.write_variable_size_log_item(&log_item);
-                assert!(result.is_ok(), "Failed to write log item with {:?} compression", compression_type);
+                assert!(
+                    result.is_ok(),
+                    "Failed to write log item with {:?} compression",
+                    compression_type
+                );
             }
 
             // 获取日志文件大小
             let wal_file_path = format!("{}/remdb.wal", config.wal_config.log_path);
             let file_size = file_size(wal_file_path.as_str()).unwrap();
-            println!("📊 {:?} compression: WAL file size = {} bytes for 100 log items", compression_type, file_size);
+            println!(
+                "📊 {:?} compression: WAL file size = {} bytes for 100 log items",
+                compression_type, file_size
+            );
         }
     }
 
@@ -291,6 +333,8 @@ fn test_wal_compression_performance() {
             pubsub_config: None,
             #[cfg(feature = "ha")]
             ha_config: None,
+
+            model_worker_config: Default::default(),
         };
 
         unsafe {
@@ -304,7 +348,7 @@ fn test_wal_compression_performance() {
 
             // 测试写入性能
             let start_time = get_timestamp_us();
-            
+
             // 写入500个日志项
             for i in 0..500 {
                 let mut log_item = VariableSizeLogItem {
@@ -322,29 +366,47 @@ fn test_wal_compression_performance() {
                     new_data: test_data.clone(),
                 };
 
-                let calculated_checksum = remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(&log_item);
+                let calculated_checksum =
+                    remdb::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                        &log_item,
+                    );
                 log_item.header.checksum = calculated_checksum;
 
                 let result = log_manager.write_variable_size_log_item(&log_item);
-                assert!(result.is_ok(), "Failed to write log item with {:?} compression", compression_type);
+                assert!(
+                    result.is_ok(),
+                    "Failed to write log item with {:?} compression",
+                    compression_type
+                );
             }
 
             let end_time = get_timestamp_us();
             let write_time = end_time - start_time;
-            println!("📈 {:?} compression: Write time = {} us for 500 log items", compression_type, write_time);
+            println!(
+                "📈 {:?} compression: Write time = {} us for 500 log items",
+                compression_type, write_time
+            );
 
             // 测试读取性能
             let start_time = get_timestamp_us();
-            
+
             // 读取所有日志项
             for i in 0..500 {
                 let result = log_manager.read_variable_size_log_item(i as u32);
-                assert!(result.is_ok(), "Failed to read log item {} with {:?} compression", i, compression_type);
+                assert!(
+                    result.is_ok(),
+                    "Failed to read log item {} with {:?} compression",
+                    i,
+                    compression_type
+                );
             }
 
             let end_time = get_timestamp_us();
             let read_time = end_time - start_time;
-            println!("📈 {:?} compression: Read time = {} us for 500 log items", compression_type, read_time);
+            println!(
+                "📈 {:?} compression: Read time = {} us for 500 log items",
+                compression_type, read_time
+            );
         }
     }
 

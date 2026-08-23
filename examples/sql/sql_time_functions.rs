@@ -43,6 +43,8 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -57,15 +59,17 @@ fn main() -> Result<()> {
 
     // 2. Insert time series data
     println!("\n2. Insert time series data");
-    
+
     let base_time: i64 = 1704067200000000; // 2024-01-01 00:00:00 UTC (microseconds)
-    
+
     for i in 0..20 {
         let ts = base_time + (i as i64 * 300000000); // Every 5 minutes
         let temp = 20.0 + (i as f64 * 0.5);
         let sql = format!(
             "INSERT INTO sensor_data VALUES ({}, 'sensor_1', {}, {})",
-            i + 1, temp, ts
+            i + 1,
+            temp,
+            ts
         );
         db.sql_query(&sql)?;
     }
@@ -73,12 +77,13 @@ fn main() -> Result<()> {
 
     // 3. View raw data
     println!("\n3. View raw data");
-    let result = db.sql_query("SELECT id, sensor_id, temperature, timestamp FROM sensor_data LIMIT 5")?;
+    let result =
+        db.sql_query("SELECT id, sensor_id, temperature, timestamp FROM sensor_data LIMIT 5")?;
     println!("{}", result.to_string());
 
     // 4. TIME_BUCKET function
     println!("\n4. TIME_BUCKET function");
-    
+
     let result = db.sql_query(
         "SELECT TIME_BUCKET('15m', timestamp) AS time_window, AVG(temperature) AS avg_temp, COUNT(*) AS count FROM sensor_data GROUP BY TIME_BUCKET('15m', timestamp)"
     )?;
@@ -99,7 +104,7 @@ fn main() -> Result<()> {
     // 6. Order by time
     println!("\n6. Order by time");
     let result = db.sql_query(
-        "SELECT id, temperature, timestamp FROM sensor_data ORDER BY timestamp DESC LIMIT 5"
+        "SELECT id, temperature, timestamp FROM sensor_data ORDER BY timestamp DESC LIMIT 5",
     )?;
     println!("   Latest 5 records:");
     println!("{}", result.to_string());

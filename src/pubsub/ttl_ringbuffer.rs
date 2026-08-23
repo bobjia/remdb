@@ -189,7 +189,8 @@ impl TTLCircularBuffer {
             core::ptr::copy_nonoverlapping(slot.data.as_ptr(), buffer.as_mut_ptr(), data_len);
 
             // 释放内存
-            let layout = Layout::from_size_align(slot.data_len, 1).expect("failed to create layout");
+            let layout =
+                Layout::from_size_align(slot.data_len, 1).expect("failed to create layout");
             dealloc(slot.data.as_ptr(), layout);
         }
 
@@ -234,7 +235,8 @@ impl TTLCircularBuffer {
                     // 匹配，释放内存并标记为删除
                     unsafe {
                         let data_len = slot.data_len;
-                        let layout = Layout::from_size_align(data_len, 1).expect("failed to create layout");
+                        let layout =
+                            Layout::from_size_align(data_len, 1).expect("failed to create layout");
                         dealloc(slot.data.as_ptr(), layout);
                         slot.state.store(SLOT_DELETED, Ordering::Release);
                     }
@@ -364,7 +366,8 @@ impl Drop for TTLCircularBuffer {
                 if state == SLOT_ACTIVE {
                     // 释放数据内存
                     let data_len = slot.data_len;
-                    let layout = Layout::from_size_align(data_len, 1).expect("failed to create layout");
+                    let layout =
+                        Layout::from_size_align(data_len, 1).expect("failed to create layout");
                     dealloc(slot.data.as_ptr(), layout);
                 }
                 // 释放槽位本身

@@ -2,17 +2,21 @@
 //!
 //! This module contains time-related function implementations like TIME_BUCKET, TO_ISO8601, TO_CHAR, TO_EPOCH.
 
+use crate::sql::QueryExecutionError;
 use crate::types::DataType;
 use crate::types::TypedValue;
 use crate::Value;
-use crate::sql::QueryExecutionError;
 use crate::MAX_STRING_LEN;
 
 /// 执行TIME_BUCKET函数
 pub fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
     #[cfg(feature = "log")]
-    crate::log::debug!("execute_time_bucket: args.len={}, args[0].type={:?}, args[1].type={:?}",
-        args.len(), args.get(0).map(|a| a.value_type), args.get(1).map(|a| a.value_type));
+    crate::log::debug!(
+        "execute_time_bucket: args.len={}, args[0].type={:?}, args[1].type={:?}",
+        args.len(),
+        args.get(0).map(|a| a.value_type),
+        args.get(1).map(|a| a.value_type)
+    );
     if args.len() < 2 {
         return Err(QueryExecutionError::TypeMismatch);
     }
@@ -71,35 +75,51 @@ pub fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecu
             }),
             DataType::UInt64 => Ok(TypedValue {
                 value_type: DataType::UInt64,
-                value: Value { u64: bucketed_timestamp as u64 },
+                value: Value {
+                    u64: bucketed_timestamp as u64,
+                },
             }),
             DataType::Int64 => Ok(TypedValue {
                 value_type: DataType::Int64,
-                value: Value { i64: bucketed_timestamp },
+                value: Value {
+                    i64: bucketed_timestamp,
+                },
             }),
             DataType::UInt32 => Ok(TypedValue {
                 value_type: DataType::UInt32,
-                value: Value { u32: bucketed_timestamp as u32 },
+                value: Value {
+                    u32: bucketed_timestamp as u32,
+                },
             }),
             DataType::Int32 => Ok(TypedValue {
                 value_type: DataType::Int32,
-                value: Value { i32: bucketed_timestamp as i32 },
+                value: Value {
+                    i32: bucketed_timestamp as i32,
+                },
             }),
             DataType::UInt16 => Ok(TypedValue {
                 value_type: DataType::UInt16,
-                value: Value { u16: bucketed_timestamp as u16 },
+                value: Value {
+                    u16: bucketed_timestamp as u16,
+                },
             }),
             DataType::Int16 => Ok(TypedValue {
                 value_type: DataType::Int16,
-                value: Value { i16: bucketed_timestamp as i16 },
+                value: Value {
+                    i16: bucketed_timestamp as i16,
+                },
             }),
             DataType::UInt8 => Ok(TypedValue {
                 value_type: DataType::UInt8,
-                value: Value { u8: bucketed_timestamp as u8 },
+                value: Value {
+                    u8: bucketed_timestamp as u8,
+                },
             }),
             DataType::Int8 => Ok(TypedValue {
                 value_type: DataType::Int8,
-                value: Value { i8: bucketed_timestamp as i8 },
+                value: Value {
+                    i8: bucketed_timestamp as i8,
+                },
             }),
             _ => Err(QueryExecutionError::TypeMismatch),
         }
@@ -148,7 +168,10 @@ pub fn execute_to_char(args: &[TypedValue]) -> Result<TypedValue, QueryExecution
 
     unsafe {
         match (timestamp_arg.value_type, format_arg.value_type) {
-            (DataType::Timestamp | DataType::TimestampTZ, DataType::VarChar | DataType::Char | DataType::Text) => {
+            (
+                DataType::Timestamp | DataType::TimestampTZ,
+                DataType::VarChar | DataType::Char | DataType::Text,
+            ) => {
                 let timestamp = &timestamp_arg.value.time;
                 // 提取字符串格式
                 let format_str = core::str::from_utf8(&format_arg.value.string)
@@ -275,7 +298,13 @@ fn split_timezone_from_time(time_part: &str) -> (&str, i32) {
 }
 
 fn parse_timezone_offset(tz_str: &str) -> Option<i32> {
-    let sign = if tz_str.starts_with('+') { 1 } else if tz_str.starts_with('-') { -1 } else { return None };
+    let sign = if tz_str.starts_with('+') {
+        1
+    } else if tz_str.starts_with('-') {
+        -1
+    } else {
+        return None;
+    };
     let offset_str = &tz_str[1..];
 
     let parts: Vec<&str> = offset_str.split(':').collect();
@@ -373,10 +402,12 @@ pub fn parse_interval_string(interval_str: &str) -> Result<i64, QueryExecutionEr
             "day" | "days" | "d" => 86_400_000_000,
             "week" | "weeks" | "w" => 604_800_000_000,
             "month" | "months" => 2_592_000_000_000, // Approximate 30 days
-            "year" | "years" => 31_556_952_000_000, // Approximate 365.25 days
+            "year" | "years" => 31_556_952_000_000,  // Approximate 365.25 days
             // 如果没有单位，尝试将整个值解析为毫秒
             "" => {
-                let ms = value_str.parse::<i64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+                let ms = value_str
+                    .parse::<i64>()
+                    .map_err(|_| QueryExecutionError::TypeMismatch)?;
                 return Ok(ms * 1000);
             }
             _ => return Err(QueryExecutionError::TypeMismatch),
@@ -386,14 +417,22 @@ pub fn parse_interval_string(interval_str: &str) -> Result<i64, QueryExecutionEr
     }
 
     // Try to parse combined format like "15m", "1h", "30s", "500ms", etc.
-    let num_str = value_str.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect::<String>();
-    let unit_str = value_str.chars().skip_while(|c| c.is_ascii_digit() || *c == '.').collect::<String>();
+    let num_str = value_str
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect::<String>();
+    let unit_str = value_str
+        .chars()
+        .skip_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect::<String>();
 
     if num_str.is_empty() || unit_str.is_empty() {
         return Err(QueryExecutionError::TypeMismatch);
     }
 
-    let num = num_str.parse::<f64>().map_err(|_| QueryExecutionError::TypeMismatch)?;
+    let num = num_str
+        .parse::<f64>()
+        .map_err(|_| QueryExecutionError::TypeMismatch)?;
     let micros_per_unit: i64 = match unit_str.as_str() {
         "us" => 1,
         "ms" => 1000,
@@ -409,7 +448,9 @@ pub fn parse_interval_string(interval_str: &str) -> Result<i64, QueryExecutionEr
 }
 
 // Helper functions for TO_ISO8601, TO_CHAR, TO_EPOCH
-pub fn process_to_iso8601(timestamp: &crate::types::db_timestamp) -> Result<String, QueryExecutionError> {
+pub fn process_to_iso8601(
+    timestamp: &crate::types::db_timestamp,
+) -> Result<String, QueryExecutionError> {
     let microseconds = timestamp.value;
     let tz_offset = timestamp.tz_offset;
 
@@ -449,17 +490,37 @@ pub fn process_to_iso8601(timestamp: &crate::types::db_timestamp) -> Result<Stri
     if micros > 0 {
         Ok(alloc::format!(
             "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:06}{}{:02}:{:02}",
-            year, month, day, hour, minute, second, micros, tz_sign, tz_hours, tz_minutes
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            micros,
+            tz_sign,
+            tz_hours,
+            tz_minutes
         ))
     } else {
         Ok(alloc::format!(
             "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{}{:02}:{:02}",
-            year, month, day, hour, minute, second, tz_sign, tz_hours, tz_minutes
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            tz_sign,
+            tz_hours,
+            tz_minutes
         ))
     }
 }
 
-pub fn process_to_char(timestamp: &crate::types::db_timestamp, format_str: &str) -> Result<String, QueryExecutionError> {
+pub fn process_to_char(
+    timestamp: &crate::types::db_timestamp,
+    format_str: &str,
+) -> Result<String, QueryExecutionError> {
     let microseconds = timestamp.value;
 
     let total_seconds = microseconds / 1_000_000;
@@ -489,7 +550,9 @@ pub fn process_to_char(timestamp: &crate::types::db_timestamp, format_str: &str)
     Ok(result)
 }
 
-pub fn process_to_epoch(timestamp: &crate::types::db_timestamp) -> Result<f64, QueryExecutionError> {
+pub fn process_to_epoch(
+    timestamp: &crate::types::db_timestamp,
+) -> Result<f64, QueryExecutionError> {
     let microseconds = timestamp.value;
     let seconds = microseconds as f64 / 1_000_000.0;
     Ok(seconds)

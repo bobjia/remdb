@@ -94,7 +94,10 @@ impl SyncHandler {
         }
 
         #[cfg(feature = "log")]
-        debug!("SyncHandler: Received sync request, data len: {}", data.len());
+        debug!(
+            "SyncHandler: Received sync request, data len: {}",
+            data.len()
+        );
 
         // Parse the sync request
         let request = match SyncRequest::decode(data) {
@@ -153,7 +156,10 @@ impl SyncHandler {
     /// Process a full sync request
     fn process_full_sync_request(request: SyncRequest) {
         #[cfg(feature = "log")]
-        debug!("SyncHandler: Processing full sync request from slave {}", request.slave_id);
+        debug!(
+            "SyncHandler: Processing full sync request from slave {}",
+            request.slave_id
+        );
 
         // Get database snapshot
         let snapshot_data = match Self::create_database_snapshot() {
@@ -319,7 +325,8 @@ impl SyncHandler {
     /// Send snapshot data in chunks
     fn send_snapshot_chunks(data: &[u8]) -> Result<()> {
         let total_size = data.len() as u64;
-        let chunk_count = ((total_size as usize + MAX_CHUNK_DATA_SIZE - 1) / MAX_CHUNK_DATA_SIZE) as u32;
+        let chunk_count =
+            ((total_size as usize + MAX_CHUNK_DATA_SIZE - 1) / MAX_CHUNK_DATA_SIZE) as u32;
 
         // Get table count from the data
         let table_count = if !data.is_empty() { data[0] } else { 0 };
@@ -333,8 +340,7 @@ impl SyncHandler {
         // Send SYNC_DATA_BEGIN
         let begin = SyncDataBegin::new_snapshot(total_size, chunk_count, table_count);
         let begin_data = begin.encode();
-        pubsub::publish(SYNC_DATA_BEGIN_TOPIC, &begin_data)
-            .map_err(|_| HAError::SyncFailed)?;
+        pubsub::publish(SYNC_DATA_BEGIN_TOPIC, &begin_data).map_err(|_| HAError::SyncFailed)?;
 
         // Send chunks
         let mut offset = 0;
@@ -347,8 +353,7 @@ impl SyncHandler {
             let chunk = SyncDataChunk::new(chunk_index, chunk_data);
             let encoded = chunk.encode();
 
-            pubsub::publish(SYNC_DATA_CHUNK_TOPIC, &encoded)
-                .map_err(|_| HAError::SyncFailed)?;
+            pubsub::publish(SYNC_DATA_CHUNK_TOPIC, &encoded).map_err(|_| HAError::SyncFailed)?;
 
             offset = chunk_end;
             chunk_index += 1;
@@ -361,8 +366,7 @@ impl SyncHandler {
         // Send SYNC_DATA_END
         let end = SyncDataEnd::new(chunk_count, 0); // No checksum for now
         let end_data = end.encode();
-        pubsub::publish(SYNC_DATA_END_TOPIC, &end_data)
-            .map_err(|_| HAError::SyncFailed)?;
+        pubsub::publish(SYNC_DATA_END_TOPIC, &end_data).map_err(|_| HAError::SyncFailed)?;
 
         #[cfg(feature = "log")]
         info!("SyncHandler: Completed sending {} chunks", chunk_count);
@@ -373,7 +377,8 @@ impl SyncHandler {
     /// Send WAL logs in chunks
     fn send_wal_chunks(data: &[u8]) -> Result<()> {
         let total_size = data.len() as u64;
-        let chunk_count = ((total_size as usize + MAX_CHUNK_DATA_SIZE - 1) / MAX_CHUNK_DATA_SIZE) as u32;
+        let chunk_count =
+            ((total_size as usize + MAX_CHUNK_DATA_SIZE - 1) / MAX_CHUNK_DATA_SIZE) as u32;
 
         // Estimate log count (rough estimate based on average LogItem size)
         let log_count = (total_size / core::mem::size_of::<LogItem>() as u64) as u32;
@@ -387,8 +392,7 @@ impl SyncHandler {
         // Send SYNC_DATA_BEGIN
         let begin = SyncDataBegin::new_wal(total_size, chunk_count, log_count);
         let begin_data = begin.encode();
-        pubsub::publish(SYNC_DATA_BEGIN_TOPIC, &begin_data)
-            .map_err(|_| HAError::SyncFailed)?;
+        pubsub::publish(SYNC_DATA_BEGIN_TOPIC, &begin_data).map_err(|_| HAError::SyncFailed)?;
 
         // Send chunks
         let mut offset = 0;
@@ -401,8 +405,7 @@ impl SyncHandler {
             let chunk = SyncDataChunk::new(chunk_index, chunk_data);
             let encoded = chunk.encode();
 
-            pubsub::publish(SYNC_DATA_CHUNK_TOPIC, &encoded)
-                .map_err(|_| HAError::SyncFailed)?;
+            pubsub::publish(SYNC_DATA_CHUNK_TOPIC, &encoded).map_err(|_| HAError::SyncFailed)?;
 
             offset = chunk_end;
             chunk_index += 1;
@@ -415,8 +418,7 @@ impl SyncHandler {
         // Send SYNC_DATA_END
         let end = SyncDataEnd::new(chunk_count, 0);
         let end_data = end.encode();
-        pubsub::publish(SYNC_DATA_END_TOPIC, &end_data)
-            .map_err(|_| HAError::SyncFailed)?;
+        pubsub::publish(SYNC_DATA_END_TOPIC, &end_data).map_err(|_| HAError::SyncFailed)?;
 
         #[cfg(feature = "log")]
         info!("SyncHandler: Completed sending {} WAL chunks", chunk_count);

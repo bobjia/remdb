@@ -51,6 +51,8 @@ fn main() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
     // 3. 初始化数据库

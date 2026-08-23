@@ -155,25 +155,17 @@ pub fn init(config: &'static crate::config::DbConfig) -> Result<()> {
         }
 
         #[cfg(feature = "log")]
-        debug!(
-            "ha::init: Creating HAManager instance"
-        );
+        debug!("ha::init: Creating HAManager instance");
         let mut ha_manager = manager::HAManager::new(config)?;
         #[cfg(feature = "log")]
-        debug!(
-            "ha::init: Calling ha_manager.init()"
-        );
+        debug!("ha::init: Calling ha_manager.init()");
         ha_manager.init()?;
         #[cfg(feature = "log")]
-        debug!(
-            "ha::init: Storing HAManager to global static"
-        );
+        debug!("ha::init: Storing HAManager to global static");
         *ha_manager_ptr = Some(ha_manager);
 
         #[cfg(feature = "log")]
-        debug!(
-            "ha::init: HA initialization completed"
-        );
+        debug!("ha::init: HA initialization completed");
 
         Ok(())
     }

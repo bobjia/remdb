@@ -1,24 +1,23 @@
 //! Model worker manager
-//! 
+//!
 //! This module manages the lifecycle of the model worker process,
 //! including spawning, monitoring, and restarting.
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 #[cfg(unix)]
-use std::os::unix::net::{UnixStream, UnixListener};
+use std::os::unix::net::{UnixListener, UnixStream};
 
 #[cfg(windows)]
 use std::os::windows::io::{AsRawSocket, FromRawSocket};
 
 use crate::model::worker_protocol::{
-    ModelRequest, ModelResponse, WorkerConfig, ErrorCode,
-    serialize_request, deserialize_response,
+    deserialize_response, serialize_request, ErrorCode, ModelRequest, ModelResponse, WorkerConfig,
 };
 use crate::model::ModelError;
 
@@ -86,13 +85,12 @@ impl WorkerManager {
         #[cfg(feature = "log")]
         info!("Spawning model worker process...");
 
-        let executable = std::env::current_exe()
-            .map_err(|_| ModelError::LoadFailed)?;
+        let executable = std::env::current_exe().map_err(|_| ModelError::LoadFailed)?;
 
         let mut cmd = Command::new(&executable);
         cmd.arg("--model-worker");
         cmd.arg("--socket");
-        
+
         #[cfg(unix)]
         cmd.arg(&self.socket_path);
         #[cfg(windows)]
@@ -107,12 +105,11 @@ impl WorkerManager {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        let child = cmd.spawn()
-            .map_err(|e| {
-                #[cfg(feature = "log")]
-                error!("Failed to spawn model worker: {}", e);
-                ModelError::LoadFailed
-            })?;
+        let child = cmd.spawn().map_err(|e| {
+            #[cfg(feature = "log")]
+            error!("Failed to spawn model worker: {}", e);
+            ModelError::LoadFailed
+        })?;
 
         self.worker_process = Some(child);
         self.restart_attempts = 0;
@@ -144,7 +141,10 @@ impl WorkerManager {
     pub fn restart_worker(&mut self) -> Result<(), ModelError> {
         if self.restart_attempts >= self.config.max_restart_attempts {
             #[cfg(feature = "log")]
-            error!("Max restart attempts ({}) reached", self.config.max_restart_attempts);
+            error!(
+                "Max restart attempts ({}) reached",
+                self.config.max_restart_attempts
+            );
             return Err(ModelError::LoadFailed);
         }
 
@@ -152,8 +152,10 @@ impl WorkerManager {
         self.restart_attempts += 1;
 
         #[cfg(feature = "log")]
-        info!("Restarting model worker (attempt {}/{})", 
-              self.restart_attempts, self.config.max_restart_attempts);
+        info!(
+            "Restarting model worker (attempt {}/{})",
+            self.restart_attempts, self.config.max_restart_attempts
+        );
 
         self.spawn_worker()
     }
@@ -176,8 +178,7 @@ impl WorkerManager {
             }
         }
 
-        let serialized = serialize_request(request)
-            .map_err(|_| ModelError::LoadFailed)?;
+        let serialized = serialize_request(request).map_err(|_| ModelError::LoadFailed)?;
 
         #[cfg(unix)]
         {
@@ -192,34 +193,35 @@ impl WorkerManager {
 
     #[cfg(unix)]
     fn send_request_unix(&mut self, data: &[u8]) -> Result<ModelResponse, ModelError> {
-        let mut stream = UnixStream::connect(&self.socket_path)
-            .map_err(|e| {
-                #[cfg(feature = "log")]
-                error!("Failed to connect to worker socket: {}", e);
-                ModelError::LoadFailed
-            })?;
+        let mut stream = UnixStream::connect(&self.socket_path).map_err(|e| {
+            #[cfg(feature = "log")]
+            error!("Failed to connect to worker socket: {}", e);
+            ModelError::LoadFailed
+        })?;
 
         let len = data.len() as u32;
-        stream.write_all(&len.to_be_bytes())
+        stream
+            .write_all(&len.to_be_bytes())
             .map_err(|_| ModelError::LoadFailed)?;
-        stream.write_all(data)
-            .map_err(|_| ModelError::LoadFailed)?;
+        stream.write_all(data).map_err(|_| ModelError::LoadFailed)?;
 
         let timeout = Duration::from_millis(self.config.request_timeout_ms);
-        stream.set_read_timeout(Some(timeout))
+        stream
+            .set_read_timeout(Some(timeout))
             .map_err(|_| ModelError::LoadFailed)?;
 
         let mut len_buf = [0u8; 4];
-        stream.read_exact(&mut len_buf)
+        stream
+            .read_exact(&mut len_buf)
             .map_err(|_| ModelError::LoadFailed)?;
         let response_len = u32::from_be_bytes(len_buf) as usize;
 
         let mut response_buf = vec![0u8; response_len];
-        stream.read_exact(&mut response_buf)
+        stream
+            .read_exact(&mut response_buf)
             .map_err(|_| ModelError::LoadFailed)?;
 
-        deserialize_response(&response_buf)
-            .map_err(|_| ModelError::LoadFailed)
+        deserialize_response(&response_buf).map_err(|_| ModelError::LoadFailed)
     }
 
     #[cfg(windows)]
@@ -241,8 +243,7 @@ impl WorkerManager {
         let len = data.len() as u32;
         pipe.write_all(&len.to_be_bytes())
             .map_err(|_| ModelError::LoadFailed)?;
-        pipe.write_all(data)
-            .map_err(|_| ModelError::LoadFailed)?;
+        pipe.write_all(data).map_err(|_| ModelError::LoadFailed)?;
 
         let mut len_buf = [0u8; 4];
         pipe.read_exact(&mut len_buf)
@@ -253,8 +254,7 @@ impl WorkerManager {
         pipe.read_exact(&mut response_buf)
             .map_err(|_| ModelError::LoadFailed)?;
 
-        deserialize_response(&response_buf)
-            .map_err(|_| ModelError::LoadFailed)
+        deserialize_response(&response_buf).map_err(|_| ModelError::LoadFailed)
     }
 
     pub fn get_config(&self) -> &WorkerConfigInternal {
@@ -273,28 +273,33 @@ lazy_static::lazy_static! {
 }
 
 pub fn init_worker_manager(config: WorkerConfigInternal) -> Result<(), ModelError> {
-    let mut manager = GLOBAL_WORKER_MANAGER.lock()
+    let mut manager = GLOBAL_WORKER_MANAGER
+        .lock()
         .map_err(|_| ModelError::LoadFailed)?;
-    
+
     let mut worker = WorkerManager::new(config);
     worker.spawn_worker()?;
-    
+
     *manager = Some(worker);
     Ok(())
 }
 
-pub fn get_worker_manager() -> Result<std::sync::MutexGuard<'static, Option<WorkerManager>>, ModelError> {
-    GLOBAL_WORKER_MANAGER.lock().map_err(|_| ModelError::LoadFailed)
+pub fn get_worker_manager(
+) -> Result<std::sync::MutexGuard<'static, Option<WorkerManager>>, ModelError> {
+    GLOBAL_WORKER_MANAGER
+        .lock()
+        .map_err(|_| ModelError::LoadFailed)
 }
 
 pub fn shutdown_worker() -> Result<(), ModelError> {
-    let mut manager = GLOBAL_WORKER_MANAGER.lock()
+    let mut manager = GLOBAL_WORKER_MANAGER
+        .lock()
         .map_err(|_| ModelError::LoadFailed)?;
-    
+
     if let Some(ref mut worker) = *manager {
         worker.kill_worker();
     }
     *manager = None;
-    
+
     Ok(())
 }

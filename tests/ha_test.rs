@@ -273,46 +273,49 @@ fn test_ha_manager_failover() {
     init_test_platform();
 
     // 创建从节点配置
-    static SLAVE_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| config::DbConfig {
-        tables: EMPTY_TABLES.to_vec(),
-        total_memory: 8 * 1024 * 1024, // 8MB
-        low_power_mode_supported: false,
-        low_power_max_records: None,
-        default_max_records: 1000,
-        memory_allocator: &config::DefaultMemoryAllocator,
-        wal_config: WALConfig {
-            log_path: "./wal",
-            log_mode: LogMode::Async,
-            checkpoint_interval_ms: 60000,
-            log_file_size_limit: 1 * 1024 * 1024,
-            log_prealloc_size: 0,
-            log_segment_size: 1 * 1024 * 1024,
-            retained_checkpoints: 1,
-            max_consecutive_invalid: 100,
-            skip_threshold: 1000,
-            skip_block_size: 1024 * 1024,
-            max_skip_attempts: 3,
-            compression_type: remdb::config::WALCompressionType::None,
-            compression_level: 3,
-        },
-        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
-        // PubSub配置（可选）
-        #[cfg(feature = "pubsub")]
-        pubsub_config: None,
-        // HA配置 - 从节点
-        #[cfg(feature = "ha")]
-        ha_config: Some(HAConfig {
-            node_id: 2, // 默认节点ID为2
-            ha_role: HARole::Slave,
-            replication_mode: ReplicationMode::Sync,
-            heartbeat_interval_ms: 1000,
-            failure_detection_ms: 3000,
-            sync_timeout_ms: 2000,
-            master_address: None,
-            master_port: None,
-            replication_port: 5556,
-        }),
-    });
+    static SLAVE_CONFIG: std::sync::LazyLock<config::DbConfig> =
+        std::sync::LazyLock::new(|| config::DbConfig {
+            tables: EMPTY_TABLES.to_vec(),
+            total_memory: 8 * 1024 * 1024, // 8MB
+            low_power_mode_supported: false,
+            low_power_max_records: None,
+            default_max_records: 1000,
+            memory_allocator: &config::DefaultMemoryAllocator,
+            wal_config: WALConfig {
+                log_path: "./wal",
+                log_mode: LogMode::Async,
+                checkpoint_interval_ms: 60000,
+                log_file_size_limit: 1 * 1024 * 1024,
+                log_prealloc_size: 0,
+                log_segment_size: 1 * 1024 * 1024,
+                retained_checkpoints: 1,
+                max_consecutive_invalid: 100,
+                skip_threshold: 1000,
+                skip_block_size: 1024 * 1024,
+                max_skip_attempts: 3,
+                compression_type: remdb::config::WALCompressionType::None,
+                compression_level: 3,
+            },
+            time_series_defaults: config::TimeSeriesConfig::DEFAULT,
+            // PubSub配置（可选）
+            #[cfg(feature = "pubsub")]
+            pubsub_config: None,
+            // HA配置 - 从节点
+            #[cfg(feature = "ha")]
+            ha_config: Some(HAConfig {
+                node_id: 2, // 默认节点ID为2
+                ha_role: HARole::Slave,
+                replication_mode: ReplicationMode::Sync,
+                heartbeat_interval_ms: 1000,
+                failure_detection_ms: 3000,
+                sync_timeout_ms: 2000,
+                master_address: None,
+                master_port: None,
+                replication_port: 5556,
+            }),
+
+            model_worker_config: Default::default(),
+        });
 
     // 创建HA管理器
     let mut ha_manager = HAManager::new(&SLAVE_CONFIG).expect("Failed to create HAManager");
@@ -394,46 +397,49 @@ fn test_ha_manager() {
     static EMPTY_TABLES: &[crate::types::TableDef] = &[];
 
     // 创建测试配置
-    static CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| config::DbConfig {
-        tables: EMPTY_TABLES.to_vec(),
-        total_memory: 8 * 1024 * 1024, // 8MB
-        low_power_mode_supported: false,
-        low_power_max_records: None,
-        default_max_records: 1000,
-        memory_allocator: &config::DefaultMemoryAllocator,
-        wal_config: WALConfig {
-            log_path: "./wal",
-            log_mode: LogMode::Async,
-            checkpoint_interval_ms: 60000,
-            log_file_size_limit: 1 * 1024 * 1024,
-            log_prealloc_size: 0,
-            log_segment_size: 1 * 1024 * 1024,
-            retained_checkpoints: 1,
-            max_consecutive_invalid: 100,
-            skip_threshold: 1000,
-            skip_block_size: 1024 * 1024,
-            max_skip_attempts: 3,
-            compression_type: remdb::config::WALCompressionType::None,
-            compression_level: 3,
-        },
-        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
-        // PubSub配置（可选）
-        #[cfg(feature = "pubsub")]
-        pubsub_config: None,
-        // HA配置
-        #[cfg(feature = "ha")]
-        ha_config: Some(HAConfig {
-            node_id: 1, // 默认节点ID为1
-            ha_role: HARole::Master,
-            replication_mode: ReplicationMode::Sync,
-            heartbeat_interval_ms: 1000,
-            failure_detection_ms: 3000,
-            sync_timeout_ms: 2000,
-            master_address: None,
-            master_port: None,
-            replication_port: 5556,
-        }),
-    });
+    static CONFIG: std::sync::LazyLock<config::DbConfig> =
+        std::sync::LazyLock::new(|| config::DbConfig {
+            tables: EMPTY_TABLES.to_vec(),
+            total_memory: 8 * 1024 * 1024, // 8MB
+            low_power_mode_supported: false,
+            low_power_max_records: None,
+            default_max_records: 1000,
+            memory_allocator: &config::DefaultMemoryAllocator,
+            wal_config: WALConfig {
+                log_path: "./wal",
+                log_mode: LogMode::Async,
+                checkpoint_interval_ms: 60000,
+                log_file_size_limit: 1 * 1024 * 1024,
+                log_prealloc_size: 0,
+                log_segment_size: 1 * 1024 * 1024,
+                retained_checkpoints: 1,
+                max_consecutive_invalid: 100,
+                skip_threshold: 1000,
+                skip_block_size: 1024 * 1024,
+                max_skip_attempts: 3,
+                compression_type: remdb::config::WALCompressionType::None,
+                compression_level: 3,
+            },
+            time_series_defaults: config::TimeSeriesConfig::DEFAULT,
+            // PubSub配置（可选）
+            #[cfg(feature = "pubsub")]
+            pubsub_config: None,
+            // HA配置
+            #[cfg(feature = "ha")]
+            ha_config: Some(HAConfig {
+                node_id: 1, // 默认节点ID为1
+                ha_role: HARole::Master,
+                replication_mode: ReplicationMode::Sync,
+                heartbeat_interval_ms: 1000,
+                failure_detection_ms: 3000,
+                sync_timeout_ms: 2000,
+                master_address: None,
+                master_port: None,
+                replication_port: 5556,
+            }),
+
+            model_worker_config: Default::default(),
+        });
 
     // 创建HA管理器
     let mut ha_manager = HAManager::new(&CONFIG).expect("Failed to create HAManager");
@@ -463,46 +469,49 @@ fn test_ha_manager_role_switch() {
 
     // 使用全局定义的EMPTY_TABLES
     // 创建测试配置
-    static CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| config::DbConfig {
-        tables: EMPTY_TABLES.to_vec(),
-        total_memory: 8 * 1024 * 1024, // 8MB
-        low_power_mode_supported: false,
-        low_power_max_records: None,
-        default_max_records: 1000,
-        memory_allocator: &config::DefaultMemoryAllocator,
-        wal_config: WALConfig {
-            log_path: "./wal",
-            log_mode: LogMode::Async,
-            checkpoint_interval_ms: 60000,
-            log_file_size_limit: 1 * 1024 * 1024,
-            log_prealloc_size: 0,
-            log_segment_size: 1 * 1024 * 1024,
-            retained_checkpoints: 1,
-            max_consecutive_invalid: 100,
-            skip_threshold: 1000,
-            skip_block_size: 1024 * 1024,
-            max_skip_attempts: 3,
-            compression_type: remdb::config::WALCompressionType::None,
-            compression_level: 3,
-        },
-        time_series_defaults: config::TimeSeriesConfig::DEFAULT,
-        // PubSub配置（可选）
-        #[cfg(feature = "pubsub")]
-        pubsub_config: None,
-        // HA配置
-        #[cfg(feature = "ha")]
-        ha_config: Some(HAConfig {
-            node_id: 1, // 默认节点ID为1
-            ha_role: HARole::Master,
-            replication_mode: ReplicationMode::Sync,
-            heartbeat_interval_ms: 1000,
-            failure_detection_ms: 3000,
-            sync_timeout_ms: 2000,
-            master_address: None,
-            master_port: None,
-            replication_port: 5556,
-        }),
-    });
+    static CONFIG: std::sync::LazyLock<config::DbConfig> =
+        std::sync::LazyLock::new(|| config::DbConfig {
+            tables: EMPTY_TABLES.to_vec(),
+            total_memory: 8 * 1024 * 1024, // 8MB
+            low_power_mode_supported: false,
+            low_power_max_records: None,
+            default_max_records: 1000,
+            memory_allocator: &config::DefaultMemoryAllocator,
+            wal_config: WALConfig {
+                log_path: "./wal",
+                log_mode: LogMode::Async,
+                checkpoint_interval_ms: 60000,
+                log_file_size_limit: 1 * 1024 * 1024,
+                log_prealloc_size: 0,
+                log_segment_size: 1 * 1024 * 1024,
+                retained_checkpoints: 1,
+                max_consecutive_invalid: 100,
+                skip_threshold: 1000,
+                skip_block_size: 1024 * 1024,
+                max_skip_attempts: 3,
+                compression_type: remdb::config::WALCompressionType::None,
+                compression_level: 3,
+            },
+            time_series_defaults: config::TimeSeriesConfig::DEFAULT,
+            // PubSub配置（可选）
+            #[cfg(feature = "pubsub")]
+            pubsub_config: None,
+            // HA配置
+            #[cfg(feature = "ha")]
+            ha_config: Some(HAConfig {
+                node_id: 1, // 默认节点ID为1
+                ha_role: HARole::Master,
+                replication_mode: ReplicationMode::Sync,
+                heartbeat_interval_ms: 1000,
+                failure_detection_ms: 3000,
+                sync_timeout_ms: 2000,
+                master_address: None,
+                master_port: None,
+                replication_port: 5556,
+            }),
+
+            model_worker_config: Default::default(),
+        });
 
     // 创建HA管理器
     let mut ha_manager = HAManager::new(&CONFIG).expect("Failed to create HAManager");
@@ -606,6 +615,8 @@ fn test_ha_config_validation() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     // 验证配置应该失败
@@ -650,6 +661,8 @@ fn test_ha_config_validation() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     // 验证配置应该成功
@@ -683,7 +696,10 @@ fn test_sync_request_encode_decode_incremental() {
     assert!(decoded.is_some());
     let decoded = decoded.unwrap();
     assert_eq!(decoded.slave_id, 7);
-    assert_eq!(decoded.sync_type, remdb::ha::protocol::SyncType::Incremental);
+    assert_eq!(
+        decoded.sync_type,
+        remdb::ha::protocol::SyncType::Incremental
+    );
     assert_eq!(decoded.last_log_index, 123456);
     assert_eq!(encoded.len(), 6);
 }
@@ -723,7 +739,10 @@ fn test_sync_data_begin_encode_decode_wal() {
 
     assert!(decoded.is_some());
     let decoded = decoded.unwrap();
-    assert_eq!(decoded.sync_type, remdb::ha::protocol::SyncType::Incremental);
+    assert_eq!(
+        decoded.sync_type,
+        remdb::ha::protocol::SyncType::Incremental
+    );
     assert_eq!(decoded.total_size, 50000);
     assert_eq!(decoded.chunk_count, 10);
     assert_eq!(decoded.table_count, 0);
@@ -833,9 +852,18 @@ fn test_sync_ack_decode_invalid() {
 
 #[test]
 fn test_sync_type_from_u8() {
-    assert_eq!(remdb::ha::protocol::SyncType::from(0), remdb::ha::protocol::SyncType::Full);
-    assert_eq!(remdb::ha::protocol::SyncType::from(1), remdb::ha::protocol::SyncType::Incremental);
-    assert_eq!(remdb::ha::protocol::SyncType::from(255), remdb::ha::protocol::SyncType::Full);
+    assert_eq!(
+        remdb::ha::protocol::SyncType::from(0),
+        remdb::ha::protocol::SyncType::Full
+    );
+    assert_eq!(
+        remdb::ha::protocol::SyncType::from(1),
+        remdb::ha::protocol::SyncType::Incremental
+    );
+    assert_eq!(
+        remdb::ha::protocol::SyncType::from(255),
+        remdb::ha::protocol::SyncType::Full
+    );
 }
 
 // =============================================================================
@@ -846,14 +874,20 @@ fn test_sync_type_from_u8() {
 fn test_sync_handler_creation() {
     init_test_platform();
     let handler = remdb::ha::sync_handler::SyncHandler::new();
-    assert_eq!(handler.get_state(), remdb::ha::sync_handler::SyncHandlerState::Idle);
+    assert_eq!(
+        handler.get_state(),
+        remdb::ha::sync_handler::SyncHandlerState::Idle
+    );
 }
 
 #[test]
 fn test_sync_handler_default() {
     init_test_platform();
     let handler = remdb::ha::sync_handler::SyncHandler::default();
-    assert_eq!(handler.get_state(), remdb::ha::sync_handler::SyncHandlerState::Idle);
+    assert_eq!(
+        handler.get_state(),
+        remdb::ha::sync_handler::SyncHandlerState::Idle
+    );
 }
 
 #[test]
@@ -862,7 +896,10 @@ fn test_sync_handler_shutdown() {
     let mut handler = remdb::ha::sync_handler::SyncHandler::new();
     let result = handler.shutdown();
     assert!(result.is_ok());
-    assert_eq!(handler.get_state(), remdb::ha::sync_handler::SyncHandlerState::Idle);
+    assert_eq!(
+        handler.get_state(),
+        remdb::ha::sync_handler::SyncHandlerState::Idle
+    );
 }
 
 #[test]
@@ -903,8 +940,14 @@ fn test_sync_handler_state_conversion() {
     use remdb::ha::SyncState;
 
     assert_eq!(SyncState::from(SyncHandlerState::Idle), SyncState::Idle);
-    assert_eq!(SyncState::from(SyncHandlerState::Syncing), SyncState::Syncing);
-    assert_eq!(SyncState::from(SyncHandlerState::Completed), SyncState::Synced);
+    assert_eq!(
+        SyncState::from(SyncHandlerState::Syncing),
+        SyncState::Syncing
+    );
+    assert_eq!(
+        SyncState::from(SyncHandlerState::Completed),
+        SyncState::Synced
+    );
     assert_eq!(SyncState::from(SyncHandlerState::Failed), SyncState::Failed);
 }
 
@@ -922,7 +965,10 @@ fn test_master_slave_sync_request_flow() {
 
     let result = replication_manager.request_full_sync();
     if result.is_err() {
-        println!("Note: request_full_sync failed (expected in test env without network): {:?}", result);
+        println!(
+            "Note: request_full_sync failed (expected in test env without network): {:?}",
+            result
+        );
     }
 
     replication_manager.shutdown().expect("Failed to shutdown");
@@ -938,7 +984,10 @@ fn test_master_slave_incremental_sync_request() {
 
     let result = replication_manager.request_incremental_sync(1000);
     if result.is_err() {
-        println!("Note: request_incremental_sync failed (expected in test env without network): {:?}", result);
+        println!(
+            "Note: request_incremental_sync failed (expected in test env without network): {:?}",
+            result
+        );
     }
 
     replication_manager.shutdown().expect("Failed to shutdown");

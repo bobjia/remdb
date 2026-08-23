@@ -21,7 +21,10 @@ fn main() {
         let db = remdb::init_global_db(&TEST_DB).unwrap();
 
         println!("Testing CREATE TABLE WITH CONFIGURATION (max_records=100)");
-        println!("Low power mode max_records: {:?}", TEST_DB.low_power_max_records);
+        println!(
+            "Low power mode max_records: {:?}",
+            TEST_DB.low_power_max_records
+        );
         println!("Expected effective max_records: 50 (min of 100 and 50)");
 
         let sql = "CREATE TABLE my_memory_table (

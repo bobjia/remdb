@@ -145,7 +145,10 @@ impl SyncReceiver {
         }
 
         #[cfg(feature = "log")]
-        debug!("SyncReceiver: Received SYNC_DATA_BEGIN, data len: {}", data.len());
+        debug!(
+            "SyncReceiver: Received SYNC_DATA_BEGIN, data len: {}",
+            data.len()
+        );
 
         let begin = match SyncDataBegin::decode(data) {
             Some(b) => b,
@@ -302,7 +305,10 @@ impl SyncReceiver {
         }
 
         #[cfg(feature = "log")]
-        info!("SyncReceiver: Applying snapshot, size: {} bytes", data.len());
+        info!(
+            "SyncReceiver: Applying snapshot, size: {} bytes",
+            data.len()
+        );
 
         let db = unsafe { crate::get_global_db() }.ok_or(HAError::SyncFailed)?;
 
@@ -412,7 +418,11 @@ impl SyncReceiver {
                             // Apply record to table
                             if record_id < table.def.max_records {
                                 let record_ptr = table.get_record_ptr_mut(record_id);
-                                crate::platform::memcpy(record_ptr, record_data.as_ptr(), record_size);
+                                crate::platform::memcpy(
+                                    record_ptr,
+                                    record_data.as_ptr(),
+                                    record_size,
+                                );
 
                                 // Update status
                                 let status_ptr = table.get_status_ptr(record_id);
@@ -427,7 +437,10 @@ impl SyncReceiver {
                 } else {
                     // Table not found, skip records
                     #[cfg(feature = "log")]
-                    warn!("SyncReceiver: Table '{}' not found, skipping records", table_name);
+                    warn!(
+                        "SyncReceiver: Table '{}' not found, skipping records",
+                        table_name
+                    );
 
                     loop {
                         let used_flag = data[offset];
@@ -459,7 +472,10 @@ impl SyncReceiver {
         }
 
         #[cfg(feature = "log")]
-        info!("SyncReceiver: Applying WAL logs, size: {} bytes", data.len());
+        info!(
+            "SyncReceiver: Applying WAL logs, size: {} bytes",
+            data.len()
+        );
 
         // TODO: Implement WAL log application
         // This would parse LogItem structures from the data and apply them

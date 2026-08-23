@@ -1,5 +1,5 @@
 //! Model manager
-//! 
+//!
 //! This module manages the lifecycle of AI models, including loading, unloading, and caching.
 
 use alloc::collections::BTreeMap;
@@ -9,7 +9,7 @@ use alloc::sync::Arc;
 use crate::model::onnx_runtime::OnnxModel;
 
 #[cfg(feature = "model-runtime")]
-use crate::model::worker_protocol::{ModelRequest, ModelResponse, ErrorCode};
+use crate::model::worker_protocol::{ErrorCode, ModelRequest, ModelResponse};
 
 #[cfg(feature = "log")]
 use crate::log::{error, info};
@@ -70,11 +70,15 @@ pub struct ModelManager {
 }
 
 lazy_static! {
-    pub(crate) static ref GLOBAL_MODEL_MANAGER: Mutex<ModelManager> = Mutex::new(ModelManager::new());
+    pub(crate) static ref GLOBAL_MODEL_MANAGER: Mutex<ModelManager> =
+        Mutex::new(ModelManager::new());
 }
 
-pub fn get_global_model_manager() -> Result<std::sync::MutexGuard<'static, ModelManager>, ModelError> {
-    GLOBAL_MODEL_MANAGER.lock().map_err(|_| ModelError::InternalError)
+pub fn get_global_model_manager() -> Result<std::sync::MutexGuard<'static, ModelManager>, ModelError>
+{
+    GLOBAL_MODEL_MANAGER
+        .lock()
+        .map_err(|_| ModelError::InternalError)
 }
 
 pub fn reset_global_model_manager() -> Result<(), ModelError> {
@@ -117,6 +121,7 @@ impl ModelManager {
             return Err(ModelError::ModelAlreadyExists);
         }
 
+
         #[cfg(feature = "model-runtime")]
         if self.use_worker {
             return self.register_model_via_worker(&name, &path, &inputs, &output);
@@ -125,27 +130,30 @@ impl ModelManager {
         #[cfg(feature = "log")]
         info!("Registering model: {} from {}", name, path);
 
-        let model = OnnxModel::load(&path)
-            .map_err(|e| {
-                #[cfg(feature = "log")]
-                error!("Failed to load model {}: {}", name, e);
-                ModelError::LoadFailed
-            })?;
+        let model = OnnxModel::load(&path).map_err(|e| {
+            #[cfg(feature = "log")]
+            error!("Failed to load model {}: {}", name, e);
+            ModelError::LoadFailed
+        })?;
 
         let name_clone = name.clone();
         self.models.insert(name.clone(), Arc::new(model));
-        self.metadata.insert(name, ModelMetadata {
-            name: name_clone.clone(),
-            path,
-            inputs,
-            output,
-        });
+        self.metadata.insert(
+            name,
+            ModelMetadata {
+                name: name_clone.clone(),
+                path,
+                inputs,
+                output,
+            },
+        );
 
         #[cfg(feature = "log")]
         info!("Model {} registered successfully", name_clone);
 
         Ok(())
     }
+
 
     #[cfg(feature = "model-runtime")]
     fn register_model_via_worker(
@@ -157,10 +165,10 @@ impl ModelManager {
     ) -> Result<(), ModelError> {
         use crate::model::worker_manager::get_worker_manager;
 
-        let mut manager_guard = get_worker_manager()
-            .map_err(|_| ModelError::WorkerUnavailable)?;
+        let mut manager_guard = get_worker_manager().map_err(|_| ModelError::WorkerUnavailable)?;
 
-        let manager = manager_guard.as_mut()
+        let manager = manager_guard
+            .as_mut()
             .ok_or(ModelError::WorkerUnavailable)?;
 
         let request = ModelRequest::LoadModel {
@@ -170,22 +178,29 @@ impl ModelManager {
             output: output.clone(),
         };
 
-        let response = manager.send_request(&request)
+        let response = manager
+            .send_request(&request)
             .map_err(|_| ModelError::WorkerUnavailable)?;
 
         match response {
             ModelResponse::ModelLoaded { metadata: _ } => {
-                self.metadata.insert(name.to_string(), ModelMetadata {
-                    name: name.to_string(),
-                    path: path.to_string(),
-                    inputs: inputs.to_vec(),
-                    output: output.clone(),
-                });
+                self.metadata.insert(
+                    name.to_string(),
+                    ModelMetadata {
+                        name: name.to_string(),
+                        path: path.to_string(),
+                        inputs: inputs.to_vec(),
+                        output: output.clone(),
+                    },
+                );
                 Ok(())
             }
             ModelResponse::Error { code, message } => {
                 #[cfg(feature = "log")]
-                error!("Failed to register model via worker: {} ({:?})", message, code);
+                error!(
+                    "Failed to register model via worker: {} ({:?})",
+                    message, code
+                );
                 Err(match code {
                     ErrorCode::ModelAlreadyExists => ModelError::ModelAlreadyExists,
                     ErrorCode::LoadFailed => ModelError::LoadFailed,
@@ -204,12 +219,11 @@ impl ModelManager {
     }
 
     pub fn get_metadata(&self, name: &str) -> Result<&ModelMetadata, ModelError> {
-        self.metadata
-            .get(name)
-            .ok_or(ModelError::ModelNotFound)
+        self.metadata.get(name).ok_or(ModelError::ModelNotFound)
     }
 
     pub fn unregister_model(&mut self, name: &str) -> Result<(), ModelError> {
+
         #[cfg(feature = "model-runtime")]
         if self.use_worker {
             return self.unregister_model_via_worker(name);
@@ -223,21 +237,23 @@ impl ModelManager {
         }
     }
 
+
     #[cfg(feature = "model-runtime")]
     fn unregister_model_via_worker(&mut self, name: &str) -> Result<(), ModelError> {
         use crate::model::worker_manager::get_worker_manager;
 
-        let mut manager_guard = get_worker_manager()
-            .map_err(|_| ModelError::WorkerUnavailable)?;
+        let mut manager_guard = get_worker_manager().map_err(|_| ModelError::WorkerUnavailable)?;
 
-        let manager = manager_guard.as_mut()
+        let manager = manager_guard
+            .as_mut()
             .ok_or(ModelError::WorkerUnavailable)?;
 
         let request = ModelRequest::UnloadModel {
             name: name.to_string(),
         };
 
-        let response = manager.send_request(&request)
+        let response = manager
+            .send_request(&request)
             .map_err(|_| ModelError::WorkerUnavailable)?;
 
         match response {
@@ -245,12 +261,10 @@ impl ModelManager {
                 self.metadata.remove(name);
                 Ok(())
             }
-            ModelResponse::Error { code, .. } => {
-                Err(match code {
-                    ErrorCode::ModelNotFound => ModelError::ModelNotFound,
-                    _ => ModelError::InternalError,
-                })
-            }
+            ModelResponse::Error { code, .. } => Err(match code {
+                ErrorCode::ModelNotFound => ModelError::ModelNotFound,
+                _ => ModelError::InternalError,
+            }),
             _ => Err(ModelError::InternalError),
         }
     }

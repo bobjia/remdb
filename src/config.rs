@@ -5,7 +5,6 @@ use crate::types::TableDef;
 use core::mem::size_of;
 
 /// Model Worker 配置
-#[cfg(feature = "model-runtime")]
 #[derive(Clone, Debug)]
 pub struct ModelWorkerConfig {
     /// 是否启用 Model Worker
@@ -24,23 +23,24 @@ pub struct ModelWorkerConfig {
     pub max_restart_attempts: u32,
 }
 
-#[cfg(feature = "model-runtime")]
 impl Default for ModelWorkerConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            cpu_cores: 2,
-            memory_limit_mb: 2048,
-            max_models: 10,
-            request_timeout_ms: 5000,
-            restart_on_failure: true,
-            max_restart_attempts: 3,
-        }
+        Self::DEFAULT
     }
 }
 
-#[cfg(feature = "model-runtime")]
 impl ModelWorkerConfig {
+    /// 默认的Model Worker配置常量
+    pub const DEFAULT: Self = Self {
+        enabled: true,
+        cpu_cores: 2,
+        memory_limit_mb: 2048,
+        max_models: 10,
+        request_timeout_ms: 5000,
+        restart_on_failure: true,
+        max_restart_attempts: 3,
+    };
+
     pub fn validate(&self) -> bool {
         if self.cpu_cores == 0 || self.cpu_cores > 64 {
             return false;
@@ -186,7 +186,6 @@ pub struct DbConfig {
     pub ha_config: Option<HAConfig>,
 
     /// Model Worker配置
-    #[cfg(feature = "model-runtime")]
     pub model_worker_config: ModelWorkerConfig,
 }
 
@@ -288,7 +287,6 @@ pub fn validate_config(config: &DbConfig) -> bool {
     }
 
     // 检查Model Worker配置
-    #[cfg(feature = "model-runtime")]
     {
         if !config.model_worker_config.validate() {
             return false;

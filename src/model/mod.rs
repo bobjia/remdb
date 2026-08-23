@@ -1,5 +1,5 @@
 //! Model management module
-//! 
+//!
 //! This module provides functionality for loading, managing, and executing AI models
 //! as user-defined functions (UDFs) in the database.
 
@@ -22,15 +22,23 @@ pub mod cache;
 #[cfg(feature = "model-download")]
 pub mod downloader;
 
-pub use model_manager::{ModelManager, ModelError, ModelMetadata};
+pub use model_manager::{ModelError, ModelManager, ModelMetadata};
 pub use model_udf::ModelUDF;
-pub use onnx_runtime::{OnnxModel, ModelInfo, InputType};
+pub use onnx_runtime::{InputType, ModelInfo, OnnxModel};
 
 #[cfg(feature = "model-runtime")]
-pub use builtin_models::{BuiltinModel, BUILTIN_MODELS, get_builtin_model, list_builtin_models, register_builtin_models};
+pub use builtin_models::{
+    get_builtin_model, list_builtin_models, register_builtin_models, BuiltinModel, BUILTIN_MODELS,
+};
 
 #[cfg(feature = "model-runtime")]
-pub use cache::{CacheConfig, CacheStats, CacheKey, CacheEntry, InferenceCache, ThreadSafeCache, cached_inference, init_cache, get_cache, clear_cache, cache_stats};
+pub use cache::{
+    cache_stats, cached_inference, clear_cache, get_cache, init_cache, CacheConfig, CacheEntry,
+    CacheKey, CacheStats, InferenceCache, ThreadSafeCache,
+};
 
 #[cfg(feature = "model-download")]
-pub use downloader::{DownloadError, DownloadProgress, download_model, download_model_sync, resolve_model_path, is_url};
+pub use downloader::{
+    download_model, download_model_sync, is_url, resolve_model_path, DownloadError,
+    DownloadProgress,
+};

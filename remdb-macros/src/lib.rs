@@ -320,7 +320,11 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             } else {
                 32
             };
-            (quote!(remdb::types::DataType::VarChar), str_size, quote!(Some(#str_size as usize)))
+            (
+                quote!(remdb::types::DataType::VarChar),
+                str_size,
+                quote!(Some(#str_size as usize)),
+            )
         } else if type_name == "vector" {
             // 处理vector(2)这样的向量类型
             let dim = if let Some(params) = type_params {
@@ -328,7 +332,11 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             } else {
                 128
             };
-            (quote!(remdb::types::DataType::Vector), dim * 4, quote!(None)) // 向量每个维度4字节
+            (
+                quote!(remdb::types::DataType::Vector),
+                dim * 4,
+                quote!(None),
+            ) // 向量每个维度4字节
         } else {
             (quote!(remdb::types::DataType::Int32), 4, quote!(None))
         };
@@ -534,6 +542,8 @@ pub fn database(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     master_port: None,
                     replication_port: 5556,
                 }),
+                // Model Worker配置
+                model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
             }
         });
     };

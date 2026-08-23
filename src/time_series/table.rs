@@ -182,30 +182,27 @@ impl TimeSeriesTable {
     }
 
     /// 添加预聚合配置
-    pub fn add_pre_aggregation(
-        &self,
-        interval_seconds: u64,
-        aggregation: &str,
-    ) -> Result<()> {
+    pub fn add_pre_aggregation(&self, interval_seconds: u64, aggregation: &str) -> Result<()> {
         let mut pre_aggregation_guard = try_lock!(self.pre_aggregation);
-        
+
         // 检查是否已存在相同配置
-        let existing_config = pre_aggregation_guard.configs.iter()
-            .find(|config| config.interval_seconds == interval_seconds && config.aggregation == aggregation);
-        
+        let existing_config = pre_aggregation_guard.configs.iter().find(|config| {
+            config.interval_seconds == interval_seconds && config.aggregation == aggregation
+        });
+
         if existing_config.is_some() {
             return Ok(()); // 配置已存在，无需重复添加
         }
-        
+
         // 添加新的预聚合配置
         pre_aggregation_guard.configs.push(PreAggregationConfig {
             interval_seconds,
             aggregation: aggregation.to_string(),
         });
-        
+
         Ok(())
     }
-    
+
     /// 使用预聚合数据执行查询
     pub fn query_pre_aggregated(
         &self,
@@ -215,23 +212,24 @@ impl TimeSeriesTable {
         aggregation: &str,
     ) -> Result<Vec<TimeSeriesRecord>> {
         let pre_aggregation_guard = try_lock!(self.pre_aggregation);
-        
+
         // 检查预聚合配置是否存在
-        let config_exists = pre_aggregation_guard.configs.iter()
-            .any(|config| config.interval_seconds == interval_seconds && config.aggregation == aggregation);
-        
+        let config_exists = pre_aggregation_guard.configs.iter().any(|config| {
+            config.interval_seconds == interval_seconds && config.aggregation == aggregation
+        });
+
         if !config_exists {
             return Err(RemDbError::ConfigError); // 预聚合配置不存在
         }
-        
+
         // 计算时间桶范围
         let interval_nanos = interval_seconds * 1_000_000_000u64;
         let start_bucket = start_time / interval_nanos;
         let end_bucket = end_time / interval_nanos;
-        
+
         // 收集预聚合数据
         let mut result = Vec::new();
-        
+
         for bucket in start_bucket..=end_bucket {
             // 查找该时间桶的所有预聚合数据
             for ((stored_bucket, _tag_hash), value) in pre_aggregation_guard.data.iter() {
@@ -246,27 +244,27 @@ impl TimeSeriesTable {
                 }
             }
         }
-        
+
         Ok(result)
     }
-    
+
     /// 更新预聚合数据
     fn update_pre_aggregations(&self, record: &TimeSeriesRecord) {
         let mut pre_aggregation_guard = try_lock!(self.pre_aggregation);
-        
+
         // 先复制配置，避免借用冲突
         let configs = pre_aggregation_guard.configs.clone();
-        
+
         // 为每个预聚合配置更新数据
         for config in &configs {
             let interval_nanos = config.interval_seconds * 1_000_000_000u64;
             let time_bucket = record.timestamp / interval_nanos;
-            
+
             // 计算标签哈希（简化处理）
             let tag_hash = record.tag_count as u64; // 实际应该基于标签值计算哈希
-            
+
             let key = (time_bucket, tag_hash);
-            
+
             // 根据聚合函数更新值
             match config.aggregation.as_str() {
                 "avg" => {
@@ -278,15 +276,21 @@ impl TimeSeriesTable {
                 }
                 "sum" => {
                     let current_value = *pre_aggregation_guard.data.get(&key).unwrap_or(&0.0);
-                    pre_aggregation_guard.data.insert(key, current_value + record.value);
+                    pre_aggregation_guard
+                        .data
+                        .insert(key, current_value + record.value);
                 }
                 "min" => {
                     let current_value = *pre_aggregation_guard.data.get(&key).unwrap_or(&f64::MAX);
-                    pre_aggregation_guard.data.insert(key, f64::min(current_value, record.value));
+                    pre_aggregation_guard
+                        .data
+                        .insert(key, f64::min(current_value, record.value));
                 }
                 "max" => {
                     let current_value = *pre_aggregation_guard.data.get(&key).unwrap_or(&f64::MIN);
-                    pre_aggregation_guard.data.insert(key, f64::max(current_value, record.value));
+                    pre_aggregation_guard
+                        .data
+                        .insert(key, f64::max(current_value, record.value));
                 }
                 _ => {}
             }

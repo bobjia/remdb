@@ -111,6 +111,8 @@ fn main() {
             pubsub_config: None,
             #[cfg(feature = "ha")]
             ha_config: None,
+
+            model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
         };
 
         // 初始化全局数据库
@@ -119,14 +121,17 @@ fn main() {
             Ok(db) => {
                 println!("Database initialized successfully!");
                 println!("Number of tables: {}", db.table_count());
-                
+
                 // 检查系统表是否创建成功
                 for (i, table_opt) in db.get_all_tables().iter().enumerate() {
                     if let Some(table) = table_opt {
-                        println!("Table {}: {} (max_records: {})\n", i, table.def.name, table.def.max_records);
+                        println!(
+                            "Table {}: {} (max_records: {})\n",
+                            i, table.def.name, table.def.max_records
+                        );
                     }
                 }
-                
+
                 println!("Test completed successfully!");
             }
             Err(e) => {

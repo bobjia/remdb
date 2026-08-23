@@ -2,10 +2,10 @@
 //!
 //! This module contains math-related function implementations like ABS, SQRT, POWER, SIN, COS, LOG, EXP, ROUND, CEIL, FLOOR, MOD.
 
+use crate::sql::QueryExecutionError;
 use crate::types::DataType;
 use crate::types::TypedValue;
 use crate::Value;
-use crate::sql::QueryExecutionError;
 
 /// 执行ABS函数
 pub fn execute_abs(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {

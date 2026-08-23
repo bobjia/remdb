@@ -2,12 +2,15 @@
 //!
 //! This module contains DDL operations like CREATE/DROP TABLE, DATABASE, INDEX, etc.
 
-use alloc::vec::Vec;
 use crate::sql::{QueryExecutionError, ResultSet, SqlQuery};
 use crate::RemDb;
+use alloc::vec::Vec;
 
 /// 执行DROP TABLE查询
-pub fn execute_drop_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+pub fn execute_drop_table_query(
+    db: &mut RemDb,
+    query: &SqlQuery,
+) -> Result<ResultSet, QueryExecutionError> {
     // 提取IF EXISTS和DEFERRED选项
     let mut if_exists = false;
     let mut is_deferred = false;
@@ -30,7 +33,10 @@ pub fn execute_drop_table_query(db: &mut RemDb, query: &SqlQuery) -> Result<Resu
 }
 
 /// 执行CREATE DATABASE查询
-pub fn execute_create_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+pub fn execute_create_database_query(
+    db: &mut RemDb,
+    query: &SqlQuery,
+) -> Result<ResultSet, QueryExecutionError> {
     // 提取数据库名称
     let database_name = query.table_name.clone();
 
@@ -43,7 +49,10 @@ pub fn execute_create_database_query(db: &mut RemDb, query: &SqlQuery) -> Result
 }
 
 /// 执行USE DATABASE查询
-pub fn execute_use_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+pub fn execute_use_database_query(
+    db: &mut RemDb,
+    query: &SqlQuery,
+) -> Result<ResultSet, QueryExecutionError> {
     // 提取数据库名称
     let database_name = query.table_name.clone();
 
@@ -56,7 +65,10 @@ pub fn execute_use_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<Re
 }
 
 /// 执行CLOSE DATABASE查询
-pub fn execute_close_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+pub fn execute_close_database_query(
+    db: &mut RemDb,
+    query: &SqlQuery,
+) -> Result<ResultSet, QueryExecutionError> {
     // 提取数据库名称
     let database_name = query.table_name.clone();
 
@@ -69,7 +81,10 @@ pub fn execute_close_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<
 }
 
 /// 执行DROP DATABASE查询
-pub fn execute_drop_database_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
+pub fn execute_drop_database_query(
+    db: &mut RemDb,
+    query: &SqlQuery,
+) -> Result<ResultSet, QueryExecutionError> {
     // 提取数据库名称
     let database_name = query.table_name.clone();
 

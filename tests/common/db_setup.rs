@@ -4,8 +4,8 @@
 
 use std::sync::Mutex;
 
-use remdb::*;
 use super::platform::TEST_PLATFORM;
+use remdb::*;
 
 const DEFAULT_TEST_MEMORY_SIZE: usize = 1024 * 1024; // 1MB
 
@@ -31,8 +31,7 @@ pub fn setup_test_db_with_memory(size: usize) {
 
     // 5. 初始化新的全局分配器
     unsafe {
-        remdb::memory::allocator::init_global_allocator(ptr, db_memory.len())
-            .unwrap();
+        remdb::memory::allocator::init_global_allocator(ptr, db_memory.len()).unwrap();
     }
 
     // 6. 将新的内存池保存到静态变量中，确保其在整个测试期间有效

@@ -1,6 +1,5 @@
 // HA管理器实现
 
-use crate::RemDbError;
 use crate::config::DbConfig;
 use crate::ha::heartbeat::HeartbeatMonitor;
 use crate::ha::replication::ReplicationManager;
@@ -11,6 +10,7 @@ use crate::ha::{HAError, HARole, ReplicationMode, Result, SyncState};
 use crate::pubsub;
 use crate::pubsub::{init as pubsub_init, PubSubConfig, UdpMode};
 use crate::transaction::LogItem;
+use crate::RemDbError;
 
 #[cfg(feature = "log")]
 use crate::log::{debug, error, info};
@@ -75,16 +75,11 @@ impl HAManager {
         match self.init_pubsub() {
             Ok(_) => {
                 #[cfg(feature = "log")]
-                debug!(
-                    "HA manager pubsub initialized successfully"
-                );
+                debug!("HA manager pubsub initialized successfully");
             }
             Err(e) => {
                 #[cfg(feature = "log")]
-                error!(
-                    "HA manager pubsub initialization failed: {:?}",
-                    e
-                );
+                error!("HA manager pubsub initialization failed: {:?}", e);
                 return Err(e);
             }
         }
@@ -95,16 +90,11 @@ impl HAManager {
         match self.role_manager.init() {
             Ok(_) => {
                 #[cfg(feature = "log")]
-                debug!(
-                    "HA manager role manager initialized successfully"
-                );
+                debug!("HA manager role manager initialized successfully");
             }
             Err(e) => {
                 #[cfg(feature = "log")]
-                error!(
-                    "HA manager role manager initialization failed: {:?}",
-                    e
-                );
+                error!("HA manager role manager initialization failed: {:?}", e);
                 return Err(e);
             }
         }
@@ -115,9 +105,7 @@ impl HAManager {
         match self.replication_manager.init() {
             Ok(_) => {
                 #[cfg(feature = "log")]
-                debug!(
-                    "HA manager replication manager initialized successfully"
-                );
+                debug!("HA manager replication manager initialized successfully");
             }
             Err(e) => {
                 #[cfg(feature = "log")]
@@ -135,9 +123,7 @@ impl HAManager {
         match self.heartbeat_monitor.init() {
             Ok(_) => {
                 #[cfg(feature = "log")]
-                debug!(
-                    "HA manager heartbeat monitor initialized successfully"
-                );
+                debug!("HA manager heartbeat monitor initialized successfully");
             }
             Err(e) => {
                 #[cfg(feature = "log")]
@@ -162,22 +148,15 @@ impl HAManager {
             HARole::Master => {
                 // 主节点初始化逻辑
                 #[cfg(feature = "log")]
-                debug!(
-                    "Initializing as master node, calling init_master()"
-                );
+                debug!("Initializing as master node, calling init_master()");
                 match self.init_master() {
                     Ok(_) => {
                         #[cfg(feature = "log")]
-                        debug!(
-                            "Master node initialized successfully"
-                        );
+                        debug!("Master node initialized successfully");
                     }
                     Err(e) => {
                         #[cfg(feature = "log")]
-                        error!(
-                            "Master node initialization failed: {:?}",
-                            e
-                        );
+                        error!("Master node initialization failed: {:?}", e);
                         return Err(e);
                     }
                 }
@@ -189,16 +168,11 @@ impl HAManager {
                 match self.init_slave() {
                     Ok(_) => {
                         #[cfg(feature = "log")]
-                        debug!(
-                            "Slave node initialized successfully"
-                        );
+                        debug!("Slave node initialized successfully");
                     }
                     Err(e) => {
                         #[cfg(feature = "log")]
-                        error!(
-                            "Slave node initialization failed: {:?}",
-                            e
-                        );
+                        error!("Slave node initialization failed: {:?}", e);
                         return Err(e);
                     }
                 }
@@ -206,22 +180,15 @@ impl HAManager {
             HARole::Auto => {
                 // 自动模式初始化逻辑
                 #[cfg(feature = "log")]
-                debug!(
-                    "Initializing in auto mode, calling init_auto()"
-                );
+                debug!("Initializing in auto mode, calling init_auto()");
                 match self.init_auto() {
                     Ok(_) => {
                         #[cfg(feature = "log")]
-                        debug!(
-                            "Auto mode initialized successfully"
-                        );
+                        debug!("Auto mode initialized successfully");
                     }
                     Err(e) => {
                         #[cfg(feature = "log")]
-                        error!(
-                            "Auto mode initialization failed: {:?}",
-                            e
-                        );
+                        error!("Auto mode initialization failed: {:?}", e);
                         return Err(e);
                     }
                 }
@@ -233,9 +200,7 @@ impl HAManager {
         // This prevents thread safety issues in test environments
 
         #[cfg(feature = "log")]
-        debug!(
-            "HA manager initialized successfully"
-        );
+        debug!("HA manager initialized successfully");
 
         Ok(())
     }
@@ -354,11 +319,16 @@ impl HAManager {
             return Ok(());
         }
 
-        let master_address = ha_config.master_address.expect("master_address must be set");
+        let master_address = ha_config
+            .master_address
+            .expect("master_address must be set");
         let master_port = ha_config.master_port.expect("master_port must be set");
 
         #[cfg(feature = "log")]
-        debug!("connect_to_master: Connecting to master at {}:{}", master_address, master_port);
+        debug!(
+            "connect_to_master: Connecting to master at {}:{}",
+            master_address, master_port
+        );
 
         // 1. 建立与主节点的连接
         #[cfg(feature = "log")]

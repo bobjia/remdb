@@ -2,12 +2,12 @@
 //!
 //! 该模块负责将SQL查询字符串解析为结构化的查询对象。
 
-use alloc::boxed::Box;
 use crate::RemDbError;
-use std::collections::HashMap;
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use std::collections::HashMap;
 
 #[cfg(feature = "log")]
 use crate::log::debug;
@@ -22,60 +22,60 @@ pub fn parse_time_string(time_str: &str) -> Result<i64, ()> {
     if time_str.starts_with('[') && time_str.ends_with(']') {
         return Err(());
     }
-    
+
     if time_str.contains(|c| c == 'Y' || c == 'M' || c == 'D' || c == 'H' || c == 'I' || c == 'S') {
         return Err(());
     }
-    
+
     if let Ok(timestamp) = time_str.parse::<i64>() {
         return Ok(timestamp);
     }
-    
+
     let time_str = time_str.trim();
     let mut parts = time_str.split_whitespace();
-    
+
     let date_part = parts.next().ok_or(())?;
     let date_components: Vec<&str> = date_part.split('-').collect();
     if date_components.len() != 3 {
         return Err(());
     }
-    
+
     let year = date_components[0].parse::<i64>().map_err(|_| ())?;
     let month = date_components[1].parse::<i64>().map_err(|_| ())?;
     let day = date_components[2].parse::<i64>().map_err(|_| ())?;
-    
+
     let mut hour = 0;
     let mut minute = 0;
     let mut second = 0;
-    
+
     if let Some(time_part) = parts.next() {
         let (time_only, _tz_offset_seconds) = split_timezone_from_time(time_part);
         let time_components: Vec<&str> = time_only.split(':').collect();
         if time_components.len() != 3 {
             return Err(());
         }
-        
+
         hour = time_components[0].parse::<i64>().map_err(|_| ())?;
         minute = time_components[1].parse::<i64>().map_err(|_| ())?;
         second = time_components[2].parse::<i64>().map_err(|_| ())?;
     }
-    
+
     let mut seconds = 0;
-    
+
     for _y in 1970..year {
         seconds += 365 * 24 * 60 * 60;
     }
-    
+
     let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     for m in 0..(month - 1) {
         seconds += days_in_month[m as usize] * 24 * 60 * 60;
     }
-    
+
     seconds += (day - 1) * 24 * 60 * 60;
     seconds += hour * 60 * 60;
     seconds += minute * 60;
     seconds += second;
-    
+
     Ok(seconds * 1000000)
 }
 
@@ -94,9 +94,15 @@ fn split_timezone_from_time(time_part: &str) -> (&str, i32) {
 }
 
 fn parse_timezone_offset(tz_str: &str) -> Option<i32> {
-    let sign = if tz_str.starts_with('+') { 1 } else if tz_str.starts_with('-') { -1 } else { return None };
+    let sign = if tz_str.starts_with('+') {
+        1
+    } else if tz_str.starts_with('-') {
+        -1
+    } else {
+        return None;
+    };
     let offset_str = &tz_str[1..];
-    
+
     let parts: Vec<&str> = offset_str.split(':').collect();
     if parts.len() == 2 {
         let hours = parts[0].parse::<i32>().ok()?;
@@ -305,71 +311,71 @@ impl std::fmt::Display for IndexType {
 }
 
 /// 查询类型
-    #[derive(Debug, Clone, PartialEq)]
-    pub enum QueryType {
-        /// SELECT查询
-        Select,
-        /// INSERT查询
-        Insert,
-        /// UPDATE查询
-        Update,
-        /// DELETE查询
-        Delete,
-        /// DESCRIBE TABLE查询
-        Describe,
-        /// CREATE TABLE查询
-        CreateTable,
-        /// CREATE TIMESERIES TABLE查询
-        CreateTimeSeriesTable,
-        /// CREATE INDEX查询
-        CreateIndex,
-        /// CREATE DATABASE查询
-        CreateDatabase,
-        /// CREATE MODEL查询
-        CreateModel,
-        /// CREATE ROLE查询
-        CreateRole,
-        /// GRANT PERMISSION查询
-        GrantPermission,
-        /// GRANT ROLE查询
-        GrantRole,
-        /// REVOKE PERMISSION查询
-        RevokePermission,
-        /// REVOKE ROLE查询
-        RevokeRole,
-        /// DROP ROLE查询
-        DropRole,
-        /// CREATE USER查询
-        CreateUser,
-        /// DROP USER查询
-        DropUser,
-        /// USE DATABASE查询
-        UseDatabase,
-        /// CLOSE DATABASE查询
-        CloseDatabase,
-        /// DROP DATABASE查询
-        DropDatabase,
-        /// ALTER TABLE查询
-        AlterTable,
-        /// DROP TABLE查询
-        DropTable,
-        /// BEGIN TRANSACTION查询
-        BeginTransaction,
-        /// COMMIT查询
-        Commit,
-        /// ROLLBACK查询
-        Rollback,
-        /// CREATE CHECKPOINT查询
-        CreateCheckpoint,
-        /// SHOW INDEX BUILD STATUS查询
-        ShowIndexBuildStatus,
-        /// REINDEX查询
-        Reindex,
-        /// SHOW TABLES查询
-        ShowTables,
-        /// 其他查询类型（暂不支持）
-        Other,
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub enum QueryType {
+    /// SELECT查询
+    Select,
+    /// INSERT查询
+    Insert,
+    /// UPDATE查询
+    Update,
+    /// DELETE查询
+    Delete,
+    /// DESCRIBE TABLE查询
+    Describe,
+    /// CREATE TABLE查询
+    CreateTable,
+    /// CREATE TIMESERIES TABLE查询
+    CreateTimeSeriesTable,
+    /// CREATE INDEX查询
+    CreateIndex,
+    /// CREATE DATABASE查询
+    CreateDatabase,
+    /// CREATE MODEL查询
+    CreateModel,
+    /// CREATE ROLE查询
+    CreateRole,
+    /// GRANT PERMISSION查询
+    GrantPermission,
+    /// GRANT ROLE查询
+    GrantRole,
+    /// REVOKE PERMISSION查询
+    RevokePermission,
+    /// REVOKE ROLE查询
+    RevokeRole,
+    /// DROP ROLE查询
+    DropRole,
+    /// CREATE USER查询
+    CreateUser,
+    /// DROP USER查询
+    DropUser,
+    /// USE DATABASE查询
+    UseDatabase,
+    /// CLOSE DATABASE查询
+    CloseDatabase,
+    /// DROP DATABASE查询
+    DropDatabase,
+    /// ALTER TABLE查询
+    AlterTable,
+    /// DROP TABLE查询
+    DropTable,
+    /// BEGIN TRANSACTION查询
+    BeginTransaction,
+    /// COMMIT查询
+    Commit,
+    /// ROLLBACK查询
+    Rollback,
+    /// CREATE CHECKPOINT查询
+    CreateCheckpoint,
+    /// SHOW INDEX BUILD STATUS查询
+    ShowIndexBuildStatus,
+    /// REINDEX查询
+    Reindex,
+    /// SHOW TABLES查询
+    ShowTables,
+    /// 其他查询类型（暂不支持）
+    Other,
+}
 
 /// WHERE子句
 #[derive(Debug, Clone, PartialEq)]
@@ -720,37 +726,37 @@ impl SqlParser {
             QueryType::AlterTable => self.parse_alter_table_query(),
             QueryType::DropTable => self.parse_drop_table_query(),
             QueryType::BeginTransaction => Ok(SqlQuery {
-            query_type,
-            table_name: String::new(),
-            table_alias: None,
-            joins: Vec::new(),
-            columns: Vec::new(),
-            select_all: false,
-            distinct: false,
-            where_clause: None,
-            having_clause: None,
-            group_by: None,
-            order_by: None,
-            limit: None,
-            sample_by: None,
-            fill_clause: None,
-            window_functions: Vec::new(),
-            insert_columns: Vec::new(),
-            values: Vec::new(),
-            table_def: Vec::new(),
-            primary_key: None,
-            index_column: None,
-            index_type: None,
-            index_params: HashMap::new(),
-            index_online: true,
-            update_pairs: Vec::new(),
-            ignore_duplicates: false,
-            if_not_exists: false,
-            model_path: String::new(),
-            model_inputs: Vec::new(),
-            model_output: (String::new(), String::new()),
-            table_config: HashMap::new(),
-        }),
+                query_type,
+                table_name: String::new(),
+                table_alias: None,
+                joins: Vec::new(),
+                columns: Vec::new(),
+                select_all: false,
+                distinct: false,
+                where_clause: None,
+                having_clause: None,
+                group_by: None,
+                order_by: None,
+                limit: None,
+                sample_by: None,
+                fill_clause: None,
+                window_functions: Vec::new(),
+                insert_columns: Vec::new(),
+                values: Vec::new(),
+                table_def: Vec::new(),
+                primary_key: None,
+                index_column: None,
+                index_type: None,
+                index_params: HashMap::new(),
+                index_online: true,
+                update_pairs: Vec::new(),
+                ignore_duplicates: false,
+                if_not_exists: false,
+                model_path: String::new(),
+                model_inputs: Vec::new(),
+                model_output: (String::new(), String::new()),
+                table_config: HashMap::new(),
+            }),
             QueryType::Commit => Ok(SqlQuery {
                 query_type: QueryType::Commit,
                 table_name: String::new(),
@@ -887,7 +893,7 @@ impl SqlParser {
                     model_output: (String::new(), String::new()),
                     table_config: HashMap::new(),
                 })
-            },
+            }
             QueryType::Reindex => self.parse_reindex_query(),
             QueryType::ShowTables => Ok(SqlQuery {
                 query_type: QueryType::ShowTables,
@@ -1234,7 +1240,7 @@ impl SqlParser {
             self.expect_keyword("EXISTS")?;
             if_not_exists = true;
         }
-        
+
         // 解析表名
         self.skip_whitespace();
         let table_name = self.parse_identifier()?;
@@ -1250,42 +1256,48 @@ impl SqlParser {
 
         loop {
             self.skip_whitespace();
-            
+
             // 检查是否是PRIMARY KEY约束
             #[cfg(feature = "log")]
             {
                 let remaining: String = self.input[self.position..].chars().take(50).collect();
-                debug!("parse_create_table_query: position={}, remaining='{}'", self.position, remaining);
+                debug!(
+                    "parse_create_table_query: position={}, remaining='{}'",
+                    self.position, remaining
+                );
             }
             // 调试：打印当前位置和剩余输入
             let remaining_debug: String = self.input[self.position..].chars().take(50).collect();
             let is_primary = self.match_keyword("PRIMARY");
             #[cfg(feature = "log")]
-            debug!("parse_create_table_query: match_keyword('PRIMARY')={}, position_after={}", is_primary, self.position);
+            debug!(
+                "parse_create_table_query: match_keyword('PRIMARY')={}, position_after={}",
+                is_primary, self.position
+            );
             if is_primary {
                 self.skip_whitespace();
                 self.expect_keyword("KEY")?;
                 self.skip_whitespace();
                 self.expect_char('(')?;
-                
+
                 // 解析复合主键字段列表
                 loop {
                     self.skip_whitespace();
                     let field_name = self.parse_identifier()?;
                     primary_key_fields.push(field_name);
-                    
+
                     self.skip_whitespace();
                     if self.match_char(')') {
                         break;
                     }
-                    
+
                     if !self.match_char(',') {
                         return Err(QueryParseError::InvalidSyntax);
                     }
                 }
-                
+
                 primary_key = Some(primary_key_fields.clone());
-                
+
                 // 不在这里更新字段定义中的主键标志，因为字段可能还未定义
                 // 将在所有字段定义完成后统一处理
             } else if self.match_keyword("FOREIGN") {
@@ -1586,18 +1598,18 @@ impl SqlParser {
             self.skip_whitespace();
             let column_name = self.parse_identifier()?;
             index_columns.push(column_name);
-            
+
             // 跳过排序方向（ASC/DESC，可选）
             self.skip_whitespace();
             if self.match_keyword("ASC") || self.match_keyword("DESC") {
                 // 目前忽略排序方向，以后可以扩展支持
             }
-            
+
             self.skip_whitespace();
             if self.match_char(')') {
                 break;
             }
-            
+
             if !self.match_char(',') {
                 return Err(QueryParseError::InvalidSyntax);
             }
@@ -1617,15 +1629,15 @@ impl SqlParser {
         if self.match_keyword("WITH") {
             self.skip_whitespace();
             self.expect_char('(')?;
-            
+
             // 解析参数列表
             loop {
                 self.skip_whitespace();
                 let param_name = self.parse_identifier()?.to_uppercase();
-                
+
                 self.skip_whitespace();
                 self.expect_char('=')?;
-                
+
                 self.skip_whitespace();
                 let param_value = self.parse_value()?;
                 let value_str = match param_value {
@@ -1637,9 +1649,9 @@ impl SqlParser {
                     Value::Json(s) => s,
                     _ => return Err(QueryParseError::InvalidValue),
                 };
-                
+
                 index_params.insert(param_name, value_str);
-                
+
                 self.skip_whitespace();
                 if self.match_char(',') {
                     continue;
@@ -1647,7 +1659,7 @@ impl SqlParser {
                     break;
                 }
             }
-            
+
             self.skip_whitespace();
             self.expect_char(')')?;
         }
@@ -1775,7 +1787,15 @@ impl SqlParser {
             // 解析要删除的字段名
             let field_name = self.parse_identifier()?;
             // 使用特殊标记表示DROP COLUMN操作
-            table_def.push((field_name, "DROP".to_string(), false, false, false, false, None));
+            table_def.push((
+                field_name,
+                "DROP".to_string(),
+                false,
+                false,
+                false,
+                false,
+                None,
+            ));
         } else if self.match_keyword("MODIFY") {
             self.skip_whitespace();
             if self.match_keyword("COLUMN") {
@@ -1841,7 +1861,9 @@ impl SqlParser {
     }
 
     /// 解析列定义
-    fn parse_column_definition(&mut self) -> Result<(String, String, bool, bool, bool, bool, Option<Value>), QueryParseError> {
+    fn parse_column_definition(
+        &mut self,
+    ) -> Result<(String, String, bool, bool, bool, bool, Option<Value>), QueryParseError> {
         let field_name = self.parse_identifier()?;
 
         self.skip_whitespace();
@@ -1869,9 +1891,7 @@ impl SqlParser {
                 is_not_null = true;
             } else if self.match_keyword("UNIQUE") {
                 is_unique = true;
-            } else if self.match_keyword("AUTOINCREMENT")
-                || self.match_keyword("AUTO_INCREMENT")
-            {
+            } else if self.match_keyword("AUTOINCREMENT") || self.match_keyword("AUTO_INCREMENT") {
                 is_auto_increment = true;
             } else if self.match_keyword("DEFAULT") {
                 self.skip_whitespace();
@@ -1883,7 +1903,15 @@ impl SqlParser {
             }
         }
 
-        Ok((field_name, data_type, is_primary_key, is_not_null, is_unique, is_auto_increment, default_value))
+        Ok((
+            field_name,
+            data_type,
+            is_primary_key,
+            is_not_null,
+            is_unique,
+            is_auto_increment,
+            default_value,
+        ))
     }
 
     /// 解析DROP TABLE查询
@@ -1948,7 +1976,15 @@ impl SqlParser {
 
         // 使用table_def字段存储额外信息
         // 格式：(if_exists, is_deferred, 0, 0, 0, 0, None)
-        query.table_def.push((if_exists.to_string(), is_deferred.to_string(), false, false, false, false, None));
+        query.table_def.push((
+            if_exists.to_string(),
+            is_deferred.to_string(),
+            false,
+            false,
+            false,
+            false,
+            None,
+        ));
 
         Ok(query)
     }
@@ -1993,10 +2029,10 @@ impl SqlParser {
             loop {
                 self.skip_whitespace();
                 let param_name = self.parse_identifier()?.to_uppercase();
-                
+
                 self.skip_whitespace();
                 self.expect_char('=')?;
-                
+
                 self.skip_whitespace();
                 let param_value = self.parse_value()?;
                 let value_str = match param_value {
@@ -2008,9 +2044,9 @@ impl SqlParser {
                     Value::Json(s) => s,
                     _ => return Err(QueryParseError::InvalidValue),
                 };
-                
+
                 config_params.insert(param_name, value_str);
-                
+
                 self.skip_whitespace();
                 if self.match_char(')') {
                     break;
@@ -2069,7 +2105,7 @@ impl SqlParser {
             self.expect_keyword("EXISTS")?;
             if_not_exists = true;
         }
-        
+
         // 解析模型名称
         self.skip_whitespace();
         let model_name = self.parse_identifier()?;
@@ -2439,10 +2475,10 @@ impl SqlParser {
 
         // 解析LIMIT子句（可选）
         let limit = self.parse_limit_clause()?;
-        
+
         // 解析SAMPLE BY子句（可选，时序查询专用）
         let sample_by = self.parse_sample_by_clause()?;
-        
+
         // 解析FILL子句（可选，时序查询专用）
         let fill_clause = self.parse_fill_clause()?;
 
@@ -2632,9 +2668,9 @@ impl SqlParser {
             if self.match_keyword("NULL") {
                 // 构建IS NULL或IS NOT NULL表达式
                 // 使用BinaryOp来表示IS NULL操作
-                let right_expr = Expression::Constant { 
-                    value: Value::Null, 
-                    alias: None 
+                let right_expr = Expression::Constant {
+                    value: Value::Null,
+                    alias: None,
                 };
                 let op = if is_not {
                     BinaryOperator::NotEqual
@@ -2697,13 +2733,9 @@ impl SqlParser {
                 right,
                 alias,
             }),
-            Expression::UnaryOp {
-                op, operand, ..
-            } => Ok(Expression::UnaryOp {
-                op,
-                operand,
-                alias,
-            }),
+            Expression::UnaryOp { op, operand, .. } => {
+                Ok(Expression::UnaryOp { op, operand, alias })
+            }
         }
     }
 
@@ -2747,35 +2779,33 @@ impl SqlParser {
             // 检查是否是布尔值
             let saved_pos_bool = self.position;
             if self.match_keyword("TRUE") {
-                return Ok(Expression::Constant { 
-                    value: Value::Boolean(true), 
-                    alias: None 
+                return Ok(Expression::Constant {
+                    value: Value::Boolean(true),
+                    alias: None,
                 });
             } else if self.match_keyword("FALSE") {
-                return Ok(Expression::Constant { 
-                    value: Value::Boolean(false), 
-                    alias: None 
+                return Ok(Expression::Constant {
+                    value: Value::Boolean(false),
+                    alias: None,
                 });
             } else if self.match_keyword("NULL") {
-                return Ok(Expression::Constant { 
-                    value: Value::Null, 
-                    alias: None 
+                return Ok(Expression::Constant {
+                    value: Value::Null,
+                    alias: None,
                 });
             }
             // 回退到原始位置
             self.position = saved_pos_bool;
             self.column = saved_col;
-            
+
             // 检查是否是数字
-            if current_char.is_ascii_digit() || current_char == '-'
-            {
+            if current_char.is_ascii_digit() || current_char == '-' {
                 // 解析常量值
                 let value = self.parse_value()?;
                 return Ok(Expression::Constant { value, alias: None });
             }
             // 检查是否是字符串
-            else if current_char == '"' || current_char == '\''
-            {
+            else if current_char == '"' || current_char == '\'' {
                 // 解析常量值
                 let value = self.parse_value()?;
                 return Ok(Expression::Constant { value, alias: None });
@@ -2785,7 +2815,7 @@ impl SqlParser {
         // 尝试直接解析函数调用，避免循环调用
         let func_saved_pos = self.position;
         let func_saved_col = self.column;
-        
+
         // 尝试解析函数名
         if let Ok(function_name) = self.parse_identifier() {
             self.skip_whitespace();
@@ -2793,7 +2823,7 @@ impl SqlParser {
             if self.peek_char() == Some('(') {
                 // 解析左括号
                 self.next_char();
-                
+
                 // 解析函数参数
                 let mut args = Vec::new();
 
@@ -2826,14 +2856,14 @@ impl SqlParser {
                 });
             }
         }
-        
+
         // 回退到原始位置
         self.position = func_saved_pos;
         self.column = func_saved_col;
-        
+
         // 尝试解析标识符作为字段
         let identifier = self.parse_identifier()?;
-        
+
         // 检查是否是INTERVAL常量
         if identifier.eq_ignore_ascii_case("INTERVAL") {
             // 解析INTERVAL常量
@@ -2865,7 +2895,7 @@ impl SqlParser {
                     alias: None,
                 });
             }
-        } 
+        }
         // 不是INTERVAL，直接返回字段表达式
         else {
             return Ok(Expression::Field {
@@ -3139,14 +3169,15 @@ impl SqlParser {
             Ok(None)
         }
     }
-
 }
 
-    /// 将表达式转换为ORDER BY子句用的字符串表示
+/// 将表达式转换为ORDER BY子句用的字符串表示
 pub fn expression_to_order_by_string(expr: &Expression) -> String {
     match expr {
         Expression::Field { name, .. } => name.clone(),
-        Expression::BinaryOp { left, op, right, .. } => {
+        Expression::BinaryOp {
+            left, op, right, ..
+        } => {
             let left_name = match left.as_ref() {
                 Expression::Field { name, .. } => name.clone(),
                 _ => return String::new(),
@@ -3158,13 +3189,11 @@ pub fn expression_to_order_by_string(expr: &Expression) -> String {
                 _ => return String::new(),
             };
             let right_str = match right.as_ref() {
-                Expression::Constant { value, .. } => {
-                    match value {
-                        crate::sql::Value::Json(json_str) => json_str.clone(),
-                        crate::sql::Value::String(s) => s.clone(),
-                        _ => format!("{:?}", value),
-                    }
-                }
+                Expression::Constant { value, .. } => match value {
+                    crate::sql::Value::Json(json_str) => json_str.clone(),
+                    crate::sql::Value::String(s) => s.clone(),
+                    _ => format!("{:?}", value),
+                },
                 _ => format!("{:?}", right.as_ref()),
             };
             format!("{} {} {}", left_name, op_str, right_str)
@@ -3362,7 +3391,7 @@ impl SqlParser {
         // 尝试解析比较条件
         let saved_pos_compare = self.position;
         let saved_col_compare = self.column;
-        
+
         if let Ok(condition) = self.parse_comparison_condition() {
             return Ok(condition);
         }
@@ -3373,7 +3402,7 @@ impl SqlParser {
 
         // 解析表达式
         let expr = self.parse_expression()?;
-        
+
         // 对于表达式条件，我们将其视为与 TRUE 的比较
         // 例如 "a" 相当于 "a = TRUE"
         Ok(Condition::Comparison(ComparisonCondition {
@@ -3493,7 +3522,7 @@ impl SqlParser {
                         Expression::Field { name, alias: None } => name,
                         _ => return Err(QueryParseError::InvalidSyntax),
                     };
-                    
+
                     // 获取向量操作符的字符串表示
                     let op_str = match op {
                         BinaryOperator::VectorL2 => "<->",
@@ -3501,19 +3530,20 @@ impl SqlParser {
                         BinaryOperator::VectorCosine => "<=>",
                         _ => return Err(QueryParseError::InvalidSyntax),
                     };
-                    
+
                     // 从右侧表达式中提取实际向量值
                     let vector_str = match *right {
-                        Expression::Constant { ref value, alias: None } => {
-                            match value {
-                                Value::String(ref vec_str) => vec_str.clone(),
-                                Value::Json(ref json_str) => json_str.clone(),
-                                _ => return Err(QueryParseError::InvalidSyntax),
-                            }
+                        Expression::Constant {
+                            ref value,
+                            alias: None,
+                        } => match value {
+                            Value::String(ref vec_str) => vec_str.clone(),
+                            Value::Json(ref json_str) => json_str.clone(),
+                            _ => return Err(QueryParseError::InvalidSyntax),
                         },
                         _ => return Err(QueryParseError::InvalidSyntax),
                     };
-                    
+
                     // 构建完整的向量距离表达式
                     format!("{field_name} {op_str} {vector_str}")
                 }
@@ -3660,7 +3690,7 @@ impl SqlParser {
                 }
                 string_value.push(c);
             }
-            
+
             // 先检查是否是带类型提示的JSON字符串
             if string_value.starts_with("__JSON__:") {
                 let json_str = string_value.trim_start_matches("__JSON__:");
@@ -3669,7 +3699,11 @@ impl SqlParser {
                 Ok(Value::Json(json_str.to_string()))
             } else {
                 // 检查是否是带引号的JSON字符串，去除引号后检查
-                let unquoted = string_value.trim_start_matches('"').trim_end_matches('"').trim_start_matches('\'').trim_end_matches('\'');
+                let unquoted = string_value
+                    .trim_start_matches('"')
+                    .trim_end_matches('"')
+                    .trim_start_matches('\'')
+                    .trim_end_matches('\'');
                 if unquoted.starts_with('{') || unquoted.starts_with('[') {
                     // 去除引号后是JSON格式
                     #[cfg(feature = "log")]
@@ -3880,7 +3914,10 @@ impl SqlParser {
                     .map_err(|_| QueryParseError::InvalidValue)?;
                 Ok(Value::Integer(int_value))
             }
-        } else if self.peek_char().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
+        } else if self
+            .peek_char()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
             // 标识符（字段名、表名等）
             let identifier = self.parse_identifier()?;
             Ok(Value::Identifier(identifier))
@@ -4088,7 +4125,7 @@ impl SqlParser {
 
         // 检查是否有修饰符，如 UNSIGNED, WITH TIME ZONE 或 WITH DISTANCE=L2
         self.skip_whitespace();
-        
+
         // 只尝试解析修饰符一次，避免无限循环
         if self.peek_char().is_some() {
             // 检查是否是约束关键字（这些应该在数据类型之后单独解析）
@@ -4121,22 +4158,25 @@ impl SqlParser {
                 // 检查是否是 WITH 修饰符，如 WITH TIME ZONE 或 WITH DISTANCE=L2
                 if modifier.eq_ignore_ascii_case("WITH") {
                     self.skip_whitespace();
-                    
+
                     if self.peek_char().is_some() {
                         // 检查是否是约束关键字
                         let next_token = self.peek_identifier();
                         if let Some(token) = next_token {
                             let token_upper = token.to_uppercase();
-                            if !["PRIMARY",
+                            if ![
+                                "PRIMARY",
                                 "NOT",
                                 "UNIQUE",
                                 "AUTOINCREMENT",
                                 "AUTO_INCREMENT",
                                 "DEFAULT",
                             ]
-                            .contains(&token_upper.as_str()) {
+                            .contains(&token_upper.as_str())
+                            {
                                 // 检查下一个字符是否是标识符的开始（字母或下划线）
-                                let next_char = self.peek_char().ok_or(RemDbError::InvalidSqlQuery)?;
+                                let next_char =
+                                    self.peek_char().ok_or(RemDbError::InvalidSqlQuery)?;
                                 if next_char.is_ascii_alphabetic() || next_char == '_' {
                                     // 解析 WITH 后的修饰符
                                     let with_modifier = self.parse_identifier()?;
@@ -4316,7 +4356,13 @@ impl SqlParser {
             table_name,
             table_alias: Some(role_name),
             joins: Vec::new(),
-            columns: permissions.into_iter().map(|p| Expression::Field { name: p, alias: None }).collect(),
+            columns: permissions
+                .into_iter()
+                .map(|p| Expression::Field {
+                    name: p,
+                    alias: None,
+                })
+                .collect(),
             select_all: false,
             distinct: false,
             where_clause: None,
@@ -4430,7 +4476,13 @@ impl SqlParser {
             table_name,
             table_alias: Some(role_name),
             joins: Vec::new(),
-            columns: permissions.into_iter().map(|p| Expression::Field { name: p, alias: None }).collect(),
+            columns: permissions
+                .into_iter()
+                .map(|p| Expression::Field {
+                    name: p,
+                    alias: None,
+                })
+                .collect(),
             select_all: false,
             distinct: false,
             where_clause: None,

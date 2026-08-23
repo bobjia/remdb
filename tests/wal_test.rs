@@ -1,6 +1,8 @@
 #[cfg(feature = "ha")]
 use remdb::config::HAConfig;
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig, WALCompressionType};
+use remdb::config::{
+    DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALCompressionType, WALConfig,
+};
 #[cfg(feature = "ha")]
 use remdb::ha::{HARole, ReplicationMode};
 use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
@@ -69,6 +71,8 @@ fn test_wal_log_manager_creation() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     // 测试创建 LogManager
@@ -125,6 +129,8 @@ fn test_wal_log_write_sync_mode() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     unsafe {
@@ -200,6 +206,8 @@ fn test_wal_log_write_async_mode() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     unsafe {
@@ -278,6 +286,8 @@ fn test_wal_checkpoint_mechanism() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     unsafe {
@@ -356,6 +366,8 @@ fn test_wal_log_preallocation() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     unsafe {
@@ -424,6 +436,8 @@ fn test_wal_different_log_modes() {
                 master_port: None,
                 replication_port: 5556,
             }),
+
+            model_worker_config: Default::default(),
         };
 
         unsafe {
@@ -504,6 +518,8 @@ fn test_wal_checkpoint_comprehensive() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     unsafe {
@@ -667,6 +683,8 @@ fn test_wal_checkpoint_comprehensive() {
                 master_port: None,
                 replication_port: 5556,
             }),
+
+            model_worker_config: Default::default(),
         };
 
         let mut async_log_manager = LogManager::new(&async_config).unwrap();
@@ -745,6 +763,8 @@ fn test_wal_recovery_flow() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     unsafe {
@@ -951,6 +971,8 @@ fn test_wal_checkpoint_with_recovery() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     };
 
     unsafe {

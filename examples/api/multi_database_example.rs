@@ -45,6 +45,7 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -88,7 +89,7 @@ fn main() -> Result<()> {
     println!("\n4. 在当前数据库中创建表");
     db.sql_query("CREATE TABLE orders (id INT32 PRIMARY KEY, product TEXT, amount REAL)")?;
     println!("   创建表: orders");
-    
+
     db.sql_query("INSERT INTO orders VALUES (1, 'Laptop', 999.99), (2, 'Phone', 599.99)")?;
     println!("   插入数据");
 
@@ -103,7 +104,7 @@ fn main() -> Result<()> {
     match db.use_database("sales_db") {
         Ok(_) => {
             println!("   切换到 sales_db 成功");
-            
+
             // 在 sales_db 中创建表
             db.sql_query("CREATE TABLE sales (id INT32 PRIMARY KEY, amount REAL)")?;
             println!("   在 sales_db 中创建表: sales");
@@ -130,8 +131,10 @@ fn main() -> Result<()> {
     match db.databases() {
         Ok(databases) => {
             for info in &databases {
-                println!("   - {} (状态: {:?}, 表数量: {}, 内存: {} bytes)", 
-                    info.name, info.status, info.table_count, info.memory_usage);
+                println!(
+                    "   - {} (状态: {:?}, 表数量: {}, 内存: {} bytes)",
+                    info.name, info.status, info.table_count, info.memory_usage
+                );
             }
         }
         Err(e) => println!("   获取数据库列表失败: {:?}", e),

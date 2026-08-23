@@ -14,8 +14,8 @@ use remdb::{config, RemDb};
 use std::sync::Mutex;
 
 mod common;
-use common::{setup_test_db, setup_test_db_with_memory};
 use crate::common::platform::TEST_PLATFORM;
+use common::{setup_test_db, setup_test_db_with_memory};
 
 // 全局互斥锁，确保测试串行执行
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
@@ -63,94 +63,102 @@ static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLo
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     }
 });
 
 /// 创建性能测试用的DbConfig
-static PERFORMANCE_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| {
-    config::DbConfig {
-        tables: vec![],
-        total_memory: 104857600,
-        default_max_records: 100000,
-        low_power_mode_supported: false,
-        low_power_max_records: None,
-        // 添加缺少的字段
-        memory_allocator: &config::DefaultMemoryAllocator,
-        wal_config: WALConfig {
-            log_path: "./wal",
-            log_mode: config::LogMode::Async,
-            log_prealloc_size: 0,
-            log_file_size_limit: 104857600,
-            log_segment_size: 1048576,
-            checkpoint_interval_ms: 30000,
-            retained_checkpoints: 2,
-            max_consecutive_invalid: 100,
-            skip_threshold: 1000,
-            skip_block_size: 1024 * 1024,
-            max_skip_attempts: 3,
-            compression_type: remdb::config::WALCompressionType::None,
-            compression_level: 3,
-        },
-        time_series_defaults: TimeSeriesConfig::DEFAULT,
-        #[cfg(feature = "pubsub")]
-        pubsub_config: None,
-        #[cfg(feature = "ha")]
-        ha_config: Some(HAConfig {
-            node_id: 1, // 默认节点ID为1
-            ha_role: HARole::Auto,
-            replication_mode: ReplicationMode::Async,
-            heartbeat_interval_ms: 1000,
-            failure_detection_ms: 3000,
-            sync_timeout_ms: 1000,
-            master_address: None,
-            master_port: None,
-            replication_port: 5556,
-        }),
-    }
-});
+static PERFORMANCE_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> =
+    std::sync::LazyLock::new(|| {
+        config::DbConfig {
+            tables: vec![],
+            total_memory: 104857600,
+            default_max_records: 100000,
+            low_power_mode_supported: false,
+            low_power_max_records: None,
+            // 添加缺少的字段
+            memory_allocator: &config::DefaultMemoryAllocator,
+            wal_config: WALConfig {
+                log_path: "./wal",
+                log_mode: config::LogMode::Async,
+                log_prealloc_size: 0,
+                log_file_size_limit: 104857600,
+                log_segment_size: 1048576,
+                checkpoint_interval_ms: 30000,
+                retained_checkpoints: 2,
+                max_consecutive_invalid: 100,
+                skip_threshold: 1000,
+                skip_block_size: 1024 * 1024,
+                max_skip_attempts: 3,
+                compression_type: remdb::config::WALCompressionType::None,
+                compression_level: 3,
+            },
+            time_series_defaults: TimeSeriesConfig::DEFAULT,
+            #[cfg(feature = "pubsub")]
+            pubsub_config: None,
+            #[cfg(feature = "ha")]
+            ha_config: Some(HAConfig {
+                node_id: 1, // 默认节点ID为1
+                ha_role: HARole::Auto,
+                replication_mode: ReplicationMode::Async,
+                heartbeat_interval_ms: 1000,
+                failure_detection_ms: 3000,
+                sync_timeout_ms: 1000,
+                master_address: None,
+                master_port: None,
+                replication_port: 5556,
+            }),
+
+            model_worker_config: Default::default(),
+        }
+    });
 
 /// 创建回滚测试用的DbConfig
-static ROLLBACK_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock::new(|| {
-    config::DbConfig {
-        tables: vec![],
-        total_memory: 104857600,
-        default_max_records: 10000,
-        low_power_mode_supported: false,
-        low_power_max_records: None,
-        // 添加缺少的字段
-        memory_allocator: &config::DefaultMemoryAllocator,
-        wal_config: WALConfig {
-            log_path: "./wal",
-            log_mode: config::LogMode::Sync,
-            log_prealloc_size: 0,
-            log_file_size_limit: 104857600,
-            log_segment_size: 1048576,
-            checkpoint_interval_ms: 30000,
-            retained_checkpoints: 2,
-            max_consecutive_invalid: 100,
-            skip_threshold: 1000,
-            skip_block_size: 1024 * 1024,
-            max_skip_attempts: 3,
-            compression_type: remdb::config::WALCompressionType::None,
-            compression_level: 3,
-        },
-        time_series_defaults: TimeSeriesConfig::DEFAULT,
-        #[cfg(feature = "pubsub")]
-        pubsub_config: None,
-        #[cfg(feature = "ha")]
-        ha_config: Some(HAConfig {
-            node_id: 1, // 默认节点ID为1
-            ha_role: HARole::Auto,
-            replication_mode: ReplicationMode::Async,
-            heartbeat_interval_ms: 1000,
-            failure_detection_ms: 3000,
-            sync_timeout_ms: 1000,
-            master_address: None,
-            master_port: None,
-            replication_port: 5556,
-        }),
-    }
-});
+static ROLLBACK_TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> =
+    std::sync::LazyLock::new(|| {
+        config::DbConfig {
+            tables: vec![],
+            total_memory: 104857600,
+            default_max_records: 10000,
+            low_power_mode_supported: false,
+            low_power_max_records: None,
+            // 添加缺少的字段
+            memory_allocator: &config::DefaultMemoryAllocator,
+            wal_config: WALConfig {
+                log_path: "./wal",
+                log_mode: config::LogMode::Sync,
+                log_prealloc_size: 0,
+                log_file_size_limit: 104857600,
+                log_segment_size: 1048576,
+                checkpoint_interval_ms: 30000,
+                retained_checkpoints: 2,
+                max_consecutive_invalid: 100,
+                skip_threshold: 1000,
+                skip_block_size: 1024 * 1024,
+                max_skip_attempts: 3,
+                compression_type: remdb::config::WALCompressionType::None,
+                compression_level: 3,
+            },
+            time_series_defaults: TimeSeriesConfig::DEFAULT,
+            #[cfg(feature = "pubsub")]
+            pubsub_config: None,
+            #[cfg(feature = "ha")]
+            ha_config: Some(HAConfig {
+                node_id: 1, // 默认节点ID为1
+                ha_role: HARole::Auto,
+                replication_mode: ReplicationMode::Async,
+                heartbeat_interval_ms: 1000,
+                failure_detection_ms: 3000,
+                sync_timeout_ms: 1000,
+                master_address: None,
+                master_port: None,
+                replication_port: 5556,
+            }),
+
+            model_worker_config: Default::default(),
+        }
+    });
 
 #[test]
 fn test_write_timeseries_batch_acid() {
@@ -627,7 +635,12 @@ fn test_time_series_pre_aggregation() {
         let end_time = 1000000000000 + 1000000000; // 2秒（纳秒）
         let interval_seconds = 60;
         let aggregation = "sum";
-        let result = time_series_table.query_pre_aggregated(start_time, end_time, interval_seconds, aggregation);
+        let result = time_series_table.query_pre_aggregated(
+            start_time,
+            end_time,
+            interval_seconds,
+            aggregation,
+        );
         assert!(result.is_ok());
         let records = result.unwrap();
         assert!(!records.is_empty());
@@ -659,7 +672,8 @@ fn test_time_series_pre_aggregation() {
     // 使用batch_write方法写入数据，不需要事务
     let time_series_table = db.get_time_series_table_mut(0).unwrap();
     unsafe {
-        let result = time_series_table.batch_write(more_data_points.as_ptr(), more_data_points.len());
+        let result =
+            time_series_table.batch_write(more_data_points.as_ptr(), more_data_points.len());
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 10);
     }
@@ -671,7 +685,12 @@ fn test_time_series_pre_aggregation() {
         let end_time = 1000000000000 + 1000000000; // 2秒（纳秒）
         let interval_seconds = 60;
         let avg_aggregation = "avg";
-        let result = time_series_table.query_pre_aggregated(start_time, end_time, interval_seconds, avg_aggregation);
+        let result = time_series_table.query_pre_aggregated(
+            start_time,
+            end_time,
+            interval_seconds,
+            avg_aggregation,
+        );
         assert!(result.is_ok());
         let avg_records = result.unwrap();
         assert!(!avg_records.is_empty());

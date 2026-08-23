@@ -1,6 +1,6 @@
-use crate::RemDbError;
 use crate::memory::{MemoryBlock, MemoryStats};
 use crate::types::Result;
+use crate::RemDbError;
 use core::ptr::NonNull;
 
 // 使用条件编译，在std环境下使用std::sync::OnceLock，在no_std环境下使用platform::OnceLock
@@ -369,17 +369,18 @@ static GLOBAL_ALLOCATOR: Mutex<Option<StaticAllocator>> = Mutex::new(None);
 /// 初始化全局内存分配器
 pub fn init_global_allocator(start_ptr: *mut u8, size: usize) -> Result<()> {
     // 检查内存大小是否足够
-    if size < MemoryBlock::SIZE * 2 { // 至少需要两个块头大小
+    if size < MemoryBlock::SIZE * 2 {
+        // 至少需要两个块头大小
         return Err(crate::types::RemDbError::OutOfMemory);
     }
-    
+
     // 检查内存指针是否有效
     if start_ptr.is_null() {
         return Err(crate::types::RemDbError::OutOfMemory);
     }
-    
+
     // 创建新的分配器实例
-    let new_allocator = 
+    let new_allocator =
         StaticAllocator::new(start_ptr, size).ok_or(crate::types::RemDbError::OutOfMemory)?;
 
     // 锁定并替换现有的分配器
@@ -437,7 +438,7 @@ pub fn reset_global_allocator() -> Result<()> {
     let mut allocator_guard = GLOBAL_ALLOCATOR
         .lock()
         .map_err(|_| crate::types::RemDbError::OutOfMemory)?;
-    
+
     if let Some(allocator) = allocator_guard.as_mut() {
         allocator.reset();
     }

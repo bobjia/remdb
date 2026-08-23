@@ -44,6 +44,8 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -55,18 +57,18 @@ fn main() -> Result<()> {
     println!("1. Create table with JSON field");
     db.sql_query("CREATE TABLE users (id INT32 PRIMARY KEY, name TEXT, profile JSON)")?;
     println!("   Created table: users (with JSON field)");
-    
+
     db.sql_query("CREATE TABLE products (id INT32 PRIMARY KEY, name TEXT, attributes JSON)")?;
     println!("   Created table: products (with JSON field)");
 
     // 2. Insert JSON data
     println!("\n2. Insert JSON data");
-    
+
     db.sql_query(r#"INSERT INTO users VALUES (1, 'Alice', '{"age": 30, "city": "Beijing", "skills": ["Rust", "Python"], "active": true}')"#)?;
     db.sql_query(r#"INSERT INTO users VALUES (2, 'Bob', '{"age": 25, "city": "Shanghai", "skills": ["Java", "Go"], "active": false}')"#)?;
     db.sql_query(r#"INSERT INTO users VALUES (3, 'Charlie', '{"age": 35, "city": "Guangzhou", "skills": ["C++", "Rust"], "address": {"street": "Main St", "zip": "10001"}}')"#)?;
     println!("   Inserted 3 user records");
-    
+
     db.sql_query(r#"INSERT INTO products VALUES (1, 'Laptop', '{"brand": "Dell", "specs": {"cpu": "i7", "ram": 16}, "price": 999.99}')"#)?;
     db.sql_query(r#"INSERT INTO products VALUES (2, 'Phone', '{"brand": "Apple", "specs": {"cpu": "A15", "ram": 8}, "price": 799.99}')"#)?;
     println!("   Inserted 2 product records");
@@ -78,35 +80,38 @@ fn main() -> Result<()> {
 
     // 4. JSON_EXTRACT
     println!("\n4. JSON_EXTRACT");
-    
+
     let result = db.sql_query(r#"SELECT id, name, JSON_EXTRACT(profile, '$.age') AS age, JSON_EXTRACT(profile, '$.city') AS city FROM users"#)?;
     println!("   Extract age and city:");
     println!("{}", result.to_string());
 
     // 5. Extract nested value
     println!("\n5. Extract nested value");
-    
+
     let result = db.sql_query(r#"SELECT id, name, JSON_EXTRACT(profile, '$.address.street') AS street FROM users WHERE id = 3"#)?;
     println!("   Extract nested address.street:");
     println!("{}", result.to_string());
 
     // 6. Extract array element
     println!("\n6. Extract array element");
-    
-    let result = db.sql_query(r#"SELECT id, name, JSON_EXTRACT(profile, '$.skills[0]') AS first_skill FROM users"#)?;
+
+    let result = db.sql_query(
+        r#"SELECT id, name, JSON_EXTRACT(profile, '$.skills[0]') AS first_skill FROM users"#,
+    )?;
     println!("   Extract first skill:");
     println!("{}", result.to_string());
 
     // 7. JSON condition query
     println!("\n7. JSON condition query");
-    
-    let result = db.sql_query(r#"SELECT id, name FROM users WHERE JSON_EXTRACT(profile, '$.age') > 28"#)?;
+
+    let result =
+        db.sql_query(r#"SELECT id, name FROM users WHERE JSON_EXTRACT(profile, '$.age') > 28"#)?;
     println!("   Users with age > 28:");
     println!("{}", result.to_string());
 
     // 8. Product JSON query
     println!("\n8. Product JSON query");
-    
+
     let result = db.sql_query(r#"SELECT id, name, JSON_EXTRACT(attributes, '$.brand') AS brand, JSON_EXTRACT(attributes, '$.specs.cpu') AS cpu FROM products"#)?;
     println!("   Product brand and CPU:");
     println!("{}", result.to_string());

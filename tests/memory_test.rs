@@ -17,8 +17,7 @@ fn test_static_allocator() {
 
     let ptr2 = allocator.allocate(128).unwrap();
     assert!(
-        ptr1.as_ptr() as usize + 64 + core::mem::size_of::<MemoryBlock>()
-            <= ptr2.as_ptr() as usize
+        ptr1.as_ptr() as usize + 64 + core::mem::size_of::<MemoryBlock>() <= ptr2.as_ptr() as usize
     );
 
     // 测试释放内存

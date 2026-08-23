@@ -64,6 +64,8 @@ fn main() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: Default::default(),
     });
 
     // 3. 创建数据库实例

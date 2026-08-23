@@ -32,7 +32,7 @@ fn main() -> Result<()> {
 
     // 定义数据库配置
     let config = Box::leak(Box::new(DbConfig {
-        tables: vec![],                    // 空的数据库配置
+        tables: vec![],                 // 空的数据库配置
         total_memory: 64 * 1024 * 1024, // 64MB，与全局缓冲区大小一致
         low_power_mode_supported: false,
         low_power_max_records: None,
@@ -63,6 +63,8 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+
+        model_worker_config: Default::default(),
     }));
 
     // 初始化数据库
@@ -71,26 +73,38 @@ fn main() -> Result<()> {
 
     // 测试不同距离类型的CREATE TABLE语句
     let test_cases = [
-        ("L2 distance", r#"CREATE TABLE products_l2 (
+        (
+            "L2 distance",
+            r#"CREATE TABLE products_l2 (
             id INT32 PRIMARY KEY,
             name TEXT,
             embedding VECTOR(4) WITH DISTANCE=L2
-        )"#),
-        ("COSINE distance", r#"CREATE TABLE products_cosine (
+        )"#,
+        ),
+        (
+            "COSINE distance",
+            r#"CREATE TABLE products_cosine (
             id INT32 PRIMARY KEY,
             name TEXT,
             embedding VECTOR(4) WITH DISTANCE=COSINE
-        )"#),
-        ("IP distance", r#"CREATE TABLE products_ip (
+        )"#,
+        ),
+        (
+            "IP distance",
+            r#"CREATE TABLE products_ip (
             id INT32 PRIMARY KEY,
             name TEXT,
             embedding VECTOR(4) WITH DISTANCE=IP
-        )"#),
-        ("INNER_PRODUCT full name", r#"CREATE TABLE products_inner_product (
+        )"#,
+        ),
+        (
+            "INNER_PRODUCT full name",
+            r#"CREATE TABLE products_inner_product (
             id INT32 PRIMARY KEY,
             name TEXT,
             embedding VECTOR(4) WITH DISTANCE=INNER_PRODUCT
-        )"#),
+        )"#,
+        ),
     ];
 
     for (test_name, sql) in test_cases.iter() {
@@ -104,11 +118,20 @@ fn main() -> Result<()> {
 
     // 验证表创建成功
     println!("\nVerify tables created:");
-    let tables = ["products_l2", "products_cosine", "products_ip", "products_inner_product"];
+    let tables = [
+        "products_l2",
+        "products_cosine",
+        "products_ip",
+        "products_inner_product",
+    ];
     for table in tables.iter() {
         let select_sql = format!("SELECT * FROM {}", table);
         match db.sql_query(&select_sql) {
-            Ok(result) => println!("[OK] Table {} exists, returned {} rows", table, result.rows.len()),
+            Ok(result) => println!(
+                "[OK] Table {} exists, returned {} rows",
+                table,
+                result.rows.len()
+            ),
             Err(e) => println!("[ERROR] Table {} verification failed: {}", table, e),
         }
     }

@@ -437,10 +437,7 @@ fn main() -> Result<()> {
         if used_records >= 11 {
             println!("✓ 记录数正确，共 {} 条记录", used_records);
         } else {
-            println!(
-                "✗ 记录数不正确，期望至少11条，实际 {} 条",
-                used_records
-            );
+            println!("✗ 记录数不正确，期望至少11条，实际 {} 条", used_records);
             return Err(remdb::RemDbError::RecordNotFound);
         }
 

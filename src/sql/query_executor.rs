@@ -4,49 +4,49 @@
 
 use crate::try_lock;
 
-
-
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use std::time::Instant;
 
+#[cfg(feature = "log")]
+use crate::log::{debug, error, info};
+use crate::model::model_manager::get_global_model_manager;
+use crate::sql::operations::comparison::{
+    compare_field_with_condition, compare_values, evaluate_condition_with_alias,
+};
+use crate::sql::operations::ddl;
+use crate::sql::operations::expression::{
+    evaluate_expression, evaluate_expression_with_depth, evaluate_expression_without_table,
+    execute_function_call,
+};
+use crate::sql::operations::vector::{
+    calculate_vector_cosine_similarity, calculate_vector_inner_product,
+    calculate_vector_l2_distance, parse_vector_distance_expression,
+};
 use crate::sql::query_parser::{
-    BetweenCondition, BinaryOperator, Expression, GroupByClause, JoinType,
-    expression_to_order_by_string,
+    expression_to_order_by_string, BetweenCondition, BinaryOperator, Expression, GroupByClause,
+    JoinType,
 };
 use crate::sql::Value as SqlValue;
 use crate::sql::{
-    ComparisonCondition, ComparisonOperator, Condition, OrderByClause, ResultSet, SqlQuery,
-    QueryExecutionError, parse_data_type_with_precision, check_memory_limit,
+    check_memory_limit, parse_data_type_with_precision, ComparisonCondition, ComparisonOperator,
+    Condition, OrderByClause, QueryExecutionError, ResultSet, SqlQuery,
 };
-use crate::types::{DataType, TypedValue, JsonStorage};
+use crate::types::{DataType, JsonStorage, TypedValue};
 use crate::{
     DdlExecutor, IndexType, MemoryTable, RemDb, RemDbError, TableDef, TimeSeriesTable, Value,
     MAX_STRING_LEN,
 };
-use crate::model::model_manager::get_global_model_manager;
-use crate::sql::operations::ddl;
-use crate::sql::operations::vector::{
-    calculate_vector_l2_distance, calculate_vector_inner_product,
-    calculate_vector_cosine_similarity, parse_vector_distance_expression,
-};
-use crate::sql::operations::expression::{
-    evaluate_expression, evaluate_expression_with_depth,
-    execute_function_call, evaluate_expression_without_table,
-};
-use crate::sql::operations::comparison::{
-    compare_values, compare_field_with_condition,
-    evaluate_condition_with_alias,
-};
-#[cfg(feature = "log")]
-use crate::log::{debug, error, info};
 
 /// 执行SQL查询
 pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {
     #[cfg(feature = "log")]
-    debug!("execute_query called: query_type={:?}, table_name={}", query.query_type, query.table_name);
+    debug!(
+        "execute_query called: query_type={:?}, table_name={}",
+        query.query_type, query.table_name
+    );
     // 检查是否是时序表查询
     let is_timeseries_table = db.time_series_tables.iter().any(|table_opt| {
         if let Some(table) = table_opt {
@@ -60,7 +60,12 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
     match query.query_type {
         crate::sql::QueryType::Select => {
             // 检查SELECT权限
-            if let Ok(has_permission) = db.check_permission("root", &crate::rbac::Permission::Select, &Some(query.table_name.clone()), &None) {
+            if let Ok(has_permission) = db.check_permission(
+                "root",
+                &crate::rbac::Permission::Select,
+                &Some(query.table_name.clone()),
+                &None,
+            ) {
                 if !has_permission {
                     return Err(QueryExecutionError::InternalError);
                 }
@@ -70,7 +75,12 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         }
         crate::sql::QueryType::Insert => {
             // 检查INSERT权限
-            if let Ok(has_permission) = db.check_permission("root", &crate::rbac::Permission::Insert, &Some(query.table_name.clone()), &None) {
+            if let Ok(has_permission) = db.check_permission(
+                "root",
+                &crate::rbac::Permission::Insert,
+                &Some(query.table_name.clone()),
+                &None,
+            ) {
                 if !has_permission {
                     return Err(QueryExecutionError::InternalError);
                 }
@@ -80,7 +90,12 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         }
         crate::sql::QueryType::Update => {
             // 检查UPDATE权限
-            if let Ok(has_permission) = db.check_permission("root", &crate::rbac::Permission::Update, &Some(query.table_name.clone()), &None) {
+            if let Ok(has_permission) = db.check_permission(
+                "root",
+                &crate::rbac::Permission::Update,
+                &Some(query.table_name.clone()),
+                &None,
+            ) {
                 if !has_permission {
                     return Err(QueryExecutionError::InternalError);
                 }
@@ -90,7 +105,12 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
         }
         crate::sql::QueryType::Delete => {
             // 检查DELETE权限
-            if let Ok(has_permission) = db.check_permission("root", &crate::rbac::Permission::Delete, &Some(query.table_name.clone()), &None) {
+            if let Ok(has_permission) = db.check_permission(
+                "root",
+                &crate::rbac::Permission::Delete,
+                &Some(query.table_name.clone()),
+                &None,
+            ) {
                 if !has_permission {
                     return Err(QueryExecutionError::InternalError);
                 }
@@ -118,7 +138,9 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             execute_create_time_series_table_query(db, query)
         }
         crate::sql::QueryType::CreateIndex => execute_create_index_query(db, query),
-        crate::sql::QueryType::ShowIndexBuildStatus => execute_show_index_build_status_query(db, query),
+        crate::sql::QueryType::ShowIndexBuildStatus => {
+            execute_show_index_build_status_query(db, query)
+        }
         crate::sql::QueryType::Reindex => execute_reindex_query(db, query),
         crate::sql::QueryType::ShowTables => execute_show_tables_query(db),
         crate::sql::QueryType::CreateCheckpoint => execute_create_checkpoint_query(db),
@@ -129,8 +151,11 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                     // 执行DROP COLUMN操作
                     db.alter_table(
                         &query.table_name,
-                        crate::AlterTableOperation::DropColumn { name: field1.clone() },
-                    ).map_err(|_| QueryExecutionError::InternalError)?;
+                        crate::AlterTableOperation::DropColumn {
+                            name: field1.clone(),
+                        },
+                    )
+                    .map_err(|_| QueryExecutionError::InternalError)?;
                 } else if field2 != "" && field2 != "DROP" {
                     // 检查是否是RENAME COLUMN操作
                     // 通过检查field2是否是有效的数据类型来区分
@@ -138,11 +163,16 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                         Ok(_) => {
                             // field2是有效的数据类型，执行ADD COLUMN或MODIFY COLUMN操作
                             // 解析数据类型
-                            let (base_type, size, distance_type) = parse_data_type_with_precision(field2)?;
+                            let (base_type, size, distance_type) =
+                                parse_data_type_with_precision(field2)?;
                             let data_type = match base_type.as_str() {
-                                "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64" => crate::types::DataType::Int64,
-                                "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32" | "UINT64" => crate::types::DataType::UInt64,
-                                "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" => crate::types::DataType::Float32,
+                                "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16"
+                                | "INT32" | "INT64" => crate::types::DataType::Int64,
+                                "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT"
+                                | "UINT16" | "UINT32" | "UINT64" => crate::types::DataType::UInt64,
+                                "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" => {
+                                    crate::types::DataType::Float32
+                                }
                                 "VARCHAR" => crate::types::DataType::VarChar,
                                 "CHAR" => crate::types::DataType::Char,
                                 "TEXT" => crate::types::DataType::Text,
@@ -172,25 +202,28 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                                 }
                             });
 
-                            let field_exists = existing_table.map(|table_opt| {
-                                if let Some(table) = table_opt {
-                                    table.def.fields.iter().any(|f| f.name == *field1)
-                                } else {
-                                    false
-                                }
-                            }).unwrap_or(false);
+                            let field_exists = existing_table
+                                .map(|table_opt| {
+                                    if let Some(table) = table_opt {
+                                        table.def.fields.iter().any(|f| f.name == *field1)
+                                    } else {
+                                        false
+                                    }
+                                })
+                                .unwrap_or(false);
 
                             // 转换默认值类型：query_parser::Value -> types::Value
-                            let types_default_value = default_val.as_ref().map(|qp_val| {
-                                match qp_val {
+                            let types_default_value =
+                                default_val.as_ref().map(|qp_val| match qp_val {
                                     crate::sql::query_parser::Value::Integer(i) => {
                                         crate::types::Value { i64: *i }
-                                    },
+                                    }
                                     crate::sql::query_parser::Value::Float(f) => {
                                         crate::types::Value { float32: *f as f32 }
-                                    },
+                                    }
                                     crate::sql::query_parser::Value::String(s) => {
-                                        let mut string_val = crate::types::Value { string: [0u8; 64] };
+                                        let mut string_val =
+                                            crate::types::Value { string: [0u8; 64] };
                                         unsafe {
                                             let s_bytes = s.as_bytes();
                                             let dest = &mut string_val.string as *mut u8;
@@ -199,13 +232,12 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                                             core::ptr::copy_nonoverlapping(src, dest, copy_size);
                                         }
                                         string_val
-                                    },
+                                    }
                                     crate::sql::query_parser::Value::Boolean(b) => {
                                         crate::types::Value { bool: *b }
-                                    },
+                                    }
                                     _ => crate::types::Value { i64: 0 },
-                                }
-                            });
+                                });
 
                             if field_exists {
                                 // 执行MODIFY COLUMN操作
@@ -219,7 +251,8 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                                         default_value: types_default_value,
                                         constraints,
                                     },
-                                ).map_err(|_| QueryExecutionError::InternalError)?;
+                                )
+                                .map_err(|_| QueryExecutionError::InternalError)?;
                             } else {
                                 // 执行ADD COLUMN操作
                                 db.alter_table(
@@ -232,24 +265,26 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                                         default_value: types_default_value,
                                         constraints,
                                     },
-                                ).map_err(|_| QueryExecutionError::InternalError)?;
+                                )
+                                .map_err(|_| QueryExecutionError::InternalError)?;
                             }
-                        },
+                        }
                         Err(_) => {
                             // field2不是有效的数据类型，执行RENAME COLUMN操作
                             db.alter_table(
                                 &query.table_name,
-                                crate::AlterTableOperation::RenameColumn { 
-                                    old_name: field1.clone(), 
-                                    new_name: field2.clone() 
+                                crate::AlterTableOperation::RenameColumn {
+                                    old_name: field1.clone(),
+                                    new_name: field2.clone(),
                                 },
-                            ).map_err(|_| QueryExecutionError::InternalError)?;
+                            )
+                            .map_err(|_| QueryExecutionError::InternalError)?;
                         }
                     }
                 }
             }
             Ok(ResultSet::new(Vec::new()))
-        },
+        }
         crate::sql::QueryType::DropTable => ddl::execute_drop_table_query(db, query),
         crate::sql::QueryType::BeginTransaction => {
             // 开始事务
@@ -257,21 +292,21 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                 crate::transaction::begin_transaction();
             }
             Ok(ResultSet::new(Vec::new()))
-        },
+        }
         crate::sql::QueryType::Commit => {
             // 提交事务
             unsafe {
                 crate::transaction::commit_transaction();
             }
             Ok(ResultSet::new(Vec::new()))
-        },
+        }
         crate::sql::QueryType::Rollback => {
             // 回滚事务
             unsafe {
                 crate::transaction::rollback_transaction();
             }
             Ok(ResultSet::new(Vec::new()))
-        },
+        }
         crate::sql::QueryType::CreateDatabase => ddl::execute_create_database_query(db, query),
         crate::sql::QueryType::UseDatabase => ddl::execute_use_database_query(db, query),
         crate::sql::QueryType::CloseDatabase => ddl::execute_close_database_query(db, query),
@@ -291,26 +326,26 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                             #[cfg(feature = "log")]
                             error!("Model registration failed: {:?}", e);
                             Err(QueryExecutionError::InternalError)
-                        },
+                        }
                     }
                 }
                 Err(_) => Err(QueryExecutionError::InternalError),
             }
-        },
+        }
         crate::sql::QueryType::CreateRole => {
             // Extract role name from table_name field
             let role_name = query.table_name.clone();
             db.create_role(&role_name)
                 .map_err(|_| QueryExecutionError::InternalError)?;
             Ok(ResultSet::new(Vec::new()))
-        },
+        }
         crate::sql::QueryType::DropRole => {
             // Extract role name from table_name field
             let role_name = query.table_name.clone();
             db.drop_role(&role_name)
                 .map_err(|_| QueryExecutionError::InternalError)?;
             Ok(ResultSet::new(Vec::new()))
-        },
+        }
         crate::sql::QueryType::GrantPermission => {
             // Extract role name and permission from query fields
             let role_name = query.table_name.clone();
@@ -319,18 +354,19 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                 let permission = crate::rbac::Permission::from_str(permission_str)
                     .ok_or(QueryExecutionError::InternalError)?;
                 // Extract table name from the second field
-                let table_name = if let Some((_, table_name, _, _, _, _, _)) = query.table_def.first() {
-                    table_name.clone()
-                } else {
-                    String::new()
-                };
+                let table_name =
+                    if let Some((_, table_name, _, _, _, _, _)) = query.table_def.first() {
+                        table_name.clone()
+                    } else {
+                        String::new()
+                    };
                 db.grant_permission(&role_name, permission, Some(table_name), None)
                     .map_err(|_| QueryExecutionError::InternalError)?;
                 Ok(ResultSet::new(Vec::new()))
             } else {
                 Err(QueryExecutionError::InternalError)
             }
-        },
+        }
         crate::sql::QueryType::RevokePermission => {
             // Extract role name and permission from query fields
             let role_name = query.table_name.clone();
@@ -339,18 +375,19 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                 let permission = crate::rbac::Permission::from_str(permission_str)
                     .ok_or(QueryExecutionError::InternalError)?;
                 // Extract table name from the second field
-                let table_name = if let Some((_, table_name, _, _, _, _, _)) = query.table_def.first() {
-                    table_name.clone()
-                } else {
-                    String::new()
-                };
+                let table_name =
+                    if let Some((_, table_name, _, _, _, _, _)) = query.table_def.first() {
+                        table_name.clone()
+                    } else {
+                        String::new()
+                    };
                 db.revoke_permission(&role_name, &permission, &Some(table_name), &None)
                     .map_err(|_| QueryExecutionError::InternalError)?;
                 Ok(ResultSet::new(Vec::new()))
             } else {
                 Err(QueryExecutionError::InternalError)
             }
-        },
+        }
         crate::sql::QueryType::GrantRole => {
             // Extract username and role name from query fields
             let username = query.table_name.clone();
@@ -362,7 +399,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             } else {
                 Err(QueryExecutionError::InternalError)
             }
-        },
+        }
         crate::sql::QueryType::RevokeRole => {
             // Extract username and role name from query fields
             let username = query.table_name.clone();
@@ -374,7 +411,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
             } else {
                 Err(QueryExecutionError::InternalError)
             }
-        },
+        }
         _ => Err(QueryExecutionError::InternalError),
     }
 }
@@ -401,10 +438,12 @@ fn extract_time_range_from_condition(
     ts_table: &crate::time_series::TimeSeriesTable,
 ) -> Result<(u64, u64), QueryExecutionError> {
     use crate::sql::query_parser::ComparisonOperator;
-    
+
     // 获取时间字段名称
-    let time_field_name = ts_table.def.base.fields[ts_table.def.time_field].name.clone();
-    
+    let time_field_name = ts_table.def.base.fields[ts_table.def.time_field]
+        .name
+        .clone();
+
     // 递归解析条件
     fn extract_from_condition(
         condition: &crate::sql::query_parser::Condition,
@@ -414,7 +453,8 @@ fn extract_time_range_from_condition(
             crate::sql::query_parser::Condition::Comparison(comp) => {
                 if comp.field == time_field_name {
                     match comp.operator {
-                        ComparisonOperator::GreaterThan | ComparisonOperator::GreaterThanOrEqual => {
+                        ComparisonOperator::GreaterThan
+                        | ComparisonOperator::GreaterThanOrEqual => {
                             if let crate::sql::query_parser::Value::Integer(value) = comp.value {
                                 Ok((Some(value as u64), None))
                             } else {
@@ -443,8 +483,11 @@ fn extract_time_range_from_condition(
             }
             crate::sql::query_parser::Condition::Between(between) => {
                 if between.field == time_field_name {
-                    if let (crate::sql::query_parser::Value::Integer(min), 
-                           crate::sql::query_parser::Value::Integer(max)) = (&between.min_value, &between.max_value) {
+                    if let (
+                        crate::sql::query_parser::Value::Integer(min),
+                        crate::sql::query_parser::Value::Integer(max),
+                    ) = (&between.min_value, &between.max_value)
+                    {
                         Ok((Some(*min as u64), Some(*max as u64)))
                     } else {
                         Err(QueryExecutionError::InvalidCondition)
@@ -456,27 +499,31 @@ fn extract_time_range_from_condition(
             crate::sql::query_parser::Condition::And(left, right) => {
                 let (left_min, left_max) = extract_from_condition(left, time_field_name)?;
                 let (right_min, right_max) = extract_from_condition(right, time_field_name)?;
-                
+
                 let min = left_min.or(right_min);
                 let max = left_max.or(right_max);
                 Ok((min, max))
             }
             crate::sql::query_parser::Condition::Or(_, _) => {
                 // OR条件不能简单合并，暂时不支持
-                Err(QueryExecutionError::UnsupportedFunction("OR conditions in time range extraction".to_string()))
+                Err(QueryExecutionError::UnsupportedFunction(
+                    "OR conditions in time range extraction".to_string(),
+                ))
             }
             crate::sql::query_parser::Condition::Not(_) => {
                 // NOT条件不支持
-                Err(QueryExecutionError::UnsupportedFunction("NOT conditions in time range extraction".to_string()))
+                Err(QueryExecutionError::UnsupportedFunction(
+                    "NOT conditions in time range extraction".to_string(),
+                ))
             }
         }
     }
-    
+
     let (min_opt, max_opt) = extract_from_condition(condition, &time_field_name)?;
-    
+
     let start_time = min_opt.unwrap_or(0);
     let end_time = max_opt.unwrap_or(u64::MAX);
-    
+
     Ok((start_time, end_time))
 }
 
@@ -579,7 +626,8 @@ fn execute_select_timeseries_query(
     };
 
     // 6. 执行时间范围查询
-    let raw_records = ts_table.query_time_range(start_time, end_time)
+    let raw_records = ts_table
+        .query_time_range(start_time, end_time)
         .map_err(|_| QueryExecutionError::InternalError)?;
 
     // 6.1 内存使用检查
@@ -634,57 +682,76 @@ fn downsample_records(
     if records.is_empty() {
         return Ok(Vec::new());
     }
-    
+
     // 解析时间间隔
     let interval_seconds = parse_sample_interval(sample_interval)?;
     let interval_nanos = interval_seconds * 1_000_000_000u64;
-    
+
     // 找到最小和最大时间戳
-    let min_timestamp = records.iter().map(|r| r.timestamp).min().expect("records must not be empty");
-    let max_timestamp = records.iter().map(|r| r.timestamp).max().expect("records must not be empty");
-    
+    let min_timestamp = records
+        .iter()
+        .map(|r| r.timestamp)
+        .min()
+        .expect("records must not be empty");
+    let max_timestamp = records
+        .iter()
+        .map(|r| r.timestamp)
+        .max()
+        .expect("records must not be empty");
+
     // 按时间窗口分组
-    let mut windows: std::collections::BTreeMap<u64, Vec<&crate::time_series::TimeSeriesRecord>> = 
+    let mut windows: std::collections::BTreeMap<u64, Vec<&crate::time_series::TimeSeriesRecord>> =
         std::collections::BTreeMap::new();
-    
+
     for record in records {
         let window_start = (record.timestamp / interval_nanos) * interval_nanos;
         windows.entry(window_start).or_default().push(record);
     }
-    
+
     // 确定窗口范围
     let first_window = (min_timestamp / interval_nanos) * interval_nanos;
     let last_window = (max_timestamp / interval_nanos) * interval_nanos;
-    
+
     // 为每个窗口生成降采样记录（包括空窗口）
     let mut result = Vec::new();
     let mut prev_window_data: Option<(u64, f64, u8, [u64; 8])> = None;
     let mut next_window_iter = windows.iter().peekable();
-    
+
     let mut current_window = first_window;
     while current_window <= last_window {
         if let Some((&window_start, _window_records)) = next_window_iter.peek() {
             if window_start == current_window {
                 // 当前窗口有数据
-                let window_records = next_window_iter.next().expect("window iterator must have elements").1;
-                
+                let window_records = next_window_iter
+                    .next()
+                    .expect("window iterator must have elements")
+                    .1;
+
                 // 计算窗口内记录的平均值（优化版本，减少迭代次数）
-                let (sum, count) = window_records.iter()
-                    .fold((0.0, 0), |(sum, count), record| (sum + record.value, count + 1));
+                let (sum, count) = window_records
+                    .iter()
+                    .fold((0.0, 0), |(sum, count), record| {
+                        (sum + record.value, count + 1)
+                    });
                 let avg_value: f64 = sum / count as f64;
-                
+
                 // 使用第一个记录的标签
                 let first_record = window_records[0];
-                
+
                 result.push(crate::time_series::TimeSeriesRecord {
                     timestamp: current_window,
                     value: avg_value,
                     tag_count: first_record.tag_count,
                     tags: first_record.tags,
                 });
-                
+
                 // 保存为前一个窗口数据（用于PREV插值）
-                prev_window_data = Some((current_window, avg_value, first_record.tag_count, first_record.tags));
+                prev_window_data = Some((
+                    current_window,
+                    avg_value,
+                    first_record.tag_count,
+                    first_record.tags,
+                ));
             } else {
                 // 当前窗口无数据，需要插值
                 if let Some(fill_clause) = fill_clause {
@@ -702,20 +769,17 @@ fn downsample_records(
         } else {
             // 后续所有窗口都无数据
             if let Some(fill_clause) = fill_clause {
-                if let Some(record) = interpolate_missing_window(
-                    current_window,
-                    &prev_window_data,
-                    None,
-                    fill_clause,
-                ) {
+                if let Some(record) =
+                    interpolate_missing_window(current_window, &prev_window_data, None, fill_clause)
+                {
                     result.push(record);
                 }
             }
         }
-        
+
         current_window += interval_nanos;
     }
-    
+
     Ok(result)
 }
 
@@ -758,13 +822,17 @@ fn interpolate_missing_window(
         }
         crate::sql::query_parser::FillClause::Linear => {
             match (prev_data, next_data) {
-                (Some((prev_ts, prev_val, prev_tag_count, prev_tags)), 
-                  Some((next_ts, next_records))) => {
+                (
+                    Some((prev_ts, prev_val, prev_tag_count, prev_tags)),
+                    Some((next_ts, next_records)),
+                ) => {
                     if !next_records.is_empty() {
                         let first_next_record = next_records[0];
-                        let time_ratio = (window_start - prev_ts) as f64 / (next_ts - prev_ts) as f64;
-                        let interpolated_value = prev_val + (first_next_record.value - prev_val) * time_ratio;
-                        
+                        let time_ratio =
+                            (window_start - prev_ts) as f64 / (next_ts - prev_ts) as f64;
+                        let interpolated_value =
+                            prev_val + (first_next_record.value - prev_val) * time_ratio;
+
                         Some(crate::time_series::TimeSeriesRecord {
                             timestamp: window_start,
                             value: interpolated_value,
@@ -810,7 +878,7 @@ fn interpolate_missing_window(
 fn parse_sample_interval(interval_str: &str) -> Result<u64, QueryExecutionError> {
     let mut total_seconds = 0;
     let mut current_number = 0;
-    
+
     for ch in interval_str.chars() {
         if ch.is_ascii_digit() {
             current_number = current_number * 10 + (ch as u64 - '0' as u64);
@@ -824,16 +892,16 @@ fn parse_sample_interval(interval_str: &str) -> Result<u64, QueryExecutionError>
             current_number = 0;
         }
     }
-    
+
     // 处理末尾没有单位的情况（默认为秒）
     if current_number > 0 {
         total_seconds += current_number;
     }
-    
+
     if total_seconds == 0 {
         return Err(QueryExecutionError::InvalidValue);
     }
-    
+
     Ok(total_seconds)
 }
 
@@ -865,32 +933,32 @@ where
     use std::sync::mpsc;
     use std::thread;
     use std::time::Duration;
-    
+
     // 如果没有设置超时，直接执行操作
     if timeout_ms.is_none() {
         return operation();
     }
-    
+
     let timeout = Duration::from_millis(timeout_ms.expect("timeout_ms must be set"));
-    
+
     // 创建通道用于接收操作结果
     let (tx, rx) = mpsc::channel();
-    
+
     // 在新线程中执行操作
     thread::spawn(move || {
         let result = operation();
         // 发送结果到通道，忽略发送错误（如果接收方已关闭）
         let _ = tx.send(result);
     });
-    
+
     // 等待结果或超时
     match rx.recv_timeout(timeout) {
         Ok(result) => result,
-        Err(_) => {
-            Err(QueryExecutionError::ResourceLimitExceeded(
-                format!("Query timeout after {}ms for {}", timeout_ms.expect("timeout_ms must be set"), operation_name)
-            ))
-        }
+        Err(_) => Err(QueryExecutionError::ResourceLimitExceeded(format!(
+            "Query timeout after {}ms for {}",
+            timeout_ms.expect("timeout_ms must be set"),
+            operation_name
+        ))),
     }
 }
 
@@ -909,13 +977,17 @@ fn evaluate_timeseries_expression(
                         // 时间字段
                         return Ok(TypedValue {
                             value_type: DataType::UInt64,
-                            value: Value { u64: record.timestamp },
+                            value: Value {
+                                u64: record.timestamp,
+                            },
                         });
                     } else if i == ts_table.def.value_field {
                         // 值字段
                         return Ok(TypedValue {
                             value_type: DataType::Float64,
-                            value: Value { float64: record.value },
+                            value: Value {
+                                float64: record.value,
+                            },
                         });
                     } else {
                         // 标签字段（简化处理，暂时返回0）
@@ -941,7 +1013,9 @@ fn evaluate_timeseries_expression(
         }
         _ => {
             // 其他表达式类型暂不支持
-            Err(QueryExecutionError::UnsupportedFunction("Complex expression in timeseries query".to_string()))
+            Err(QueryExecutionError::UnsupportedFunction(
+                "Complex expression in timeseries query".to_string(),
+            ))
         }
     }
 }
@@ -1045,7 +1119,8 @@ fn process_aggregate_query(
                 let name = name.to_uppercase();
 
                 // 计算当前行的函数值
-                let current_value = evaluate_expression_for_aggregate(args, record_values, field_index_map)?;
+                let current_value =
+                    evaluate_expression_for_aggregate(args, record_values, field_index_map)?;
 
                 // 更新聚合值
                 match name.as_str() {
@@ -1135,10 +1210,12 @@ fn process_aggregate_query(
                                             current_value.value.i64 < aggregate_values[i].value.i64
                                         }
                                         (DataType::Float32, DataType::Float32) => {
-                                            current_value.value.float32 < aggregate_values[i].value.float32
+                                            current_value.value.float32
+                                                < aggregate_values[i].value.float32
                                         }
                                         (DataType::Float64, DataType::Float64) => {
-                                            current_value.value.float64 < aggregate_values[i].value.float64
+                                            current_value.value.float64
+                                                < aggregate_values[i].value.float64
                                         }
                                         _ => return Err(QueryExecutionError::TypeMismatch),
                                     }
@@ -1185,10 +1262,12 @@ fn process_aggregate_query(
                                             current_value.value.i64 > aggregate_values[i].value.i64
                                         }
                                         (DataType::Float32, DataType::Float32) => {
-                                            current_value.value.float32 > aggregate_values[i].value.float32
+                                            current_value.value.float32
+                                                > aggregate_values[i].value.float32
                                         }
                                         (DataType::Float64, DataType::Float64) => {
-                                            current_value.value.float64 > aggregate_values[i].value.float64
+                                            current_value.value.float64
+                                                > aggregate_values[i].value.float64
                                         }
                                         _ => return Err(QueryExecutionError::TypeMismatch),
                                     }
@@ -1460,7 +1539,12 @@ fn evaluate_expression_for_aggregate(
                     (DataType::VarChar, Value { string: buf })
                 }
                 SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
-                SqlValue::Null => (DataType::Json, Value { json_storage: crate::types::JsonStorage::Null }),
+                SqlValue::Null => (
+                    DataType::Json,
+                    Value {
+                        json_storage: crate::types::JsonStorage::Null,
+                    },
+                ),
                 SqlValue::Identifier(s) => {
                     // 标识符作为字符串处理
                     let mut buf = [0; MAX_STRING_LEN];
@@ -1492,7 +1576,7 @@ fn evaluate_expression_for_aggregate(
             } else {
                 name.as_str()
             };
-            
+
             // 查找字段索引
             if let Some(&index) = field_index_map.get(field_name) {
                 if index < record_values.len() {
@@ -1544,7 +1628,6 @@ fn execute_select_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
-
     // 从系统表获取查询资源配置
     let (max_memory_mb, query_timeout_ms) = crate::get_query_resource_config();
     let _query_timeout_ms = Some(query_timeout_ms as u64);
@@ -1583,7 +1666,9 @@ fn execute_select_query(
     // 1. 查找要查询的表（同时尝试获取索引）
     let (table, maybe_index) = if let Some(where_clause) = &query.where_clause {
         // 检查是否有WHERE条件可以使用索引
-        if let Some((indexed_field, index_operation)) = extract_index_operation(&where_clause.condition) {
+        if let Some((indexed_field, index_operation)) =
+            extract_index_operation(&where_clause.condition)
+        {
             // 尝试获取表和索引
             match db.get_table_and_secondary_index_mut_by_name(&query.table_name) {
                 Ok((table_ref, index_ref)) => {
@@ -1634,7 +1719,10 @@ fn execute_select_query(
     let columns = if query.select_all {
         // 返回所有列（作为Field表达式）
         #[cfg(feature = "log")]
-        info!("DEBUG: SELECT * query, table fields: {:?}", table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
+        info!(
+            "DEBUG: SELECT * query, table fields: {:?}",
+            table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>()
+        );
         table
             .def
             .fields
@@ -1757,8 +1845,10 @@ fn execute_select_query(
                 // 范围查询 - 使用索引
                 unsafe {
                     match secondary_index.find_range(
-                        start_value.as_ptr(), start_value.len(),
-                        end_value.as_ptr(), end_value.len()
+                        start_value.as_ptr(),
+                        start_value.len(),
+                        end_value.as_ptr(),
+                        end_value.len(),
                     ) {
                         Ok(record_id) => {
                             // 找到记录，只处理这一条
@@ -1795,35 +1885,34 @@ fn execute_select_query(
     if !use_index {
         unsafe {
             // 遍历表中的所有记录，收集所有记录
-            let iterate_result = table
-                .iterate(|_id, record_ptr| {
-                    // 检查记录指针是否为null
-                    if record_ptr.is_null() {
-                        return true; // 跳过空记录，继续遍历
-                    }
-                    
-                    // 直接从记录中提取字段值，创建行数据
-                    let mut record_values = Vec::with_capacity(table.def.fields.len());
-                    for field in table.def.fields.iter() {
-                        match get_field_value(table, record_ptr, &field.name) {
-                            Ok(typed_value) => record_values.push(typed_value),
-                            Err(_) => return true, // 跳过错误记录，继续遍历
-                        }
-                    }
+            let iterate_result = table.iterate(|_id, record_ptr| {
+                // 检查记录指针是否为null
+                if record_ptr.is_null() {
+                    return true; // 跳过空记录，继续遍历
+                }
 
-                    // 将记录值添加到向量中
-                    all_records.push(record_values);
+                // 直接从记录中提取字段值，创建行数据
+                let mut record_values = Vec::with_capacity(table.def.fields.len());
+                for field in table.def.fields.iter() {
+                    match get_field_value(table, record_ptr, &field.name) {
+                        Ok(typed_value) => record_values.push(typed_value),
+                        Err(_) => return true, // 跳过错误记录，继续遍历
+                    }
+                }
 
-                    stats.scanned_records += 1;
-                    true // 继续遍历
-                });
+                // 将记录值添加到向量中
+                all_records.push(record_values);
+
+                stats.scanned_records += 1;
+                true // 继续遍历
+            });
             iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
         }
     }
-    
+
     // 更新匹配的记录数
     stats.matched_records = all_records.len();
-    
+
     // 内存使用检查
     let estimated_memory = estimate_memory_usage_for_records(&all_records);
     check_memory_limit(estimated_memory, Some(max_memory_mb))?;
@@ -1940,7 +2029,12 @@ fn execute_select_query(
             )?;
         } else {
             // 处理普通聚合查询
-            process_aggregate_query(&columns, &records_for_aggregation, &mut result_set, &field_index_map)?;
+            process_aggregate_query(
+                &columns,
+                &records_for_aggregation,
+                &mut result_set,
+                &field_index_map,
+            )?;
         }
     } else {
         // 处理普通查询
@@ -2008,7 +2102,10 @@ fn add_joined_row(
                     .position(|f| f.name == field_name_part)
                 {
                     #[cfg(feature = "log")]
-                    debug!("get_field_value: found field '{}' at index {} in main_table", field_name_part, field_index);
+                    debug!(
+                        "get_field_value: found field '{}' at index {} in main_table",
+                        field_name_part, field_index
+                    );
                     row_data.push(main_record_values[field_index].clone());
                 }
                 // 尝试从连接表获取字段
@@ -2026,7 +2123,10 @@ fn add_joined_row(
                         value: Value { i64: 0 },
                     };
                     #[cfg(feature = "log")]
-                    debug!("get_field_value: field '{}' not found, using default value", field_name_part);
+                    debug!(
+                        "get_field_value: field '{}' not found, using default value",
+                        field_name_part
+                    );
                     row_data.push(default_value);
                 }
             }
@@ -2125,13 +2225,13 @@ fn validate_cross_table_columns(
 ) -> Result<(), QueryExecutionError> {
     // 构建表名到表定义的映射
     let mut table_map = std::collections::HashMap::new();
-    
+
     // 添加主表
     table_map.insert(main_table_name.to_string(), main_table);
     if let Some(alias) = main_table_alias {
         table_map.insert(alias.to_string(), main_table);
     }
-    
+
     // 添加所有连接表
     for join_clause in joins {
         let join_table = find_table_by_name(db, &join_clause.table_name)?;
@@ -2140,7 +2240,7 @@ fn validate_cross_table_columns(
             table_map.insert(alias.clone(), join_table);
         }
     }
-    
+
     // 验证每个列表达式
     for expr in columns {
         if let Expression::Field { name, .. } = expr {
@@ -2152,7 +2252,7 @@ fn validate_cross_table_columns(
                 }
                 let table_name = parts[0];
                 let field_name = parts[1];
-                
+
                 // 检查表是否存在
                 if let Some(table) = table_map.get(table_name) {
                     // 检查字段是否存在于表中
@@ -2166,7 +2266,12 @@ fn validate_cross_table_columns(
                 // 没有指定表名的字段，需要在所有表中查找
                 let mut found = false;
                 for table in table_map.values() {
-                    if table.def.fields.iter().any(|f| f.name.as_str() == name.as_str()) {
+                    if table
+                        .def
+                        .fields
+                        .iter()
+                        .any(|f| f.name.as_str() == name.as_str())
+                    {
                         found = true;
                         break;
                     }
@@ -2177,7 +2282,7 @@ fn validate_cross_table_columns(
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -2188,7 +2293,7 @@ fn execute_select_join_query(
 ) -> Result<ResultSet, QueryExecutionError> {
     // 从系统表获取查询资源配置
     let (_max_memory_mb, _query_timeout_ms) = crate::get_query_resource_config();
-    
+
     // 1. 查找主表
     let main_table = find_table_by_name(db, &query.table_name)?;
 
@@ -2379,7 +2484,10 @@ fn execute_select_join_query(
                                             (DataType::UInt64, crate::sql::Value::Integer(v)) => {
                                                 field_value.value.u64 == *v as u64
                                             }
-                                            (DataType::VarChar | DataType::Char | DataType::Text, crate::sql::Value::String(v)) => {
+                                            (
+                                                DataType::VarChar | DataType::Char | DataType::Text,
+                                                crate::sql::Value::String(v),
+                                            ) => {
                                                 let field_str =
                                                     core::str::from_utf8(&field_value.value.string)
                                                         .expect("invalid UTF-8 in field value")
@@ -2390,12 +2498,10 @@ fn execute_select_join_query(
                                                 field_value.value.bool == *v
                                             }
                                             (DataType::Float32, crate::sql::Value::Float(v)) => {
-                                                (field_value.value.float32 - *v as f32).abs()
-                                                    < 1e-6
+                                                (field_value.value.float32 - *v as f32).abs() < 1e-6
                                             }
                                             (DataType::Float64, crate::sql::Value::Float(v)) => {
-                                                (field_value.value.float64 - *v).abs()
-                                                    < 1e-12
+                                                (field_value.value.float64 - *v).abs() < 1e-12
                                             }
                                             // 支持字段引用比较
                                             (_, crate::sql::Value::Identifier(right_field)) => {
@@ -2602,13 +2708,13 @@ fn execute_select_join_query(
                             },
                             DataType::Vector => TypedValue {
                                 value_type: DataType::Vector,
-                                value: Value {
-                                    u64: 0,
-                                },
+                                value: Value { u64: 0 },
                             },
                             DataType::Json => TypedValue {
                                 value_type: DataType::Json,
-                                value: Value { json_storage: JsonStorage::Null },
+                                value: Value {
+                                    json_storage: JsonStorage::Null,
+                                },
                             },
                         };
                         join_default_values.push(default_value);
@@ -2764,7 +2870,10 @@ fn execute_select_join_query(
                                             (DataType::UInt64, crate::sql::Value::Integer(v)) => {
                                                 field_value.value.u64 == *v as u64
                                             }
-                                            (DataType::VarChar | DataType::Char | DataType::Text, crate::sql::Value::String(v)) => {
+                                            (
+                                                DataType::VarChar | DataType::Char | DataType::Text,
+                                                crate::sql::Value::String(v),
+                                            ) => {
                                                 let field_str =
                                                     core::str::from_utf8(&field_value.value.string)
                                                         .expect("invalid UTF-8 in field value")
@@ -2775,20 +2884,18 @@ fn execute_select_join_query(
                                                 field_value.value.bool == *v
                                             }
                                             (DataType::Float32, crate::sql::Value::Float(v)) => {
-                                                (field_value.value.float32 - *v as f32).abs()
-                                                    < 1e-6
+                                                (field_value.value.float32 - *v as f32).abs() < 1e-6
                                             }
                                             (DataType::Float64, crate::sql::Value::Float(v)) => {
-                                                (field_value.value.float64 - *v).abs()
-                                                    < 1e-12
+                                                (field_value.value.float64 - *v).abs() < 1e-12
                                             }
                                             // 支持字段引用比较
                                             (_, crate::sql::Value::Identifier(right_field)) => {
                                                 // 右值是字段引用，处理字段到字段的比较
                                                 // 处理带表名/别名的右字段
-                                                let (right_table_name_part, right_field_name_part) = 
+                                                let (right_table_name_part, right_field_name_part) =
                                                     if right_field.contains('.') {
-                                                        let parts: Vec<&str> = 
+                                                        let parts: Vec<&str> =
                                                             right_field.split('.').collect();
                                                         (Some(parts[0]), parts[1])
                                                     } else {
@@ -2796,10 +2903,12 @@ fn execute_select_join_query(
                                                     };
 
                                                 // 根据表名确定从哪个记录中获取右字段值
-                                                let (right_table, right_record_values) = 
-                                                    if let Some(table_name) = right_table_name_part {
+                                                let (right_table, right_record_values) =
+                                                    if let Some(table_name) = right_table_name_part
+                                                    {
                                                         if table_name == query.table_name
-                                                            || Some(table_name) == query.table_alias.as_deref()
+                                                            || Some(table_name)
+                                                                == query.table_alias.as_deref()
                                                         {
                                                             (&main_table, &main_record_values)
                                                         } else {
@@ -2822,14 +2931,14 @@ fn execute_select_join_query(
                                                     };
 
                                                 // 查找右字段索引
-                                                if let Some(right_field_index) = right_table
-                                                    .def
-                                                    .fields
-                                                    .iter()
-                                                    .position(|f| f.name == right_field_name_part)
+                                                if let Some(right_field_index) =
+                                                    right_table.def.fields.iter().position(|f| {
+                                                        f.name == right_field_name_part
+                                                    })
                                                 {
                                                     // 获取右字段值
-                                                    let right_field_value = &right_record_values[right_field_index];
+                                                    let right_field_value =
+                                                        &right_record_values[right_field_index];
 
                                                     // 使用compare_values函数比较两个字段值
                                                     compare_values(field_value, right_field_value)
@@ -2927,13 +3036,13 @@ fn execute_select_join_query(
                                 },
                                 DataType::Vector => TypedValue {
                                     value_type: DataType::Vector,
-                                    value: Value {
-                                        u64: 0,
-                                    },
+                                    value: Value { u64: 0 },
                                 },
                                 DataType::Json => TypedValue {
                                     value_type: DataType::Json,
-                                    value: Value { json_storage: JsonStorage::Null },
+                                    value: Value {
+                                        json_storage: JsonStorage::Null,
+                                    },
                                 },
                             };
                             main_default_values.push(default_value);
@@ -2946,7 +3055,8 @@ fn execute_select_join_query(
                             match expr {
                                 Expression::Field { name, .. } => {
                                     // 处理带表名/别名的字段
-                                    let (_table_name_part, field_name_part) = if name.contains('.') {
+                                    let (_table_name_part, field_name_part) = if name.contains('.')
+                                    {
                                         let parts: Vec<&str> = name.split('.').collect();
                                         (Some(parts[0]), parts[1])
                                     } else {
@@ -3017,7 +3127,10 @@ fn execute_create_table_query(
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
     #[cfg(feature = "log")]
-    debug!("execute_create_table_query called for table: {}", query.table_name);
+    debug!(
+        "execute_create_table_query called for table: {}",
+        query.table_name
+    );
     // 检查IF NOT EXISTS子句
     if query.if_not_exists {
         // 检查表是否已存在
@@ -3051,7 +3164,7 @@ fn execute_create_table_query(
             }
         }
     }
-    
+
     // 将SQL数据类型转换为RemDb DataType
     // 字段定义：(字段名, 数据类型, 维度/精度, 距离度量, 默认值)
     let mut fields = Vec::new();
@@ -3217,7 +3330,7 @@ fn execute_create_table_query(
                                     crate::types::JsonStorage::Null
                                 };
                                 Value { json_storage }
-                            },
+                            }
                         }
                     }
                     crate::sql::Value::Float(f) => match data_type {
@@ -3233,20 +3346,10 @@ fn execute_create_table_query(
                         DataType::Float32 => Value { float32: *f as f32 },
                         DataType::Float64 => Value { float64: *f },
                         DataType::Timestamp => Value {
-                            time: crate::types::db_timestamp::new(
-                                *f as i64,
-                                0,
-                                precision as u8,
-                                0,
-                            ),
+                            time: crate::types::db_timestamp::new(*f as i64, 0, precision as u8, 0),
                         },
                         DataType::TimestampTZ => Value {
-                            time: crate::types::db_timestamp::new(
-                                *f as i64,
-                                0,
-                                precision as u8,
-                                0,
-                            ),
+                            time: crate::types::db_timestamp::new(*f as i64, 0, precision as u8, 0),
                         },
                         DataType::VarChar | DataType::Char | DataType::Text => {
                             let mut s = [0; MAX_STRING_LEN];
@@ -3256,11 +3359,7 @@ fn execute_create_table_query(
                             Value { string: s }
                         }
                         DataType::Interval => Value {
-                            interval: crate::types::db_interval::new(
-                                *f as i64,
-                                precision as u8,
-                                0,
-                            ),
+                            interval: crate::types::db_interval::new(*f as i64, precision as u8, 0),
                         },
                         DataType::Vector => Value {
                             vector: core::ptr::null(),
@@ -3276,7 +3375,7 @@ fn execute_create_table_query(
                                 crate::types::JsonStorage::Null
                             };
                             Value { json_storage }
-                        },
+                        }
                     },
                     crate::sql::Value::Boolean(b) => match data_type {
                         DataType::UInt8 => Value { u8: *b as u8 },
@@ -3295,20 +3394,10 @@ fn execute_create_table_query(
                             float64: (*b as i32) as f64,
                         },
                         DataType::Timestamp => Value {
-                            time: crate::types::db_timestamp::new(
-                                *b as i64,
-                                0,
-                                precision as u8,
-                                0,
-                            ),
+                            time: crate::types::db_timestamp::new(*b as i64, 0, precision as u8, 0),
                         },
                         DataType::TimestampTZ => Value {
-                            time: crate::types::db_timestamp::new(
-                                *b as i64,
-                                0,
-                                precision as u8,
-                                0,
-                            ),
+                            time: crate::types::db_timestamp::new(*b as i64, 0, precision as u8, 0),
                         },
                         DataType::VarChar | DataType::Char | DataType::Text => {
                             let mut s = [0; MAX_STRING_LEN];
@@ -3318,11 +3407,7 @@ fn execute_create_table_query(
                             Value { string: s }
                         }
                         DataType::Interval => Value {
-                            interval: crate::types::db_interval::new(
-                                *b as i64,
-                                precision as u8,
-                                0,
-                            ),
+                            interval: crate::types::db_interval::new(*b as i64, precision as u8, 0),
                         },
                         DataType::Vector => Value {
                             vector: core::ptr::null(),
@@ -3489,30 +3574,16 @@ fn execute_create_table_query(
                             DataType::Float32 => Value { float32: 0.0 },
                             DataType::Float64 => Value { float64: 0.0 },
                             DataType::Timestamp => Value {
-                                time: crate::types::db_timestamp::new(
-                                    0,
-                                    0,
-                                    precision as u8,
-                                    0,
-                                ),
+                                time: crate::types::db_timestamp::new(0, 0, precision as u8, 0),
                             },
                             DataType::TimestampTZ => Value {
-                                time: crate::types::db_timestamp::new(
-                                    0,
-                                    0,
-                                    precision as u8,
-                                    0,
-                                ),
+                                time: crate::types::db_timestamp::new(0, 0, precision as u8, 0),
                             },
                             DataType::VarChar | DataType::Char | DataType::Text => Value {
                                 string: [0; MAX_STRING_LEN],
                             },
                             DataType::Interval => Value {
-                                interval: crate::types::db_interval::new(
-                                    0,
-                                    precision as u8,
-                                    0,
-                                ),
+                                interval: crate::types::db_interval::new(0, precision as u8, 0),
                             },
                             DataType::Vector => Value {
                                 vector: core::ptr::null(),
@@ -3529,7 +3600,7 @@ fn execute_create_table_query(
                         _ => Value {
                             json_storage: crate::types::JsonStorage::Null,
                         },
-                    }
+                    },
                 };
                 Some(types_val)
             }
@@ -3585,7 +3656,9 @@ fn execute_create_table_query(
     });
 
     // 从WITH CONFIGURATION子句中提取max_records配置
-    let max_records = query.table_config.get("MAX_RECORDS")
+    let max_records = query
+        .table_config
+        .get("MAX_RECORDS")
         .and_then(|v| v.parse::<usize>().ok());
 
     // 调用DdlExecutor::create_table方法，支持约束和复合主键
@@ -3642,97 +3715,113 @@ fn execute_show_index_build_status_query(
         "total_rows".to_string(),
         "elapsed_time".to_string(),
     ];
-    
+
     let mut result_set = ResultSet::new(columns);
-    
+
     // 获取索引构建线程池，如果不可用则返回空结果集
     if let Ok(thread_pool) = crate::index::builder::get_index_build_thread_pool() {
         // 获取所有索引构建状态
         let status_list = thread_pool.get_build_status(None);
-        
+
         // 遍历所有状态，添加到结果集
         for status_arc in status_list {
             let status = try_lock!(status_arc);
-            
+
             // 转换状态为字符串
             let state_str = status.get_state_str();
-            
+
             // 创建行数据
             let row = alloc::vec![
                 TypedValue {
                     value_type: DataType::UInt64,
-                    value: Value { u64: status.id as u64 },
+                    value: Value {
+                        u64: status.id as u64
+                    },
                 },
                 TypedValue {
                     value_type: DataType::VarChar,
-                    value: Value { 
-                        string: { 
+                    value: Value {
+                        string: {
                             let mut s = [0u8; 64];
                             let bytes = status.table_name.as_bytes();
                             let len = core::cmp::min(bytes.len(), 64);
                             s[..len].copy_from_slice(&bytes[..len]);
                             s
-                        } 
+                        }
                     },
                 },
                 TypedValue {
                     value_type: DataType::VarChar,
-                    value: Value { 
-                        string: { 
+                    value: Value {
+                        string: {
                             let mut s = [0u8; 64];
                             let bytes = status.column_name.as_bytes();
                             let len = core::cmp::min(bytes.len(), 64);
                             s[..len].copy_from_slice(&bytes[..len]);
                             s
-                        } 
+                        }
                     },
                 },
                 TypedValue {
                     value_type: DataType::VarChar,
-                    value: Value { 
-                        string: { 
+                    value: Value {
+                        string: {
                             let mut s = [0u8; 64];
                             let bytes = status.index_type.as_bytes();
                             let len = core::cmp::min(bytes.len(), 64);
                             s[..len].copy_from_slice(&bytes[..len]);
                             s
-                        } 
+                        }
                     },
                 },
                 TypedValue {
                     value_type: DataType::VarChar,
-                    value: Value { 
-                        string: { 
+                    value: Value {
+                        string: {
                             let mut s = [0u8; 64];
                             let bytes = state_str.as_bytes();
                             let len = core::cmp::min(bytes.len(), 64);
                             s[..len].copy_from_slice(&bytes[..len]);
                             s
-                        } 
+                        }
                     },
                 },
                 TypedValue {
                     value_type: DataType::UInt64,
-                    value: Value { u64: status.progress.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+                    value: Value {
+                        u64: status.progress.load(core::sync::atomic::Ordering::SeqCst) as u64
+                    },
                 },
                 TypedValue {
                     value_type: DataType::UInt64,
-                    value: Value { u64: status.processed_rows.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+                    value: Value {
+                        u64: status
+                            .processed_rows
+                            .load(core::sync::atomic::Ordering::SeqCst)
+                            as u64
+                    },
                 },
                 TypedValue {
                     value_type: DataType::UInt64,
-                    value: Value { u64: status.total_rows.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+                    value: Value {
+                        u64: status.total_rows.load(core::sync::atomic::Ordering::SeqCst) as u64
+                    },
                 },
                 TypedValue {
                     value_type: DataType::UInt64,
-                    value: Value { u64: status.elapsed_time.load(core::sync::atomic::Ordering::SeqCst) as u64 },
+                    value: Value {
+                        u64: status
+                            .elapsed_time
+                            .load(core::sync::atomic::Ordering::SeqCst)
+                            as u64
+                    },
                 },
             ];
-            
+
             result_set.add_row(row);
         }
     }
-    
+
     Ok(result_set)
 }
 
@@ -3746,68 +3835,60 @@ fn execute_reindex_query(
     let mut result_set = ResultSet::new(columns);
     result_set.add_row(alloc::vec![TypedValue {
         value_type: DataType::VarChar,
-        value: Value { 
-            string: { 
+        value: Value {
+            string: {
                 let mut s = [0u8; 64];
                 let bytes = b"OK";
                 s[..2].copy_from_slice(bytes);
                 s
-            } 
+            }
         },
     }]);
     Ok(result_set)
 }
 
 /// 执行SHOW TABLES查询
-fn execute_show_tables_query(
-    db: &mut RemDb,
-) -> Result<ResultSet, QueryExecutionError> {
-    let columns = alloc::vec![
-        "table_name".to_string(),
-    ];
-    
+fn execute_show_tables_query(db: &mut RemDb) -> Result<ResultSet, QueryExecutionError> {
+    let columns = alloc::vec!["table_name".to_string(),];
+
     let mut result_set = ResultSet::new(columns);
-    
+
     for table_opt in db.tables.iter() {
         if let Some(table) = table_opt {
-            let row = alloc::vec![
-                TypedValue {
-                    value_type: DataType::VarChar,
-                    value: Value {
-                        string: {
-                            let mut s = [0u8; 64];
-                            let bytes = table.def.name.as_bytes();
-                            let len = core::cmp::min(bytes.len(), 64);
-                            s[..len].copy_from_slice(&bytes[..len]);
-                            s
-                        }
-                    },
+            let row = alloc::vec![TypedValue {
+                value_type: DataType::VarChar,
+                value: Value {
+                    string: {
+                        let mut s = [0u8; 64];
+                        let bytes = table.def.name.as_bytes();
+                        let len = core::cmp::min(bytes.len(), 64);
+                        s[..len].copy_from_slice(&bytes[..len]);
+                        s
+                    }
                 },
-            ];
+            },];
             result_set.add_row(row);
         }
     }
-    
+
     for ts_table_opt in db.time_series_tables.iter() {
         if let Some(ts_table) = ts_table_opt {
-            let row = alloc::vec![
-                TypedValue {
-                    value_type: DataType::VarChar,
-                    value: Value {
-                        string: {
-                            let mut s = [0u8; 64];
-                            let bytes = ts_table.def.base.name.as_bytes();
-                            let len = core::cmp::min(bytes.len(), 64);
-                            s[..len].copy_from_slice(&bytes[..len]);
-                            s
-                        }
-                    },
+            let row = alloc::vec![TypedValue {
+                value_type: DataType::VarChar,
+                value: Value {
+                    string: {
+                        let mut s = [0u8; 64];
+                        let bytes = ts_table.def.base.name.as_bytes();
+                        let len = core::cmp::min(bytes.len(), 64);
+                        s[..len].copy_from_slice(&bytes[..len]);
+                        s
+                    }
                 },
-            ];
+            },];
             result_set.add_row(row);
         }
     }
-    
+
     Ok(result_set)
 }
 
@@ -3843,7 +3924,7 @@ fn execute_create_index_query(
     let mut params = crate::index::builder::IndexBuildParams::default();
     params.index_type = index_type;
     params.online = query.index_online;
-    
+
     // 解析向量索引类型和参数
     if index_type == IndexType::Vector {
         // 设置向量索引类型
@@ -3855,7 +3936,7 @@ fn execute_create_index_query(
             Some("IVF_PQ") => Some(crate::types::VectorIndexType::IVF_PQ),
             _ => Some(crate::types::VectorIndexType::HNSW), // 默认值
         };
-        
+
         // 解析HNSW参数
         if let Some(m) = query.index_params.get("M") {
             params.hnsw_m = m.parse().ok();
@@ -3866,7 +3947,7 @@ fn execute_create_index_query(
         if let Some(efs) = query.index_params.get("EF_SEARCH") {
             params.hnsw_ef_search = efs.parse().ok();
         }
-        
+
         // 解析IVF参数
         if let Some(nlist) = query.index_params.get("NLIST") {
             params.ivf_nlist = nlist.parse().ok();
@@ -3881,7 +3962,7 @@ fn execute_create_index_query(
         Ok(thread_pool) => {
             thread_pool.submit_task(
                 query.table_name.clone(),
-                field_name.clone(), // 直接克隆 Vec<String>
+                field_name.clone(),                         // 直接克隆 Vec<String>
                 crate::sql::query_parser::IndexType::BTree, // 使用默认值，实际索引类型由params指定
                 params,
             )
@@ -3897,7 +3978,9 @@ fn execute_create_index_query(
     let mut result_set = ResultSet::new(columns);
     result_set.add_row(alloc::vec![TypedValue {
         value_type: DataType::UInt64,
-        value: Value { u64: task_id as u64 },
+        value: Value {
+            u64: task_id as u64
+        },
     }]);
 
     Ok(result_set)
@@ -3906,7 +3989,11 @@ fn execute_create_index_query(
 /// 从WHERE条件中提取可索引的字段和值
 fn extract_indexed_condition(condition: &Condition) -> Option<(String, Vec<u8>)> {
     match condition {
-        Condition::Comparison(ComparisonCondition { field, operator, value }) => {
+        Condition::Comparison(ComparisonCondition {
+            field,
+            operator,
+            value,
+        }) => {
             // 只处理相等比较，因为只有相等比较才能直接使用索引查找
             if *operator == ComparisonOperator::Equal {
                 // 转换值为字节数组，用于索引查找
@@ -3968,7 +4055,11 @@ enum IndexOperation {
 /// 从WHERE条件中提取可索引的字段和操作
 fn extract_index_operation(condition: &Condition) -> Option<(String, IndexOperation)> {
     match condition {
-        Condition::Comparison(ComparisonCondition { field, operator, value }) => {
+        Condition::Comparison(ComparisonCondition {
+            field,
+            operator,
+            value,
+        }) => {
             // 转换值为字节数组，用于索引查找
             let convert_value = |v: &crate::sql::Value| -> Option<Vec<u8>> {
                 match v {
@@ -4006,8 +4097,10 @@ fn extract_index_operation(condition: &Condition) -> Option<(String, IndexOperat
                         None
                     }
                 }
-                ComparisonOperator::GreaterThan | ComparisonOperator::GreaterThanOrEqual
-                | ComparisonOperator::LessThan | ComparisonOperator::LessThanOrEqual => {
+                ComparisonOperator::GreaterThan
+                | ComparisonOperator::GreaterThanOrEqual
+                | ComparisonOperator::LessThan
+                | ComparisonOperator::LessThanOrEqual => {
                     // 范围查询，暂时只支持简单的范围查询
                     // 这里简化处理，使用最小值和最大值作为范围边界
                     if let Some(index_value) = convert_value(value) {
@@ -4105,18 +4198,28 @@ fn process_group_by_query(
     for expr in columns {
         let alias = match expr {
             Expression::Field { alias, name } => alias.clone().unwrap_or_else(|| name.clone()),
-            Expression::FunctionCall { alias, name, .. } => alias.clone().unwrap_or_else(|| name.clone()),
-            Expression::Constant { alias, .. } => alias.clone().unwrap_or_else(|| "constant".to_string()),
-            Expression::BinaryOp { alias, .. } => alias.clone().unwrap_or_else(|| "binary_op".to_string()),
-            Expression::LogicalOp { alias, .. } => alias.clone().unwrap_or_else(|| "logical_op".to_string()),
-            Expression::UnaryOp { alias, .. } => alias.clone().unwrap_or_else(|| "unary_op".to_string()),
+            Expression::FunctionCall { alias, name, .. } => {
+                alias.clone().unwrap_or_else(|| name.clone())
+            }
+            Expression::Constant { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "constant".to_string())
+            }
+            Expression::BinaryOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "binary_op".to_string())
+            }
+            Expression::LogicalOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "logical_op".to_string())
+            }
+            Expression::UnaryOp { alias, .. } => {
+                alias.clone().unwrap_or_else(|| "unary_op".to_string())
+            }
         };
         alias_to_expr.insert(alias.to_uppercase(), expr);
     }
 
     // 创建分组映射：GroupKey -> Vec<record_values>
     let mut groups = BTreeMap::new();
-    
+
     // 简单的哈希函数，用于生成分组键
     fn hash_typed_value(value: &TypedValue) -> u64 {
         unsafe {
@@ -4133,7 +4236,9 @@ fn process_group_by_query(
                 DataType::Float64 => value.value.float64.to_bits(),
                 DataType::Bool => value.value.bool as u64,
                 DataType::Timestamp => value.value.time.value as u64,
-                DataType::TimestampTZ => (value.value.time.value as u64) ^ (value.value.time.tz_offset as u64),
+                DataType::TimestampTZ => {
+                    (value.value.time.value as u64) ^ (value.value.time.tz_offset as u64)
+                }
                 DataType::Interval => value.value.interval.value as u64,
                 DataType::VarChar | DataType::Char | DataType::Text => {
                     // 简单的字符串哈希
@@ -4144,12 +4249,12 @@ fn process_group_by_query(
                         hash = hash.wrapping_mul(31).wrapping_add(c as u64);
                     }
                     hash
-                },
+                }
                 DataType::Vector => value.value.vector as u64,
                 DataType::Json => {
                     // JSON类型的简单哈希
                     0 // 暂时返回0，实际应用中可能需要更复杂的哈希逻辑
-                },
+                }
             }
         }
     }
@@ -4173,16 +4278,17 @@ fn process_group_by_query(
             };
             let value = evaluate_expression(table, record_values, resolved_expr)?;
             if cfg!(feature = "log") {
-                crate::log::debug!("process_group_by_query: group expr value_type={:?}", value.value_type);
+                crate::log::debug!(
+                    "process_group_by_query: group expr value_type={:?}",
+                    value.value_type
+                );
             }
             let hash = hash_typed_value(&value);
             key_values.push(hash);
         }
-        
+
         // 创建安全的分组键
-        let group_key = GroupKey {
-            values: key_values,
-        };
+        let group_key = GroupKey { values: key_values };
 
         // 将记录添加到对应的分组中
         groups
@@ -4216,10 +4322,20 @@ fn process_group_by_query(
                     let upper_name = name.to_uppercase();
 
                     // 处理非聚合函数（如JSON_EXTRACT、TIME_BUCKET等）：使用分组中第一个记录的值
-                    let is_aggregate = matches!(upper_name.as_str(),
-                        "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" |
-                        "STDDEV" | "VAR" | "STDDEV_SAMP" | "VAR_SAMP" |
-                        "MOVING_AVERAGE" | "MOVING_SUM");
+                    let is_aggregate = matches!(
+                        upper_name.as_str(),
+                        "COUNT"
+                            | "SUM"
+                            | "AVG"
+                            | "MIN"
+                            | "MAX"
+                            | "STDDEV"
+                            | "VAR"
+                            | "STDDEV_SAMP"
+                            | "VAR_SAMP"
+                            | "MOVING_AVERAGE"
+                            | "MOVING_SUM"
+                    );
                     if !is_aggregate {
                         let mut arg_values = Vec::with_capacity(args.len());
                         for arg in args {
@@ -4558,7 +4674,10 @@ fn validate_expression(table: &MemoryTable, expr: &Expression) -> Result<(), Que
                 // 处理带表别名的字段名，如 "t.id"
                 let actual_field_name = if field_name.contains('.') {
                     // 提取点号后面的部分作为实际字段名
-                    field_name.split('.').last().expect("field name must contain '.'")
+                    field_name
+                        .split('.')
+                        .last()
+                        .expect("field name must contain '.'")
                 } else {
                     // 没有表别名，直接使用字段名
                     field_name
@@ -4619,10 +4738,8 @@ fn execute_expression_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {
-
     // 确定要返回的列表达式
     let columns = query.columns.clone();
-
 
     // 生成结果集的列名
     let result_columns = columns
@@ -4660,7 +4777,6 @@ fn execute_expression_query(
     // 添加行到结果集
     result_set.add_row(row_values);
 
-
     Ok(result_set)
 }
 
@@ -4687,9 +4803,9 @@ fn execute_describe_query(
         for ts_table_opt in db.time_series_tables.iter() {
             if let Some(ts_table) = ts_table_opt {
                 if ts_table.def.base.name == query.table_name {
-                            found_table_def = Some(alloc::sync::Arc::new(ts_table.def.base.clone()));
-                            break;
-                        }
+                    found_table_def = Some(alloc::sync::Arc::new(ts_table.def.base.clone()));
+                    break;
+                }
             }
         }
     }
@@ -4712,11 +4828,19 @@ fn execute_describe_query(
     // 添加调试信息
     #[cfg(feature = "log")]
     {
-        debug!("describe table {}: id={}, name={}, fields_len={}, primary_key_len={}", 
-                query.table_name, table_def.id, table_def.name, table_def.fields.len(), table_def.primary_key.len());
+        debug!(
+            "describe table {}: id={}, name={}, fields_len={}, primary_key_len={}",
+            query.table_name,
+            table_def.id,
+            table_def.name,
+            table_def.fields.len(),
+            table_def.primary_key.len()
+        );
         for (i, field) in table_def.fields.iter().enumerate() {
-            debug!("field {}: name={}, data_type={:?}, size={}, offset={}", 
-                    i, field.name, field.data_type, field.size, field.offset);
+            debug!(
+                "field {}: name={}, data_type={:?}, size={}, offset={}",
+                i, field.name, field.data_type, field.size, field.offset
+            );
         }
     }
 
@@ -4772,7 +4896,7 @@ fn execute_describe_query(
                 // 向量类型，默认值显示为<vector>
                 DataType::Vector => "<vector>".to_string(),
                 // JSON类型，默认值显示为<json>
-                DataType::Json => "<json>".to_string()
+                DataType::Json => "<json>".to_string(),
             }
         } else {
             "".to_string()
@@ -4804,7 +4928,7 @@ fn execute_describe_query(
                     "vector".to_string()
                 }
             }
-            crate::DataType::Json => "json".to_string()
+            crate::DataType::Json => "json".to_string(),
         };
 
         // 创建行数据
@@ -4915,12 +5039,16 @@ fn execute_insert_query(
 
     // 2. 获取可变表引用
     #[cfg(feature = "log")]
-    debug!("table_id = {}, db.tables.len() = {}", table_id, db.tables.len());
+    debug!(
+        "table_id = {}, db.tables.len() = {}",
+        table_id,
+        db.tables.len()
+    );
     let table = db.get_table_mut(table_id).map_err(|e| {
-            #[cfg(feature = "log")]
-            debug!("get_table_mut failed with error: {:?}", e);
-            QueryExecutionError::InternalError
-        })?;
+        #[cfg(feature = "log")]
+        debug!("get_table_mut failed with error: {:?}", e);
+        QueryExecutionError::InternalError
+    })?;
 
     // 3. 验证插入的字段名
     if !query.insert_columns.is_empty() {
@@ -4965,7 +5093,10 @@ fn execute_insert_query(
         // 6. 将字段值写入缓冲区
         for (i, field) in table.def.fields.iter().enumerate() {
             #[cfg(feature = "log")]
-            debug!("Processing field {} (index {}), insert_columns={:?}", field.name, i, query.insert_columns);
+            debug!(
+                "Processing field {} (index {}), insert_columns={:?}",
+                field.name, i, query.insert_columns
+            );
             let field_value = if !query.insert_columns.is_empty() {
                 // 插入指定列
                 if let Some(col_index) = query
@@ -4974,14 +5105,25 @@ fn execute_insert_query(
                     .position(|col| *col == field.name)
                 {
                     #[cfg(feature = "log")]
-                    debug!("Field '{}' found in insert_columns at index {}", field.name, col_index);
+                    debug!(
+                        "Field '{}' found in insert_columns at index {}",
+                        field.name, col_index
+                    );
                     if col_index < values.len() {
                         #[cfg(feature = "log")]
-                        debug!("Using value at index {} for field '{}'", col_index, field.name);
+                        debug!(
+                            "Using value at index {} for field '{}'",
+                            col_index, field.name
+                        );
                         Some(&values[col_index])
                     } else {
                         #[cfg(feature = "log")]
-                        debug!("No value available for field '{}' (col_index {} >= values.len {})", field.name, col_index, values.len());
+                        debug!(
+                            "No value available for field '{}' (col_index {} >= values.len {})",
+                            field.name,
+                            col_index,
+                            values.len()
+                        );
                         None
                     }
                 } else {
@@ -5002,8 +5144,13 @@ fn execute_insert_query(
             let is_pk_auto_incr = field.primary_key && field.auto_increment;
 
             #[cfg(feature = "log")]
-            debug!("Field: {}, PK={}, AutoIncr={}, HasValue={}", 
-                field.name, field.primary_key, field.auto_increment, field_value.is_some());
+            debug!(
+                "Field: {}, PK={}, AutoIncr={}, HasValue={}",
+                field.name,
+                field.primary_key,
+                field.auto_increment,
+                field_value.is_some()
+            );
 
             // 如果是自动递增主键且未提供值，则生成唯一值
             if is_pk_auto_incr && field_value.is_none() {
@@ -5134,7 +5281,10 @@ fn execute_insert_query(
                 }
             } else if let Some(sql_value) = field_value {
                 // 验证字符串长度
-                if field.data_type == DataType::VarChar || field.data_type == DataType::Char || field.data_type == DataType::Text {
+                if field.data_type == DataType::VarChar
+                    || field.data_type == DataType::Char
+                    || field.data_type == DataType::Text
+                {
                     if let crate::sql::Value::String(s) = sql_value {
                         // 验证字符串长度
                         if let Some(max_length) = field.string_length {
@@ -5183,9 +5333,15 @@ fn execute_insert_query(
                     Ok(()) => {}
                     Err(e) => {
                         #[cfg(feature = "log")]
-                        debug!("set_field_value failed for field '{}' with error: {:?}", field.name, e);
+                        debug!(
+                            "set_field_value failed for field '{}' with error: {:?}",
+                            field.name, e
+                        );
                         #[cfg(feature = "log")]
-                        debug!("field.type={:?}, field.offset={}, field.size={}", field.data_type, field.offset, field.size);
+                        debug!(
+                            "field.type={:?}, field.offset={}, field.size={}",
+                            field.data_type, field.offset, field.size
+                        );
                         // 自动创建的事务需要回滚，避免泄漏
                         if !has_active_tx {
                             unsafe {
@@ -5290,14 +5446,17 @@ fn execute_insert_query(
                         }
                         DataType::Vector => {
                             // 写入向量数据（考虑压缩）
-                            let vector_metadata = field.vector_metadata.as_ref().expect("vector_metadata must be set for vector fields");
+                            let vector_metadata = field
+                                .vector_metadata
+                                .as_ref()
+                                .expect("vector_metadata must be set for vector fields");
                             let dimension = vector_metadata.dimension as usize;
-                            
+
                             // 压缩向量数据后写入
                             crate::compression::compress_vector(
                                 default_value.vector,
                                 dimension,
-                                record_data.as_mut_ptr().add(field.offset)
+                                record_data.as_mut_ptr().add(field.offset),
                             );
                         }
                         DataType::Json => {
@@ -5602,7 +5761,8 @@ fn execute_update_query(
 
         // 记录日志（如果有活跃事务）
         unsafe {
-            if false { // crate::transaction::has_active_tx()
+            if false {
+                // crate::transaction::has_active_tx()
                 // 保存旧数据
                 let mut old_data = alloc::vec![0; record_size];
                 let old_record_ptr = table_mut.get_record_ptr_mut(id);
@@ -5696,7 +5856,10 @@ fn set_field_value_with_depth(
     }
 
     #[cfg(feature = "log")]
-    debug!("set_field_value_with_depth: data_type={:?}, offset={}, field_size={}, expr={:?}", data_type, offset, field_size, expr);
+    debug!(
+        "set_field_value_with_depth: data_type={:?}, offset={}, field_size={}, expr={:?}",
+        data_type, offset, field_size, expr
+    );
     unsafe {
         // 1. 从record_data中提取所有字段的当前值
         let record_values = table
@@ -5753,7 +5916,9 @@ fn set_field_value_with_depth(
                         crate::types::Value { string: str_value }
                     }
                     DataType::Json => crate::types::Value {
-                        json_storage: unsafe { core::ptr::read_unaligned(field_ptr as *const crate::types::JsonStorage) },
+                        json_storage: unsafe {
+                            core::ptr::read_unaligned(field_ptr as *const crate::types::JsonStorage)
+                        },
                     },
                     _ => crate::types::Value { i64: 0 },
                 };
@@ -5765,9 +5930,13 @@ fn set_field_value_with_depth(
             .collect::<Vec<_>>();
 
         // 2. 评估表达式
-        let evaluated_value = evaluate_expression_with_depth(table, &record_values, expr, depth + 1)?;
+        let evaluated_value =
+            evaluate_expression_with_depth(table, &record_values, expr, depth + 1)?;
         #[cfg(feature = "log")]
-        debug!("evaluated_value: value_type={:?}, field_type={:?}", evaluated_value.value_type, data_type);
+        debug!(
+            "evaluated_value: value_type={:?}, field_type={:?}",
+            evaluated_value.value_type, data_type
+        );
 
         // 3. 根据字段类型设置值
         match data_type {
@@ -5954,7 +6123,8 @@ fn set_field_value_with_depth(
             DataType::VarChar | DataType::Char | DataType::Text => {
                 let str_value = match evaluated_value.value_type {
                     DataType::VarChar | DataType::Char | DataType::Text => {
-                        let s = core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default();
+                        let s =
+                            core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default();
                         s
                     }
                     DataType::Json => {
@@ -5969,7 +6139,11 @@ fn set_field_value_with_depth(
                             crate::types::JsonStorage::Null => {
                                 // For Null storage, the JSON string was too large for the inline buffer.
                                 // Try to extract the original string from the expression.
-                                if let Expression::Constant { value: crate::sql::Value::Json(s), .. } = expr {
+                                if let Expression::Constant {
+                                    value: crate::sql::Value::Json(s),
+                                    ..
+                                } = expr
+                                {
                                     s.clone()
                                 } else {
                                     return Err(QueryExecutionError::TypeMismatch);
@@ -6022,46 +6196,59 @@ fn set_field_value_with_depth(
             // 向量类型
             DataType::Vector => {
                 // 处理字符串类型的向量字面量（来自evaluate_expression的结果）
-                if matches!(evaluated_value.value_type, DataType::VarChar | DataType::Char | DataType::Text) {
+                if matches!(
+                    evaluated_value.value_type,
+                    DataType::VarChar | DataType::Char | DataType::Text
+                ) {
                     // 从固定大小的字符串数组中提取有效字符串（去除后面的零字节）
-                    let string_slice = evaluated_value.value.string.iter()
+                    let string_slice = evaluated_value
+                        .value
+                        .string
+                        .iter()
                         .take_while(|&&c| c != 0)
                         .map(|&c| c)
                         .collect::<Vec<_>>();
                     let s = core::str::from_utf8(&string_slice).unwrap_or_default();
-                    
+
                     // 检查是否是向量字面量格式 [x1, x2, ..., xn]
                     if s.starts_with('[') && s.ends_with(']') {
-                        let vec_str = &s[1..s.len()-1];
+                        let vec_str = &s[1..s.len() - 1];
                         let vec_values: Vec<&str> = vec_str.split(',').map(|v| v.trim()).collect();
-                        
+
                         // 计算向量维度
                         let expected_dim = field_size / 4;
                         if vec_values.len() != expected_dim {
                             return Err(QueryExecutionError::TypeMismatch);
                         }
-                        
+
                         // 解析向量值并写入记录
-                            let vec_ptr = record_data.as_mut_ptr().add(offset) as *mut f32;
-                            for (i, val_str) in vec_values.iter().enumerate() {
-                                if let Ok(val) = val_str.parse::<f32>() {
-                                    core::ptr::write_unaligned(vec_ptr.add(i), val);
-                                } else {
-                                    return Err(QueryExecutionError::TypeMismatch);
-                                }
+                        let vec_ptr = record_data.as_mut_ptr().add(offset) as *mut f32;
+                        for (i, val_str) in vec_values.iter().enumerate() {
+                            if let Ok(val) = val_str.parse::<f32>() {
+                                core::ptr::write_unaligned(vec_ptr.add(i), val);
+                            } else {
+                                return Err(QueryExecutionError::TypeMismatch);
                             }
+                        }
                         return Ok(());
                     }
                 } else if matches!(evaluated_value.value_type, DataType::Json) {
                     // 处理JSON类型的向量字面量
                     let json_str = match &evaluated_value.value.json_storage {
                         crate::types::JsonStorage::Inline(json_bytes) => {
-                            core::str::from_utf8(json_bytes.as_slice()).unwrap_or_default().trim_end_matches(char::from(0)).to_string()
+                            core::str::from_utf8(json_bytes.as_slice())
+                                .unwrap_or_default()
+                                .trim_end_matches(char::from(0))
+                                .to_string()
                         }
                         crate::types::JsonStorage::Null => {
                             // For Null storage, the JSON string was too large for the inline buffer.
                             // Try to extract the original string from the expression.
-                            if let Expression::Constant { value: crate::sql::Value::Json(s), .. } = expr {
+                            if let Expression::Constant {
+                                value: crate::sql::Value::Json(s),
+                                ..
+                            } = expr
+                            {
                                 s.clone()
                             } else {
                                 return Err(QueryExecutionError::TypeMismatch);
@@ -6073,7 +6260,7 @@ fn set_field_value_with_depth(
                     // Check if it's a vector literal [x1, x2, ..., xn]
                     let s = json_str.trim();
                     if s.starts_with('[') && s.ends_with(']') {
-                        let vec_str = &s[1..s.len()-1];
+                        let vec_str = &s[1..s.len() - 1];
                         let vec_values: Vec<&str> = vec_str.split(',').map(|v| v.trim()).collect();
 
                         // Calculate expected dimension
@@ -6094,7 +6281,7 @@ fn set_field_value_with_depth(
                         return Ok(());
                     }
                 }
-                
+
                 // 处理其他表达式类型或非向量字面量情况
                 match evaluated_value.value_type {
                     DataType::Vector => {
@@ -6107,13 +6294,20 @@ fn set_field_value_with_depth(
                     }
                     _ => {
                         // 调试信息
-                        if matches!(evaluated_value.value_type, DataType::VarChar | DataType::Char | DataType::Text) {
-                            let s = core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default();
+                        if matches!(
+                            evaluated_value.value_type,
+                            DataType::VarChar | DataType::Char | DataType::Text
+                        ) {
+                            let s = core::str::from_utf8(&evaluated_value.value.string)
+                                .unwrap_or_default();
                             #[cfg(feature = "log")]
                             debug!("Vector field got string: '{}', starts_with('['): {}, ends_with(']'): {}", s, s.starts_with('['), s.ends_with(']'));
                         } else {
                             #[cfg(feature = "log")]
-                            debug!("Vector field got unexpected type: {:?}", evaluated_value.value_type);
+                            debug!(
+                                "Vector field got unexpected type: {:?}",
+                                evaluated_value.value_type
+                            );
                         }
                         return Err(QueryExecutionError::TypeMismatch);
                     }
@@ -6122,7 +6316,10 @@ fn set_field_value_with_depth(
             // JSON类型
             DataType::Json => {
                 #[cfg(feature = "log")]
-                debug!("JSON field - evaluated_value.value_type: {:?}", evaluated_value.value_type);
+                debug!(
+                    "JSON field - evaluated_value.value_type: {:?}",
+                    evaluated_value.value_type
+                );
                 // 处理JSON类型
                 match evaluated_value.value_type {
                     DataType::Json => {
@@ -6136,18 +6333,25 @@ fn set_field_value_with_depth(
                         // 处理NULL值（Int64(0)表示NULL）
                         if evaluated_value.value.i64 == 0 {
                             core::ptr::write_unaligned(
-                                record_data.as_mut_ptr().add(offset) as *mut crate::types::JsonStorage,
+                                record_data.as_mut_ptr().add(offset)
+                                    as *mut crate::types::JsonStorage,
                                 crate::types::JsonStorage::Null,
                             );
                         } else {
                             #[cfg(feature = "log")]
-                            debug!("JSON field got unexpected Int64 value: {}", evaluated_value.value.i64);
+                            debug!(
+                                "JSON field got unexpected Int64 value: {}",
+                                evaluated_value.value.i64
+                            );
                             return Err(QueryExecutionError::TypeMismatch);
                         }
                     }
                     _ => {
                         #[cfg(feature = "log")]
-                        debug!("JSON field got unexpected type: {:?}", evaluated_value.value_type);
+                        debug!(
+                            "JSON field got unexpected type: {:?}",
+                            evaluated_value.value_type
+                        );
                         return Err(QueryExecutionError::TypeMismatch);
                     }
                 }
@@ -6196,7 +6400,7 @@ fn execute_create_time_series_table_query(
             }
         }
     }
-    
+
     // 时序表创建逻辑：
     // 1. 必须包含一个TIMESTAMP类型的time_field
     // 2. 必须包含一个数值类型的value_field
@@ -6213,10 +6417,17 @@ fn execute_create_time_series_table_query(
         debug!("Field {} has data type: '{}'", field_name, data_type_str);
 
         // 提取基本类型部分，去除参数（如 VARCHAR(32) -> VARCHAR）
-        let base_type = data_type_str.split('(').next().unwrap_or(data_type_str).trim();
+        let base_type = data_type_str
+            .split('(')
+            .next()
+            .unwrap_or(data_type_str)
+            .trim();
         let base_type_upper = base_type.to_uppercase();
         #[cfg(feature = "log")]
-        debug!("Base type: '{}', upper case: '{}'", base_type, base_type_upper);
+        debug!(
+            "Base type: '{}', upper case: '{}'",
+            base_type, base_type_upper
+        );
 
         let data_type = match base_type_upper.as_str() {
             "TIMESTAMP" | "DATETIME" | "DATE" | "TIME" => crate::DataType::Timestamp,
@@ -6308,16 +6519,22 @@ fn execute_insert_timeseries_query(
     use crate::time_series::TimeSeriesRecord;
 
     // 1. 查找时序表
-    let ts_table_id = db.time_series_tables.iter().position(|table_opt| {
-        if let Some(table) = table_opt {
-            table.def.base.name == query.table_name
-        } else {
-            false
-        }
-    }).ok_or(QueryExecutionError::TableNotFound)?;
+    let ts_table_id = db
+        .time_series_tables
+        .iter()
+        .position(|table_opt| {
+            if let Some(table) = table_opt {
+                table.def.base.name == query.table_name
+            } else {
+                false
+            }
+        })
+        .ok_or(QueryExecutionError::TableNotFound)?;
 
     // 2. 获取时序表的可变引用
-    let ts_table = db.time_series_tables[ts_table_id].as_mut().ok_or(QueryExecutionError::TableNotFound)?;
+    let ts_table = db.time_series_tables[ts_table_id]
+        .as_mut()
+        .ok_or(QueryExecutionError::TableNotFound)?;
 
     // 3. 解析字段索引
     let time_field_idx = ts_table.def.time_field;
@@ -6354,7 +6571,11 @@ fn execute_insert_timeseries_query(
         // 解析每个字段的值
         for (i, field) in ts_table.def.base.fields.iter().enumerate() {
             let field_value = if !query.insert_columns.is_empty() {
-                if let Some(col_index) = query.insert_columns.iter().position(|col| *col == field.name) {
+                if let Some(col_index) = query
+                    .insert_columns
+                    .iter()
+                    .position(|col| *col == field.name)
+                {
                     if col_index < values.len() {
                         Some(&values[col_index])
                     } else {
@@ -6426,7 +6647,9 @@ fn execute_insert_timeseries_query(
         partition_guard.stats.record_count = partition_guard.records.len();
 
         // 更新索引
-        ts_table.index.insert(record.timestamp, affected_rows as usize);
+        ts_table
+            .index
+            .insert(record.timestamp, affected_rows as usize);
 
         affected_rows += 1;
     }
@@ -6436,7 +6659,9 @@ fn execute_insert_timeseries_query(
     let mut result_set = ResultSet::new(columns);
     result_set.add_row(alloc::vec![TypedValue {
         value_type: DataType::Int64,
-        value: Value { i64: affected_rows as i64 },
+        value: Value {
+            i64: affected_rows as i64
+        },
     }]);
 
     Ok(result_set)
@@ -6459,9 +6684,7 @@ unsafe fn evaluate_condition(
             evaluate_condition(table, record_ptr, left)
                 || evaluate_condition(table, record_ptr, right)
         }
-        Condition::Not(inner) => {
-            !evaluate_condition(table, record_ptr, inner)
-        }
+        Condition::Not(inner) => !evaluate_condition(table, record_ptr, inner),
     }
 }
 
@@ -6477,7 +6700,9 @@ unsafe fn evaluate_between(
         || between.field.contains("<=>")
     {
         // 这是一个向量距离表达式，需要特殊处理
-        if let Some((field_name, op, _compare_vec)) = parse_vector_distance_expression(&between.field) {
+        if let Some((field_name, op, _compare_vec)) =
+            parse_vector_distance_expression(&between.field)
+        {
             // 获取向量字段索引
             let field_index = match table
                 .def
@@ -6488,56 +6713,63 @@ unsafe fn evaluate_between(
                 Some(index) => index,
                 None => return false, // 字段不存在，条件不成立
             };
-            
+
             let field = &table.def.fields[field_index];
-            
+
             // 检查是否为向量类型
             if !matches!(field.data_type, DataType::Vector) {
                 return false;
             }
-            
+
             // 获取向量维度
             let dimension = if let Some(metadata) = field.vector_metadata {
                 metadata.dimension
             } else {
                 return false;
             };
-            
+
             // 获取向量字段值
-            let Some(vector_field_value) = get_field_value(table, record_ptr, &field_name).ok() else {
+            let Some(vector_field_value) = get_field_value(table, record_ptr, &field_name).ok()
+            else {
                 return false;
             };
             let vector_ptr = vector_field_value.value.vector;
-            
+
             // 简化实现：由于我们无法从条件中提取实际向量，使用一个固定向量进行比较
             // 实际实现中，应该从条件的value字段中提取实际向量
             let compare_vec = vec![1.0; dimension as usize];
-            
+
             // 计算距离
             let distance = match op {
-                "<->" => unsafe { calculate_vector_l2_distance(vector_ptr, &compare_vec, dimension) },
-                "<#>" => unsafe { calculate_vector_inner_product(vector_ptr, &compare_vec, dimension) },
-                "<=>" => unsafe { calculate_vector_cosine_similarity(vector_ptr, &compare_vec, dimension) },
+                "<->" => unsafe {
+                    calculate_vector_l2_distance(vector_ptr, &compare_vec, dimension)
+                },
+                "<#>" => unsafe {
+                    calculate_vector_inner_product(vector_ptr, &compare_vec, dimension)
+                },
+                "<=>" => unsafe {
+                    calculate_vector_cosine_similarity(vector_ptr, &compare_vec, dimension)
+                },
                 _ => return false,
             };
-            
+
             // 获取条件阈值
             let min_threshold = match &between.min_value {
                 crate::sql::Value::Float(f) => *f,
                 crate::sql::Value::Integer(i) => *i as f64,
                 _ => return false,
             };
-            
+
             let max_threshold = match &between.max_value {
                 crate::sql::Value::Float(f) => *f,
                 crate::sql::Value::Integer(i) => *i as f64,
                 _ => return false,
             };
-            
+
             // BETWEEN条件：distance >= min_value AND distance <= max_value
             return distance >= min_threshold && distance <= max_threshold;
         }
-        
+
         // 无法解析向量距离表达式，返回false
         return false;
     }
@@ -6546,7 +6778,11 @@ unsafe fn evaluate_between(
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if between.field.contains('.') {
         // 提取点号后面的部分作为实际字段名
-        between.field.split('.').last().expect("field name must contain '.'")
+        between
+            .field
+            .split('.')
+            .last()
+            .expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
         &between.field
@@ -6606,42 +6842,49 @@ unsafe fn evaluate_comparison(
                 Some(index) => index,
                 None => return false, // 字段不存在，条件不成立
             };
-            
+
             let field = &table.def.fields[field_index];
-            
+
             // 检查是否为向量类型
             if !matches!(field.data_type, DataType::Vector) {
                 return false;
             }
-            
+
             // 获取向量维度
             let dimension = if let Some(metadata) = field.vector_metadata {
                 metadata.dimension
             } else {
                 return false;
             };
-            
+
             // 获取向量字段值
-            let Some(vector_field_value) = get_field_value(table, record_ptr, &field_name).ok() else {
+            let Some(vector_field_value) = get_field_value(table, record_ptr, &field_name).ok()
+            else {
                 return false;
             };
             let vector_ptr = vector_field_value.value.vector;
-            
+
             // 获取条件阈值（距离阈值，不是向量值）
             let threshold = match &comp.value {
                 crate::sql::Value::Float(f) => *f,
                 crate::sql::Value::Integer(i) => *i as f64,
                 _ => return false,
             };
-            
+
             // 计算距离
             let distance = match op {
-                "<->" => unsafe { calculate_vector_l2_distance(vector_ptr, &compare_vec, dimension) },
-                "<#>" => unsafe { calculate_vector_inner_product(vector_ptr, &compare_vec, dimension) },
-                "<=>" => unsafe { calculate_vector_cosine_similarity(vector_ptr, &compare_vec, dimension) },
+                "<->" => unsafe {
+                    calculate_vector_l2_distance(vector_ptr, &compare_vec, dimension)
+                },
+                "<#>" => unsafe {
+                    calculate_vector_inner_product(vector_ptr, &compare_vec, dimension)
+                },
+                "<=>" => unsafe {
+                    calculate_vector_cosine_similarity(vector_ptr, &compare_vec, dimension)
+                },
                 _ => return false,
             };
-            
+
             // 比较距离和阈值
             return match &comp.operator {
                 ComparisonOperator::LessThan => distance < threshold,
@@ -6653,7 +6896,7 @@ unsafe fn evaluate_comparison(
                 ComparisonOperator::Like => false, // 向量类型不支持LIKE操作符
             };
         }
-        
+
         // 无法解析向量距离表达式，返回false
         return false;
     }
@@ -6662,7 +6905,10 @@ unsafe fn evaluate_comparison(
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if comp.field.contains('.') {
         // 提取点号后面的部分作为实际字段名
-        comp.field.split('.').last().expect("field name must contain '.'")
+        comp.field
+            .split('.')
+            .last()
+            .expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
         &comp.field
@@ -6785,7 +7031,11 @@ fn sort_rows_with_alias(
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if order_by.field.contains('.') {
         // 提取点号后面的部分作为实际字段名
-        order_by.field.split('.').last().expect("field name must contain '.'")
+        order_by
+            .field
+            .split('.')
+            .last()
+            .expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
         &order_by.field
@@ -6907,7 +7157,10 @@ fn sort_rows_with_alias(
     // 没有使用别名，使用原始的排序逻辑
     // 查找排序字段在表中的索引
     #[cfg(feature = "log")]
-    debug!("DEBUG get_field_value: looking for field '{}' in table '{}'", actual_field_name, table.def.name);
+    debug!(
+        "DEBUG get_field_value: looking for field '{}' in table '{}'",
+        actual_field_name, table.def.name
+    );
     let field_index = table
         .def
         .fields
@@ -6915,7 +7168,12 @@ fn sort_rows_with_alias(
         .position(|field| field.name == *actual_field_name)
         .ok_or_else(|| {
             #[cfg(feature = "log")]
-            error!("DEBUG get_field_value: field '{}' not found in table '{}'. Available fields: {:?}", actual_field_name, table.def.name, table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>());
+            error!(
+                "DEBUG get_field_value: field '{}' not found in table '{}'. Available fields: {:?}",
+                actual_field_name,
+                table.def.name,
+                table.def.fields.iter().map(|f| &f.name).collect::<Vec<_>>()
+            );
             QueryExecutionError::FieldNotFound
         })?;
 
@@ -7099,7 +7357,11 @@ fn sort_rows(
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if order_by.field.contains('.') {
         // 提取点号后面的部分作为实际字段名
-        order_by.field.split('.').last().expect("field name must contain '.'")
+        order_by
+            .field
+            .split('.')
+            .last()
+            .expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
         &order_by.field
@@ -7107,7 +7369,10 @@ fn sort_rows(
 
     // 查找排序字段在表中的索引
     #[cfg(feature = "log")]
-    debug!("DEBUG get_field_value (unsafe): looking for field '{}' in table '{}'", actual_field_name, table.def.name);
+    debug!(
+        "DEBUG get_field_value (unsafe): looking for field '{}' in table '{}'",
+        actual_field_name, table.def.name
+    );
     let field_index = table
         .def
         .fields
@@ -7268,7 +7533,10 @@ unsafe fn get_field_value(
     // 处理带表别名的字段名，如 "t.id"
     let actual_field_name = if field_name.contains('.') {
         // 提取点号后面的部分作为实际字段名
-        field_name.split('.').last().expect("field name must contain '.'")
+        field_name
+            .split('.')
+            .last()
+            .expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
         field_name
@@ -7288,7 +7556,10 @@ unsafe fn get_field_value(
         .map_err(|_| QueryExecutionError::FieldNotFound)?;
 
     #[cfg(feature = "log")]
-    debug!("get_field_value for field '{}': value={:?}", field.name, value);
+    debug!(
+        "get_field_value for field '{}': value={:?}",
+        field.name, value
+    );
 
     Ok(TypedValue {
         value_type: field.data_type,
@@ -7299,7 +7570,8 @@ unsafe fn get_field_value(
 /// 执行CREATE CHECKPOINT查询
 fn execute_create_checkpoint_query(db: &mut RemDb) -> Result<ResultSet, QueryExecutionError> {
     unsafe {
-        db.checkpoint().map_err(|_| QueryExecutionError::InternalError)?;
+        db.checkpoint()
+            .map_err(|_| QueryExecutionError::InternalError)?;
     }
 
     // 创建结果集，返回成功消息
@@ -7316,7 +7588,9 @@ fn execute_create_checkpoint_query(db: &mut RemDb) -> Result<ResultSet, QueryExe
 
     result_set.add_row(alloc::vec![TypedValue {
         value_type: crate::DataType::VarChar,
-        value: crate::Value { string: success_msg },
+        value: crate::Value {
+            string: success_msg
+        },
     }]);
 
     Ok(result_set)
@@ -7325,7 +7599,9 @@ fn execute_create_checkpoint_query(db: &mut RemDb) -> Result<ResultSet, QueryExe
 /// 将表达式转换为ORDER BY子句用的字符串表示（用于向量表达式匹配）
 fn expr_to_order_by_string(expr: &Expression) -> alloc::string::String {
     match expr {
-        Expression::BinaryOp { left, op, right, .. } => {
+        Expression::BinaryOp {
+            left, op, right, ..
+        } => {
             let left_name = match left.as_ref() {
                 Expression::Field { name, .. } => name.clone(),
                 _ => return alloc::string::String::new(),
@@ -7337,13 +7613,11 @@ fn expr_to_order_by_string(expr: &Expression) -> alloc::string::String {
                 _ => return alloc::string::String::new(),
             };
             let right_str = match right.as_ref() {
-                Expression::Constant { value, .. } => {
-                    match value {
-                        SqlValue::Json(json_str) => json_str.clone(),
-                        SqlValue::String(s) => s.clone(),
-                        _ => return alloc::string::String::new(),
-                    }
-                }
+                Expression::Constant { value, .. } => match value {
+                    SqlValue::Json(json_str) => json_str.clone(),
+                    SqlValue::String(s) => s.clone(),
+                    _ => return alloc::string::String::new(),
+                },
                 _ => return alloc::string::String::new(),
             };
             alloc::format!("{} {} {}", left_name, op_str, right_str)

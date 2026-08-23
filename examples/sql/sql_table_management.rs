@@ -44,6 +44,8 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -55,10 +57,10 @@ fn main() -> Result<()> {
     println!("1. Create test tables");
     db.sql_query("CREATE TABLE users (id INT32 PRIMARY KEY, name TEXT NOT NULL, email TEXT)")?;
     println!("   Created table: users");
-    
+
     db.sql_query("CREATE TABLE products (id INT32 PRIMARY KEY, name TEXT, price REAL)")?;
     println!("   Created table: products");
-    
+
     db.sql_query("CREATE TABLE orders (id INT32 PRIMARY KEY, user_id INT32, product_id INT32, quantity INT32)")?;
     println!("   Created table: orders");
 
@@ -70,7 +72,7 @@ fn main() -> Result<()> {
 
     // 3. DESCRIBE TABLE
     println!("\n3. DESCRIBE TABLE");
-    
+
     let result = db.sql_query("DESCRIBE users")?;
     println!("   users table structure:");
     println!("{}", result.to_string());
@@ -83,17 +85,17 @@ fn main() -> Result<()> {
 
     // 5. DROP TABLE
     println!("\n5. DROP TABLE");
-    
+
     db.sql_query("DROP TABLE orders")?;
     println!("   Dropped table: orders");
-    
+
     let result = db.sql_query("SHOW TABLES")?;
     println!("   Tables after drop:");
     println!("{}", result.to_string());
 
     // 6. DROP TABLE IF EXISTS
     println!("\n6. DROP TABLE IF EXISTS");
-    
+
     db.sql_query("DROP TABLE IF EXISTS products")?;
     println!("   Dropped table: products (IF EXISTS)");
 

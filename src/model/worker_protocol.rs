@@ -1,5 +1,5 @@
 //! Worker communication protocol
-//! 
+//!
 //! This module defines the IPC protocol between the main database process
 //! and the model worker process.
 
@@ -57,26 +57,13 @@ pub enum ModelRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ModelResponse {
     Success,
-    ModelLoaded {
-        metadata: ModelMetadataMsg,
-    },
-    ExecutionResult {
-        output: Vec<f32>,
-    },
-    BatchExecutionResult {
-        outputs: Vec<Vec<f32>>,
-    },
-    ModelInfo {
-        metadata: ModelMetadataMsg,
-    },
-    ModelList {
-        models: Vec<String>,
-    },
+    ModelLoaded { metadata: ModelMetadataMsg },
+    ExecutionResult { output: Vec<f32> },
+    BatchExecutionResult { outputs: Vec<Vec<f32>> },
+    ModelInfo { metadata: ModelMetadataMsg },
+    ModelList { models: Vec<String> },
     Pong,
-    Error {
-        code: ErrorCode,
-        message: String,
-    },
+    Error { code: ErrorCode, message: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

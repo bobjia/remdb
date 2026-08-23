@@ -44,6 +44,7 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -70,51 +71,51 @@ fn main() -> Result<()> {
 
     // 4. Successful transaction - transfer
     println!("\n4. Successful transaction - transfer (Alice -> Bob: 200)");
-    
+
     db.sql_query("BEGIN TRANSACTION")?;
     println!("   Started transaction");
-    
+
     db.sql_query("UPDATE accounts SET balance = balance - 200 WHERE id = 1")?;
     println!("   Deducted 200 from Alice");
-    
+
     db.sql_query("UPDATE accounts SET balance = balance + 200 WHERE id = 2")?;
     println!("   Added 200 to Bob");
-    
+
     db.sql_query("COMMIT")?;
     println!("   Committed transaction");
-    
+
     println!("\n   State after transfer:");
     let result = db.sql_query("SELECT * FROM accounts")?;
     println!("{}", result.to_string());
 
     // 5. Rollback transaction
     println!("\n5. Rollback transaction - simulate failure");
-    
+
     db.sql_query("BEGIN TRANSACTION")?;
     println!("   Started transaction");
-    
+
     db.sql_query("UPDATE accounts SET balance = balance - 500 WHERE id = 1")?;
     println!("   Deducted 500 from Alice (simulated)");
-    
+
     db.sql_query("ROLLBACK")?;
     println!("   Rolled back transaction");
-    
+
     println!("\n   State after rollback (unchanged):");
     let result = db.sql_query("SELECT * FROM accounts")?;
     println!("{}", result.to_string());
 
     // 6. Transaction with insert
     println!("\n6. Transaction with insert");
-    
+
     db.sql_query("BEGIN TRANSACTION")?;
     println!("   Started transaction");
-    
+
     db.sql_query("INSERT INTO accounts VALUES (3, 'Charlie', 750.00)")?;
     println!("   Inserted Charlie");
-    
+
     db.sql_query("COMMIT")?;
     println!("   Committed transaction");
-    
+
     let result = db.sql_query("SELECT * FROM accounts")?;
     println!("\n   State after insert:");
     println!("{}", result.to_string());

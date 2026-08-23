@@ -31,19 +31,14 @@ fn handle_heartbeat_callback(topic_id: u16, data: &[u8]) -> bool {
     }
 
     #[cfg(feature = "log")]
-    debug!(
-        "Heartbeat callback received data, len: {}",
-        data.len()
-    );
+    debug!("Heartbeat callback received data, len: {}", data.len());
 
     // 解析并处理心跳数据包
     if let Some(packet) = HeartbeatPacket::from_bytes(data) {
         // 验证CRC校验值
         if !packet.verify_crc() {
             #[cfg(feature = "log")]
-            debug!(
-                "Heartbeat CRC check failed"
-            );
+            debug!("Heartbeat CRC check failed");
             return true;
         }
 
@@ -55,9 +50,7 @@ fn handle_heartbeat_callback(topic_id: u16, data: &[u8]) -> bool {
         #[cfg(feature = "log")]
         debug!(
             "Received heartbeat, node_id: {}, role: {:?}, timestamp: {}",
-            node_id,
-            role,
-            timestamp
+            node_id, role, timestamp
         );
     }
 
@@ -277,17 +270,14 @@ impl HeartbeatMonitor {
         #[cfg(feature = "log")]
         debug!(
             "Heartbeat monitor initialized, role: {:?}, node_id: {}",
-            self.role,
-            self.node_id
+            self.role, self.node_id
         );
 
         // 初始化pubsub系统
         self.init_pubsub()?;
 
         #[cfg(feature = "log")]
-        debug!(
-            "Heartbeat monitor pubsub initialized"
-        );
+        debug!("Heartbeat monitor pubsub initialized");
 
         Ok(())
     }
@@ -296,16 +286,12 @@ impl HeartbeatMonitor {
     pub fn init_master(&self) -> Result<()> {
         // 主节点：定期发送心跳
         #[cfg(feature = "log")]
-        debug!(
-            "Initializing master node, starting heartbeat sender"
-        );
+        debug!("Initializing master node, starting heartbeat sender");
 
         self.start_heartbeat_sender()?;
 
         #[cfg(feature = "log")]
-        debug!(
-            "Master node heartbeat sender started"
-        );
+        debug!("Master node heartbeat sender started");
 
         Ok(())
     }
@@ -326,9 +312,7 @@ impl HeartbeatMonitor {
         // pubsub系统已经由HA管理器统一初始化，无需再次初始化
         // 这里只做日志记录
         #[cfg(feature = "log")]
-        debug!(
-            "Heartbeat using existing pubsub system"
-        );
+        debug!("Heartbeat using existing pubsub system");
 
         Ok(())
     }
@@ -360,16 +344,11 @@ impl HeartbeatMonitor {
         match pubsub::subscribe(HEARTBEAT_TOPIC, handle_heartbeat_callback) {
             Ok(_) => {
                 #[cfg(feature = "log")]
-                debug!(
-                    "Successfully subscribed to heartbeat topic"
-                );
+                debug!("Successfully subscribed to heartbeat topic");
             }
             Err(e) => {
                 #[cfg(feature = "log")]
-                error!(
-                    "Failed to subscribe to heartbeat topic: {:?}",
-                    e
-                );
+                error!("Failed to subscribe to heartbeat topic: {:?}", e);
                 // 忽略订阅失败，继续运行（测试环境可能没有网络）
             }
         }
@@ -391,9 +370,7 @@ impl HeartbeatMonitor {
             // 验证CRC校验值
             if !packet.verify_crc() {
                 #[cfg(feature = "log")]
-                debug!(
-                    "Heartbeat CRC check failed"
-                );
+                debug!("Heartbeat CRC check failed");
                 return;
             }
 
@@ -405,9 +382,7 @@ impl HeartbeatMonitor {
             #[cfg(feature = "log")]
             debug!(
                 "Received heartbeat, node_id: {}, role: {:?}, timestamp: {}",
-                node_id,
-                role,
-                timestamp
+                node_id, role, timestamp
             );
 
             // 更新最后心跳时间
@@ -416,9 +391,7 @@ impl HeartbeatMonitor {
             self.master_alive.store(true, Ordering::Relaxed);
 
             #[cfg(feature = "log")]
-            debug!(
-                "Updated master alive status to true"
-            );
+            debug!("Updated master alive status to true");
         }
     }
 
@@ -458,9 +431,7 @@ impl HeartbeatMonitor {
         #[cfg(feature = "log")]
         debug!(
             "Sending heartbeat, node_id: {}, role: {:?}, timestamp: {}",
-            self.node_id,
-            self.role,
-            timestamp
+            self.node_id, self.role, timestamp
         );
 
         // 复制数据到临时缓冲区，确保publish函数使用完数据之前不会释放内存
@@ -475,17 +446,12 @@ impl HeartbeatMonitor {
         match pubsub::publish(HEARTBEAT_TOPIC, &buffer) {
             Ok(_) => {
                 #[cfg(feature = "log")]
-                debug!(
-                    "Heartbeat sent successfully"
-                );
+                debug!("Heartbeat sent successfully");
                 Ok(())
             }
             Err(e) => {
                 #[cfg(feature = "log")]
-                error!(
-                    "Failed to send heartbeat: {:?}",
-                    e
-                );
+                error!("Failed to send heartbeat: {:?}", e);
                 Err(HAError::NetworkError)
             }
         }

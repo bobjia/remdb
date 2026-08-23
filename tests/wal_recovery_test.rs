@@ -1,4 +1,6 @@
-use remdb::config::{DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALConfig, WALCompressionType};
+use remdb::config::{
+    DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALCompressionType, WALConfig,
+};
 use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
 use remdb::transaction::set_low_power_mode;
 use remdb::{init_global_db, reset_global_db, RemDb};
@@ -110,199 +112,202 @@ impl Platform for TestPlatform {
 }
 
 // 定义测试配置
-static TEST_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| remdb::types::TableDef {
-    id: 0,
-    name: "test_table".to_string(),
-    fields: vec![
-        remdb::types::FieldDef {
-            name: "id".to_string(),
-            data_type: remdb::types::DataType::Int32,
-            size: 4,
-            string_length: None,
-            offset: 0,
-            primary_key: true,
-            not_null: true,
-            unique: false,
-            auto_increment: true,
-            default_value: None,
-            vector_metadata: None,
-            json_metadata: None,
-        },
-        remdb::types::FieldDef {
-            name: "name".to_string(),
-            data_type: remdb::types::DataType::VarChar,
-            size: 64,
-            string_length: Some(64),
-            offset: 4,
-            primary_key: false,
-            not_null: false,
-            unique: false,
-            auto_increment: false,
-            default_value: None,
-            vector_metadata: None,
-            json_metadata: None,
-        },
-    ],
-    primary_key: vec![0],
-    secondary_index: None,
-    secondary_index_type: remdb::types::IndexType::SortedArray,
-    record_size: 68,
-    max_records: 100,
-    version: 1,
-    created_at: 0,
-    updated_at: 0,
-});
+static TEST_TABLE: std::sync::LazyLock<remdb::types::TableDef> =
+    std::sync::LazyLock::new(|| remdb::types::TableDef {
+        id: 0,
+        name: "test_table".to_string(),
+        fields: vec![
+            remdb::types::FieldDef {
+                name: "id".to_string(),
+                data_type: remdb::types::DataType::Int32,
+                size: 4,
+                string_length: None,
+                offset: 0,
+                primary_key: true,
+                not_null: true,
+                unique: false,
+                auto_increment: true,
+                default_value: None,
+                vector_metadata: None,
+                json_metadata: None,
+            },
+            remdb::types::FieldDef {
+                name: "name".to_string(),
+                data_type: remdb::types::DataType::VarChar,
+                size: 64,
+                string_length: Some(64),
+                offset: 4,
+                primary_key: false,
+                not_null: false,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+                vector_metadata: None,
+                json_metadata: None,
+            },
+        ],
+        primary_key: vec![0],
+        secondary_index: None,
+        secondary_index_type: remdb::types::IndexType::SortedArray,
+        record_size: 68,
+        max_records: 100,
+        version: 1,
+        created_at: 0,
+        updated_at: 0,
+    });
 
 // 定义时序表配置
-static TEST_TIMESERIES_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| remdb::types::TableDef {
-    id: 1,
-    name: "sensor_data".to_string(),
-    fields: vec![
-        remdb::types::FieldDef {
-            name: "id".to_string(),
-            data_type: remdb::types::DataType::Int32,
-            size: 4,
-            string_length: None,
-            offset: 0,
-            primary_key: true,
-            not_null: true,
-            unique: false,
-            auto_increment: true,
-            default_value: None,
-            vector_metadata: None,
-            json_metadata: None,
-        },
-        remdb::types::FieldDef {
-            name: "sensor_id".to_string(),
-            data_type: remdb::types::DataType::VarChar,
-            size: 32,
-            string_length: Some(32),
-            offset: 4,
-            primary_key: false,
-            not_null: true,
-            unique: false,
-            auto_increment: false,
-            default_value: None,
-            vector_metadata: None,
-            json_metadata: None,
-        },
-        remdb::types::FieldDef {
-            name: "value".to_string(),
-            data_type: remdb::types::DataType::Float64,
-            size: 8,
-            string_length: None,
-            offset: 36,
-            primary_key: false,
-            not_null: true,
-            unique: false,
-            auto_increment: false,
-            default_value: None,
-            vector_metadata: None,
-            json_metadata: None,
-        },
-        remdb::types::FieldDef {
-            name: "timestamp".to_string(),
-            data_type: remdb::types::DataType::Int64,
-            size: 8,
-            string_length: None,
-            offset: 44,
-            primary_key: false,
-            not_null: true,
-            unique: false,
-            auto_increment: false,
-            default_value: None,
-            vector_metadata: None,
-            json_metadata: None,
-        },
-    ],
-    primary_key: vec![0],
-    secondary_index: Some(vec![3]), // 时间戳字段索引
-    secondary_index_type: remdb::types::IndexType::SortedArray,
-    record_size: 52,
-    max_records: 100,
-    version: 1,
-    created_at: 0,
-    updated_at: 0,
-});
+static TEST_TIMESERIES_TABLE: std::sync::LazyLock<remdb::types::TableDef> =
+    std::sync::LazyLock::new(|| remdb::types::TableDef {
+        id: 1,
+        name: "sensor_data".to_string(),
+        fields: vec![
+            remdb::types::FieldDef {
+                name: "id".to_string(),
+                data_type: remdb::types::DataType::Int32,
+                size: 4,
+                string_length: None,
+                offset: 0,
+                primary_key: true,
+                not_null: true,
+                unique: false,
+                auto_increment: true,
+                default_value: None,
+                vector_metadata: None,
+                json_metadata: None,
+            },
+            remdb::types::FieldDef {
+                name: "sensor_id".to_string(),
+                data_type: remdb::types::DataType::VarChar,
+                size: 32,
+                string_length: Some(32),
+                offset: 4,
+                primary_key: false,
+                not_null: true,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+                vector_metadata: None,
+                json_metadata: None,
+            },
+            remdb::types::FieldDef {
+                name: "value".to_string(),
+                data_type: remdb::types::DataType::Float64,
+                size: 8,
+                string_length: None,
+                offset: 36,
+                primary_key: false,
+                not_null: true,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+                vector_metadata: None,
+                json_metadata: None,
+            },
+            remdb::types::FieldDef {
+                name: "timestamp".to_string(),
+                data_type: remdb::types::DataType::Int64,
+                size: 8,
+                string_length: None,
+                offset: 44,
+                primary_key: false,
+                not_null: true,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+                vector_metadata: None,
+                json_metadata: None,
+            },
+        ],
+        primary_key: vec![0],
+        secondary_index: Some(vec![3]), // 时间戳字段索引
+        secondary_index_type: remdb::types::IndexType::SortedArray,
+        record_size: 52,
+        max_records: 100,
+        version: 1,
+        created_at: 0,
+        updated_at: 0,
+    });
 
 // 定义包含向量数据的表配置
-static TEST_VECTOR_TABLE: std::sync::LazyLock<remdb::types::TableDef> = std::sync::LazyLock::new(|| remdb::types::TableDef {
-    id: 2,
-    name: "vector_data".to_string(),
-    fields: vec![
-        remdb::types::FieldDef {
-            name: "id".to_string(),
-            data_type: remdb::types::DataType::Int32,
-            size: 4,
-            string_length: None,
-            offset: 0,
-            primary_key: true,
-            not_null: true,
-            unique: false,
-            auto_increment: true,
-            default_value: None,
-            vector_metadata: None,
-            json_metadata: None,
-        },
-        remdb::types::FieldDef {
-            name: "name".to_string(),
-            data_type: remdb::types::DataType::VarChar,
-            size: 32,
-            string_length: Some(32),
-            offset: 4,
-            primary_key: false,
-            not_null: true,
-            unique: false,
-            auto_increment: false,
-            default_value: None,
-            vector_metadata: None,
-            json_metadata: None,
-        },
-        remdb::types::FieldDef {
-            name: "vector".to_string(),
-            data_type: remdb::types::DataType::Vector,
-            size: 32, // 8维向量，每个元素4字节，共32字节
-            string_length: None,
-            offset: 36,
-            primary_key: false,
-            not_null: true,
-            unique: false,
-            auto_increment: false,
-            default_value: None,
-            vector_metadata: Some(remdb::types::VectorMetadata {
-                dimension: 8,
-                distance_type: remdb::types::DistanceType::L2,
-                index_type: remdb::types::VectorIndexType::HNSW,
-                compression_enabled: false,
-                compression_scheme: 0,
-                compression_level: 3,
-                // HNSW默认参数
-                hnsw_m: 16,
-                hnsw_ef_construction: 200,
-                hnsw_ef_search: 128,
-                // IVF默认参数
-                ivf_nlist: 1024,
-                ivf_nprobe: 16,
-            }),
-            json_metadata: None,
-        },
-    ],
-    primary_key: vec![0],
-    secondary_index: None,
-    secondary_index_type: remdb::types::IndexType::SortedArray,
-    record_size: 68,
-    max_records: 100,
-    version: 1,
-    created_at: 0,
-    updated_at: 0,
-});
+static TEST_VECTOR_TABLE: std::sync::LazyLock<remdb::types::TableDef> =
+    std::sync::LazyLock::new(|| remdb::types::TableDef {
+        id: 2,
+        name: "vector_data".to_string(),
+        fields: vec![
+            remdb::types::FieldDef {
+                name: "id".to_string(),
+                data_type: remdb::types::DataType::Int32,
+                size: 4,
+                string_length: None,
+                offset: 0,
+                primary_key: true,
+                not_null: true,
+                unique: false,
+                auto_increment: true,
+                default_value: None,
+                vector_metadata: None,
+                json_metadata: None,
+            },
+            remdb::types::FieldDef {
+                name: "name".to_string(),
+                data_type: remdb::types::DataType::VarChar,
+                size: 32,
+                string_length: Some(32),
+                offset: 4,
+                primary_key: false,
+                not_null: true,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+                vector_metadata: None,
+                json_metadata: None,
+            },
+            remdb::types::FieldDef {
+                name: "vector".to_string(),
+                data_type: remdb::types::DataType::Vector,
+                size: 32, // 8维向量，每个元素4字节，共32字节
+                string_length: None,
+                offset: 36,
+                primary_key: false,
+                not_null: true,
+                unique: false,
+                auto_increment: false,
+                default_value: None,
+                vector_metadata: Some(remdb::types::VectorMetadata {
+                    dimension: 8,
+                    distance_type: remdb::types::DistanceType::L2,
+                    index_type: remdb::types::VectorIndexType::HNSW,
+                    compression_enabled: false,
+                    compression_scheme: 0,
+                    compression_level: 3,
+                    // HNSW默认参数
+                    hnsw_m: 16,
+                    hnsw_ef_construction: 200,
+                    hnsw_ef_search: 128,
+                    // IVF默认参数
+                    ivf_nlist: 1024,
+                    ivf_nprobe: 16,
+                }),
+                json_metadata: None,
+            },
+        ],
+        primary_key: vec![0],
+        secondary_index: None,
+        secondary_index_type: remdb::types::IndexType::SortedArray,
+        record_size: 68,
+        max_records: 100,
+        version: 1,
+        created_at: 0,
+        updated_at: 0,
+    });
 
 // 静态测试数据库配置
 static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(|| DbConfig {
     tables: vec![
         TEST_TABLE.clone(),
         TEST_TIMESERIES_TABLE.clone(),
-        TEST_VECTOR_TABLE.clone()
+        TEST_VECTOR_TABLE.clone(),
     ],
     total_memory: 2097152, // 2MB
     default_max_records: 100,
@@ -329,6 +334,7 @@ static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(
     #[cfg(feature = "ha")]
     ha_config: None,
     time_series_defaults: TimeSeriesConfig::DEFAULT,
+    model_worker_config: Default::default(),
 });
 
 // 为每个测试用例创建独立的平台实例
@@ -347,14 +353,17 @@ fn test_wal_recovery_no_overwrite() {
 
     // 重置全局内存分配器，确保测试之间的隔离
     remdb::memory::allocator::reset_global_allocator().unwrap();
-    
+
     // 零初始化内存缓冲区，确保测试之间的完全隔离
     unsafe {
         core::ptr::write_bytes(DB_MEMORY_1.as_mut_ptr(), 0, DB_MEMORY_1.len());
-        
+
         // 初始化内存分配器
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY_1.as_mut_ptr(), DB_MEMORY_1.len())
-            .unwrap();
+        remdb::memory::allocator::init_global_allocator(
+            DB_MEMORY_1.as_mut_ptr(),
+            DB_MEMORY_1.len(),
+        )
+        .unwrap();
     }
 
     // 重置全局数据库实例，确保测试之间的隔离
@@ -427,14 +436,17 @@ fn test_wal_recovery_alter_table() {
 
     // 重置全局内存分配器，确保测试之间的隔离
     remdb::memory::allocator::reset_global_allocator().unwrap();
-    
+
     // 零初始化内存缓冲区，确保测试之间的完全隔离
     unsafe {
         core::ptr::write_bytes(DB_MEMORY_2.as_mut_ptr(), 0, DB_MEMORY_2.len());
-        
+
         // 初始化内存分配器
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY_2.as_mut_ptr(), DB_MEMORY_2.len())
-            .unwrap();
+        remdb::memory::allocator::init_global_allocator(
+            DB_MEMORY_2.as_mut_ptr(),
+            DB_MEMORY_2.len(),
+        )
+        .unwrap();
     }
 
     // 重置全局数据库实例，确保测试之间的隔离
@@ -493,7 +505,8 @@ fn test_wal_recovery_alter_table() {
     println!("✓ ALTER TABLE ADD COLUMN succeeded");
 
     // 10. 插入数据到添加列后的表
-    let insert_modified_sql = "INSERT INTO test_alter_table (name, age, status) VALUES ('updated_user', 30, 'active')";
+    let insert_modified_sql =
+        "INSERT INTO test_alter_table (name, age, status) VALUES ('updated_user', 30, 'active')";
     let result7 = db.sql_query(insert_modified_sql);
     assert!(result7.is_ok(), "Failed to insert into modified table");
     println!("✓ INSERT after ADD COLUMN succeeded");
@@ -517,7 +530,8 @@ fn test_wal_recovery_alter_table() {
     println!("✓ ALTER TABLE DROP COLUMN (second) succeeded");
 
     // 14. 插入最终数据
-    let insert_after_drop_sql = "INSERT INTO test_alter_table (name, age, phone) VALUES ('final_user', 40, '0987654321')";
+    let insert_after_drop_sql =
+        "INSERT INTO test_alter_table (name, age, phone) VALUES ('final_user', 40, '0987654321')";
     let result11 = db.sql_query(insert_after_drop_sql);
     assert!(result11.is_ok(), "Failed to insert after dropping column");
     println!("✓ INSERT after second DROP succeeded");

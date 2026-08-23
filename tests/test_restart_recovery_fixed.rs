@@ -294,6 +294,8 @@ static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(
         master_port: None,
         replication_port: 6668,
     }),
+
+    model_worker_config: Default::default(),
 });
 
 #[test]
@@ -361,7 +363,10 @@ fn test_restart_recovery_fixed() -> Result<()> {
         }
 
         // 保存全量快照
-        let snapshot_path = std::env::current_dir().unwrap().join("test_snapshots").join("full_test.remd");
+        let snapshot_path = std::env::current_dir()
+            .unwrap()
+            .join("test_snapshots")
+            .join("full_test.remd");
         let snapshot_path_str = snapshot_path.to_str().unwrap();
         fs::create_dir_all(snapshot_path.parent().unwrap()).ok();
         db.save_snapshot(snapshot_path_str)?;
@@ -371,7 +376,7 @@ fn test_restart_recovery_fixed() -> Result<()> {
             let file_size = fs::metadata(&snapshot_path).unwrap().len();
             println!("快照文件已创建，大小: {} 字节", file_size);
             println!("快照文件路径: {}", snapshot_path_str);
-            
+
             // 验证快照文件的魔数
             if let Ok(mut file) = std::fs::File::open(&snapshot_path) {
                 let mut magic_bytes = [0u8; 4];
@@ -423,29 +428,35 @@ fn test_restart_recovery_fixed() -> Result<()> {
                             if read == 4 {
                                 let version = u32::from_le_bytes(version_bytes);
                                 println!("读取版本号: {}", version);
-                                
+
                                 // 读取快照类型
                                 let mut snapshot_type_bytes = [0u8; 1];
                                 if let Ok(read) = file.read(&mut snapshot_type_bytes) {
                                     if read == 1 {
                                         let snapshot_type = snapshot_type_bytes[0];
                                         println!("读取快照类型: {}", snapshot_type);
-                                        
+
                                         // 读取基础版本号
                                         let mut base_version_bytes = [0u8; 4];
                                         if let Ok(read) = file.read(&mut base_version_bytes) {
                                             if read == 4 {
-                                                let base_version = u32::from_le_bytes(base_version_bytes);
+                                                let base_version =
+                                                    u32::from_le_bytes(base_version_bytes);
                                                 println!("读取基础版本号: {}", base_version);
-                                                
+
                                                 // 读取表数量
                                                 let mut table_count_bytes = [0u8; 4];
-                                                if let Ok(read) = file.read(&mut table_count_bytes) {
+                                                if let Ok(read) = file.read(&mut table_count_bytes)
+                                                {
                                                     if read == 4 {
-                                                        let table_count = u32::from_le_bytes(table_count_bytes) as usize;
+                                                        let table_count =
+                                                            u32::from_le_bytes(table_count_bytes)
+                                                                as usize;
                                                         println!("读取表数量: {}", table_count);
-                                                        
-                                                        println!("快照文件读取成功，开始恢复数据...");
+
+                                                        println!(
+                                                            "快照文件读取成功，开始恢复数据..."
+                                                        );
                                                     }
                                                 }
                                             }

@@ -1,8 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![recursion_limit = "1024"]
 
-
-
 use crate::table::Defer;
 use core::ptr::NonNull;
 
@@ -23,12 +21,12 @@ pub mod platform;
 pub mod pubsub;
 pub mod rbac;
 pub mod sql;
+pub mod sync;
+pub mod system_tables;
 pub mod table;
 pub mod time_series;
 pub mod transaction;
 pub mod types;
-pub mod sync;
-pub mod system_tables;
 pub mod utf8;
 pub mod wal_compression;
 
@@ -83,17 +81,21 @@ macro_rules! try_write {
 }
 
 // 导出核心类型
-pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};
-pub use types::{    DataType, DistanceType, FieldDef, IndexType, RecordStatus, RemDbError, Result, TableDef, Value,
-    VectorIndexType, VectorMetadata, MAX_STRING_LEN, MAX_TEXT_LEN, DEFAULT_TEXT_SIZE, DEFAULT_JSON_SIZE,
-};
 pub use compression::CompressionScheme;
-pub use system_tables::{init_system_tables, get_vector_compression_config, get_query_resource_config};
-pub use rbac::{RbacManager, Permission, Role, User};
+pub use rbac::{Permission, RbacManager, Role, User};
+pub use system_tables::{
+    get_query_resource_config, get_vector_compression_config, init_system_tables,
+};
+pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};
+pub use types::{
+    DataType, DistanceType, FieldDef, IndexType, RecordStatus, RemDbError, Result, TableDef, Value,
+    VectorIndexType, VectorMetadata, DEFAULT_JSON_SIZE, DEFAULT_TEXT_SIZE, MAX_STRING_LEN,
+    MAX_TEXT_LEN,
+};
 
 pub use index::{
-    AnySecondaryIndex, BTreeIndex, IndexStats, PrimaryIndex, PrimaryIndexItem, SecondaryIndex,
-    TTreeIndex, init_index_build_thread_pool,
+    init_index_build_thread_pool, AnySecondaryIndex, BTreeIndex, IndexStats, PrimaryIndex,
+    PrimaryIndexItem, SecondaryIndex, TTreeIndex,
 };
 pub use monitor::{DbMetrics, DbMetricsSnapshot, HealthCheckResult, HealthStatus};
 pub use time_series::{
@@ -145,9 +147,7 @@ pub enum AlterTableOperation {
         constraints: FieldConstraint,
     },
     /// 删除列
-    DropColumn {
-        name: alloc::string::String,
-    },
+    DropColumn { name: alloc::string::String },
     /// 修改列
     ModifyColumn {
         name: alloc::string::String,
@@ -177,11 +177,7 @@ pub trait DdlExecutor {
     ) -> Result<()>;
 
     /// 修改表结构
-    fn alter_table(
-        &mut self,
-        table_name: &str,
-        operation: AlterTableOperation,
-    ) -> Result<()>;
+    fn alter_table(&mut self, table_name: &str, operation: AlterTableOperation) -> Result<()>;
 
     /// 创建索引
     fn create_index(
@@ -341,7 +337,10 @@ impl DatabaseManager {
         // 创建数据库配置
         let db_config = Box::leak(Box::new(config::DbConfig {
             tables: vec![],
-            total_memory: config.as_ref().and_then(|c| c.memory_limit).unwrap_or(1024 * 1024 * 1024), // 默认1GB
+            total_memory: config
+                .as_ref()
+                .and_then(|c| c.memory_limit)
+                .unwrap_or(1024 * 1024 * 1024), // 默认1GB
             default_max_records: 100000,
             low_power_mode_supported: true,
             low_power_max_records: Some(10000),
@@ -371,7 +370,6 @@ impl DatabaseManager {
             pubsub_config: None,
             #[cfg(feature = "ha")]
             ha_config: None,
-            #[cfg(feature = "model-runtime")]
             model_worker_config: config::ModelWorkerConfig::default(),
         }));
 
@@ -402,7 +400,10 @@ impl DatabaseManager {
                     new_data,
                 };
 
-                let calculated_checksum = crate::transaction::Transaction::calculate_variable_size_log_item_checksum(&var_log_item);
+                let calculated_checksum =
+                    crate::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                        &var_log_item,
+                    );
                 var_log_item.header.checksum = calculated_checksum;
 
                 let _ = log_manager.write_variable_size_log_item(&var_log_item);
@@ -446,14 +447,17 @@ impl DatabaseManager {
     /// 获取所有数据库信息
     pub fn list_databases(&self) -> Result<Vec<DatabaseInfo>> {
         let mut databases_info = Vec::new();
-        
+
         for db in &self.databases {
             // 计算表数量（排除None值）
             let table_count = db.tables.iter().filter(|table| table.is_some()).count();
-            
+
             // 计算内存使用情况
-            let memory_usage = db.metrics.used_memory.load(core::sync::atomic::Ordering::Relaxed);
-            
+            let memory_usage = db
+                .metrics
+                .used_memory
+                .load(core::sync::atomic::Ordering::Relaxed);
+
             // 创建数据库信息
             let db_info = DatabaseInfo {
                 name: db.name.clone(),
@@ -462,10 +466,10 @@ impl DatabaseManager {
                 table_count,
                 memory_usage,
             };
-            
+
             databases_info.push(db_info);
         }
-        
+
         Ok(databases_info)
     }
 }
@@ -630,139 +634,139 @@ impl RemDb {
 
     /// 创建角色
     pub fn create_role(&mut self, role_name: &str) -> Result<()> {
-        self.rbac_manager.create_role(role_name.to_string()).map_err(|_e| {
-            RemDbError::ConfigError
-        })?;
-        
+        self.rbac_manager
+            .create_role(role_name.to_string())
+            .map_err(|_e| RemDbError::ConfigError)?;
+
         // 保存到系统表
         unsafe {
             let _ = RbacManager::save_to_system_tables(&mut *self);
         }
-        
+
         Ok(())
     }
 
     /// 删除角色
     pub fn drop_role(&mut self, role_name: &str) -> Result<()> {
-        self.rbac_manager.drop_role(role_name).map_err(|_e| {
-            RemDbError::ConfigError
-        })?;
-        
+        self.rbac_manager
+            .drop_role(role_name)
+            .map_err(|_e| RemDbError::ConfigError)?;
+
         // 保存到系统表
         unsafe {
             let _ = RbacManager::save_to_system_tables(&mut *self);
         }
-        
+
         Ok(())
     }
 
     /// 授予权限给角色
     pub fn grant_permission(
-        &mut self, 
-        role_name: &str, 
-        permission: rbac::Permission, 
-        table_name: Option<String>, 
-        column_name: Option<String>
+        &mut self,
+        role_name: &str,
+        permission: rbac::Permission,
+        table_name: Option<String>,
+        column_name: Option<String>,
     ) -> Result<()> {
-        self.rbac_manager.grant_permission(role_name, permission, table_name, column_name).map_err(|_e| {
-            RemDbError::ConfigError
-        })?;
-        
+        self.rbac_manager
+            .grant_permission(role_name, permission, table_name, column_name)
+            .map_err(|_e| RemDbError::ConfigError)?;
+
         // 保存到系统表
         unsafe {
             let _ = RbacManager::save_to_system_tables(&mut *self);
         }
-        
+
         Ok(())
     }
 
     /// 撤销角色的权限
     pub fn revoke_permission(
-        &mut self, 
-        role_name: &str, 
-        permission: &rbac::Permission, 
-        table_name: &Option<String>, 
-        column_name: &Option<String>
+        &mut self,
+        role_name: &str,
+        permission: &rbac::Permission,
+        table_name: &Option<String>,
+        column_name: &Option<String>,
     ) -> Result<()> {
-        self.rbac_manager.revoke_permission(role_name, permission, table_name, column_name).map_err(|_e| {
-            RemDbError::ConfigError
-        })?;
-        
+        self.rbac_manager
+            .revoke_permission(role_name, permission, table_name, column_name)
+            .map_err(|_e| RemDbError::ConfigError)?;
+
         // 保存到系统表
         unsafe {
             let _ = RbacManager::save_to_system_tables(&mut *self);
         }
-        
+
         Ok(())
     }
 
     /// 创建用户
     pub fn create_user(&mut self, user_name: &str) -> Result<()> {
-        self.rbac_manager.create_user(user_name.to_string()).map_err(|_e| {
-            RemDbError::ConfigError
-        })?;
-        
+        self.rbac_manager
+            .create_user(user_name.to_string())
+            .map_err(|_e| RemDbError::ConfigError)?;
+
         // 保存到系统表
         unsafe {
             let _ = RbacManager::save_to_system_tables(&mut *self);
         }
-        
+
         Ok(())
     }
 
     /// 删除用户
     pub fn drop_user(&mut self, user_name: &str) -> Result<()> {
-        self.rbac_manager.drop_user(user_name).map_err(|_e| {
-            RemDbError::ConfigError
-        })?;
-        
+        self.rbac_manager
+            .drop_user(user_name)
+            .map_err(|_e| RemDbError::ConfigError)?;
+
         // 保存到系统表
         unsafe {
             let _ = RbacManager::save_to_system_tables(&mut *self);
         }
-        
+
         Ok(())
     }
 
     /// 授予角色给用户
     pub fn grant_role(&mut self, user_name: &str, role_name: &str) -> Result<()> {
-        self.rbac_manager.grant_role(user_name, role_name).map_err(|_e| {
-            RemDbError::ConfigError
-        })?;
-        
+        self.rbac_manager
+            .grant_role(user_name, role_name)
+            .map_err(|_e| RemDbError::ConfigError)?;
+
         // 保存到系统表
         unsafe {
             let _ = RbacManager::save_to_system_tables(&mut *self);
         }
-        
+
         Ok(())
     }
 
     /// 撤销用户的角色
     pub fn revoke_role(&mut self, user_name: &str, role_name: &str) -> Result<()> {
-        self.rbac_manager.revoke_role(user_name, role_name).map_err(|_e| {
-            RemDbError::ConfigError
-        })?;
-        
+        self.rbac_manager
+            .revoke_role(user_name, role_name)
+            .map_err(|_e| RemDbError::ConfigError)?;
+
         // 保存到系统表
         unsafe {
             let _ = RbacManager::save_to_system_tables(&mut *self);
         }
-        
+
         Ok(())
     }
 
     /// 检查用户是否有特定权限
     pub fn check_permission(
-        &self, 
-        user_name: &str, 
-        permission: &rbac::Permission, 
-        table_name: &Option<String>, 
-        column_name: &Option<String>
+        &self,
+        user_name: &str,
+        permission: &rbac::Permission,
+        table_name: &Option<String>,
+        column_name: &Option<String>,
     ) -> Result<bool> {
-        self.rbac_manager.check_permission(user_name, permission, table_name, column_name).map_err(|_e| {
-            RemDbError::ConfigError
-        })
+        self.rbac_manager
+            .check_permission(user_name, permission, table_name, column_name)
+            .map_err(|_e| RemDbError::ConfigError)
     }
 
     /// 获取当前系统中可用的数据库列表
@@ -894,7 +898,7 @@ impl RemDb {
             None => Err(RemDbError::RecordNotFound),
         }
     }
-    
+
     /// 根据表名获取表引用和辅助索引的可变引用
     pub fn get_table_and_secondary_index_mut_by_name(
         &mut self,
@@ -910,9 +914,9 @@ impl RemDb {
                 }
             }
         }
-        
+
         let table_id = table_id.ok_or(RemDbError::RecordNotFound)?;
-        
+
         // 安全地分割借用：分别借用 tables 和 secondary_indices 字段
         // 这是安全的，因为：
         // 1. tables 和 secondary_indices 是不相关的字段
@@ -920,22 +924,23 @@ impl RemDb {
         // 3. 没有创建任何别名或悬垂指针
         unsafe {
             let tables_ptr: *const Vec<Option<MemoryTable>> = &self.tables;
-            let secondary_indices_ptr: *mut Vec<Option<AnySecondaryIndex>> = &mut self.secondary_indices;
-            
+            let secondary_indices_ptr: *mut Vec<Option<AnySecondaryIndex>> =
+                &mut self.secondary_indices;
+
             let table = (&(*tables_ptr))
                 .get(table_id)
                 .and_then(|opt: &Option<MemoryTable>| opt.as_ref())
                 .ok_or(RemDbError::RecordNotFound)?;
-                
+
             let index = (&mut (*secondary_indices_ptr))
                 .get_mut(table_id)
                 .and_then(|opt: &mut Option<AnySecondaryIndex>| opt.as_mut())
                 .ok_or(RemDbError::RecordNotFound)?;
-                
+
             Ok((table, index))
         }
     }
-    
+
     /// 检查是否处于低功耗模式
     pub fn is_low_power_mode(&self) -> bool {
         self.low_power_mode
@@ -1200,9 +1205,7 @@ impl RemDb {
         }
 
         // 初始化系统表
-        let tables_created = unsafe {
-            crate::system_tables::init_system_tables(self)?
-        };
+        let tables_created = unsafe { crate::system_tables::init_system_tables(self)? };
 
         // 只有在创建了新表时才加载RBAC数据
         // 注意：如果系统表已存在，需要加载之前持久化的RBAC数据
@@ -1308,12 +1311,8 @@ impl RemDb {
                 // 1. 写入表名
                 let table_name = &table.def.name;
                 let table_name_len = table_name.len() as u8;
-                let written = crate::platform::file_write(
-                    handle,
-                    &table_name_len as *const u8,
-                    1,
-                )
-                .map_err(|_| RemDbError::FileIoError)?;
+                let written = crate::platform::file_write(handle, &table_name_len as *const u8, 1)
+                    .map_err(|_| RemDbError::FileIoError)?;
                 if written != 1 {
                     return Err(RemDbError::FileIoError);
                 }
@@ -1329,48 +1328,39 @@ impl RemDb {
 
                 // 2. 写入字段数量
                 let field_count = table.def.fields.len() as u8;
-                let written = crate::platform::file_write(
-                    handle,
-                    &field_count as *const u8,
-                    1,
-                )
-                .map_err(|_| RemDbError::FileIoError)?;
+                let written = crate::platform::file_write(handle, &field_count as *const u8, 1)
+                    .map_err(|_| RemDbError::FileIoError)?;
                 if written != 1 {
                     return Err(RemDbError::FileIoError);
                 }
 
                 // 3. 写入主键字段数量
                 let primary_key_count = table.def.primary_key.len() as u8;
-                let written = crate::platform::file_write(
-                    handle,
-                    &primary_key_count as *const u8,
-                    1,
-                )
-                .map_err(|_| RemDbError::FileIoError)?;
+                let written =
+                    crate::platform::file_write(handle, &primary_key_count as *const u8, 1)
+                        .map_err(|_| RemDbError::FileIoError)?;
                 if written != 1 {
                     return Err(RemDbError::FileIoError);
                 }
 
                 // 4. 写入辅助索引字段数量
-                let secondary_index_count = table.def.secondary_index.as_ref().map_or(0, |idx| idx.len()) as u8;
-                let written = crate::platform::file_write(
-                    handle,
-                    &secondary_index_count as *const u8,
-                    1,
-                )
-                .map_err(|_| RemDbError::FileIoError)?;
+                let secondary_index_count = table
+                    .def
+                    .secondary_index
+                    .as_ref()
+                    .map_or(0, |idx| idx.len()) as u8;
+                let written =
+                    crate::platform::file_write(handle, &secondary_index_count as *const u8, 1)
+                        .map_err(|_| RemDbError::FileIoError)?;
                 if written != 1 {
                     return Err(RemDbError::FileIoError);
                 }
 
                 // 5. 写入辅助索引类型
                 let secondary_index_type = table.def.secondary_index_type as u8;
-                let written = crate::platform::file_write(
-                    handle,
-                    &secondary_index_type as *const u8,
-                    1,
-                )
-                .map_err(|_| RemDbError::FileIoError)?;
+                let written =
+                    crate::platform::file_write(handle, &secondary_index_type as *const u8, 1)
+                        .map_err(|_| RemDbError::FileIoError)?;
                 if written != 1 {
                     return Err(RemDbError::FileIoError);
                 }
@@ -1392,12 +1382,9 @@ impl RemDb {
                 for field in &table.def.fields {
                     // 写入字段名称长度和字段名称
                     let field_name_len = field.name.len() as u8;
-                    let written = crate::platform::file_write(
-                        handle,
-                        &field_name_len as *const u8,
-                        1,
-                    )
-                    .map_err(|_| RemDbError::FileIoError)?;
+                    let written =
+                        crate::platform::file_write(handle, &field_name_len as *const u8, 1)
+                            .map_err(|_| RemDbError::FileIoError)?;
                     if written != 1 {
                         return Err(RemDbError::FileIoError);
                     }
@@ -1413,12 +1400,8 @@ impl RemDb {
 
                     // 写入数据类型
                     let data_type = field.data_type as u8;
-                    let written = crate::platform::file_write(
-                        handle,
-                        &data_type as *const u8,
-                        1,
-                    )
-                    .map_err(|_| RemDbError::FileIoError)?;
+                    let written = crate::platform::file_write(handle, &data_type as *const u8, 1)
+                        .map_err(|_| RemDbError::FileIoError)?;
                     if written != 1 {
                         return Err(RemDbError::FileIoError);
                     }
@@ -1438,12 +1421,9 @@ impl RemDb {
 
                     // 写入字符串长度限制（如果有）
                     let has_string_length = field.string_length.is_some() as u8;
-                    let written = crate::platform::file_write(
-                        handle,
-                        &has_string_length as *const u8,
-                        1,
-                    )
-                    .map_err(|_| RemDbError::FileIoError)?;
+                    let written =
+                        crate::platform::file_write(handle, &has_string_length as *const u8, 1)
+                            .map_err(|_| RemDbError::FileIoError)?;
                     if written != 1 {
                         return Err(RemDbError::FileIoError);
                     }
@@ -1466,24 +1446,16 @@ impl RemDb {
                         | (field.not_null as u8) << 1
                         | (field.unique as u8) << 2
                         | (field.auto_increment as u8) << 3;
-                    let written = crate::platform::file_write(
-                        handle,
-                        &flags as *const u8,
-                        1,
-                    )
-                    .map_err(|_| RemDbError::FileIoError)?;
+                    let written = crate::platform::file_write(handle, &flags as *const u8, 1)
+                        .map_err(|_| RemDbError::FileIoError)?;
                     if written != 1 {
                         return Err(RemDbError::FileIoError);
                     }
 
                     // 暂时不支持默认值的序列化
                     let has_default = 0u8;
-                    let written = crate::platform::file_write(
-                        handle,
-                        &has_default as *const u8,
-                        1,
-                    )
-                    .map_err(|_| RemDbError::FileIoError)?;
+                    let written = crate::platform::file_write(handle, &has_default as *const u8, 1)
+                        .map_err(|_| RemDbError::FileIoError)?;
                     if written != 1 {
                         return Err(RemDbError::FileIoError);
                     }
@@ -1492,12 +1464,8 @@ impl RemDb {
                 // 8. 写入主键字段索引列表
                 for &pk_idx in &table.def.primary_key {
                     let pk_idx_u8 = pk_idx as u8;
-                    let written = crate::platform::file_write(
-                        handle,
-                        &pk_idx_u8 as *const u8,
-                        1,
-                    )
-                    .map_err(|_| RemDbError::FileIoError)?;
+                    let written = crate::platform::file_write(handle, &pk_idx_u8 as *const u8, 1)
+                        .map_err(|_| RemDbError::FileIoError)?;
                     if written != 1 {
                         return Err(RemDbError::FileIoError);
                     }
@@ -1507,12 +1475,8 @@ impl RemDb {
                 if let Some(ref secondary_index) = table.def.secondary_index {
                     for &idx in secondary_index {
                         let idx_u8 = idx as u8;
-                        let written = crate::platform::file_write(
-                            handle,
-                            &idx_u8 as *const u8,
-                            1,
-                        )
-                        .map_err(|_| RemDbError::FileIoError)?;
+                        let written = crate::platform::file_write(handle, &idx_u8 as *const u8, 1)
+                            .map_err(|_| RemDbError::FileIoError)?;
                         if written != 1 {
                             return Err(RemDbError::FileIoError);
                         }
@@ -1686,12 +1650,9 @@ impl RemDb {
 
             // 读取表名
             let mut table_name_bytes = vec![0u8; table_name_len];
-            let read = crate::platform::file_read(
-                handle,
-                table_name_bytes.as_mut_ptr(),
-                table_name_len,
-            )
-            .map_err(|_| RemDbError::FileIoError)?;
+            let read =
+                crate::platform::file_read(handle, table_name_bytes.as_mut_ptr(), table_name_len)
+                    .map_err(|_| RemDbError::FileIoError)?;
             if read != table_name_len {
                 return Err(RemDbError::FileIoError);
             }
@@ -1845,12 +1806,9 @@ impl RemDb {
 
                 // 读取字段标志
                 let mut flags_bytes = [0u8; 1];
-                let read = crate::platform::file_read(
-                    handle,
-                    flags_bytes.as_mut_ptr(),
-                    flags_bytes.len(),
-                )
-                .map_err(|_| RemDbError::FileIoError)?;
+                let read =
+                    crate::platform::file_read(handle, flags_bytes.as_mut_ptr(), flags_bytes.len())
+                        .map_err(|_| RemDbError::FileIoError)?;
                 if read != flags_bytes.len() {
                     return Err(RemDbError::FileIoError);
                 }
@@ -1909,12 +1867,9 @@ impl RemDb {
                 let mut indices = Vec::new();
                 for _ in 0..secondary_index_count {
                     let mut idx_bytes = [0u8; 1];
-                    let read = crate::platform::file_read(
-                        handle,
-                        idx_bytes.as_mut_ptr(),
-                        idx_bytes.len(),
-                    )
-                    .map_err(|_| RemDbError::FileIoError)?;
+                    let read =
+                        crate::platform::file_read(handle, idx_bytes.as_mut_ptr(), idx_bytes.len())
+                            .map_err(|_| RemDbError::FileIoError)?;
                     if read != idx_bytes.len() {
                         return Err(RemDbError::FileIoError);
                     }
@@ -1930,7 +1885,10 @@ impl RemDb {
                 table
             } else {
                 #[cfg(feature = "log")]
-                info!("Creating table '{}' with ID {} from snapshot...", table_name, table_id);
+                info!(
+                    "Creating table '{}' with ID {} from snapshot...",
+                    table_name, table_id
+                );
 
                 // 创建表定义
                 let table_def = crate::types::TableDef {
@@ -1953,7 +1911,9 @@ impl RemDb {
                     .map_err(|_| RemDbError::OutOfMemory)?;
 
                 self.tables[table_id] = Some(table);
-                self.tables[table_id].as_mut().ok_or(RemDbError::TableNotFound)?
+                self.tables[table_id]
+                    .as_mut()
+                    .ok_or(RemDbError::TableNotFound)?
             };
 
             // 读取记录数
@@ -2043,28 +2003,28 @@ impl RemDb {
                         match primary_key_field.data_type {
                             crate::types::DataType::UInt8 => {
                                 core::ptr::read_unaligned(key_ptr as *const u8) as u64
-                            },
+                            }
                             crate::types::DataType::UInt16 => {
                                 core::ptr::read_unaligned(key_ptr as *const u16) as u64
-                            },
+                            }
                             crate::types::DataType::UInt32 => {
                                 core::ptr::read_unaligned(key_ptr as *const u32) as u64
-                            },
+                            }
                             crate::types::DataType::UInt64 => {
                                 core::ptr::read_unaligned(key_ptr as *const u64)
-                            },
+                            }
                             crate::types::DataType::Int8 => {
                                 core::ptr::read_unaligned(key_ptr as *const i8) as u64
-                            },
+                            }
                             crate::types::DataType::Int16 => {
                                 core::ptr::read_unaligned(key_ptr as *const i16) as u64
-                            },
+                            }
                             crate::types::DataType::Int32 => {
                                 core::ptr::read_unaligned(key_ptr as *const i32) as u64
-                            },
+                            }
                             crate::types::DataType::Int64 => {
                                 core::ptr::read_unaligned(key_ptr as *const i64) as u64
-                            },
+                            }
                             _ => 0,
                         }
                     };
@@ -2138,7 +2098,9 @@ impl RemDb {
 
         // Publish health status to pubsub
         #[cfg(feature = "pubsub")]
-        if let Some(topic_id) = crate::pubsub::get_topic_id(crate::pubsub::topics::HEALTH_STATUS_TOPIC) {
+        if let Some(topic_id) =
+            crate::pubsub::get_topic_id(crate::pubsub::topics::HEALTH_STATUS_TOPIC)
+        {
             let health_bytes = health_result.to_bytes();
             let _ = crate::pubsub::publish(topic_id, &health_bytes);
         }
@@ -2147,12 +2109,12 @@ impl RemDb {
     }
 
     /// 删除表
-    /// 
+    ///
     /// # 参数
     /// - `table_name`: 要删除的表名
     /// - `if_exists`: 如果表不存在，是否不报错
     /// - `deferred`: 是否延迟删除
-    /// 
+    ///
     /// # 返回值
     /// - `Ok(())`: 删除成功
     /// - `Err(RemDbError)`: 删除失败
@@ -2169,7 +2131,7 @@ impl RemDb {
         if crate::system_tables::is_system_table(table_name) {
             return Err(RemDbError::NotAllowed);
         }
-        
+
         // 1. 查找表的位置
         let table_index = self.tables.iter().position(|table_opt| {
             if let Some(table) = table_opt {
@@ -2270,7 +2232,8 @@ impl RemDb {
                 };
 
                 // 计算校验和
-                let calculated_checksum = crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
+                let calculated_checksum =
+                    crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
 
                 let mut final_log_item = log_item;
                 final_log_item.checksum = calculated_checksum;
@@ -2278,13 +2241,19 @@ impl RemDb {
                 // 写入日志
                 if let Err(e) = log_manager.write_log_item(&final_log_item) {
                     #[cfg(feature = "log")]
-                    warn!("Failed to write WAL log for DROP TABLE {}: {:?}", table_name, e);
+                    warn!(
+                        "Failed to write WAL log for DROP TABLE {}: {:?}",
+                        table_name, e
+                    );
                     // 继续执行，因为表删除操作已经完成
                 }
                 // 立即刷新缓冲区，确保日志被持久化
                 if let Err(e) = log_manager.flush_buffer() {
                     #[cfg(feature = "log")]
-                    warn!("Failed to flush WAL buffer for DROP TABLE {}: {:?}", table_name, e);
+                    warn!(
+                        "Failed to flush WAL buffer for DROP TABLE {}: {:?}",
+                        table_name, e
+                    );
                     // 继续执行，因为表删除操作已经完成
                 }
             }
@@ -2329,7 +2298,10 @@ impl DdlExecutor for RemDb {
         }
 
         // 3.5. 查找可重用的表ID（优先使用已删除的表ID）
-        let table_id = self.tables.iter().position(|t| t.is_none())
+        let table_id = self
+            .tables
+            .iter()
+            .position(|t| t.is_none())
             .unwrap_or(self.tables.len());
 
         // 3. 计算字段大小和偏移量
@@ -2341,7 +2313,10 @@ impl DdlExecutor for RemDb {
             fields.iter().enumerate()
         {
             #[cfg(feature = "log")]
-            debug!("field: name={}, type={:?}, dimension={}, distance_type={:?}", field_name, data_type, dimension, distance_type);
+            debug!(
+                "field: name={}, type={:?}, dimension={}, distance_type={:?}",
+                field_name, data_type, dimension, distance_type
+            );
             // 计算字段大小
             let field_size = match data_type {
                 DataType::VarChar | DataType::Char => {
@@ -2376,7 +2351,10 @@ impl DdlExecutor for RemDb {
             let field_name_static = Box::leak(field_name.to_string().into_boxed_str());
 
             // 检查是否为自增主键
-            let is_primary_key = primary_key.as_ref().map(|pk| pk.contains(&i)).unwrap_or(false);
+            let is_primary_key = primary_key
+                .as_ref()
+                .map(|pk| pk.contains(&i))
+                .unwrap_or(false);
             // 获取字段约束信息
             let default_constraint = FieldConstraint {
                 primary_key: is_primary_key,
@@ -2401,7 +2379,7 @@ impl DdlExecutor for RemDb {
 
             // 获取当前向量压缩配置
             let compression_config = crate::system_tables::get_vector_compression_config();
-            
+
             // 创建向量元数据（仅向量类型需要）
             let vector_metadata = if *data_type == DataType::Vector {
                 Some(VectorMetadata {
@@ -2432,7 +2410,7 @@ impl DdlExecutor for RemDb {
                 not_null: final_not_null,          // 应用非空约束
                 unique: final_unique,              // 应用唯一约束
                 auto_increment: is_auto_increment, // 应用自增约束
-                default_value: default_value.clone(),     // 设置字段默认值
+                default_value: default_value.clone(), // 设置字段默认值
                 vector_metadata,                   // 设置向量元数据
                 json_metadata: None,               // JSON元数据
             };
@@ -2561,92 +2539,93 @@ impl DdlExecutor for RemDb {
                 }
 
                 // 写入字段定义信息
-                    let mut offset = 67 + table_def.primary_key.len();
-                    for (_i, field) in table_def.fields.iter().enumerate() {
-                        // 检查缓冲区是否有足够空间写入基础字段信息
-                        // 基础信息：1字节长度 + 32字节名字 + 1字节类型 + 1字节约束 + 1字节默认值标志 + 2字节向量维度 = 38字节
-                        if offset + 38 > log_data.len() {
-                            break;
-                        }
+                let mut offset = 67 + table_def.primary_key.len();
+                for (_i, field) in table_def.fields.iter().enumerate() {
+                    // 检查缓冲区是否有足够空间写入基础字段信息
+                    // 基础信息：1字节长度 + 32字节名字 + 1字节类型 + 1字节约束 + 1字节默认值标志 + 2字节向量维度 = 38字节
+                    if offset + 38 > log_data.len() {
+                        break;
+                    }
 
-                        // 写入字段名
-                        let field_name = field.name.clone();
-                        let field_name_bytes = field_name.as_bytes();
-                        let field_name_len = core::cmp::min(field_name_bytes.len(), 32);
+                    // 写入字段名
+                    let field_name = field.name.clone();
+                    let field_name_bytes = field_name.as_bytes();
+                    let field_name_len = core::cmp::min(field_name_bytes.len(), 32);
 
-                        // 安全写入字段名长度
-                        log_data[offset] = field_name_len as u8;
+                    // 安全写入字段名长度
+                    log_data[offset] = field_name_len as u8;
+                    offset += 1;
+
+                    // 安全复制字段名
+                    let copy_end = core::cmp::min(offset + field_name_len, log_data.len());
+                    let actual_copy_len = copy_end - offset;
+                    log_data[offset..copy_end]
+                        .copy_from_slice(&field_name_bytes[..actual_copy_len]);
+                    // 固定32字节字段名空间，但要确保不超过缓冲区边界
+                    offset = core::cmp::min(offset + 32, log_data.len());
+
+                    // 检查数据类型写入边界
+                    if offset < log_data.len() {
+                        // 写入数据类型
+                        log_data[offset] = field.data_type as u8;
                         offset += 1;
+                    } else {
+                        break;
+                    }
 
-                        // 安全复制字段名
-                        let copy_end = core::cmp::min(offset + field_name_len, log_data.len());
-                        let actual_copy_len = copy_end - offset;
-                        log_data[offset..copy_end]
-                            .copy_from_slice(&field_name_bytes[..actual_copy_len]);
-                        // 固定32字节字段名空间，但要确保不超过缓冲区边界
-                        offset = core::cmp::min(offset + 32, log_data.len());
-
-                        // 检查数据类型写入边界
-                        if offset < log_data.len() {
-                            // 写入数据类型
-                            log_data[offset] = field.data_type as u8;
-                            offset += 1;
-                        } else {
-                            break;
+                    // 写入字段约束
+                    if offset < log_data.len() {
+                        let mut constraints = 0u8;
+                        if field.primary_key {
+                            constraints |= 0b0001;
                         }
-
-                        // 写入字段约束
-                        if offset < log_data.len() {
-                            let mut constraints = 0u8;
-                            if field.primary_key {
-                                constraints |= 0b0001;
-                            }
-                            if field.not_null {
-                                constraints |= 0b0010;
-                            }
-                            if field.unique {
-                                constraints |= 0b0100;
-                            }
-                            if field.auto_increment {
-                                constraints |= 0b1000;
-                            }
-                            log_data[offset] = constraints;
-                            offset += 1;
-                        } else {
-                            break;
+                        if field.not_null {
+                            constraints |= 0b0010;
                         }
-
-                        // 写入字段大小（4字节）
-                        if offset + 4 <= log_data.len() {
-                            let field_size_u32 = field.size as u32;
-                            log_data[offset..offset + 4].copy_from_slice(&field_size_u32.to_le_bytes());
-                            offset += 4;
-                        } else {
-                            break;
+                        if field.unique {
+                            constraints |= 0b0100;
                         }
+                        if field.auto_increment {
+                            constraints |= 0b1000;
+                        }
+                        log_data[offset] = constraints;
+                        offset += 1;
+                    } else {
+                        break;
+                    }
 
-                        // 写入向量维度（如果是向量类型）
-                        if offset + 2 <= log_data.len() {
-                            let mut vector_dimension = 0u16;
-                            if field.data_type == crate::types::DataType::Vector {
-                                if let Some(metadata) = &field.vector_metadata {
-                                    vector_dimension = metadata.dimension;
-                                }
+                    // 写入字段大小（4字节）
+                    if offset + 4 <= log_data.len() {
+                        let field_size_u32 = field.size as u32;
+                        log_data[offset..offset + 4].copy_from_slice(&field_size_u32.to_le_bytes());
+                        offset += 4;
+                    } else {
+                        break;
+                    }
+
+                    // 写入向量维度（如果是向量类型）
+                    if offset + 2 <= log_data.len() {
+                        let mut vector_dimension = 0u16;
+                        if field.data_type == crate::types::DataType::Vector {
+                            if let Some(metadata) = &field.vector_metadata {
+                                vector_dimension = metadata.dimension;
                             }
-                            log_data[offset..offset+2].copy_from_slice(&vector_dimension.to_le_bytes());
-                            offset += 2;
-                        } else {
-                            break;
                         }
+                        log_data[offset..offset + 2]
+                            .copy_from_slice(&vector_dimension.to_le_bytes());
+                        offset += 2;
+                    } else {
+                        break;
+                    }
 
-                        // 写入默认值存在标志
-                        if offset < log_data.len() {
-                            let has_default = field.default_value.is_some();
-                            log_data[offset] = has_default as u8;
-                            offset += 1;
-                        } else {
-                            break;
-                        }
+                    // 写入默认值存在标志
+                    if offset < log_data.len() {
+                        let has_default = field.default_value.is_some();
+                        log_data[offset] = has_default as u8;
+                        offset += 1;
+                    } else {
+                        break;
+                    }
 
                     // 写入默认值（如果有）
                     if let Some(default_value) = &field.default_value {
@@ -2742,7 +2721,9 @@ impl DdlExecutor for RemDb {
                                 }
                             }
                             // 字符串类型：1字节长度 + 64字节内容
-                            crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => {
+                            crate::types::DataType::VarChar
+                            | crate::types::DataType::Char
+                            | crate::types::DataType::Text => {
                                 if offset + 65 <= log_data.len() {
                                     let s = default_value.string;
                                     let string_len = core::cmp::min(
@@ -2777,7 +2758,8 @@ impl DdlExecutor for RemDb {
                             // JSON类型
                             crate::types::DataType::Json => {
                                 // JSON默认值处理
-                                if offset + 64 <= log_data.len() { // JsonStorage大小
+                                if offset + 64 <= log_data.len() {
+                                    // JsonStorage大小
                                     let json_storage = default_value.json_storage;
                                     let storage_ptr = &json_storage as *const _ as *const u8;
                                     std::ptr::copy(
@@ -2810,7 +2792,9 @@ impl DdlExecutor for RemDb {
                 };
 
                 let calculated_checksum =
-                    crate::transaction::Transaction::calculate_variable_size_log_item_checksum(&var_log_item);
+                    crate::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                        &var_log_item,
+                    );
 
                 var_log_item.header.checksum = calculated_checksum;
 
@@ -2978,7 +2962,9 @@ impl DdlExecutor for RemDb {
                 };
 
                 let calculated_checksum =
-                    crate::transaction::Transaction::calculate_variable_size_log_item_checksum(&var_log_item);
+                    crate::transaction::Transaction::calculate_variable_size_log_item_checksum(
+                        &var_log_item,
+                    );
 
                 var_log_item.header.checksum = calculated_checksum;
 
@@ -3001,11 +2987,7 @@ impl DdlExecutor for RemDb {
         RemDb::create_time_series_table(self, name, time_field, value_field, tag_fields, config)
     }
 
-    fn alter_table(
-        &mut self,
-        table_name: &str,
-        operation: AlterTableOperation,
-    ) -> Result<()> {
+    fn alter_table(&mut self, table_name: &str, operation: AlterTableOperation) -> Result<()> {
         #[cfg(feature = "log")]
         info!("Starting ALTER TABLE operation on {}", table_name);
 
@@ -3013,22 +2995,27 @@ impl DdlExecutor for RemDb {
         if crate::system_tables::is_system_table(table_name) {
             return Err(RemDbError::NotAllowed);
         }
-        
+
         // 1. 查找表
-        let table_index = self.tables.iter().position(|table_opt| {
-            if let Some(table) = table_opt {
-                table.def.name == table_name
-            } else {
-                false
-            }
-        })
-        .ok_or(RemDbError::TableNotFound)?;
+        let table_index = self
+            .tables
+            .iter()
+            .position(|table_opt| {
+                if let Some(table) = table_opt {
+                    table.def.name == table_name
+                } else {
+                    false
+                }
+            })
+            .ok_or(RemDbError::TableNotFound)?;
 
         #[cfg(feature = "log")]
         debug!("Found table at index {}", table_index);
 
         // 2. 获取当前表定义
-        let current_table = self.tables[table_index].as_ref().ok_or(RemDbError::TableNotFound)?;
+        let current_table = self.tables[table_index]
+            .as_ref()
+            .ok_or(RemDbError::TableNotFound)?;
         let mut new_table_def = (*current_table.def).clone();
 
         #[cfg(feature = "log")]
@@ -3037,9 +3024,16 @@ impl DdlExecutor for RemDb {
         // 3. 根据操作类型执行相应的表结构变更
         #[cfg(feature = "log")]
         debug!("Executing operation: {:?}", operation);
-        
+
         match operation {
-            AlterTableOperation::AddColumn { ref name, data_type, size, distance_type, ref default_value, ref constraints } => {
+            AlterTableOperation::AddColumn {
+                ref name,
+                data_type,
+                size,
+                distance_type,
+                ref default_value,
+                ref constraints,
+            } => {
                 // 检查列名是否已存在
                 if new_table_def.fields.iter().any(|f| f.name == *name) {
                     return Err(RemDbError::ConfigError);
@@ -3047,14 +3041,14 @@ impl DdlExecutor for RemDb {
 
                 // 计算新字段的偏移量
                 let new_offset = new_table_def.record_size;
-                
+
                 // 计算字段大小
                 let field_size = match data_type {
                     DataType::VarChar | DataType::Char | DataType::Text => size as usize,
                     DataType::Vector => {
                         // 向量类型：维度 * 4字节（f32）
                         size as usize * 4
-                    },
+                    }
                     _ => data_type.size().unwrap_or(0),
                 };
 
@@ -3069,7 +3063,11 @@ impl DdlExecutor for RemDb {
                     name: name.clone(),
                     data_type,
                     size: field_size,
-                    string_length: if matches!(data_type, DataType::VarChar | DataType::Char) { Some(size as usize) } else { None },
+                    string_length: if matches!(data_type, DataType::VarChar | DataType::Char) {
+                        Some(size as usize)
+                    } else {
+                        None
+                    },
                     offset: new_offset,
                     primary_key,
                     not_null,
@@ -3101,10 +3099,13 @@ impl DdlExecutor for RemDb {
                 new_table_def.record_size += field_size;
                 new_table_def.version += 1;
                 new_table_def.updated_at = crate::platform::get_timestamp_us();
-            },
+            }
             AlterTableOperation::DropColumn { ref name } => {
                 // 查找要删除的列
-                let field_index = new_table_def.fields.iter().position(|f| f.name == *name)
+                let field_index = new_table_def
+                    .fields
+                    .iter()
+                    .position(|f| f.name == *name)
                     .ok_or(RemDbError::FieldNotFound)?;
 
                 // 不能删除主键列
@@ -3129,10 +3130,20 @@ impl DdlExecutor for RemDb {
                 new_table_def.record_size = new_offset;
                 new_table_def.version += 1;
                 new_table_def.updated_at = crate::platform::get_timestamp_us();
-            },
-            AlterTableOperation::ModifyColumn { ref name, data_type, size, distance_type, ref default_value, ref constraints } => {
+            }
+            AlterTableOperation::ModifyColumn {
+                ref name,
+                data_type,
+                size,
+                distance_type,
+                ref default_value,
+                ref constraints,
+            } => {
                 // 查找要修改的列
-                let field_index = new_table_def.fields.iter().position(|f| f.name == *name)
+                let field_index = new_table_def
+                    .fields
+                    .iter()
+                    .position(|f| f.name == *name)
                     .ok_or(RemDbError::FieldNotFound)?;
 
                 let field = &mut new_table_def.fields[field_index];
@@ -3144,20 +3155,24 @@ impl DdlExecutor for RemDb {
                     DataType::Vector => {
                         // 向量类型：维度 * 4字节（f32）
                         size as usize * 4
-                    },
+                    }
                     _ => data_type.size().unwrap_or(0),
                 };
 
                 // 更新字段定义
                 field.data_type = data_type;
                 field.size = new_size;
-                field.string_length = if matches!(data_type, DataType::VarChar | DataType::Char) { Some(size as usize) } else { None };
+                field.string_length = if matches!(data_type, DataType::VarChar | DataType::Char) {
+                    Some(size as usize)
+                } else {
+                    None
+                };
                 field.default_value = default_value.clone();
                 field.primary_key = constraints.primary_key;
                 field.not_null = constraints.not_null;
                 field.unique = constraints.unique;
                 field.auto_increment = constraints.auto_increment;
-                
+
                 // 更新向量元数据
                 if data_type == DataType::Vector {
                     field.vector_metadata = Some(VectorMetadata {
@@ -3180,34 +3195,40 @@ impl DdlExecutor for RemDb {
                 // 如果字段大小改变，需要重新计算所有后续字段的偏移量
                 if new_size != old_size {
                     let size_diff = new_size - old_size;
-                    
+
                     // 更新后续字段的偏移量
                     for i in field_index + 1..new_table_def.fields.len() {
                         new_table_def.fields[i].offset += size_diff;
                     }
-                    
+
                     // 更新记录大小
                     new_table_def.record_size += size_diff;
                 }
 
                 new_table_def.version += 1;
                 new_table_def.updated_at = crate::platform::get_timestamp_us();
-            },
-            AlterTableOperation::RenameColumn { ref old_name, ref new_name } => {
+            }
+            AlterTableOperation::RenameColumn {
+                ref old_name,
+                ref new_name,
+            } => {
                 // 检查新列名是否已存在
                 if new_table_def.fields.iter().any(|f| f.name == *new_name) {
                     return Err(RemDbError::ConfigError);
                 }
 
                 // 查找要重命名的列
-                let field_index = new_table_def.fields.iter().position(|f| f.name == *old_name)
+                let field_index = new_table_def
+                    .fields
+                    .iter()
+                    .position(|f| f.name == *old_name)
                     .ok_or(RemDbError::FieldNotFound)?;
 
                 // 重命名列
                 new_table_def.fields[field_index].name = new_name.clone();
                 new_table_def.version += 1;
                 new_table_def.updated_at = crate::platform::get_timestamp_us();
-            },
+            }
         }
 
         // 4. 计算主键索引所需内存大小
@@ -3215,10 +3236,17 @@ impl DdlExecutor for RemDb {
         debug!("Calculating primary index memory size");
 
         let hash_table_size = (new_table_def.max_records * 2).next_power_of_two(); // 哈希表大小为记录数的2倍，取最近的2的幂
-        let index_memory_size = PrimaryIndex::calculate_memory_size(&new_table_def, hash_table_size, new_table_def.max_records);
+        let index_memory_size = PrimaryIndex::calculate_memory_size(
+            &new_table_def,
+            hash_table_size,
+            new_table_def.max_records,
+        );
 
         #[cfg(feature = "log")]
-        debug!("Hash table size: {}, index memory size: {}", hash_table_size, index_memory_size);
+        debug!(
+            "Hash table size: {}, index memory size: {}",
+            hash_table_size, index_memory_size
+        );
 
         // 分配内存
         #[cfg(feature = "log")]
@@ -3258,7 +3286,7 @@ impl DdlExecutor for RemDb {
 
         // 保存旧表引用
         let old_table = current_table;
-        
+
         // 创建新的主键索引
         let mut primary_index = unsafe {
             PrimaryIndex::new(
@@ -3269,22 +3297,25 @@ impl DdlExecutor for RemDb {
                 new_table_def_arc.max_records,
             )
         };
-        
+
         // 迁移数据
         unsafe {
             // 遍历旧表的所有记录槽
             for slot_id in 0..old_table.def.max_records {
                 let status_ptr = old_table.status_array.as_ptr().add(slot_id);
                 let status = &*status_ptr;
-                
+
                 // 只迁移已使用且可见的记录
                 if status.status == RecordStatus::Used {
                     // 获取旧记录的数据指针
-                    let old_record_ptr = old_table.data_start.as_ptr().add(slot_id * old_table.record_size);
-                    
+                    let old_record_ptr = old_table
+                        .data_start
+                        .as_ptr()
+                        .add(slot_id * old_table.record_size);
+
                     // 创建新记录缓冲区，大小为新表的记录大小
                     let mut new_record_data = vec![0u8; new_table.record_size];
-                    
+
                     // 迁移字段数据
                     match &operation {
                         AlterTableOperation::RenameColumn { .. } => {
@@ -3297,111 +3328,161 @@ impl DdlExecutor for RemDb {
                                     crate::platform::memcpy(
                                         new_record_data.as_mut_ptr().add(new_field.offset),
                                         old_record_ptr.add(old_field.offset),
-                                        copy_len
+                                        copy_len,
                                     );
                                 }
                             }
-                        },
+                        }
                         _ => {
                             // For other operations, match fields by name
                             for old_field in old_table.def.fields.iter() {
                                 // 查找新表中对应的字段（按名称匹配）
-                                if let Some(new_field) = new_table_def_arc.fields.iter().find(|f| f.name == old_field.name) {
+                                if let Some(new_field) = new_table_def_arc
+                                    .fields
+                                    .iter()
+                                    .find(|f| f.name == old_field.name)
+                                {
                                     // 复制字段数据
                                     let copy_len = core::cmp::min(old_field.size, new_field.size);
                                     crate::platform::memcpy(
                                         new_record_data.as_mut_ptr().add(new_field.offset),
                                         old_record_ptr.add(old_field.offset),
-                                        copy_len
+                                        copy_len,
                                     );
                                 }
                             }
-                            
+
                             // 为新添加的字段设置默认值
                             for new_field in new_table_def_arc.fields.iter() {
                                 // 检查是否为新字段（旧表中不存在）
-                                if !old_table.def.fields.iter().any(|f| f.name == new_field.name) {
+                                if !old_table
+                                    .def
+                                    .fields
+                                    .iter()
+                                    .any(|f| f.name == new_field.name)
+                                {
                                     // 如果有默认值，设置默认值
                                     if let Some(default_value) = &new_field.default_value {
                                         unsafe {
                                             match new_field.data_type {
                                                 DataType::UInt8 => {
-                                                    new_record_data[new_field.offset] = default_value.u8;
+                                                    new_record_data[new_field.offset] =
+                                                        default_value.u8;
                                                 }
                                                 DataType::UInt16 => {
                                                     core::ptr::write_unaligned(
-                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut u16,
+                                                        new_record_data
+                                                            .as_mut_ptr()
+                                                            .add(new_field.offset)
+                                                            as *mut u16,
                                                         default_value.u16,
                                                     );
                                                 }
                                                 DataType::UInt32 => {
                                                     core::ptr::write_unaligned(
-                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut u32,
+                                                        new_record_data
+                                                            .as_mut_ptr()
+                                                            .add(new_field.offset)
+                                                            as *mut u32,
                                                         default_value.u32,
                                                     );
                                                 }
                                                 DataType::UInt64 => {
                                                     core::ptr::write_unaligned(
-                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut u64,
+                                                        new_record_data
+                                                            .as_mut_ptr()
+                                                            .add(new_field.offset)
+                                                            as *mut u64,
                                                         default_value.u64,
                                                     );
                                                 }
                                                 DataType::Int8 => {
-                                                    new_record_data[new_field.offset] = default_value.i8 as u8;
+                                                    new_record_data[new_field.offset] =
+                                                        default_value.i8 as u8;
                                                 }
                                                 DataType::Int16 => {
                                                     core::ptr::write_unaligned(
-                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut i16,
+                                                        new_record_data
+                                                            .as_mut_ptr()
+                                                            .add(new_field.offset)
+                                                            as *mut i16,
                                                         default_value.i16,
                                                     );
                                                 }
                                                 DataType::Int32 => {
                                                     core::ptr::write_unaligned(
-                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut i32,
+                                                        new_record_data
+                                                            .as_mut_ptr()
+                                                            .add(new_field.offset)
+                                                            as *mut i32,
                                                         default_value.i32,
                                                     );
                                                 }
                                                 DataType::Int64 => {
                                                     core::ptr::write_unaligned(
-                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut i64,
+                                                        new_record_data
+                                                            .as_mut_ptr()
+                                                            .add(new_field.offset)
+                                                            as *mut i64,
                                                         default_value.i64,
                                                     );
                                                 }
                                                 DataType::Float32 => {
                                                     core::ptr::write_unaligned(
-                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut f32,
+                                                        new_record_data
+                                                            .as_mut_ptr()
+                                                            .add(new_field.offset)
+                                                            as *mut f32,
                                                         default_value.float32,
                                                     );
                                                 }
                                                 DataType::Float64 => {
                                                     core::ptr::write_unaligned(
-                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut f64,
+                                                        new_record_data
+                                                            .as_mut_ptr()
+                                                            .add(new_field.offset)
+                                                            as *mut f64,
                                                         default_value.float64,
                                                     );
                                                 }
                                                 DataType::Bool => {
-                                                    new_record_data[new_field.offset] = if default_value.bool { 1u8 } else { 0u8 };
+                                                    new_record_data[new_field.offset] =
+                                                        if default_value.bool { 1u8 } else { 0u8 };
                                                 }
                                                 DataType::Timestamp => {
                                                     core::ptr::write_unaligned(
-                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut crate::types::db_timestamp,
+                                                        new_record_data
+                                                            .as_mut_ptr()
+                                                            .add(new_field.offset)
+                                                            as *mut crate::types::db_timestamp,
                                                         default_value.time,
                                                     );
                                                 }
                                                 DataType::TimestampTZ => {
                                                     core::ptr::write_unaligned(
-                                                        new_record_data.as_mut_ptr().add(new_field.offset) as *mut crate::types::db_timestamp,
+                                                        new_record_data
+                                                            .as_mut_ptr()
+                                                            .add(new_field.offset)
+                                                            as *mut crate::types::db_timestamp,
                                                         default_value.time,
                                                     );
                                                 }
-                                                DataType::VarChar | DataType::Char | DataType::Text | DataType::Json => {
+                                                DataType::VarChar
+                                                | DataType::Char
+                                                | DataType::Text
+                                                | DataType::Json => {
                                                     // 字符串类型：直接写入字符串数据
                                                     let bytes = &default_value.string;
-                                                    let len = core::cmp::min(MAX_STRING_LEN, new_field.size);
+                                                    let len = core::cmp::min(
+                                                        MAX_STRING_LEN,
+                                                        new_field.size,
+                                                    );
                                                     unsafe {
                                                         core::ptr::copy_nonoverlapping(
                                                             bytes.as_ptr(),
-                                                            new_record_data.as_mut_ptr().add(new_field.offset),
+                                                            new_record_data
+                                                                .as_mut_ptr()
+                                                                .add(new_field.offset),
                                                             len,
                                                         );
                                                     }
@@ -3416,97 +3497,103 @@ impl DdlExecutor for RemDb {
                             }
                         }
                     }
-                    
+
                     // 直接插入新记录到新表，绕过约束验证和事务处理
-                        // 获取空闲槽
-                        let new_slot_id;
-                        let _is_overwrite = false;
-                        
-                        // 自旋锁保护
-                        crate::platform::spin_lock(&mut new_table.lock);
-                        
-                        // 检查是否有空闲槽
-                        if new_table.free_slot_count > 0 {
-                            // 从空闲槽栈获取空闲记录槽
-                            new_slot_id = *new_table.free_slots.as_ptr().add(new_table.free_slot_count - 1);
-                            new_table.free_slot_count -= 1;
-                        } else {
-                            // 没有空闲槽，跳过这条记录
-                            crate::platform::spin_unlock(&mut new_table.lock);
-                            continue;
-                        }
-                        
-                        // 释放锁
+                    // 获取空闲槽
+                    let new_slot_id;
+                    let _is_overwrite = false;
+
+                    // 自旋锁保护
+                    crate::platform::spin_lock(&mut new_table.lock);
+
+                    // 检查是否有空闲槽
+                    if new_table.free_slot_count > 0 {
+                        // 从空闲槽栈获取空闲记录槽
+                        new_slot_id = *new_table
+                            .free_slots
+                            .as_ptr()
+                            .add(new_table.free_slot_count - 1);
+                        new_table.free_slot_count -= 1;
+                    } else {
+                        // 没有空闲槽，跳过这条记录
                         crate::platform::spin_unlock(&mut new_table.lock);
-                        
-                        // 计算记录地址
-                        let record_ptr = new_table.data_start.as_ptr().add(new_slot_id * new_table.record_size);
-                        
-                        // 拷贝记录数据
-                        crate::platform::memcpy(
-                            record_ptr,
-                            new_record_data.as_ptr(),
-                            new_table.record_size
-                        );
-                        
-                        // 更新状态
-                        let status_ptr = new_table.status_array.as_ptr().add(new_slot_id);
-                        (*status_ptr).status = crate::types::RecordStatus::Used;
-                        (*status_ptr).version += 1;
-                        
-                        // 再次加锁，更新记录计数和max_pk
-                        crate::platform::spin_lock(&mut new_table.lock);
-                        new_table.record_count += 1;
-                        
-                        // 更新max_pk（如果有主键字段）
-                        if let Some(pk_field) = new_table_def_arc.fields.iter().find(|f| f.primary_key) {
-                            // 获取当前记录的主键值
-                            let pk_value = match pk_field.data_type {
-                                crate::types::DataType::UInt8 => {
-                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u8) as u64
-                                },
-                                crate::types::DataType::UInt16 => {
-                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u16) as u64
-                                },
-                                crate::types::DataType::UInt32 => {
-                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u32) as u64
-                                },
-                                crate::types::DataType::UInt64 => {
-                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const u64)
-                                },
-                                crate::types::DataType::Int8 => {
-                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i8) as u64
-                                },
-                                crate::types::DataType::Int16 => {
-                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i16) as u64
-                                },
-                                crate::types::DataType::Int32 => {
-                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i32) as u64
-                                },
-                                crate::types::DataType::Int64 => {
-                                    core::ptr::read_unaligned(record_ptr.add(pk_field.offset) as *const i64) as u64
-                                },
-                                _ => 0,
-                            };
-                            
-                            if pk_value > new_table.max_pk {
-                                new_table.max_pk = pk_value;
-                            }
+                        continue;
+                    }
+
+                    // 释放锁
+                    crate::platform::spin_unlock(&mut new_table.lock);
+
+                    // 计算记录地址
+                    let record_ptr = new_table
+                        .data_start
+                        .as_ptr()
+                        .add(new_slot_id * new_table.record_size);
+
+                    // 拷贝记录数据
+                    crate::platform::memcpy(
+                        record_ptr,
+                        new_record_data.as_ptr(),
+                        new_table.record_size,
+                    );
+
+                    // 更新状态
+                    let status_ptr = new_table.status_array.as_ptr().add(new_slot_id);
+                    (*status_ptr).status = crate::types::RecordStatus::Used;
+                    (*status_ptr).version += 1;
+
+                    // 再次加锁，更新记录计数和max_pk
+                    crate::platform::spin_lock(&mut new_table.lock);
+                    new_table.record_count += 1;
+
+                    // 更新max_pk（如果有主键字段）
+                    if let Some(pk_field) = new_table_def_arc.fields.iter().find(|f| f.primary_key)
+                    {
+                        // 获取当前记录的主键值
+                        let pk_value = match pk_field.data_type {
+                            crate::types::DataType::UInt8 => core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const u8,
+                            ) as u64,
+                            crate::types::DataType::UInt16 => core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const u16,
+                            ) as u64,
+                            crate::types::DataType::UInt32 => core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const u32,
+                            ) as u64,
+                            crate::types::DataType::UInt64 => core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const u64,
+                            ),
+                            crate::types::DataType::Int8 => core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const i8,
+                            ) as u64,
+                            crate::types::DataType::Int16 => core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const i16,
+                            ) as u64,
+                            crate::types::DataType::Int32 => core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const i32,
+                            ) as u64,
+                            crate::types::DataType::Int64 => core::ptr::read_unaligned(
+                                record_ptr.add(pk_field.offset) as *const i64,
+                            ) as u64,
+                            _ => 0,
+                        };
+
+                        if pk_value > new_table.max_pk {
+                            new_table.max_pk = pk_value;
                         }
-                        
-                        crate::platform::spin_unlock(&mut new_table.lock);
-                        
-                        // 插入到主键索引（不需要锁，因为索引还未被使用）
-                        if !new_table_def_arc.primary_key.is_empty() {
-                            primary_index.insert_composite(
-                                record_ptr,
-                                new_slot_id as u16
-                            ).map_err(|e| {
+                    }
+
+                    crate::platform::spin_unlock(&mut new_table.lock);
+
+                    // 插入到主键索引（不需要锁，因为索引还未被使用）
+                    if !new_table_def_arc.primary_key.is_empty() {
+                        primary_index
+                            .insert_composite(record_ptr, new_slot_id as u16)
+                            .map_err(|e| {
                                 #[cfg(feature = "log")]
                                 error!("Failed to insert into primary index: {:?}", e);
                                 e
                             })?;
-                        }
+                    }
                 }
             }
         }
@@ -3519,7 +3606,7 @@ impl DdlExecutor for RemDb {
 
         // 8. 替换旧的主键索引
         self.primary_indices[table_index] = Some(primary_index);
-        
+
         // 10. 重置辅助索引（因为表结构已经改变）
         self.secondary_indices[table_index] = None;
 
@@ -3530,13 +3617,13 @@ impl DdlExecutor for RemDb {
             if let Some(log_manager) = tx_manager.get_log_manager_mut() {
                 // 序列化表结构变更信息
                 let mut log_data = [0u8; 512];
-                
+
                 // 写入表名
                 let name_bytes = table_name.as_bytes();
                 let name_len = core::cmp::min(name_bytes.len(), 64);
                 log_data[0] = name_len as u8;
                 log_data[1..1 + name_len].copy_from_slice(&name_bytes[..name_len]);
-                
+
                 // 写入操作类型
                 let op_type_code = match &operation {
                     AlterTableOperation::AddColumn { .. } => 0,
@@ -3545,26 +3632,34 @@ impl DdlExecutor for RemDb {
                     AlterTableOperation::RenameColumn { .. } => 3,
                 };
                 log_data[65] = op_type_code;
-                
+
                 // 写入表ID
                 log_data[66] = table_index as u8;
-                
+
                 // 根据操作类型写入详细信息
                 let mut data_size = 67;
                 match &operation {
-                    AlterTableOperation::AddColumn { ref name, ref data_type, size, distance_type: _, default_value: _, ref constraints } => {
+                    AlterTableOperation::AddColumn {
+                        ref name,
+                        ref data_type,
+                        size,
+                        distance_type: _,
+                        default_value: _,
+                        ref constraints,
+                    } => {
                         // 写入列名
                         let name_bytes = name.as_bytes();
                         let col_name_len = core::cmp::min(name_bytes.len(), 64);
                         log_data[67] = col_name_len as u8;
-                        log_data[68..68 + col_name_len].copy_from_slice(&name_bytes[..col_name_len]);
-                        
+                        log_data[68..68 + col_name_len]
+                            .copy_from_slice(&name_bytes[..col_name_len]);
+
                         // 写入数据类型
                         log_data[132] = (*data_type) as u8;
-                        
+
                         // 写入大小
                         log_data[133..135].copy_from_slice(&size.to_le_bytes());
-                        
+
                         // 写入约束
                         let mut constraint_bits = 0u8;
                         if constraints.primary_key {
@@ -3580,31 +3675,40 @@ impl DdlExecutor for RemDb {
                             constraint_bits |= 0b1000;
                         }
                         log_data[135] = constraint_bits;
-                        
+
                         data_size = 136;
-                    },
+                    }
                     AlterTableOperation::DropColumn { ref name } => {
                         // 写入列名
                         let name_bytes = name.as_bytes();
                         let col_name_len = core::cmp::min(name_bytes.len(), 64);
                         log_data[67] = col_name_len as u8;
-                        log_data[68..68 + col_name_len].copy_from_slice(&name_bytes[..col_name_len]);
-                        
+                        log_data[68..68 + col_name_len]
+                            .copy_from_slice(&name_bytes[..col_name_len]);
+
                         data_size = 68 + col_name_len;
-                    },
-                    AlterTableOperation::ModifyColumn { ref name, ref data_type, size, distance_type: _, default_value: _, ref constraints } => {
+                    }
+                    AlterTableOperation::ModifyColumn {
+                        ref name,
+                        ref data_type,
+                        size,
+                        distance_type: _,
+                        default_value: _,
+                        ref constraints,
+                    } => {
                         // 写入列名
                         let name_bytes = name.as_bytes();
                         let col_name_len = core::cmp::min(name_bytes.len(), 64);
                         log_data[67] = col_name_len as u8;
-                        log_data[68..68 + col_name_len].copy_from_slice(&name_bytes[..col_name_len]);
-                        
+                        log_data[68..68 + col_name_len]
+                            .copy_from_slice(&name_bytes[..col_name_len]);
+
                         // 写入数据类型
                         log_data[132] = (*data_type) as u8;
-                        
+
                         // 写入大小
                         log_data[133..135].copy_from_slice(&size.to_le_bytes());
-                        
+
                         // 写入约束
                         let mut constraint_bits = 0u8;
                         if constraints.primary_key {
@@ -3620,26 +3724,31 @@ impl DdlExecutor for RemDb {
                             constraint_bits |= 0b1000;
                         }
                         log_data[135] = constraint_bits;
-                        
+
                         data_size = 136;
-                    },
-                    AlterTableOperation::RenameColumn { ref old_name, ref new_name } => {
+                    }
+                    AlterTableOperation::RenameColumn {
+                        ref old_name,
+                        ref new_name,
+                    } => {
                         // 写入旧列名
                         let old_name_bytes = old_name.as_bytes();
                         let old_col_name_len = core::cmp::min(old_name_bytes.len(), 64);
                         log_data[67] = old_col_name_len as u8;
-                        log_data[68..68 + old_col_name_len].copy_from_slice(&old_name_bytes[..old_col_name_len]);
-                        
+                        log_data[68..68 + old_col_name_len]
+                            .copy_from_slice(&old_name_bytes[..old_col_name_len]);
+
                         // 写入新列名
                         let new_name_bytes = new_name.as_bytes();
                         let new_col_name_len = core::cmp::min(new_name_bytes.len(), 64);
                         log_data[132] = new_col_name_len as u8;
-                        log_data[133..133 + new_col_name_len].copy_from_slice(&new_name_bytes[..new_col_name_len]);
-                        
+                        log_data[133..133 + new_col_name_len]
+                            .copy_from_slice(&new_name_bytes[..new_col_name_len]);
+
                         data_size = 133 + new_col_name_len;
-                    },
+                    }
                 }
-                
+
                 // 创建日志项
                 let log_item = crate::transaction::LogItem {
                     op_type: crate::transaction::LogOperation::AlterTable,
@@ -3653,7 +3762,7 @@ impl DdlExecutor for RemDb {
                 };
 
                 // 计算校验和
-                let calculated_checksum = 
+                let calculated_checksum =
                     crate::transaction::Transaction::calculate_log_item_checksum(&log_item);
 
                 let mut final_log_item = log_item;
@@ -3761,7 +3870,14 @@ impl RemDb {
         primary_key: Option<Vec<usize>>,
         max_records: Option<usize>,
     ) -> Result<()> {
-        DdlExecutor::create_table(self, table_name, fields, constraints, primary_key, max_records)
+        DdlExecutor::create_table(
+            self,
+            table_name,
+            fields,
+            constraints,
+            primary_key,
+            max_records,
+        )
     }
 
     /// 创建时序表
@@ -3863,8 +3979,8 @@ impl RemDb {
         // 3. 创建时序表定义
         let time_series_table_def = time_series::TimeSeriesTableDef {
             base: table_def,
-            time_field: 0,                        // 时间字段索引
-            value_field: 1,                       // 值字段索引
+            time_field: 0,                                    // 时间字段索引
+            value_field: 1,                                   // 值字段索引
             tag_fields: tag_field_indices.into_boxed_slice(), // 标签字段索引列表
             config: config.unwrap_or(time_series::TimeSeriesConfig::DEFAULT), // 时序数据配置
         };
@@ -4243,23 +4359,25 @@ impl RemDb {
                 // 生成CREATE INDEX语句（如果有辅助索引）
                 if let Some(secondary_index) = &table.def.secondary_index {
                     if !secondary_index.is_empty() {
-                        let index_fields = secondary_index.iter()
+                        let index_fields = secondary_index
+                            .iter()
                             .filter(|&&idx| idx < table.def.fields.len())
                             .map(|&idx| &table.def.fields[idx])
                             .collect::<Vec<_>>();
-                        
+
                         if !index_fields.is_empty() {
-                            let field_names = index_fields.iter()
+                            let field_names = index_fields
+                                .iter()
                                 .map(|f| f.name.clone())
                                 .collect::<Vec<_>>()
                                 .join(", ");
-                            
+
                             let index_name = format!(
-                                "idx_{}_{}", 
-                                table.def.name.to_lowercase(), 
+                                "idx_{}_{}",
+                                table.def.name.to_lowercase(),
                                 field_names.replace(", ", "_")
                             );
-                            
+
                             let index_type = match table.def.secondary_index_type {
                                 IndexType::Hash => "hash",
                                 IndexType::SortedArray => "sortedarray",
@@ -4648,23 +4766,29 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
     unsafe {
         // 无论是否已经初始化过，都创建一个新的数据库实例
         let mut db = RemDb::new(config);
-        
+
         // 从配置创建表
         for (table_id, table_def) in config.tables.iter().enumerate() {
             // 创建表
             let table_def_arc = alloc::sync::Arc::new(table_def.clone());
             let table = MemoryTable::new(table_def_arc.clone())?;
             db.tables.push(Some(table));
-            
+
             // 创建主键索引
             let hash_table_size = (table_def.max_records * 2).next_power_of_two();
-            let index_memory_size =
-                crate::index::PrimaryIndex::calculate_memory_size(table_def, hash_table_size, table_def.max_records);
+            let index_memory_size = crate::index::PrimaryIndex::calculate_memory_size(
+                table_def,
+                hash_table_size,
+                table_def.max_records,
+            );
             let index_memory = crate::memory::allocator::alloc(index_memory_size)?;
-            let hash_table_start = index_memory.as_ptr() as *mut core::option::Option<core::ptr::NonNull<crate::index::PrimaryIndexItem>>;
+            let hash_table_start = index_memory.as_ptr()
+                as *mut core::option::Option<core::ptr::NonNull<crate::index::PrimaryIndexItem>>;
             let items_start = (index_memory.as_ptr() as usize
-                + hash_table_size * core::mem::size_of::<core::option::Option<core::ptr::NonNull<crate::index::PrimaryIndexItem>>>())
-                as *mut crate::index::PrimaryIndexItem;
+                + hash_table_size
+                    * core::mem::size_of::<
+                        core::option::Option<core::ptr::NonNull<crate::index::PrimaryIndexItem>>,
+                    >()) as *mut crate::index::PrimaryIndexItem;
             let primary_index = crate::index::PrimaryIndex::new(
                 table_def_arc,
                 hash_table_start,
@@ -4675,17 +4799,19 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
             db.primary_indices.push(Some(primary_index));
             db.secondary_indices.push(None);
         }
-        
+
         // 初始化数据库（包括系统表）
         db.init()?;
-        
+
         // 初始化 DatabaseManager，添加默认数据库
         let _ = db.database_manager.create_database("default", "", None);
-        
+
         // 将新的数据库实例赋值给 DB_INSTANCE
         // 旧实例会被自动丢弃（Option::Some -> Some 替换时旧值被 drop）
         DB_INSTANCE = Some(db);
-        Ok(DB_INSTANCE.as_mut().ok_or(RemDbError::UnexpectedNone("DB not initialized"))?)
+        Ok(DB_INSTANCE
+            .as_mut()
+            .ok_or(RemDbError::UnexpectedNone("DB not initialized"))?)
     }
 }
 

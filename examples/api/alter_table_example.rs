@@ -45,6 +45,8 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -56,10 +58,10 @@ fn main() -> Result<()> {
     println!("1. 创建初始表");
     db.sql_query("CREATE TABLE users (id INT32 PRIMARY KEY, name TEXT NOT NULL)")?;
     println!("   创建表: users (id, name)");
-    
+
     db.sql_query("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')")?;
     println!("   插入测试数据");
-    
+
     let result = db.sql_query("SELECT * FROM users")?;
     println!("\n   当前表结构:");
     println!("{}", result.to_string());
@@ -68,7 +70,7 @@ fn main() -> Result<()> {
     println!("\n2. 添加新列 (SQL 方式)");
     db.sql_query("ALTER TABLE users ADD COLUMN age INT32")?;
     println!("   添加列: age (INT32)");
-    
+
     let result = db.sql_query("SELECT * FROM users")?;
     println!("\n   添加列后的数据:");
     println!("{}", result.to_string());
@@ -77,7 +79,7 @@ fn main() -> Result<()> {
     println!("\n3. 添加带默认值的列");
     db.sql_query("ALTER TABLE users ADD COLUMN active BOOLEAN DEFAULT true")?;
     println!("   添加列: active (BOOLEAN, 默认值: true)");
-    
+
     let result = db.sql_query("SELECT * FROM users")?;
     println!("\n   添加列后的数据:");
     println!("{}", result.to_string());
@@ -99,7 +101,7 @@ fn main() -> Result<()> {
     };
     db.alter_table("users", operation)?;
     println!("   通过 API 添加列: email (VARCHAR(64))");
-    
+
     let result = db.sql_query("SELECT * FROM users")?;
     println!("\n   添加列后的数据:");
     println!("{}", result.to_string());
@@ -110,7 +112,7 @@ fn main() -> Result<()> {
     db.sql_query("UPDATE users SET age = 25, email = 'bob@example.com' WHERE id = 2")?;
     db.sql_query("UPDATE users SET age = 35, email = 'charlie@example.com' WHERE id = 3")?;
     println!("   更新 age 和 email 字段");
-    
+
     let result = db.sql_query("SELECT * FROM users")?;
     println!("\n   更新后的数据:");
     println!("{}", result.to_string());
@@ -128,7 +130,7 @@ fn main() -> Result<()> {
     };
     db.alter_table("users", operation)?;
     println!("   重命名列: email -> email_address");
-    
+
     let result = db.sql_query("SELECT * FROM users")?;
     println!("\n   重命名后的数据:");
     println!("{}", result.to_string());
@@ -137,7 +139,7 @@ fn main() -> Result<()> {
     println!("\n8. 删除列");
     db.sql_query("ALTER TABLE users DROP COLUMN active")?;
     println!("   删除列: active");
-    
+
     let result = db.sql_query("SELECT * FROM users")?;
     println!("\n   删除列后的数据:");
     println!("{}", result.to_string());
@@ -147,8 +149,9 @@ fn main() -> Result<()> {
     db.sql_query("ALTER TABLE users ADD COLUMN created_at TIMESTAMP")?;
     db.sql_query("ALTER TABLE users ADD COLUMN updated_at TIMESTAMP")?;
     println!("   添加列: created_at, updated_at");
-    
-    let result = db.sql_query("SELECT id, name, age, email_address, created_at, updated_at FROM users")?;
+
+    let result =
+        db.sql_query("SELECT id, name, age, email_address, created_at, updated_at FROM users")?;
     println!("\n   最终表结构:");
     println!("{}", result.to_string());
 

@@ -46,6 +46,8 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -58,15 +60,17 @@ fn main() -> Result<()> {
     println!("1. Create table with vector field");
     db.sql_query("CREATE TABLE documents (id INT32 PRIMARY KEY, title TEXT, content TEXT, embedding VECTOR(128) WITH DISTANCE=L2)")?;
     println!("   Created table: documents (with 128-dim vector field)");
-    
+
     db.sql_query("CREATE TABLE products (id INT32 PRIMARY KEY, name TEXT, price REAL, features VECTOR(64) WITH DISTANCE=COSINE)")?;
     println!("   Created table: products (with 64-dim vector field)");
 
     // 2. Insert vector data
     println!("\n2. Insert vector data");
-    
+
     for i in 1..=5 {
-        let embedding: Vec<String> = (0..128).map(|j| format!("{:.4}", (i as f64 * 0.1 + j as f64 * 0.01))).collect();
+        let embedding: Vec<String> = (0..128)
+            .map(|j| format!("{:.4}", (i as f64 * 0.1 + j as f64 * 0.01)))
+            .collect();
         let embedding_str = format!("[{}]", embedding.join(", "));
         let sql = format!(
             "INSERT INTO documents VALUES ({}, 'Doc {}', 'Content for document {}', '{}')",
@@ -75,13 +79,18 @@ fn main() -> Result<()> {
         db.sql_query(&sql)?;
     }
     println!("   Inserted 5 document records");
-    
+
     for i in 1..=5 {
-        let features: Vec<String> = (0..64).map(|j| format!("{:.4}", (i as f64 * 0.2 + j as f64 * 0.02))).collect();
+        let features: Vec<String> = (0..64)
+            .map(|j| format!("{:.4}", (i as f64 * 0.2 + j as f64 * 0.02)))
+            .collect();
         let features_str = format!("[{}]", features.join(", "));
         let sql = format!(
             "INSERT INTO products VALUES ({}, 'Product {}', {}, '{}')",
-            i, i, i as f64 * 10.0, features_str
+            i,
+            i,
+            i as f64 * 10.0,
+            features_str
         );
         db.sql_query(&sql)?;
     }
@@ -89,7 +98,7 @@ fn main() -> Result<()> {
 
     // 3. Create vector index
     println!("\n3. Create vector index");
-    
+
     let result = db.sql_query("CREATE INDEX idx_doc_embedding ON documents (embedding) USING HNSW WITH (M=16, ef_construction=200, DISTANCE=L2)");
     match result {
         Ok(_) => println!("   Created HNSW index: idx_doc_embedding"),
@@ -98,10 +107,12 @@ fn main() -> Result<()> {
 
     // 4. Vector distance operator - L2 distance (<->)
     println!("\n4. Vector distance operator - L2 distance (<->)");
-    
-    let query_vec: Vec<String> = (0..128).map(|j| format!("{:.4}", j as f64 * 0.01)).collect();
+
+    let query_vec: Vec<String> = (0..128)
+        .map(|j| format!("{:.4}", j as f64 * 0.01))
+        .collect();
     let query_str = format!("[{}]", query_vec.join(", "));
-    
+
     let result = db.sql_query(&format!(
         "SELECT id, title, embedding <-> '{}' AS distance FROM documents ORDER BY distance LIMIT 3",
         query_str
@@ -116,10 +127,10 @@ fn main() -> Result<()> {
 
     // 5. Vector distance operator - Cosine similarity (<=>)
     println!("\n5. Vector distance operator - Cosine similarity (<=>)");
-    
+
     let query_vec2: Vec<String> = (0..64).map(|j| format!("{:.4}", j as f64 * 0.02)).collect();
     let query_str2 = format!("[{}]", query_vec2.join(", "));
-    
+
     let result = db.sql_query(&format!(
         "SELECT id, name, features <=> '{}' AS similarity FROM products ORDER BY similarity DESC LIMIT 3",
         query_str2
@@ -134,7 +145,7 @@ fn main() -> Result<()> {
 
     // 6. Vector search + scalar filter
     println!("\n6. Vector search + scalar filter");
-    
+
     let result = db.sql_query(&format!(
         "SELECT id, name, price, features <=> '{}' AS similarity FROM products WHERE price < 40.0 ORDER BY similarity DESC LIMIT 5",
         query_str2

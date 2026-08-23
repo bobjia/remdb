@@ -523,11 +523,11 @@ fn test_vector_knn_search() {
 
     // 插入测试数据
     let test_vectors = vec![
-        ([1.0, 1.0, 1.0, 1.0], 1),  // 与查询向量最接近
+        ([1.0, 1.0, 1.0, 1.0], 1), // 与查询向量最接近
         ([2.0, 2.0, 2.0, 2.0], 1),
         ([3.0, 3.0, 3.0, 3.0], 2),
         ([4.0, 4.0, 4.0, 4.0], 2),
-        ([10.0, 10.0, 10.0, 10.0], 1),  // 与查询向量最远
+        ([10.0, 10.0, 10.0, 10.0], 1), // 与查询向量最远
     ];
 
     for (i, (vec, category)) in test_vectors.iter().enumerate() {
@@ -612,7 +612,7 @@ fn test_vector_distance_calculation() {
 
     // 测试不同距离计算
     println!("测试不同距离计算:");
-    
+
     // 测试L2距离
     println!("1. 测试L2距离计算");
     let l2_result = db.sql_query(

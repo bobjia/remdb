@@ -1,7 +1,7 @@
 // 运行时DDL配置示例
 
 // 运行时DDL配置示例
-use remdb::config::{DbConfig, LogMode, WALConfig, WALCompressionType};
+use remdb::config::{DbConfig, LogMode, WALCompressionType, WALConfig};
 #[cfg(feature = "ha")]
 use remdb::ha::{HAConfig, HARole, ReplicationMode};
 use remdb::memory::allocator::init_global_allocator;
@@ -57,7 +57,10 @@ fn main() {
                 ) -> remdb::platform::FileResult<remdb::platform::FileHandle> {
                     Err(())
                 }
-                fn file_close(&self, _handle: remdb::platform::FileHandle) -> remdb::platform::FileResult<()> {
+                fn file_close(
+                    &self,
+                    _handle: remdb::platform::FileHandle,
+                ) -> remdb::platform::FileResult<()> {
                     Err(())
                 }
                 fn file_write(
@@ -108,7 +111,8 @@ fn main() {
         default_max_records: 10, // 减少默认最大记录数，避免内存不足
         memory_allocator: unsafe {
             // 使用静态DEFAULT_ALLOCATOR
-            static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
+            static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator =
+                remdb::config::DefaultMemoryAllocator;
             &mut DEFAULT_ALLOCATOR
         },
         wal_config: WALConfig {
@@ -141,6 +145,8 @@ fn main() {
             master_port: None,
             replication_port: 5556,
         }),
+
+        model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
     // 创建数据库实例

@@ -109,10 +109,7 @@ impl ReplicationManager {
             Err(e) => {
                 // 订阅失败，记录错误但继续运行（测试环境可能没有网络）
                 #[cfg(feature = "log")]
-                error!(
-                    "Failed to subscribe to WAL replication topic: {:?}",
-                    e
-                );
+                error!("Failed to subscribe to WAL replication topic: {:?}", e);
             }
         }
 
@@ -217,12 +214,13 @@ impl ReplicationManager {
                             if offset >= log_data.len() {
                                 break;
                             }
-                            
+
                             // 解析字段名 - 添加安全检查
                             let field_name_len = log_data[offset] as usize;
                             offset += 1;
                             // 确保offset + field_name_len不超过log_data的大小
-                            let safe_field_name_len = core::cmp::min(field_name_len, log_data.len() - offset);
+                            let safe_field_name_len =
+                                core::cmp::min(field_name_len, log_data.len() - offset);
                             let field_name = core::str::from_utf8(
                                 &log_data[offset..offset + safe_field_name_len],
                             )
@@ -234,7 +232,7 @@ impl ReplicationManager {
                             if offset >= log_data.len() {
                                 break;
                             }
-                            
+
                             // 解析数据类型
                             let data_type = crate::types::DataType::from(log_data[offset]);
                             offset += 1;
@@ -243,7 +241,7 @@ impl ReplicationManager {
                             if offset >= log_data.len() {
                                 break;
                             }
-                            
+
                             // 解析字段约束
                             let constraints = log_data[offset];
                             offset += 1;
@@ -256,7 +254,7 @@ impl ReplicationManager {
                             if offset >= log_data.len() {
                                 break;
                             }
-                            
+
                             // 解析默认值存在标志
                             let has_default = log_data[offset] != 0;
                             offset += 1;
@@ -440,7 +438,9 @@ impl ReplicationManager {
                                             offset = log_data.len();
                                         }
                                     }
-                                    crate::types::DataType::VarChar | crate::types::DataType::Char | crate::types::DataType::Text => {
+                                    crate::types::DataType::VarChar
+                                    | crate::types::DataType::Char
+                                    | crate::types::DataType::Text => {
                                         // 确保offset不超过log_data的大小
                                         if offset < log_data.len() {
                                             let string_len = log_data[offset] as usize;
@@ -449,7 +449,8 @@ impl ReplicationManager {
                                             // 安全检查：确保string_len不超过缓冲区大小
                                             let copy_len = core::cmp::min(string_len, 64);
                                             // 确保offset + copy_len不超过log_data的大小
-                                            let safe_copy_len = core::cmp::min(copy_len, log_data.len() - offset);
+                                            let safe_copy_len =
+                                                core::cmp::min(copy_len, log_data.len() - offset);
                                             if safe_copy_len > 0 {
                                                 string_data[..safe_copy_len].copy_from_slice(
                                                     &log_data[offset..offset + safe_copy_len],
@@ -483,8 +484,7 @@ impl ReplicationManager {
                                     }
                                     crate::types::DataType::Interval => {
                                         // 解析Interval类型，读取value、precision和flags
-                                        let interval_value_bytes = log_data
-                                            [offset..offset + 8]
+                                        let interval_value_bytes = log_data[offset..offset + 8]
                                             .try_into()
                                             .expect("type conversion should not fail");
                                         let interval_value =
@@ -572,14 +572,12 @@ impl ReplicationManager {
                         // 执行创建索引操作
                         // 从日志中解析表名和字段名
                         let table_name_len = log_data[0] as usize;
-                        let table_name =
-                            core::str::from_utf8(&log_data[1..1 + table_name_len])
-                                .unwrap_or("unknown");
+                        let table_name = core::str::from_utf8(&log_data[1..1 + table_name_len])
+                            .unwrap_or("unknown");
 
                         let field_name_len = log_data[65] as usize;
-                        let field_name =
-                            core::str::from_utf8(&log_data[66..66 + field_name_len])
-                                .unwrap_or("unknown");
+                        let field_name = core::str::from_utf8(&log_data[66..66 + field_name_len])
+                            .unwrap_or("unknown");
 
                         let index_type: crate::types::IndexType = log_data[130].into();
 
@@ -605,7 +603,8 @@ impl ReplicationManager {
                         if table_id < db.tables.len() {
                             if let Some(table) = &mut db.tables[table_id] {
                                 let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                                let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                                let record_ptr =
+                                    table.get_record_ptr_mut(log_item.record_id as usize);
 
                                 // 复制数据到记录位置
                                 crate::platform::memcpy(
@@ -629,10 +628,14 @@ impl ReplicationManager {
                                         let mut found = false;
                                         let mut i = 0;
                                         while i < table.free_slot_count {
-                                            if *table.free_slots.as_ptr().add(i) == log_item.record_id as usize {
+                                            if *table.free_slots.as_ptr().add(i)
+                                                == log_item.record_id as usize
+                                            {
                                                 // 找到，将最后一个元素移动到当前位置
-                                                *table.free_slots.as_ptr().add(i) =
-                                                    *table.free_slots.as_ptr().add(table.free_slot_count - 1);
+                                                *table.free_slots.as_ptr().add(i) = *table
+                                                    .free_slots
+                                                    .as_ptr()
+                                                    .add(table.free_slot_count - 1);
                                                 table.free_slot_count -= 1;
                                                 found = true;
                                                 break;
@@ -657,39 +660,54 @@ impl ReplicationManager {
                                     // 先删除旧的索引项（如果存在）
                                     let _ = primary_index.delete_composite(record_ptr);
                                     // 使用复合键插入方法
-                                    let _ = primary_index.insert_composite(
-                                        record_ptr,
-                                        log_item.record_id as u16,
-                                    );
+                                    let _ = primary_index
+                                        .insert_composite(record_ptr, log_item.record_id as u16);
                                 }
 
                                 // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
                                 // 对于复合主键，只考虑第一个主键字段
                                 if !table.def.primary_key.is_empty() {
-                                    let primary_key_field = &table.def.fields[table.def.primary_key[0]];
+                                    let primary_key_field =
+                                        &table.def.fields[table.def.primary_key[0]];
                                     let key_ptr = record_ptr.add(primary_key_field.offset);
                                     let new_pk = match primary_key_field.data_type {
                                         crate::types::DataType::UInt8 => {
-                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const u8) }) as u64
+                                            (unsafe {
+                                                std::ptr::read_unaligned(key_ptr as *const u8)
+                                            }) as u64
                                         }
                                         crate::types::DataType::UInt16 => {
-                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const u16) }) as u64
+                                            (unsafe {
+                                                std::ptr::read_unaligned(key_ptr as *const u16)
+                                            }) as u64
                                         }
                                         crate::types::DataType::UInt32 => {
-                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const u32) }) as u64
+                                            (unsafe {
+                                                std::ptr::read_unaligned(key_ptr as *const u32)
+                                            }) as u64
                                         }
-                                        crate::types::DataType::UInt64 => unsafe { std::ptr::read_unaligned(key_ptr as *const u64) },
+                                        crate::types::DataType::UInt64 => unsafe {
+                                            std::ptr::read_unaligned(key_ptr as *const u64)
+                                        },
                                         crate::types::DataType::Int8 => {
-                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const i8) }) as u64
+                                            (unsafe {
+                                                std::ptr::read_unaligned(key_ptr as *const i8)
+                                            }) as u64
                                         }
                                         crate::types::DataType::Int16 => {
-                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const i16) }) as u64
+                                            (unsafe {
+                                                std::ptr::read_unaligned(key_ptr as *const i16)
+                                            }) as u64
                                         }
                                         crate::types::DataType::Int32 => {
-                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const i32) }) as u64
+                                            (unsafe {
+                                                std::ptr::read_unaligned(key_ptr as *const i32)
+                                            }) as u64
                                         }
                                         crate::types::DataType::Int64 => {
-                                            (unsafe { std::ptr::read_unaligned(key_ptr as *const i64) }) as u64
+                                            (unsafe {
+                                                std::ptr::read_unaligned(key_ptr as *const i64)
+                                            }) as u64
                                         }
                                         _ => 0,
                                     };
@@ -706,7 +724,11 @@ impl ReplicationManager {
                             }
                         } else {
                             #[cfg(feature = "log")]
-                            warn!("Table ID {} out of bounds (tables.len() = {})", table_id, db.tables.len());
+                            warn!(
+                                "Table ID {} out of bounds (tables.len() = {})",
+                                table_id,
+                                db.tables.len()
+                            );
                         }
                     }
                     _ => {
@@ -723,11 +745,17 @@ impl ReplicationManager {
                                 match log_item.op_type {
                                     crate::transaction::LogOperation::Delete => {
                                         // 执行删除操作
-                                        let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                                        if (*status_ptr).status == crate::types::RecordStatus::Used {
+                                        let status_ptr =
+                                            table.get_status_ptr(log_item.record_id as usize);
+                                        if (*status_ptr).status == crate::types::RecordStatus::Used
+                                        {
                                             // 从主键索引中删除
-                                            if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                                                let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                                            if let Some(primary_index) =
+                                                &mut db.primary_indices[table_id]
+                                            {
+                                                let record_ptr = table.get_record_ptr_mut(
+                                                    log_item.record_id as usize,
+                                                );
                                                 let _ = primary_index.delete_composite(record_ptr);
                                             }
 
@@ -736,12 +764,20 @@ impl ReplicationManager {
                                             (*status_ptr).version += 1;
 
                                             // 清空记录数据
-                                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
-                                            crate::platform::memset(record_ptr, 0, table.record_size);
+                                            let record_ptr = table
+                                                .get_record_ptr_mut(log_item.record_id as usize);
+                                            crate::platform::memset(
+                                                record_ptr,
+                                                0,
+                                                table.record_size,
+                                            );
 
                                             // 将空闲槽压回栈中
                                             if table.free_slot_count < table.def.max_records {
-                                                *table.free_slots.as_ptr().add(table.free_slot_count) =
+                                                *table
+                                                    .free_slots
+                                                    .as_ptr()
+                                                    .add(table.free_slot_count) =
                                                     log_item.record_id as usize;
                                                 table.free_slot_count += 1;
                                             }
@@ -755,16 +791,23 @@ impl ReplicationManager {
                                     }
                                     crate::transaction::LogOperation::Update => {
                                         // 执行更新操作
-                                        let status_ptr = table.get_status_ptr(log_item.record_id as usize);
-                                        if (*status_ptr).status == crate::types::RecordStatus::Used {
+                                        let status_ptr =
+                                            table.get_status_ptr(log_item.record_id as usize);
+                                        if (*status_ptr).status == crate::types::RecordStatus::Used
+                                        {
                                             // 从主键索引中删除旧记录
-                                            if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                                                let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                                            if let Some(primary_index) =
+                                                &mut db.primary_indices[table_id]
+                                            {
+                                                let record_ptr = table.get_record_ptr_mut(
+                                                    log_item.record_id as usize,
+                                                );
                                                 let _ = primary_index.delete_composite(record_ptr);
                                             }
 
                                             // 记录存在，执行更新
-                                            let record_ptr = table.get_record_ptr_mut(log_item.record_id as usize);
+                                            let record_ptr = table
+                                                .get_record_ptr_mut(log_item.record_id as usize);
                                             crate::platform::memcpy(
                                                 record_ptr,
                                                 log_data.as_ptr(),
@@ -775,7 +818,9 @@ impl ReplicationManager {
                                             (*status_ptr).create_tx_id = log_item.tx_id;
 
                                             // 将新记录插入到主键索引中
-                                            if let Some(primary_index) = &mut db.primary_indices[table_id] {
+                                            if let Some(primary_index) =
+                                                &mut db.primary_indices[table_id]
+                                            {
                                                 let _ = primary_index.insert_composite(
                                                     record_ptr,
                                                     log_item.record_id as u16,
@@ -788,7 +833,10 @@ impl ReplicationManager {
                                     }
                                     _ => {
                                         #[cfg(feature = "log")]
-                                        error!("Unsupported operation type: {:?}", log_item.op_type);
+                                        error!(
+                                            "Unsupported operation type: {:?}",
+                                            log_item.op_type
+                                        );
                                     }
                                 }
                             } else {
@@ -797,7 +845,11 @@ impl ReplicationManager {
                             }
                         } else {
                             #[cfg(feature = "log")]
-                            warn!("Table ID {} out of bounds (tables.len() = {})", table_id, db.tables.len());
+                            warn!(
+                                "Table ID {} out of bounds (tables.len() = {})",
+                                table_id,
+                                db.tables.len()
+                            );
                         }
                     }
                 }
@@ -877,7 +929,9 @@ impl ReplicationManager {
                             ReplicationMode::Async => {
                                 // 异步模式：立即返回，不等待确认
                                 #[cfg(feature = "log")]
-                                debug!("Using async replication mode, not waiting for acknowledgment");
+                                debug!(
+                                    "Using async replication mode, not waiting for acknowledgment"
+                                );
                             }
                         }
                         Ok(())
@@ -941,7 +995,10 @@ impl ReplicationManager {
         const MAX_REPLICATION_DELAY_US: u64 = 1000000; // 1秒
         if self.replication_delay > MAX_REPLICATION_DELAY_US {
             #[cfg(feature = "log")]
-            warn!("Replication delay exceeds threshold: {}μs", self.replication_delay);
+            warn!(
+                "Replication delay exceeds threshold: {}μs",
+                self.replication_delay
+            );
             // 注意：在测试环境中，我们不返回错误，只记录警告
         }
 
@@ -959,7 +1016,10 @@ impl ReplicationManager {
         let active_slaves = self.slave_acks.iter().filter(|&&ack| ack).count();
         if active_slaves < self.total_slaves && self.total_slaves > 0 {
             #[cfg(feature = "log")]
-            warn!("Some slaves not responding: active={}, total={}", active_slaves, self.total_slaves);
+            warn!(
+                "Some slaves not responding: active={}, total={}",
+                active_slaves, self.total_slaves
+            );
         }
 
         Ok(())
@@ -990,7 +1050,10 @@ impl ReplicationManager {
         let sync_data = request.encode();
 
         #[cfg(feature = "log")]
-        debug!("Requesting full sync from master, slave_id: {}", self.slave_id);
+        debug!(
+            "Requesting full sync from master, slave_id: {}",
+            self.slave_id
+        );
 
         // 发送同步请求
         match pubsub::publish(SYNC_REQUEST_TOPIC, &sync_data) {

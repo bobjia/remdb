@@ -1,5 +1,5 @@
 //! DROP TABLE 操作示例
-//! 
+//!
 //! 该示例展示了如何使用remdb的DROP TABLE操作，包括：
 //! 1. 创建表
 //! 2. 使用SQL DROP TABLE语句删除表
@@ -47,6 +47,7 @@ static DB_CONFIG: config::DbConfig = config::DbConfig {
     pubsub_config: None,
     #[cfg(feature = "ha")]
     ha_config: None,
+    model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
 };
 
 fn main() {
@@ -140,20 +141,8 @@ fn main() {
         db.create_table(
             "test_table",
             &[
-                (
-                    "id",
-                    DataType::Int64,
-                    0,
-                    None,
-                    None,
-                ),
-                (
-                    "name",
-                    DataType::VarChar,
-                    32,
-                    None,
-                    None,
-                ),
+                ("id", DataType::Int64, 0, None, None),
+                ("name", DataType::VarChar, 32, None, None),
             ],
             Some(vec![0]),
         )
@@ -180,20 +169,8 @@ fn main() {
         db.create_table(
             "test_table",
             &[
-                (
-                    "id",
-                    DataType::Int64,
-                    0,
-                    None,
-                    None,
-                ),
-                (
-                    "name",
-                    DataType::VarChar,
-                    32,
-                    None,
-                    None,
-                ),
+                ("id", DataType::Int64, 0, None, None),
+                ("name", DataType::VarChar, 32, None, None),
             ],
             Some(vec![0]),
         )
@@ -214,12 +191,18 @@ fn main() {
         let drop_if_exists_sql = "DROP TABLE IF EXISTS non_existent_table;";
         let drop_if_exists_query = sql::parse_sql_query(drop_if_exists_sql).unwrap();
         let result = sql::execute_query(&mut db, &drop_if_exists_query);
-        println!("   使用IF EXISTS删除不存在的表: 结果 = {:?}", result.is_ok());
+        println!(
+            "   使用IF EXISTS删除不存在的表: 结果 = {:?}",
+            result.is_ok()
+        );
 
         // 6. 使用RemDb::drop_table方法删除不存在的表（使用if_exists=true）
         println!("\n6. 使用RemDb::drop_table方法删除不存在的表:");
         let result = db.drop_table("non_existent_table", true, false);
-        println!("   使用if_exists=true删除不存在的表: 结果 = {:?}", result.is_ok());
+        println!(
+            "   使用if_exists=true删除不存在的表: 结果 = {:?}",
+            result.is_ok()
+        );
 
         println!("\n=== DROP TABLE 操作示例完成 ===");
     }

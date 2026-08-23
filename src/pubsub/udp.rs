@@ -120,7 +120,8 @@ mod posix {
             let socket = match mode {
                 UdpMode::Unicast => {
                     // 单播模式：创建套接字，设置选项，然后绑定
-                    let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port)).expect("failed to parse socket address");
+                    let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port))
+                        .expect("failed to parse socket address");
                     // 使用 socket2 库创建套接字，设置选项，然后绑定
                     let socket2 = socket2::Socket::new(
                         socket2::Domain::IPV4,
@@ -142,7 +143,8 @@ mod posix {
                 }
                 UdpMode::Broadcast => {
                     // 广播模式：创建套接字，设置选项，然后绑定
-                    let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port)).expect("failed to parse socket address");
+                    let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port))
+                        .expect("failed to parse socket address");
                     // 使用 socket2 库创建套接字，设置选项，然后绑定
                     let socket2 = socket2::Socket::new(
                         socket2::Domain::IPV4,
@@ -168,7 +170,8 @@ mod posix {
                 }
                 UdpMode::Multicast => {
                     // 组播模式：创建套接字，设置选项，加入组播组
-                    let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port)).expect("failed to parse socket address");
+                    let addr = SocketAddr::from_str(&format!("0.0.0.0:{}", port))
+                        .expect("failed to parse socket address");
                     // 使用 socket2 库创建套接字，设置选项，然后绑定
                     let socket2 = socket2::Socket::new(
                         socket2::Domain::IPV4,
@@ -214,7 +217,10 @@ mod posix {
                 }
                 UdpMode::Broadcast => {
                     // 广播模式：使用广播地址
-                    Some(SocketAddr::from_str(&format!("255.255.255.255:{}", port)).expect("failed to parse socket address"))
+                    Some(
+                        SocketAddr::from_str(&format!("255.255.255.255:{}", port))
+                            .expect("failed to parse socket address"),
+                    )
                 }
                 UdpMode::Multicast => {
                     // 组播模式：使用组播地址

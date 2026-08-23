@@ -64,6 +64,8 @@ static MASTER_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::ne
         master_port: None,
         replication_port: 5556,
     }),
+
+    model_worker_config: Default::default(),
 });
 
 // 主节点示例

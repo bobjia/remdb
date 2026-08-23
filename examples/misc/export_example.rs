@@ -38,7 +38,8 @@ fn main() {
     // 1. 初始化内存分配器
     println!("1. 初始化内存分配器...");
     unsafe {
-        crate::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len()).unwrap();
+        crate::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
+            .unwrap();
     }
     println!("   内存分配器初始化成功");
 

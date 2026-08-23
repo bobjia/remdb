@@ -1,4 +1,9 @@
-use remdb::{init_global_db, reset_global_db, CompressionType, config::{DbConfig, DefaultMemoryAllocator, WALConfig, TimeSeriesConfig, HAConfig, LogMode}, pubsub::PubSubConfig, TableDef, FieldDef, DataType, IndexType};
+use remdb::{
+    config::{DbConfig, DefaultMemoryAllocator, HAConfig, LogMode, TimeSeriesConfig, WALConfig},
+    init_global_db,
+    pubsub::PubSubConfig,
+    reset_global_db, CompressionType, DataType, FieldDef, IndexType, TableDef,
+};
 use serial_test::serial;
 
 // 简单的测试平台实现
@@ -129,7 +134,11 @@ fn setup_test() {
     db_memory.resize(8388608, 0);
 
     // 打印内存缓冲区信息
-    println!("Memory buffer: ptr={:p}, len={}", db_memory.as_mut_ptr(), db_memory.len());
+    println!(
+        "Memory buffer: ptr={:p}, len={}",
+        db_memory.as_mut_ptr(),
+        db_memory.len()
+    );
 
     // 初始化内存分配器
     match remdb::memory::allocator::init_global_allocator(db_memory.as_mut_ptr(), db_memory.len()) {
@@ -142,14 +151,20 @@ fn setup_test() {
 
     // 打印内存统计信息
     let stats = remdb::memory::allocator::get_memory_stats();
-    println!("Initial memory stats: used={}, total={}, fragmentation={:.2}", stats.used, stats.total, stats.fragmentation);
+    println!(
+        "Initial memory stats: used={}, total={}, fragmentation={:.2}",
+        stats.used, stats.total, stats.fragmentation
+    );
 
     // 重置全局数据库实例，确保测试之间的隔离
     remdb::reset_global_db();
 
     // 打印内存统计信息
     let stats = remdb::memory::allocator::get_memory_stats();
-    println!("Memory stats after reset: used={}, total={}, fragmentation={:.2}", stats.used, stats.total, stats.fragmentation);
+    println!(
+        "Memory stats after reset: used={}, total={}, fragmentation={:.2}",
+        stats.used, stats.total, stats.fragmentation
+    );
 }
 
 /// 清理测试环境
@@ -188,11 +203,12 @@ fn test_create_model_statement() {
 
     // Initialize a minimal database
     let db = init_global_db(&MINIMAL_DB).unwrap();
-    
+
     // Test CREATE MODEL statement
-    let create_model_sql = "CREATE MODEL udf_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);";
+    let create_model_sql =
+        "CREATE MODEL udf_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);";
     let result = db.sql_query(create_model_sql);
-    
+
     // The statement should execute successfully (even if model file doesn't exist in test)
     assert!(result.is_ok(), "CREATE MODEL should succeed");
 
@@ -206,21 +222,22 @@ fn test_model_udf_in_query() {
 
     // Initialize a database with a test table
     let db = init_global_db(&DOCS_DB).unwrap();
-    
+
     // Create test data
     let insert_sql = "INSERT INTO DOCS_TABLE (text) VALUES ('Hello world'), ('Test document');";
     let result = db.sql_query(insert_sql);
     assert!(result.is_ok(), "INSERT should succeed");
-    
+
     // Register model
-    let create_model_sql = "CREATE MODEL udf_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);";
+    let create_model_sql =
+        "CREATE MODEL udf_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);";
     let result = db.sql_query(create_model_sql);
     assert!(result.is_ok(), "CREATE MODEL should succeed");
-    
+
     // Test model UDF in query
     let select_sql = "SELECT id, udf_embedding(text) AS embedding FROM DOCS_TABLE;";
     let result = db.sql_query(select_sql);
-    
+
     // The query should execute (even if model returns dummy data)
     assert!(result.is_ok(), "SELECT with model UDF should succeed");
 
@@ -234,13 +251,16 @@ fn test_invalid_model() {
 
     // Initialize a minimal database
     let db = init_global_db(&MINIMAL_DB).unwrap();
-    
+
     // Test using non-existent model
     let select_sql = "SELECT non_existent_model(text) AS embedding FROM DOCS_TABLE;";
     let result = db.sql_query(select_sql);
-    
+
     // The query should fail with unsupported function error
-    assert!(result.is_err(), "SELECT with non-existent model should fail");
+    assert!(
+        result.is_err(),
+        "SELECT with non-existent model should fail"
+    );
 
     teardown_test();
 }
@@ -252,13 +272,16 @@ fn test_model_with_multiple_inputs() {
 
     // Initialize a minimal database
     let db = init_global_db(&MINIMAL_DB).unwrap();
-    
+
     // Test CREATE MODEL with multiple inputs
     let create_model_sql = "CREATE MODEL multi_input_model USING 'multi-input.onnx' AS (text1 STRING, text2 STRING) RETURNS VECTOR(768);";
     let result = db.sql_query(create_model_sql);
-    
+
     // The statement should execute successfully
-    assert!(result.is_ok(), "CREATE MODEL with multiple inputs should succeed");
+    assert!(
+        result.is_ok(),
+        "CREATE MODEL with multiple inputs should succeed"
+    );
 
     teardown_test();
 }
@@ -270,12 +293,13 @@ fn test_duplicate_model_name() {
 
     // Initialize a minimal database
     let db = init_global_db(&MINIMAL_DB).unwrap();
-    
+
     // First CREATE MODEL should succeed
-    let create_model_sql = "CREATE MODEL my_model USING 'model.onnx' AS (text STRING) RETURNS VECTOR(768);";
+    let create_model_sql =
+        "CREATE MODEL my_model USING 'model.onnx' AS (text STRING) RETURNS VECTOR(768);";
     let result = db.sql_query(create_model_sql);
     assert!(result.is_ok(), "First CREATE MODEL should succeed");
-    
+
     // Second CREATE MODEL with same name should fail
     let result2 = db.sql_query(create_model_sql);
     assert!(result2.is_err(), "Duplicate CREATE MODEL should fail");
@@ -290,17 +314,21 @@ fn test_model_udf_incorrect_arguments() {
 
     // Initialize a minimal database
     let db = init_global_db(&MINIMAL_DB).unwrap();
-    
+
     // Register model
-    let create_model_sql = "CREATE MODEL udf_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);";
+    let create_model_sql =
+        "CREATE MODEL udf_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);";
     let result = db.sql_query(create_model_sql);
     assert!(result.is_ok(), "CREATE MODEL should succeed");
-    
+
     // Test with wrong number of arguments - should fail
     let select_sql = "SELECT udf_embedding(text, extra) FROM DOCS_TABLE;";
     let result = db.sql_query(select_sql);
-    assert!(result.is_err(), "Model UDF with wrong argument count should fail");
-    
+    assert!(
+        result.is_err(),
+        "Model UDF with wrong argument count should fail"
+    );
+
     // Test with no arguments - should fail
     let select_sql2 = "SELECT udf_embedding() FROM DOCS_TABLE;";
     let result2 = db.sql_query(select_sql2);
@@ -319,17 +347,17 @@ fn test_model_udf_in_where_clause() {
 
             // Initialize a database with a test table
             let db = init_global_db(&DOCS_DB).unwrap();
-            
+
             // Create test data
             let insert_sql = "INSERT INTO DOCS_TABLE (text) VALUES ('Hello world'), ('Test document');";
             let result = db.sql_query(insert_sql);
             assert!(result.is_ok(), "INSERT should succeed");
-            
+
             // Register model
             let create_model_sql = "CREATE MODEL udf_embedding USING 'bge-m3.onnx' AS (text STRING) RETURNS VECTOR(768);";
             let result = db.sql_query(create_model_sql);
             assert!(result.is_ok(), "CREATE MODEL should succeed");
-            
+
             // Test model UDF in WHERE clause - should execute (even if dummy results)
             let select_sql = "SELECT id FROM DOCS_TABLE WHERE udf_embedding(text) = udf_embedding(text);";
             let result = db.sql_query(select_sql);

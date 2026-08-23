@@ -67,7 +67,11 @@ impl remdb::platform::Platform for TestPlatform {
         // 空实现
     }
 
-    fn file_open(&self, _path: &str, _mode: remdb::platform::FileMode) -> remdb::platform::FileResult<remdb::platform::FileHandle> {
+    fn file_open(
+        &self,
+        _path: &str,
+        _mode: remdb::platform::FileMode,
+    ) -> remdb::platform::FileResult<remdb::platform::FileHandle> {
         Ok(core::ptr::null())
     }
 
@@ -84,11 +88,21 @@ impl remdb::platform::Platform for TestPlatform {
         Ok(0)
     }
 
-    fn file_read(&self, _handle: remdb::platform::FileHandle, _buffer: *mut u8, _size: usize) -> remdb::platform::FileResult<usize> {
+    fn file_read(
+        &self,
+        _handle: remdb::platform::FileHandle,
+        _buffer: *mut u8,
+        _size: usize,
+    ) -> remdb::platform::FileResult<usize> {
         Ok(0)
     }
 
-    fn file_seek(&self, _handle: remdb::platform::FileHandle, _offset: i64, _whence: remdb::platform::SeekWhence) -> remdb::platform::FileResult<u64> {
+    fn file_seek(
+        &self,
+        _handle: remdb::platform::FileHandle,
+        _offset: i64,
+        _whence: remdb::platform::SeekWhence,
+    ) -> remdb::platform::FileResult<u64> {
         Ok(0)
     }
 
@@ -111,7 +125,8 @@ static TEST_PLATFORM: TestPlatform = TestPlatform;
 static mut DB_MEMORY: Vec<u8> = Vec::new();
 
 // 静态内存分配器实例
-static DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator = remdb::config::DefaultMemoryAllocator;
+static DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator =
+    remdb::config::DefaultMemoryAllocator;
 
 // 创建一个静态测试配置
 static TEST_CONFIG: LazyLock<remdb::config::DbConfig> = LazyLock::new(|| {
@@ -142,6 +157,8 @@ static TEST_CONFIG: LazyLock<remdb::config::DbConfig> = LazyLock::new(|| {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+
+        model_worker_config: Default::default(),
     }
 });
 
@@ -241,9 +258,9 @@ fn test_insert_and_query_with_composite_pk() -> Result<()> {
     record[4..8].copy_from_slice(&id2.to_le_bytes());
     // 设置name
     let name_bytes = name.as_bytes();
-    record[8..8+name_bytes.len()].copy_from_slice(name_bytes);
+    record[8..8 + name_bytes.len()].copy_from_slice(name_bytes);
     // 设置value
-    record[8+64..8+64+8].copy_from_slice(&value.to_le_bytes());
+    record[8 + 64..8 + 64 + 8].copy_from_slice(&value.to_le_bytes());
 
     // 插入记录
     let record_id = table.insert(record.as_ptr() as *const u8)?;

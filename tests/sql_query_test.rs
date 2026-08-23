@@ -439,10 +439,14 @@ fn test_sql_create_checkpoint() {
     // 测试CREATE CHECKPOINT语句解析
     let result = parse_sql_query("CREATE CHECKPOINT;");
     assert!(result.is_ok(), "CREATE CHECKPOINT语句应该能够被解析");
-    
+
     let query = result.unwrap();
-    assert_eq!(query.query_type, QueryType::CreateCheckpoint, "查询类型应该是CreateCheckpoint");
-    
+    assert_eq!(
+        query.query_type,
+        QueryType::CreateCheckpoint,
+        "查询类型应该是CreateCheckpoint"
+    );
+
     println!("CREATE CHECKPOINT语句解析成功");
 }
 

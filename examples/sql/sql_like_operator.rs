@@ -44,6 +44,7 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -58,7 +59,7 @@ fn main() -> Result<()> {
 
     // 2. Insert test data
     println!("\n2. Insert test data");
-    
+
     db.sql_query("INSERT INTO users VALUES (1, 'Alice', 'alice@example.com', '13812345678')")?;
     db.sql_query("INSERT INTO users VALUES (2, 'Bob', 'bob@test.org', '13987654321')")?;
     db.sql_query("INSERT INTO users VALUES (3, 'Charlie', 'charlie@example.com', '13611112222')")?;
@@ -69,50 +70,53 @@ fn main() -> Result<()> {
 
     // 3. % wildcard - prefix match
     println!("\n3. % wildcard - prefix match");
-    
+
     let result = db.sql_query("SELECT id, name FROM users WHERE name LIKE 'A%'")?;
     println!("   Names starting with 'A':");
     println!("{}", result.to_string());
 
     // 4. % wildcard - suffix match
     println!("\n4. % wildcard - suffix match");
-    
+
     let result = db.sql_query("SELECT id, name, email FROM users WHERE email LIKE '%.com'")?;
     println!("   Emails ending with .com:");
     println!("{}", result.to_string());
 
     // 5. % wildcard - contains match
     println!("\n5. % wildcard - contains match");
-    
+
     let result = db.sql_query("SELECT id, name, email FROM users WHERE email LIKE '%example%'")?;
     println!("   Emails containing 'example':");
     println!("{}", result.to_string());
 
     // 6. _ wildcard - single character match
     println!("\n6. _ wildcard - single character match");
-    
+
     let result = db.sql_query("SELECT id, name FROM users WHERE name LIKE '_ob'")?;
     println!("   3-character names ending with 'ob':");
     println!("{}", result.to_string());
 
     // 7. Combined wildcards
     println!("\n7. Combined wildcards");
-    
+
     let result = db.sql_query("SELECT id, name FROM users WHERE name LIKE 'A_i%'")?;
     println!("   Names starting with 'A' and third char is 'i':");
     println!("{}", result.to_string());
 
     // 8. NOT LIKE
     println!("\n8. NOT LIKE");
-    
-    let result = db.sql_query("SELECT id, name, email FROM users WHERE email NOT LIKE '%example%'")?;
+
+    let result =
+        db.sql_query("SELECT id, name, email FROM users WHERE email NOT LIKE '%example%'")?;
     println!("   Emails NOT containing 'example':");
     println!("{}", result.to_string());
 
     // 9. LIKE with AND/OR
     println!("\n9. LIKE with AND/OR");
-    
-    let result = db.sql_query("SELECT id, name, email FROM users WHERE email LIKE '%.com' OR email LIKE '%.org'")?;
+
+    let result = db.sql_query(
+        "SELECT id, name, email FROM users WHERE email LIKE '%.com' OR email LIKE '%.org'",
+    )?;
     println!("   Emails ending with .com or .org:");
     println!("{}", result.to_string());
 

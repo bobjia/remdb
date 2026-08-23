@@ -1,5 +1,5 @@
 //! Permission module
-//! 
+//!
 //! This module defines the Permission enum for RBAC.
 
 use std::string::String;

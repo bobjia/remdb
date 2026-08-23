@@ -45,6 +45,7 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -76,18 +77,23 @@ fn main() -> Result<()> {
     println!("\n3. 执行一些操作以产生指标");
     db.sql_query("CREATE TABLE test_table (id INT32 PRIMARY KEY, name TEXT, value REAL)")?;
     println!("   创建表: test_table");
-    
+
     for i in 1..=10 {
-        db.sql_query(&format!("INSERT INTO test_table VALUES ({}, 'Name_{}', {})", i, i, i as f64 * 10.0))?;
+        db.sql_query(&format!(
+            "INSERT INTO test_table VALUES ({}, 'Name_{}', {})",
+            i,
+            i,
+            i as f64 * 10.0
+        ))?;
     }
     println!("   插入 10 条记录");
-    
+
     db.sql_query("SELECT * FROM test_table")?;
     println!("   执行查询");
-    
+
     db.sql_query("UPDATE test_table SET value = 999.99 WHERE id = 1")?;
     println!("   更新 1 条记录");
-    
+
     db.sql_query("DELETE FROM test_table WHERE id = 10")?;
     println!("   删除 1 条记录");
 
@@ -128,17 +134,16 @@ fn main() -> Result<()> {
     } else {
         0.0
     };
-    println!("   内存使用: {} / {} bytes ({:.2}%)", 
-        health.metrics.used_memory, 
-        health.metrics.total_memory,
-        mem_usage_percent
+    println!(
+        "   内存使用: {} / {} bytes ({:.2}%)",
+        health.metrics.used_memory, health.metrics.total_memory, mem_usage_percent
     );
 
     // 8. 重置指标
     println!("\n8. 重置指标");
     db.reset_metrics();
     println!("   指标已重置");
-    
+
     let metrics = db.get_metrics();
     let snapshot = metrics.snapshot();
     println!("   重置后的读操作数: {}", snapshot.read_ops);
@@ -151,14 +156,19 @@ fn main() -> Result<()> {
 
     // 10. 性能指标计算
     println!("\n10. 性能指标计算");
-    
+
     // 执行更多操作
     let start = std::time::Instant::now();
     for i in 100..200 {
-        db.sql_query(&format!("INSERT INTO test_table VALUES ({}, 'Name_{}', {})", i, i, i as f64 * 10.0))?;
+        db.sql_query(&format!(
+            "INSERT INTO test_table VALUES ({}, 'Name_{}', {})",
+            i,
+            i,
+            i as f64 * 10.0
+        ))?;
     }
     let duration = start.elapsed();
-    
+
     let metrics = db.get_metrics();
     let snapshot = metrics.snapshot();
     let ops_per_sec = 100.0 / duration.as_secs_f64();

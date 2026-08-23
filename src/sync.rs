@@ -60,7 +60,10 @@ impl<T> Mutex<T> {
         }
         #[cfg(not(feature = "std"))]
         {
-            self.inner.try_lock().ok().map(|guard| MutexGuard { inner: guard })
+            self.inner
+                .try_lock()
+                .ok()
+                .map(|guard| MutexGuard { inner: guard })
         }
     }
 }
@@ -138,7 +141,10 @@ impl<T> RwLock<T> {
         }
         #[cfg(not(feature = "std"))]
         {
-            self.inner.try_lock().ok().map(|guard| RwLockReadGuard { inner: guard })
+            self.inner
+                .try_lock()
+                .ok()
+                .map(|guard| RwLockReadGuard { inner: guard })
         }
     }
 
@@ -167,7 +173,10 @@ impl<T> RwLock<T> {
         }
         #[cfg(not(feature = "std"))]
         {
-            self.inner.try_lock().ok().map(|guard| RwLockWriteGuard { inner: guard })
+            self.inner
+                .try_lock()
+                .ok()
+                .map(|guard| RwLockWriteGuard { inner: guard })
         }
     }
 }

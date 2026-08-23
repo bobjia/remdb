@@ -1,5 +1,5 @@
 //! ONNX runtime wrapper
-//! 
+//!
 //! This module provides a wrapper for loading and executing ONNX models.
 //! Supports both real ONNX Runtime (with feature flag) and stub implementation.
 
@@ -50,34 +50,38 @@ pub struct OnnxModel {
 }
 
 impl OnnxModel {
+
     #[cfg(feature = "model-runtime")]
     pub fn load(path: &str) -> Result<Self, String> {
-        #[cfg(feature = "log")]
-        info!("Loading ONNX model from: {}", path);
 
         let session = Session::builder()
             .map_err(|e| format!("Failed to create session builder: {}", e))?
             .commit_from_file(path)
             .map_err(|e| format!("Failed to load model from {}: {}", path, e))?;
 
-        let input_names: Vec<String> = session.inputs().iter().map(|i| i.name().to_string()).collect();
+        let input_names: Vec<String> = session
+            .inputs()
+            .iter()
+            .map(|i| i.name().to_string())
+            .collect();
         let input_count = input_names.len();
-        let input_shapes: Vec<Vec<Option<usize>>> = (0..input_count)
-            .map(|_| vec![None, Some(512)])
-            .collect();
-        
-        let input_types: Vec<InputType> = (0..input_count)
-            .map(|_| InputType::Float32)
-            .collect();
+        let input_shapes: Vec<Vec<Option<usize>>> =
+            (0..input_count).map(|_| vec![None, Some(512)]).collect();
 
-        let output_names: Vec<String> = session.outputs().iter().map(|o| o.name().to_string()).collect();
-        let output_count = output_names.len();
-        let output_shapes: Vec<Vec<Option<usize>>> = (0..output_count)
-            .map(|_| vec![None, Some(512)])
+        let input_types: Vec<InputType> = (0..input_count).map(|_| InputType::Float32).collect();
+
+        let output_names: Vec<String> = session
+            .outputs()
+            .iter()
+            .map(|o| o.name().to_string())
             .collect();
+        let output_count = output_names.len();
+        let output_shapes: Vec<Vec<Option<usize>>> =
+            (0..output_count).map(|_| vec![None, Some(512)]).collect();
 
         let info = ModelInfo {
-            name: path.split(|c| c == '/' || c == '\\')
+            name: path
+                .split(|c| c == '/' || c == '\\')
                 .last()
                 .unwrap_or("unknown")
                 .to_string(),
@@ -89,8 +93,11 @@ impl OnnxModel {
         };
 
         #[cfg(feature = "log")]
-        info!("Model loaded successfully: {} inputs, {} outputs", 
-              info.input_names.len(), info.output_names.len());
+        info!(
+            "Model loaded successfully: {} inputs, {} outputs",
+            info.input_names.len(),
+            info.output_names.len()
+        );
 
         Ok(Self {
             session: Mutex::new(session),
@@ -105,7 +112,8 @@ impl OnnxModel {
         warn!("model-runtime feature not enabled, using stub implementation");
 
         let info = ModelInfo {
-            name: path.split(|c| c == '/' || c == '\\')
+            name: path
+                .split(|c| c == '/' || c == '\\')
                 .last()
                 .unwrap_or("unknown")
                 .to_string(),
@@ -122,10 +130,9 @@ impl OnnxModel {
         })
     }
 
+
     #[cfg(feature = "model-runtime")]
     pub fn execute(&self, inputs_data: &[Vec<f32>]) -> Result<Vec<f32>, String> {
-        #[cfg(feature = "log")]
-        debug!("Executing model with {} input(s)", inputs_data.len());
 
         if inputs_data.is_empty() {
             return Err("No inputs provided".to_string());
@@ -137,19 +144,21 @@ impl OnnxModel {
         let input_tensor = Tensor::from_array((shape, input_vec.into_boxed_slice()))
             .map_err(|e| format!("Failed to create input tensor: {}", e))?;
 
-        let mut session = self.session.lock()
+        let mut session = self
+            .session
+            .lock()
             .map_err(|_| "Failed to lock session".to_string())?;
 
         let outputs = session
             .run(ort::inputs![input_tensor])
             .map_err(|e| format!("Model execution failed: {}", e))?;
 
-        let output_name = self.info.output_names.first()
-            .ok_or("No output names")?;
-        
-        let first_output = outputs.get(output_name.as_str())
+        let output_name = self.info.output_names.first().ok_or("No output names")?;
+
+        let first_output = outputs
+            .get(output_name.as_str())
             .ok_or("Failed to get first output")?;
-        
+
         let (_shape, data) = first_output
             .try_extract_tensor::<f32>()
             .map_err(|e| format!("Failed to extract output tensor: {}", e))?;
@@ -162,20 +171,21 @@ impl OnnxModel {
         Ok(result)
     }
 
+
     #[cfg(feature = "model-runtime")]
     pub fn execute_int64(&self, inputs_data: &[Vec<i64>]) -> Result<Vec<f32>, String> {
-        #[cfg(feature = "log")]
-        debug!("Executing model with {} int64 input(s)", inputs_data.len());
 
         if inputs_data.is_empty() {
             return Err("No inputs provided".to_string());
         }
 
-        let mut session = self.session.lock()
+        let mut session = self
+            .session
+            .lock()
             .map_err(|_| "Failed to lock session".to_string())?;
 
         let input_count = self.info.input_names.len();
-        
+
         if input_count == 1 {
             let input_dim = inputs_data[0].len();
             let input_vec: Vec<i64> = inputs_data[0].clone();
@@ -190,28 +200,26 @@ impl OnnxModel {
             self.extract_sentence_embedding(&outputs)
         } else if input_count >= 3 {
             let seq_len = inputs_data.get(0).map(|v| v.len()).unwrap_or(512);
-            
-            let input_ids = inputs_data.get(0)
-                .ok_or("Missing input_ids")?;
-            let attention_mask = inputs_data.get(1)
-                .ok_or("Missing attention_mask")?;
-            let token_type_ids = inputs_data.get(2)
-                .ok_or("Missing token_type_ids")?;
 
-            let input_ids_tensor = Tensor::from_array((
-                [1, input_ids.len()],
-                input_ids.clone().into_boxed_slice()
-            )).map_err(|e| format!("Failed to create input_ids tensor: {}", e))?;
-            
+            let input_ids = inputs_data.get(0).ok_or("Missing input_ids")?;
+            let attention_mask = inputs_data.get(1).ok_or("Missing attention_mask")?;
+            let token_type_ids = inputs_data.get(2).ok_or("Missing token_type_ids")?;
+
+            let input_ids_tensor =
+                Tensor::from_array(([1, input_ids.len()], input_ids.clone().into_boxed_slice()))
+                    .map_err(|e| format!("Failed to create input_ids tensor: {}", e))?;
+
             let attention_mask_tensor = Tensor::from_array((
                 [1, attention_mask.len()],
-                attention_mask.clone().into_boxed_slice()
-            )).map_err(|e| format!("Failed to create attention_mask tensor: {}", e))?;
-            
+                attention_mask.clone().into_boxed_slice(),
+            ))
+            .map_err(|e| format!("Failed to create attention_mask tensor: {}", e))?;
+
             let token_type_ids_tensor = Tensor::from_array((
                 [1, token_type_ids.len()],
-                token_type_ids.clone().into_boxed_slice()
-            )).map_err(|e| format!("Failed to create token_type_ids tensor: {}", e))?;
+                token_type_ids.clone().into_boxed_slice(),
+            ))
+            .map_err(|e| format!("Failed to create token_type_ids tensor: {}", e))?;
 
             let outputs = session
                 .run(ort::inputs![
@@ -227,31 +235,39 @@ impl OnnxModel {
         }
     }
 
+
     #[cfg(feature = "model-runtime")]
-    fn extract_sentence_embedding(&self, outputs: &ort::session::SessionOutputs) -> Result<Vec<f32>, String> {
-        if let Some(embedding_name) = self.info.output_names.iter().find(|n| n.contains("embedding")) {
-            let output = outputs.get(embedding_name.as_str())
+    fn extract_sentence_embedding(
+    ) -> Result<Vec<f32>, String> {
+        if let Some(embedding_name) = self
+            .info
+            .output_names
+            .iter()
+            .find(|n| n.contains("embedding"))
+        {
+            let output = outputs
+                .get(embedding_name.as_str())
                 .ok_or("Failed to get embedding output")?;
-            
+
             let (_shape, data) = output
                 .try_extract_tensor::<f32>()
                 .map_err(|e| format!("Failed to extract embedding tensor: {}", e))?;
-            
+
             return Ok(data.to_vec());
         }
 
-        let output_name = self.info.output_names.first()
-            .ok_or("No output names")?;
-        
-        let first_output = outputs.get(output_name.as_str())
+        let output_name = self.info.output_names.first().ok_or("No output names")?;
+
+        let first_output = outputs
+            .get(output_name.as_str())
             .ok_or("Failed to get first output")?;
-        
+
         let (shape, data) = first_output
             .try_extract_tensor::<f32>()
             .map_err(|e| format!("Failed to extract output tensor: {}", e))?;
 
         let shape_dims: Vec<usize> = shape.iter().map(|d| *d as usize).collect();
-        
+
         if shape_dims.len() == 2 {
             Ok(data.to_vec())
         } else if shape_dims.len() == 3 {
@@ -266,10 +282,9 @@ impl OnnxModel {
         }
     }
 
+
     #[cfg(feature = "model-runtime")]
     pub fn execute_batch(&self, inputs_data: &[Vec<f32>]) -> Result<Vec<Vec<f32>>, String> {
-        #[cfg(feature = "log")]
-        debug!("Executing model with batch size {}", inputs_data.len());
 
         if inputs_data.is_empty() {
             return Ok(Vec::new());
@@ -294,25 +309,27 @@ impl OnnxModel {
         let input_tensor = Tensor::from_array((shape, flat_input.into_boxed_slice()))
             .map_err(|e| format!("Failed to create input tensor: {}", e))?;
 
-        let mut session = self.session.lock()
+        let mut session = self
+            .session
+            .lock()
             .map_err(|_| "Failed to lock session".to_string())?;
 
         let outputs = session
             .run(ort::inputs![input_tensor])
             .map_err(|e| format!("Model execution failed: {}", e))?;
 
-        let output_name = self.info.output_names.first()
-            .ok_or("No output names")?;
-        
-        let first_output = outputs.get(output_name.as_str())
+        let output_name = self.info.output_names.first().ok_or("No output names")?;
+
+        let first_output = outputs
+            .get(output_name.as_str())
             .ok_or("Failed to get first output")?;
-        
+
         let (out_shape, data) = first_output
             .try_extract_tensor::<f32>()
             .map_err(|e| format!("Failed to extract output tensor: {}", e))?;
 
         let shape_dims: Vec<usize> = out_shape.iter().map(|d| *d as usize).collect();
-        
+
         if shape_dims.len() < 2 {
             let result: Vec<f32> = data.to_vec();
             return Ok(vec![result]);
@@ -334,8 +351,10 @@ impl OnnxModel {
         Ok(results)
     }
 
+
     #[cfg(feature = "model-runtime")]
-    pub fn execute_int64_batch(&self, inputs_data: &[Vec<Vec<i64>>]) -> Result<Vec<Vec<f32>>, String> {
+    pub fn execute_int64_batch(
+    ) -> Result<Vec<Vec<f32>>, String> {
         #[cfg(feature = "log")]
         debug!("Executing model with {} int64 batch(es)", inputs_data.len());
 
@@ -369,7 +388,9 @@ impl OnnxModel {
         #[cfg(feature = "log")]
         debug!("Using stub model execution");
 
-        let output_dim = self.info.output_shapes
+        let output_dim = self
+            .info
+            .output_shapes
             .first()
             .and_then(|shape| shape.last().copied())
             .flatten()
@@ -380,7 +401,9 @@ impl OnnxModel {
 
     #[cfg(not(feature = "model-runtime"))]
     pub fn execute_batch(&self, inputs_data: &[Vec<f32>]) -> Result<Vec<Vec<f32>>, String> {
-        let output_dim = self.info.output_shapes
+        let output_dim = self
+            .info
+            .output_shapes
             .first()
             .and_then(|shape| shape.last().copied())
             .flatten()
@@ -406,14 +429,17 @@ impl OnnxModel {
     }
 }
 
+#[cfg(feature = "model-runtime")]
 impl Clone for OnnxModel {
-    #[cfg(feature = "model-runtime")]
-    fn clone(&self) -> Self {
-        Self::load(&self.model_path)
-            .expect("Failed to clone model by reloading")
-    }
 
-    #[cfg(not(feature = "model-runtime"))]
+    fn clone(&self) -> Self {
+        Self::load(&self.model_path).expect("Failed to clone model by reloading")
+    }
+}
+
+#[cfg(not(feature = "model-runtime"))]
+impl Clone for OnnxModel {
+
     fn clone(&self) -> Self {
         Self {
             model_path: self.model_path.clone(),

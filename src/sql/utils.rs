@@ -7,13 +7,15 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::sql::QueryExecutionError;
-use crate::types::{DEFAULT_TEXT_SIZE, DEFAULT_JSON_SIZE};
+use crate::types::{DEFAULT_JSON_SIZE, DEFAULT_TEXT_SIZE};
 
 /// 解析数据类型字符串，提取基本类型、精度/维度和距离类型
 /// 例如："TIMESTAMP(6)" -> ("TIMESTAMP", 6, None)
 ///       "VECTOR(768)" -> ("VECTOR", 768, None)
 ///       "VECTOR(64) WITH DISTANCE=IP" -> ("VECTOR", 64, Some(InnerProduct))
-pub fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16, Option<crate::types::DistanceType>), QueryExecutionError> {
+pub fn parse_data_type_with_precision(
+    type_str: &str,
+) -> Result<(String, u16, Option<crate::types::DistanceType>), QueryExecutionError> {
     #[cfg(feature = "log")]
     crate::log::debug!("parse_data_type_with_precision called with: {}", type_str);
     let type_str = type_str.to_uppercase();
@@ -59,25 +61,23 @@ pub fn parse_data_type_with_precision(type_str: &str) -> Result<(String, u16, Op
 
         // 验证基本类型是否有效
         match base_type {
-            "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64" |
-            "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32" | "UINT64" |
-            "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" |
-            "VARCHAR" | "CHAR" | "TEXT" |
-            "BOOL" | "BOOLEAN" |
-            "TIMESTAMP" | "TIMESTAMPTZ" | "JSON" |
-            "VECTOR" => Ok((base_type.to_string(), param, distance_type)),
+            "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64"
+            | "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32"
+            | "UINT64" | "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" | "VARCHAR"
+            | "CHAR" | "TEXT" | "BOOL" | "BOOLEAN" | "TIMESTAMP" | "TIMESTAMPTZ" | "JSON"
+            | "VECTOR" => Ok((base_type.to_string(), param, distance_type)),
             _ => Err(QueryExecutionError::TypeMismatch),
         }
     } else {
         // 没有参数，使用默认值
         let base_type = type_str.trim();
-        
+
         // 验证基本类型是否有效，并为不同类型设置合适的默认大小
         match base_type {
-            "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64" |
-            "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32" | "UINT64" |
-            "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" |
-            "BOOL" | "BOOLEAN" => Ok((base_type.to_string(), 8, None)),
+            "INT" | "INTEGER" | "BIGINT" | "TINYINT" | "SMALLINT" | "INT16" | "INT32" | "INT64"
+            | "UINT" | "UINTEGER" | "UBIGINT" | "UTINYINT" | "USMALLINT" | "UINT16" | "UINT32"
+            | "UINT64" | "FLOAT" | "DOUBLE" | "REAL" | "FLOAT32" | "FLOAT64" | "BOOL"
+            | "BOOLEAN" => Ok((base_type.to_string(), 8, None)),
             "VARCHAR" | "CHAR" => Ok((base_type.to_string(), 64, None)),
             "TEXT" => Ok((base_type.to_string(), DEFAULT_TEXT_SIZE as u16, None)),
             "JSON" => Ok((base_type.to_string(), DEFAULT_JSON_SIZE as u16, None)),
@@ -95,9 +95,11 @@ pub fn check_memory_limit(
     if let Some(max_mb) = max_memory_mb {
         let max_bytes = (max_mb as usize) * 1024 * 1024;
         if estimated_usage > max_bytes {
-            return Err(QueryExecutionError::ResourceLimitExceeded(
-                format!("Query exceeds memory limit: {}MB estimated, {}MB allowed", 
-                       estimated_usage / (1024 * 1024), max_mb)));
+            return Err(QueryExecutionError::ResourceLimitExceeded(format!(
+                "Query exceeds memory limit: {}MB estimated, {}MB allowed",
+                estimated_usage / (1024 * 1024),
+                max_mb
+            )));
         }
     }
 
@@ -177,6 +179,8 @@ pub fn process_to_iso8601(
 
 /// 处理TO_EPOCH()函数
 /// 将时间戳转换为epoch秒数
-pub fn process_to_epoch(timestamp: &crate::types::db_timestamp) -> Result<f64, QueryExecutionError> {
+pub fn process_to_epoch(
+    timestamp: &crate::types::db_timestamp,
+) -> Result<f64, QueryExecutionError> {
     Ok(crate::types::time_format::to_epoch(timestamp))
 }

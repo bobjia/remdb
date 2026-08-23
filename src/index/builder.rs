@@ -110,7 +110,12 @@ pub struct IndexBuildStatus {
 
 impl IndexBuildStatus {
     /// 创建新的索引构建状态
-    fn new(id: IndexBuildTaskId, table_name: String, column_name: String, index_type: String) -> Self {
+    fn new(
+        id: IndexBuildTaskId,
+        table_name: String,
+        column_name: String,
+        index_type: String,
+    ) -> Self {
         Self {
             id,
             table_name,
@@ -124,30 +129,30 @@ impl IndexBuildStatus {
             error: Mutex::new(None),
         }
     }
-    
+
     /// 更新状态为运行中
     fn set_running(&mut self, total_rows: usize) {
         self.state = IndexBuildState::Running;
         self.total_rows.store(total_rows, Ordering::SeqCst);
     }
-    
+
     /// 更新状态为已完成
     fn set_completed(&mut self) {
         self.state = IndexBuildState::Completed;
         self.progress.store(100, Ordering::SeqCst);
     }
-    
+
     /// 更新状态为失败
     fn set_failed(&mut self, error: String) {
         self.state = IndexBuildState::Failed(error.clone());
         *try_lock!(self.error) = Some(error);
     }
-    
+
     /// 检查是否已取消
     fn is_canceled(&self) -> bool {
         matches!(self.state, IndexBuildState::Failed(_))
     }
-    
+
     /// 获取状态字符串
     pub fn get_state_str(&self) -> &'static str {
         match self.state {
@@ -180,15 +185,18 @@ impl IndexBuildThreadPool {
     pub fn new(thread_count: usize) -> Self {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let task_queue = Arc::new(Mutex::new(VecDeque::new()));
-        
+
         let mut workers = Vec::with_capacity(thread_count);
         for _ in 0..thread_count {
             let task_queue_clone = task_queue.clone();
             let stop = stop_flag.clone();
-            let handle = thread::Builder::new().stack_size(8 * 1024 * 1024).spawn(move || Self::worker_loop(task_queue_clone, stop)).expect("Failed to spawn builder thread");
+            let handle = thread::Builder::new()
+                .stack_size(8 * 1024 * 1024)
+                .spawn(move || Self::worker_loop(task_queue_clone, stop))
+                .expect("Failed to spawn builder thread");
             workers.push(handle);
         }
-        
+
         Self {
             thread_count,
             workers,
@@ -198,7 +206,7 @@ impl IndexBuildThreadPool {
             stop_flag,
         }
     }
-    
+
     /// 工作线程主循环
     fn worker_loop(task_queue: Arc<Mutex<VecDeque<IndexBuildTask>>>, stop: Arc<AtomicBool>) {
         while !stop.load(Ordering::SeqCst) {
@@ -207,7 +215,7 @@ impl IndexBuildThreadPool {
                 let mut queue = try_lock!(task_queue);
                 queue.pop_front()
             };
-            
+
             if let Some(task) = task {
                 // 执行索引构建任务
                 Self::execute_index_build(task);
@@ -217,7 +225,7 @@ impl IndexBuildThreadPool {
             }
         }
     }
-    
+
     /// 执行索引构建任务
     fn execute_index_build(task: IndexBuildTask) {
         // 1. 查找目标表
@@ -228,7 +236,7 @@ impl IndexBuildThreadPool {
             return;
         }
         let db = db.unwrap();
-        
+
         // 查找表ID
         let mut table_id = None;
         for (id, table_opt) in db.tables.iter().enumerate() {
@@ -239,7 +247,7 @@ impl IndexBuildThreadPool {
                 }
             }
         }
-        
+
         if table_id.is_none() {
             #[cfg(feature = "log")]
             error!("Table {} not found", task.table_name);
@@ -262,17 +270,17 @@ impl IndexBuildThreadPool {
         error!("Index building not supported yet");
         return;
     }
-    
+
     /// 提交索引构建任务
     pub fn submit_task(
-        &self, 
-        table_name: String, 
-        column_name: Vec<String>, 
+        &self,
+        table_name: String,
+        column_name: Vec<String>,
         sql_index_type: SqlIndexType,
         params: IndexBuildParams,
     ) -> IndexBuildTaskId {
         let task_id = self.next_task_id.fetch_add(1, Ordering::SeqCst) as u64;
-        
+
         // 创建索引构建状态
         let status = Arc::new(Mutex::new(IndexBuildStatus::new(
             task_id,
@@ -280,10 +288,10 @@ impl IndexBuildThreadPool {
             column_name.join(", "),
             sql_index_type.to_string(),
         )));
-        
+
         // 存储状态
         try_lock!(self.build_status).insert(task_id, status);
-        
+
         // 创建并提交任务
         let task = IndexBuildTask {
             id: task_id,
@@ -293,17 +301,20 @@ impl IndexBuildThreadPool {
             params,
             canceled: Arc::new(AtomicBool::new(false)),
         };
-        
+
         // 将任务添加到队列
         try_lock!(self.task_queue).push_back(task);
-        
+
         task_id
     }
-    
+
     /// 获取索引构建状态
-    pub fn get_build_status(&self, task_id: Option<IndexBuildTaskId>) -> Vec<Arc<Mutex<IndexBuildStatus>>> {
+    pub fn get_build_status(
+        &self,
+        task_id: Option<IndexBuildTaskId>,
+    ) -> Vec<Arc<Mutex<IndexBuildStatus>>> {
         let status_map = try_lock!(self.build_status);
-        
+
         match task_id {
             Some(id) => {
                 // 获取指定任务的状态
@@ -312,14 +323,14 @@ impl IndexBuildThreadPool {
                 } else {
                     vec![]
                 }
-            },
+            }
             None => {
                 // 获取所有任务的状态
                 status_map.values().cloned().collect()
-            },
+            }
         }
     }
-    
+
     /// 停止线程池
     pub fn stop(&mut self) {
         self.stop_flag.store(true, Ordering::SeqCst);
@@ -342,6 +353,9 @@ pub fn init_index_build_thread_pool(thread_count: usize) {
 /// 获取索引构建线程池
 pub fn get_index_build_thread_pool() -> Result<Arc<IndexBuildThreadPool>> {
     unsafe {
-        INDEX_BUILD_THREAD_POOL.as_ref().ok_or(RemDbError::UnsupportedOperation).cloned()
+        INDEX_BUILD_THREAD_POOL
+            .as_ref()
+            .ok_or(RemDbError::UnsupportedOperation)
+            .cloned()
     }
 }

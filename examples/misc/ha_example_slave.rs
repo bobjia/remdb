@@ -64,6 +64,8 @@ static SLAVE_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new
         master_port: Some(5556),
         replication_port: 5556,
     }),
+
+    model_worker_config: Default::default(),
 });
 
 // 从节点示例

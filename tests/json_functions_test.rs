@@ -3,14 +3,14 @@ use common::platform::TEST_PLATFORM;
 use common::{setup_test_db, setup_test_db_with_memory};
 use serial_test::serial;
 
-use remdb::types::DataType;
-use remdb::RemDb;
 use remdb::config::DbConfig;
 use remdb::config::DefaultMemoryAllocator;
-use remdb::config::WALConfig;
 use remdb::config::LogMode;
-use remdb::time_series::TimeSeriesConfig;
+use remdb::config::WALConfig;
 use remdb::time_series::CompressionType;
+use remdb::time_series::TimeSeriesConfig;
+use remdb::types::DataType;
+use remdb::RemDb;
 
 /// 创建默认的测试数据库配置
 fn create_test_config() -> &'static DbConfig {
@@ -46,6 +46,7 @@ fn create_test_config() -> &'static DbConfig {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
+        model_worker_config: Default::default(),
     }))
 }
 
@@ -87,22 +88,28 @@ fn test_json_extract_function() {
     }
 
     // 测试JSON_EXTRACT提取字符串
-    let result = db.sql_query("SELECT JSON_EXTRACT(data, '$.name') AS name FROM JSON_TEST_TABLE WHERE id = 1");
+    let result = db
+        .sql_query("SELECT JSON_EXTRACT(data, '$.name') AS name FROM JSON_TEST_TABLE WHERE id = 1");
     assert!(result.is_ok(), "JSON_EXTRACT提取字符串应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_EXTRACT提取数字
-    let result = db.sql_query("SELECT JSON_EXTRACT(data, '$.age') AS age FROM JSON_TEST_TABLE WHERE id = 1");
+    let result =
+        db.sql_query("SELECT JSON_EXTRACT(data, '$.age') AS age FROM JSON_TEST_TABLE WHERE id = 1");
     assert!(result.is_ok(), "JSON_EXTRACT提取数字应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_EXTRACT提取嵌套字段
-    let result = db.sql_query("SELECT JSON_EXTRACT(data, '$.address.city') AS city FROM JSON_TEST_TABLE WHERE id = 4");
+    let result = db.sql_query(
+        "SELECT JSON_EXTRACT(data, '$.address.city') AS city FROM JSON_TEST_TABLE WHERE id = 4",
+    );
     assert!(result.is_ok(), "JSON_EXTRACT提取嵌套字段应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_EXTRACT提取数组元素
-    let result = db.sql_query("SELECT JSON_EXTRACT(data, '$.hobbies[0]') AS hobby FROM JSON_TEST_TABLE WHERE id = 2");
+    let result = db.sql_query(
+        "SELECT JSON_EXTRACT(data, '$.hobbies[0]') AS hobby FROM JSON_TEST_TABLE WHERE id = 2",
+    );
     assert!(result.is_ok(), "JSON_EXTRACT提取数组元素应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
@@ -134,17 +141,20 @@ fn test_json_value_function() {
     assert!(create_result.is_ok());
 
     // 插入测试数据
-    let insert_query = "INSERT INTO JSON_TEST_TABLE VALUES (1, '{\"name\": \"Alice\", \"age\": 25}')";
+    let insert_query =
+        "INSERT INTO JSON_TEST_TABLE VALUES (1, '{\"name\": \"Alice\", \"age\": 25}')";
     let result = db.sql_query(insert_query);
     assert!(result.is_ok());
 
     // 测试JSON_VALUE提取标量值
-    let result = db.sql_query("SELECT JSON_VALUE(data, '$.name') AS name FROM JSON_TEST_TABLE WHERE id = 1");
+    let result =
+        db.sql_query("SELECT JSON_VALUE(data, '$.name') AS name FROM JSON_TEST_TABLE WHERE id = 1");
     assert!(result.is_ok(), "JSON_VALUE提取标量值应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_VALUE提取数字
-    let result = db.sql_query("SELECT JSON_VALUE(data, '$.age') AS age FROM JSON_TEST_TABLE WHERE id = 1");
+    let result =
+        db.sql_query("SELECT JSON_VALUE(data, '$.age') AS age FROM JSON_TEST_TABLE WHERE id = 1");
     assert!(result.is_ok(), "JSON_VALUE提取数字应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
@@ -187,12 +197,16 @@ fn test_json_query_function() {
     }
 
     // 测试JSON_QUERY提取数组
-    let result = db.sql_query("SELECT JSON_QUERY(data, '$.hobbies') AS hobbies FROM JSON_TEST_TABLE WHERE id = 1");
+    let result = db.sql_query(
+        "SELECT JSON_QUERY(data, '$.hobbies') AS hobbies FROM JSON_TEST_TABLE WHERE id = 1",
+    );
     assert!(result.is_ok(), "JSON_QUERY提取数组应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_QUERY提取对象
-    let result = db.sql_query("SELECT JSON_QUERY(data, '$.address') AS address FROM JSON_TEST_TABLE WHERE id = 2");
+    let result = db.sql_query(
+        "SELECT JSON_QUERY(data, '$.address') AS address FROM JSON_TEST_TABLE WHERE id = 2",
+    );
     assert!(result.is_ok(), "JSON_QUERY提取对象应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
@@ -235,12 +249,15 @@ fn test_json_has_function() {
     }
 
     // 测试JSON_HAS检查存在的字段
-    let result = db.sql_query("SELECT JSON_HAS(data, '$.age') AS has_age FROM JSON_TEST_TABLE WHERE id = 1");
+    let result =
+        db.sql_query("SELECT JSON_HAS(data, '$.age') AS has_age FROM JSON_TEST_TABLE WHERE id = 1");
     assert!(result.is_ok(), "JSON_HAS检查存在的字段应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_HAS检查不存在的字段
-    let result = db.sql_query("SELECT JSON_HAS(data, '$.email') AS has_email FROM JSON_TEST_TABLE WHERE id = 1");
+    let result = db.sql_query(
+        "SELECT JSON_HAS(data, '$.email') AS has_email FROM JSON_TEST_TABLE WHERE id = 1",
+    );
     assert!(result.is_ok(), "JSON_HAS检查不存在的字段应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
@@ -285,27 +302,32 @@ fn test_json_type_function() {
     }
 
     // 测试JSON_TYPE检查字符串类型
-    let result = db.sql_query("SELECT JSON_TYPE(data, '$.name') AS type FROM JSON_TEST_TABLE WHERE id = 1");
+    let result =
+        db.sql_query("SELECT JSON_TYPE(data, '$.name') AS type FROM JSON_TEST_TABLE WHERE id = 1");
     assert!(result.is_ok(), "JSON_TYPE检查字符串类型应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_TYPE检查数字类型
-    let result = db.sql_query("SELECT JSON_TYPE(data, '$.age') AS type FROM JSON_TEST_TABLE WHERE id = 1");
+    let result =
+        db.sql_query("SELECT JSON_TYPE(data, '$.age') AS type FROM JSON_TEST_TABLE WHERE id = 1");
     assert!(result.is_ok(), "JSON_TYPE检查数字类型应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_TYPE检查布尔类型
-    let result = db.sql_query("SELECT JSON_TYPE(data, '$.active') AS type FROM JSON_TEST_TABLE WHERE id = 2");
+    let result = db
+        .sql_query("SELECT JSON_TYPE(data, '$.active') AS type FROM JSON_TEST_TABLE WHERE id = 2");
     assert!(result.is_ok(), "JSON_TYPE检查布尔类型应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_TYPE检查数组类型
-    let result = db.sql_query("SELECT JSON_TYPE(data, '$.items') AS type FROM JSON_TEST_TABLE WHERE id = 3");
+    let result =
+        db.sql_query("SELECT JSON_TYPE(data, '$.items') AS type FROM JSON_TEST_TABLE WHERE id = 3");
     assert!(result.is_ok(), "JSON_TYPE检查数组类型应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_TYPE检查null类型
-    let result = db.sql_query("SELECT JSON_TYPE(data, '$.value') AS type FROM JSON_TEST_TABLE WHERE id = 4");
+    let result =
+        db.sql_query("SELECT JSON_TYPE(data, '$.value') AS type FROM JSON_TEST_TABLE WHERE id = 4");
     assert!(result.is_ok(), "JSON_TYPE检查null类型应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
@@ -349,17 +371,20 @@ fn test_json_array_length_function() {
     }
 
     // 测试JSON_ARRAY_LENGTH计算数组长度
-    let result = db.sql_query("SELECT JSON_ARRAY_LENGTH(data) AS length FROM JSON_TEST_TABLE WHERE id = 1");
+    let result =
+        db.sql_query("SELECT JSON_ARRAY_LENGTH(data) AS length FROM JSON_TEST_TABLE WHERE id = 1");
     assert!(result.is_ok(), "JSON_ARRAY_LENGTH计算数组长度应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_ARRAY_LENGTH计算空数组长度
-    let result = db.sql_query("SELECT JSON_ARRAY_LENGTH(data) AS length FROM JSON_TEST_TABLE WHERE id = 2");
+    let result =
+        db.sql_query("SELECT JSON_ARRAY_LENGTH(data) AS length FROM JSON_TEST_TABLE WHERE id = 2");
     assert!(result.is_ok(), "JSON_ARRAY_LENGTH计算空数组长度应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_ARRAY_LENGTH计算非数组长度
-    let result = db.sql_query("SELECT JSON_ARRAY_LENGTH(data) AS length FROM JSON_TEST_TABLE WHERE id = 3");
+    let result =
+        db.sql_query("SELECT JSON_ARRAY_LENGTH(data) AS length FROM JSON_TEST_TABLE WHERE id = 3");
     assert!(result.is_ok(), "JSON_ARRAY_LENGTH计算非数组长度应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
@@ -433,7 +458,9 @@ fn test_json_object_function() {
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_OBJECT创建复杂对象
-    let result = db.sql_query("SELECT JSON_OBJECT('name', 'Bob', 'email', 'bob@example.com', 'active', true) AS obj");
+    let result = db.sql_query(
+        "SELECT JSON_OBJECT('name', 'Bob', 'email', 'bob@example.com', 'active', true) AS obj",
+    );
     assert!(result.is_ok(), "JSON_OBJECT创建复杂对象应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
@@ -465,12 +492,15 @@ fn test_json_set_function() {
     assert!(create_result.is_ok());
 
     // 插入测试数据
-    let insert_query = "INSERT INTO JSON_TEST_TABLE VALUES (1, '{\"name\": \"Alice\", \"age\": 25}')";
+    let insert_query =
+        "INSERT INTO JSON_TEST_TABLE VALUES (1, '{\"name\": \"Alice\", \"age\": 25}')";
     let result = db.sql_query(insert_query);
     assert!(result.is_ok());
 
     // 测试JSON_SET修改字段
-    let result = db.sql_query("SELECT JSON_SET(data, '$.age', 26) AS new_data FROM JSON_TEST_TABLE WHERE id = 1");
+    let result = db.sql_query(
+        "SELECT JSON_SET(data, '$.age', 26) AS new_data FROM JSON_TEST_TABLE WHERE id = 1",
+    );
     assert!(result.is_ok(), "JSON_SET修改字段应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
@@ -512,7 +542,9 @@ fn test_json_remove_function() {
     assert!(result.is_ok());
 
     // 测试JSON_REMOVE删除字段
-    let result = db.sql_query("SELECT JSON_REMOVE(data, '$.email') AS new_data FROM JSON_TEST_TABLE WHERE id = 1");
+    let result = db.sql_query(
+        "SELECT JSON_REMOVE(data, '$.email') AS new_data FROM JSON_TEST_TABLE WHERE id = 1",
+    );
     assert!(result.is_ok(), "JSON_REMOVE删除字段应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
@@ -544,7 +576,8 @@ fn test_json_merge_patch_function() {
     assert!(create_result.is_ok());
 
     // 插入测试数据
-    let insert_query = "INSERT INTO JSON_TEST_TABLE VALUES (1, '{\"name\": \"Alice\", \"age\": 25}')";
+    let insert_query =
+        "INSERT INTO JSON_TEST_TABLE VALUES (1, '{\"name\": \"Alice\", \"age\": 25}')";
     let result = db.sql_query(insert_query);
     assert!(result.is_ok());
 
@@ -586,7 +619,8 @@ fn test_json_array_append_function() {
     assert!(create_result.is_ok());
 
     // 插入测试数据
-    let insert_query = "INSERT INTO JSON_TEST_TABLE VALUES (1, '{\"hobbies\": [\"reading\", \"hiking\"]}')";
+    let insert_query =
+        "INSERT INTO JSON_TEST_TABLE VALUES (1, '{\"hobbies\": [\"reading\", \"hiking\"]}')";
     let result = db.sql_query(insert_query);
     assert!(result.is_ok());
 
@@ -634,7 +668,8 @@ fn test_json_functions_combined() {
     }
 
     // 测试JSON_EXTRACT与WHERE条件结合
-    let result = db.sql_query("SELECT * FROM JSON_TEST_TABLE WHERE JSON_EXTRACT(data, '$.age') > 25");
+    let result =
+        db.sql_query("SELECT * FROM JSON_TEST_TABLE WHERE JSON_EXTRACT(data, '$.age') > 25");
     assert!(result.is_ok(), "JSON_EXTRACT与WHERE条件结合应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
@@ -644,7 +679,8 @@ fn test_json_functions_combined() {
     assert_eq!(result.expect("Query should succeed").row_count(), 2);
 
     // 测试JSON_TYPE与ORDER BY结合
-    let result = db.sql_query("SELECT JSON_TYPE(data, '$.name') AS type FROM JSON_TEST_TABLE ORDER BY id");
+    let result =
+        db.sql_query("SELECT JSON_TYPE(data, '$.name') AS type FROM JSON_TEST_TABLE ORDER BY id");
     assert!(result.is_ok(), "JSON_TYPE与ORDER BY结合应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 2);
 
@@ -693,12 +729,15 @@ fn test_json_functions_edge_cases() {
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_ARRAY_LENGTH计算大数组长度
-    let result = db.sql_query("SELECT JSON_ARRAY_LENGTH(data) AS length FROM JSON_TEST_TABLE WHERE id = 2");
+    let result =
+        db.sql_query("SELECT JSON_ARRAY_LENGTH(data) AS length FROM JSON_TEST_TABLE WHERE id = 2");
     assert!(result.is_ok(), "JSON_ARRAY_LENGTH计算大数组长度应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 
     // 测试JSON_HAS检查空对象
-    let result = db.sql_query("SELECT JSON_HAS(data, '$.empty') AS has_empty FROM JSON_TEST_TABLE WHERE id = 3");
+    let result = db.sql_query(
+        "SELECT JSON_HAS(data, '$.empty') AS has_empty FROM JSON_TEST_TABLE WHERE id = 3",
+    );
     assert!(result.is_ok(), "JSON_HAS检查空对象应该成功");
     assert_eq!(result.expect("Query should succeed").row_count(), 1);
 

@@ -1,4 +1,3 @@
-
 #[cfg(feature = "std")]
 use std::sync::Arc;
 
@@ -73,11 +72,7 @@ impl NoStdLogger {
 
             #[cfg(feature = "baremetal")]
             {
-                let _ = crate::platform::file_write(
-                    1 as crate::platform::FileHandle,
-                    data,
-                    len,
-                );
+                let _ = crate::platform::file_write(1 as crate::platform::FileHandle, data, len);
             }
         }
 
@@ -114,7 +109,12 @@ impl tracing_core::Subscriber for NoStdLogger {
 
     fn record(&self, _span: &tracing_core::span::Id, _values: &tracing_core::span::Record) {}
 
-    fn record_follows_from(&self, _span: &tracing_core::span::Id, _follows: &tracing_core::span::Id) {}
+    fn record_follows_from(
+        &self,
+        _span: &tracing_core::span::Id,
+        _follows: &tracing_core::span::Id,
+    ) {
+    }
 
     fn event(&self, event: &tracing_core::Event) {
         if !self.enabled(event.metadata()) {
@@ -173,7 +173,11 @@ impl<'a> tracing_core::field::Visit for EventVisitor<'a> {
         let _ = write!(self.logger.buffer, "{}: {}\n", field.name(), value);
     }
 
-    fn record_error(&mut self, field: &tracing_core::field::Field, value: &(dyn core::error::Error + 'static)) {
+    fn record_error(
+        &mut self,
+        field: &tracing_core::field::Field,
+        value: &(dyn core::error::Error + 'static),
+    ) {
         let _ = write!(self.logger.buffer, "[{}ms] ", self.timestamp);
         let _ = write!(self.logger.buffer, "{}: {}\n", field.name(), value);
     }
@@ -198,7 +202,11 @@ pub fn init_logger_with_file(log_path: &str, debug_mode: bool) -> Result<(), std
     use std::sync::Mutex;
     use tracing::Level;
 
-    let log_level = if debug_mode { Level::DEBUG } else { Level::INFO };
+    let log_level = if debug_mode {
+        Level::DEBUG
+    } else {
+        Level::INFO
+    };
 
     let file = OpenOptions::new()
         .create(true)
@@ -207,7 +215,11 @@ pub fn init_logger_with_file(log_path: &str, debug_mode: bool) -> Result<(), std
     let file = Arc::new(Mutex::new(file));
 
     let env_filter = tracing_subscriber::EnvFilter::from_default_env()
-        .add_directive(format!("remdb={}", log_level).parse().expect("failed to parse log level"))
+        .add_directive(
+            format!("remdb={}", log_level)
+                .parse()
+                .expect("failed to parse log level"),
+        )
         .add_directive(format!("remdb_server={}", log_level).parse().unwrap());
 
     // 使用更简单的方法：为文件输出单独创建一个不带颜色的订阅者
@@ -220,13 +232,13 @@ pub fn init_logger_with_file(log_path: &str, debug_mode: bool) -> Result<(), std
         fn new(file: Arc<Mutex<std::fs::File>>) -> Self {
             Self { file }
         }
-        
+
         // 移除ANSI颜色代码和处理特殊字符的辅助方法
         fn clean_log_output(&self, buf: &[u8]) -> Vec<u8> {
             let s = String::from_utf8_lossy(buf);
             let mut result = String::new();
             let mut in_ansi = false;
-            
+
             for c in s.chars() {
                 if c == '\u{1b}' {
                     in_ansi = true;
@@ -243,7 +255,7 @@ pub fn init_logger_with_file(log_path: &str, debug_mode: bool) -> Result<(), std
                     }
                 }
             }
-            
+
             result.into_bytes()
         }
     }
@@ -252,7 +264,7 @@ pub fn init_logger_with_file(log_path: &str, debug_mode: bool) -> Result<(), std
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             // 直接写入stdout，保留颜色
             let _ = std::io::stdout().write(buf);
-            
+
             // 清理日志输出后写入文件
             let cleaned_buf = self.clean_log_output(buf);
             if let Ok(mut f) = self.file.lock() {

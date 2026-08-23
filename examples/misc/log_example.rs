@@ -1,4 +1,4 @@
-use remdb::log::{debug, error, info, trace, warn, init_logger};
+use remdb::log::{debug, error, info, init_logger, trace, warn};
 
 #[cfg(feature = "std")]
 fn main() {

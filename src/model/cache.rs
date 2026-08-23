@@ -1,5 +1,5 @@
 //! Inference result cache
-//! 
+//!
 //! This module provides an LRU cache for model inference results,
 //! reducing redundant computations for identical inputs.
 
@@ -176,9 +176,9 @@ impl InferenceCache {
             }
             entry.touch();
             self.stats.hits += 1;
-            
+
             self.update_access_order(key);
-            
+
             Some(self.entries.get(key)?)
         } else {
             self.stats.misses += 1;
@@ -198,8 +198,9 @@ impl InferenceCache {
         let entry = CacheEntry::new(output);
         let entry_memory = entry.memory_size;
 
-        while self.entries.len() >= self.config.max_entries 
-              || self.current_memory + entry_memory > self.config.max_memory_mb * 1024 * 1024 {
+        while self.entries.len() >= self.config.max_entries
+            || self.current_memory + entry_memory > self.config.max_memory_mb * 1024 * 1024
+        {
             if !self.evict_lru() {
                 break;
             }
@@ -211,7 +212,11 @@ impl InferenceCache {
         self.stats.current_size = self.entries.len();
 
         #[cfg(feature = "log")]
-        debug!("Cache put: {} entries, {} bytes", self.entries.len(), self.current_memory);
+        debug!(
+            "Cache put: {} entries, {} bytes",
+            self.entries.len(),
+            self.current_memory
+        );
     }
 
     pub fn remove(&mut self, key: &CacheKey) -> bool {
@@ -238,10 +243,10 @@ impl InferenceCache {
                 self.current_memory -= entry.memory_size;
                 self.stats.evictions += 1;
                 self.stats.current_size = self.entries.len();
-                
+
                 #[cfg(feature = "log")]
                 debug!("Cache evicted LRU entry for model: {}", lru_key.model_name);
-                
+
                 return true;
             }
         }
@@ -258,7 +263,7 @@ impl InferenceCache {
         self.access_order.clear();
         self.current_memory = 0;
         self.stats.current_size = 0;
-        
+
         #[cfg(feature = "log")]
         info!("Cache cleared");
     }
@@ -296,7 +301,8 @@ impl InferenceCache {
             None => return 0,
         };
 
-        let expired_keys: Vec<CacheKey> = self.entries
+        let expired_keys: Vec<CacheKey> = self
+            .entries
             .iter()
             .filter(|(_, entry)| entry.is_expired(ttl))
             .map(|(key, _)| key.clone())
@@ -338,7 +344,10 @@ impl ThreadSafeCache {
     }
 
     pub fn remove(&self, key: &CacheKey) -> bool {
-        self.inner.lock().map(|mut c| c.remove(key)).unwrap_or(false)
+        self.inner
+            .lock()
+            .map(|mut c| c.remove(key))
+            .unwrap_or(false)
     }
 
     pub fn clear(&self) {
@@ -362,7 +371,10 @@ impl ThreadSafeCache {
     }
 
     pub fn prune_expired(&self) -> usize {
-        self.inner.lock().map(|mut c| c.prune_expired()).unwrap_or(0)
+        self.inner
+            .lock()
+            .map(|mut c| c.prune_expired())
+            .unwrap_or(0)
     }
 }
 
@@ -379,14 +391,15 @@ lazy_static::lazy_static! {
 }
 
 pub fn init_cache(config: CacheConfig) -> Result<(), String> {
-    let mut cache = GLOBAL_CACHE.write()
+    let mut cache = GLOBAL_CACHE
+        .write()
         .map_err(|_| "Failed to acquire cache lock")?;
-    
+
     *cache = Some(ThreadSafeCache::new(config));
-    
+
     #[cfg(feature = "log")]
     info!("Global inference cache initialized");
-    
+
     Ok(())
 }
 
@@ -398,14 +411,14 @@ pub fn get_or_init_cache() -> ThreadSafeCache {
     if let Some(cache) = get_cache() {
         return cache;
     }
-    
+
     let config = CacheConfig::default();
     let cache = ThreadSafeCache::new(config);
-    
+
     if let Ok(mut guard) = GLOBAL_CACHE.write() {
         *guard = Some(cache.clone());
     }
-    
+
     cache
 }
 
@@ -428,26 +441,26 @@ where
     F: FnOnce() -> Result<Vec<f32>, String>,
 {
     let cache = get_or_init_cache();
-    
+
     if !cache.is_enabled() {
         return compute_fn();
     }
-    
+
     let key = CacheKey::new(model_name.to_string(), inputs);
-    
+
     if let Some(entry) = cache.get(&key) {
         #[cfg(feature = "log")]
         debug!("Cache hit for model: {}", model_name);
         return Ok(entry.output);
     }
-    
+
     #[cfg(feature = "log")]
     debug!("Cache miss for model: {}", model_name);
-    
+
     let output = compute_fn()?;
-    
+
     cache.put(key, output.clone());
-    
+
     Ok(output)
 }
 
@@ -483,9 +496,9 @@ mod tests {
         let mut cache = InferenceCache::new(CacheConfig::default());
         let key = CacheKey::new("model".to_string(), &[vec![1.0, 2.0, 3.0]]);
         let output = vec![4.0, 5.0, 6.0];
-        
+
         cache.put(key.clone(), output.clone());
-        
+
         let entry = cache.get(&key);
         assert!(entry.is_some());
         assert_eq!(entry.unwrap().output, output);
@@ -495,10 +508,10 @@ mod tests {
     fn test_cache_miss() {
         let mut cache = InferenceCache::new(CacheConfig::default());
         let key = CacheKey::new("model".to_string(), &[vec![1.0, 2.0, 3.0]]);
-        
+
         let entry = cache.get(&key);
         assert!(entry.is_none());
-        
+
         let stats = cache.stats();
         assert_eq!(stats.misses, 1);
     }
@@ -507,11 +520,11 @@ mod tests {
     fn test_cache_hit_stats() {
         let mut cache = InferenceCache::new(CacheConfig::default());
         let key = CacheKey::new("model".to_string(), &[vec![1.0, 2.0, 3.0]]);
-        
+
         cache.put(key.clone(), vec![4.0, 5.0, 6.0]);
         cache.get(&key);
         cache.get(&key);
-        
+
         let stats = cache.stats();
         assert_eq!(stats.hits, 2);
         assert_eq!(stats.misses, 0);
@@ -525,19 +538,19 @@ mod tests {
             ..Default::default()
         };
         let mut cache = InferenceCache::new(config);
-        
+
         let key1 = CacheKey::new("model".to_string(), &[vec![1.0]]);
         let key2 = CacheKey::new("model".to_string(), &[vec![2.0]]);
         let key3 = CacheKey::new("model".to_string(), &[vec![3.0]]);
-        
+
         cache.put(key1.clone(), vec![1.0]);
         cache.put(key2.clone(), vec![2.0]);
         cache.put(key3.clone(), vec![3.0]);
-        
+
         assert!(cache.get(&key1).is_none());
         assert!(cache.get(&key2).is_some());
         assert!(cache.get(&key3).is_some());
-        
+
         let stats = cache.stats();
         assert_eq!(stats.evictions, 1);
     }
@@ -545,14 +558,14 @@ mod tests {
     #[test]
     fn test_cache_clear() {
         let mut cache = InferenceCache::new(CacheConfig::default());
-        
+
         cache.put(CacheKey::new("model".to_string(), &[vec![1.0]]), vec![1.0]);
         cache.put(CacheKey::new("model".to_string(), &[vec![2.0]]), vec![2.0]);
-        
+
         assert_eq!(cache.len(), 2);
-        
+
         cache.clear();
-        
+
         assert!(cache.is_empty());
         assert_eq!(cache.memory_usage(), 0);
     }
@@ -564,10 +577,10 @@ mod tests {
             ..Default::default()
         };
         let mut cache = InferenceCache::new(config);
-        
+
         let key = CacheKey::new("model".to_string(), &[vec![1.0]]);
         cache.put(key.clone(), vec![1.0]);
-        
+
         assert!(cache.get(&key).is_none());
         assert!(cache.is_empty());
     }
@@ -579,15 +592,21 @@ mod tests {
             ..Default::default()
         };
         let mut cache = InferenceCache::new(config);
-        
+
         let key = CacheKey::new("model".to_string(), &[vec![1.0]]);
         cache.put(key.clone(), vec![1.0]);
-        
-        assert!(cache.get(&key).is_some(), "Entry should exist immediately after put");
-        
+
+        assert!(
+            cache.get(&key).is_some(),
+            "Entry should exist immediately after put"
+        );
+
         std::thread::sleep(std::time::Duration::from_secs(2));
-        
-        assert!(cache.get(&key).is_none(), "Entry should be expired after TTL");
+
+        assert!(
+            cache.get(&key).is_none(),
+            "Entry should be expired after TTL"
+        );
     }
 
     #[test]
@@ -599,7 +618,7 @@ mod tests {
             current_size: 10,
             max_size: 100,
         };
-        
+
         assert!((stats.hit_rate() - 0.75).abs() < 0.001);
     }
 
@@ -607,9 +626,9 @@ mod tests {
     fn test_thread_safe_cache() {
         let cache = ThreadSafeCache::new(CacheConfig::default());
         let key = CacheKey::new("model".to_string(), &[vec![1.0, 2.0]]);
-        
+
         cache.put(key.clone(), vec![3.0, 4.0]);
-        
+
         let entry = cache.get(&key);
         assert!(entry.is_some());
         assert_eq!(entry.unwrap().output, vec![3.0, 4.0]);
@@ -618,17 +637,19 @@ mod tests {
     #[test]
     fn test_cached_inference_function() {
         let mut call_count = 0;
-        
+
         let result1 = cached_inference("model", &[vec![1.0, 2.0]], || {
             call_count += 1;
             Ok(vec![3.0, 4.0])
-        }).unwrap();
-        
+        })
+        .unwrap();
+
         let result2 = cached_inference("model", &[vec![1.0, 2.0]], || {
             call_count += 1;
             Ok(vec![3.0, 4.0])
-        }).unwrap();
-        
+        })
+        .unwrap();
+
         assert_eq!(result1, vec![3.0, 4.0]);
         assert_eq!(result2, vec![3.0, 4.0]);
         assert_eq!(call_count, 1);
@@ -641,14 +662,14 @@ mod tests {
             ..Default::default()
         };
         let mut cache = InferenceCache::new(config);
-        
+
         cache.put(CacheKey::new("model".to_string(), &[vec![1.0]]), vec![1.0]);
         cache.put(CacheKey::new("model".to_string(), &[vec![2.0]]), vec![2.0]);
-        
+
         assert_eq!(cache.len(), 2, "Should have 2 entries initially");
-        
+
         std::thread::sleep(std::time::Duration::from_secs(2));
-        
+
         let pruned = cache.prune_expired();
         assert_eq!(pruned, 2, "Should prune 2 expired entries");
         assert!(cache.is_empty(), "Cache should be empty after pruning");

@@ -1,7 +1,6 @@
 extern crate alloc;
 use alloc::sync::Arc;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use std::sync::LazyLock;
 use remdb::memory::allocator;
 use remdb::platform::*;
 use remdb::table::*;
@@ -11,6 +10,7 @@ use remdb::TimeSeriesIndex;
 use remdb::TimeSeriesRecord;
 use remdb::TimeSeriesTable;
 use remdb::TimeSeriesTableDef;
+use std::sync::LazyLock;
 
 // 测试用Platform实现
 struct TestPlatform;
@@ -1475,7 +1475,7 @@ static VECTOR_TABLE_DEF: LazyLock<TableDef> = LazyLock::new(|| TableDef {
     secondary_index: None,
     secondary_index_type: IndexType::Hash,
     record_size: 4 + 32 * 4 + 4, // 4字节id + 32*4字节向量 + 4字节category
-    max_records: 1000, // 基准测试使用1000条记录
+    max_records: 1000,           // 基准测试使用1000条记录
     version: 1,
     created_at: 0,
     updated_at: 0,
@@ -1511,11 +1511,23 @@ fn bench_vector_insert(c: &mut Criterion) {
             // 指针操作需要unsafe块
             unsafe {
                 // 设置id
-                core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, record_data.as_mut_ptr(), 4);
+                core::ptr::copy_nonoverlapping(
+                    &id as *const i32 as *const u8,
+                    record_data.as_mut_ptr(),
+                    4,
+                );
                 // 设置向量数据
-                core::ptr::copy_nonoverlapping(vector_data.as_ptr() as *const u8, record_data.as_mut_ptr().add(4), 32 * 4);
+                core::ptr::copy_nonoverlapping(
+                    vector_data.as_ptr() as *const u8,
+                    record_data.as_mut_ptr().add(4),
+                    32 * 4,
+                );
                 // 设置category
-                core::ptr::copy_nonoverlapping(&category as *const i32 as *const u8, record_data.as_mut_ptr().add(4 + 32 * 4), 4);
+                core::ptr::copy_nonoverlapping(
+                    &category as *const i32 as *const u8,
+                    record_data.as_mut_ptr().add(4 + 32 * 4),
+                    4,
+                );
 
                 // 插入记录
                 black_box(table.insert(record_data.as_ptr()).unwrap());
@@ -1539,7 +1551,9 @@ fn bench_vector_insert(c: &mut Criterion) {
             // 初始化测试数据，指针操作需要unsafe块
             unsafe {
                 for i in 0..BATCH_SIZE {
-                    let record_ptr = batch_data.as_mut_ptr().add(i * VECTOR_TABLE_DEF.record_size);
+                    let record_ptr = batch_data
+                        .as_mut_ptr()
+                        .add(i * VECTOR_TABLE_DEF.record_size);
                     let id: i32 = (i + 1) as i32;
                     let category: i32 = (i % 5 + 1) as i32;
                     let vector_value = (i + 1) as f32;
@@ -1548,9 +1562,17 @@ fn bench_vector_insert(c: &mut Criterion) {
                     // 设置id
                     core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, record_ptr, 4);
                     // 设置向量数据
-                    core::ptr::copy_nonoverlapping(vector_data.as_ptr() as *const u8, record_ptr.add(4), 32 * 4);
+                    core::ptr::copy_nonoverlapping(
+                        vector_data.as_ptr() as *const u8,
+                        record_ptr.add(4),
+                        32 * 4,
+                    );
                     // 设置category
-                    core::ptr::copy_nonoverlapping(&category as *const i32 as *const u8, record_ptr.add(4 + 32 * 4), 4);
+                    core::ptr::copy_nonoverlapping(
+                        &category as *const i32 as *const u8,
+                        record_ptr.add(4 + 32 * 4),
+                        4,
+                    );
                 }
 
                 // 执行批量插入
@@ -1597,11 +1619,23 @@ fn bench_vector_query(c: &mut Criterion) {
                     let vector_data = [vector_value; 32]; // 32维向量
 
                     // 设置id
-                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, record_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(
+                        &id as *const i32 as *const u8,
+                        record_data.as_mut_ptr(),
+                        4,
+                    );
                     // 设置向量数据
-                    core::ptr::copy_nonoverlapping(vector_data.as_ptr() as *const u8, record_data.as_mut_ptr().add(4), 32 * 4);
+                    core::ptr::copy_nonoverlapping(
+                        vector_data.as_ptr() as *const u8,
+                        record_data.as_mut_ptr().add(4),
+                        32 * 4,
+                    );
                     // 设置category
-                    core::ptr::copy_nonoverlapping(&category as *const i32 as *const u8, record_data.as_mut_ptr().add(4 + 32 * 4), 4);
+                    core::ptr::copy_nonoverlapping(
+                        &category as *const i32 as *const u8,
+                        record_data.as_mut_ptr().add(4 + 32 * 4),
+                        4,
+                    );
 
                     table.insert(record_data.as_ptr()).unwrap();
                 }
@@ -1617,14 +1651,14 @@ fn bench_vector_query(c: &mut Criterion) {
                     .iterate(|_id, data_ptr| {
                         // 获取向量数据
                         let vector_ptr = data_ptr.add(4) as *const f32;
-                        
+
                         // 计算L2距离（简化实现，仅用于基准测试）
                         let mut distance = 0.0f32;
                         for i in 0..32 {
                             let diff = *vector_ptr.add(i) - query_vector[i];
                             distance += diff * diff;
                         }
-                        
+
                         // 如果距离小于阈值，计数
                         if distance.sqrt() < 5.0 {
                             result_count += 1;
@@ -1657,11 +1691,23 @@ fn bench_vector_query(c: &mut Criterion) {
                     let vector_data = [vector_value; 32]; // 32维向量
 
                     // 设置id
-                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, record_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(
+                        &id as *const i32 as *const u8,
+                        record_data.as_mut_ptr(),
+                        4,
+                    );
                     // 设置向量数据
-                    core::ptr::copy_nonoverlapping(vector_data.as_ptr() as *const u8, record_data.as_mut_ptr().add(4), 32 * 4);
+                    core::ptr::copy_nonoverlapping(
+                        vector_data.as_ptr() as *const u8,
+                        record_data.as_mut_ptr().add(4),
+                        32 * 4,
+                    );
                     // 设置category
-                    core::ptr::copy_nonoverlapping(&category as *const i32 as *const u8, record_data.as_mut_ptr().add(4 + 32 * 4), 4);
+                    core::ptr::copy_nonoverlapping(
+                        &category as *const i32 as *const u8,
+                        record_data.as_mut_ptr().add(4 + 32 * 4),
+                        4,
+                    );
 
                     table.insert(record_data.as_ptr()).unwrap();
                 }
@@ -1709,11 +1755,23 @@ fn bench_vector_index(c: &mut Criterion) {
                     let vector_data = [vector_value; 32]; // 32维向量
 
                     // 设置id
-                    core::ptr::copy_nonoverlapping(&id as *const i32 as *const u8, record_data.as_mut_ptr(), 4);
+                    core::ptr::copy_nonoverlapping(
+                        &id as *const i32 as *const u8,
+                        record_data.as_mut_ptr(),
+                        4,
+                    );
                     // 设置向量数据
-                    core::ptr::copy_nonoverlapping(vector_data.as_ptr() as *const u8, record_data.as_mut_ptr().add(4), 32 * 4);
+                    core::ptr::copy_nonoverlapping(
+                        vector_data.as_ptr() as *const u8,
+                        record_data.as_mut_ptr().add(4),
+                        32 * 4,
+                    );
                     // 设置category
-                    core::ptr::copy_nonoverlapping(&category as *const i32 as *const u8, record_data.as_mut_ptr().add(4 + 32 * 4), 4);
+                    core::ptr::copy_nonoverlapping(
+                        &category as *const i32 as *const u8,
+                        record_data.as_mut_ptr().add(4 + 32 * 4),
+                        4,
+                    );
 
                     table.insert(record_data.as_ptr()).unwrap();
                 }

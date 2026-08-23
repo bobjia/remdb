@@ -121,7 +121,9 @@ fn main() {
 
         // 查询数据
         println!("\n查询数据:");
-        let result = db.execute_query("users", &["id", "name", "email", "age"], None, None).unwrap();
+        let result = db
+            .execute_query("users", &["id", "name", "email", "age"], None, None)
+            .unwrap();
         println!("查询结果: {}", result.to_string());
 
         // 测试新的专用方法

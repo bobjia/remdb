@@ -45,6 +45,7 @@ fn main() -> Result<()> {
         ha_config: None,
         #[cfg(feature = "pubsub")]
         pubsub_config: None,
+        model_worker_config: Default::default(),
     }));
 
     let mut db = RemDb::new(config);
@@ -54,10 +55,14 @@ fn main() -> Result<()> {
 
     // 1. Create test tables
     println!("1. Create test tables");
-    db.sql_query("CREATE TABLE users (id INT32 PRIMARY KEY, name TEXT, department TEXT, salary REAL)")?;
+    db.sql_query(
+        "CREATE TABLE users (id INT32 PRIMARY KEY, name TEXT, department TEXT, salary REAL)",
+    )?;
     println!("   Created table: users");
-    
-    db.sql_query("CREATE TABLE orders (id INT32 PRIMARY KEY, user_id INT32, product TEXT, amount REAL)")?;
+
+    db.sql_query(
+        "CREATE TABLE orders (id INT32 PRIMARY KEY, user_id INT32, product TEXT, amount REAL)",
+    )?;
     println!("   Created table: orders");
 
     // 2. Insert test data
@@ -69,7 +74,7 @@ fn main() -> Result<()> {
     db.sql_query("INSERT INTO users VALUES (5, 'Eve', 'Marketing', 60000)")?;
     db.sql_query("INSERT INTO users VALUES (6, 'Frank', 'Engineering', 85000)")?;
     println!("   Inserted 6 user records");
-    
+
     db.sql_query("INSERT INTO orders VALUES (1, 1, 'Laptop', 1200)")?;
     db.sql_query("INSERT INTO orders VALUES (2, 1, 'Mouse', 50)")?;
     db.sql_query("INSERT INTO orders VALUES (3, 2, 'Keyboard', 100)")?;
@@ -80,21 +85,22 @@ fn main() -> Result<()> {
 
     // 3. DISTINCT query
     println!("\n3. DISTINCT query");
-    
+
     let result = db.sql_query("SELECT DISTINCT department FROM users")?;
     println!("   Distinct departments:");
     println!("{}", result.to_string());
 
     // 4. GROUP BY query
     println!("\n4. GROUP BY query");
-    
-    let result = db.sql_query("SELECT department, COUNT(*) AS count FROM users GROUP BY department")?;
+
+    let result =
+        db.sql_query("SELECT department, COUNT(*) AS count FROM users GROUP BY department")?;
     println!("   Count by department:");
     println!("{}", result.to_string());
 
     // 5. GROUP BY + multiple aggregate functions
     println!("\n5. GROUP BY + multiple aggregate functions");
-    
+
     let result = db.sql_query(
         "SELECT department, COUNT(*) AS count, AVG(salary) AS avg_salary, MIN(salary) AS min_salary, MAX(salary) AS max_salary FROM users GROUP BY department"
     )?;
@@ -103,23 +109,24 @@ fn main() -> Result<()> {
 
     // 6. HAVING clause
     println!("\n6. HAVING clause");
-    
+
     let result = db.sql_query(
-        "SELECT department, COUNT(*) AS count FROM users GROUP BY department HAVING count > 1"
+        "SELECT department, COUNT(*) AS count FROM users GROUP BY department HAVING count > 1",
     )?;
     println!("   Departments with more than 1 employee:");
     println!("{}", result.to_string());
 
     // 7. Column alias
     println!("\n7. Column alias");
-    
-    let result = db.sql_query("SELECT id AS user_id, name AS user_name, salary AS income FROM users")?;
+
+    let result =
+        db.sql_query("SELECT id AS user_id, name AS user_name, salary AS income FROM users")?;
     println!("   Using column aliases:");
     println!("{}", result.to_string());
 
     // 8. JOIN query
     println!("\n8. JOIN query");
-    
+
     let result = db.sql_query(
         "SELECT users.id, users.name, orders.product, orders.amount FROM users INNER JOIN orders ON users.id = orders.user_id"
     )?;
@@ -128,7 +135,7 @@ fn main() -> Result<()> {
 
     // 9. JOIN + WHERE
     println!("\n9. JOIN + WHERE");
-    
+
     let result = db.sql_query(
         "SELECT users.name, orders.product, orders.amount FROM users INNER JOIN orders ON users.id = orders.user_id WHERE orders.amount > 100"
     )?;
@@ -137,7 +144,7 @@ fn main() -> Result<()> {
 
     // 10. Complex query
     println!("\n10. Complex query");
-    
+
     let result = db.sql_query(
         "SELECT users.department, COUNT(*) AS order_count, SUM(orders.amount) AS total_amount FROM users INNER JOIN orders ON users.id = orders.user_id GROUP BY users.department ORDER BY total_amount DESC"
     )?;

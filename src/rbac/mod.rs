@@ -1,5 +1,5 @@
 //! RBAC (Role-Based Access Control) module
-//! 
+//!
 //! This module implements role-based access control for the remdb database,
 //! including role creation, permission granting, and user-role assignment.
 

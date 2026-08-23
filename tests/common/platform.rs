@@ -58,11 +58,9 @@ impl Platform for TestPlatform {
         }
     }
 
-    fn delay_ms(&self, _ms: u32) {
-    }
+    fn delay_ms(&self, _ms: u32) {}
 
-    fn delay_us(&self, _us: u32) {
-    }
+    fn delay_us(&self, _us: u32) {}
 
     fn file_open(&self, _path: &str, _mode: FileMode) -> FileResult<FileHandle> {
         Ok(core::ptr::null())
@@ -72,7 +70,12 @@ impl Platform for TestPlatform {
         Ok(())
     }
 
-    fn file_write(&self, _handle: FileHandle, _buffer: *const u8, _size: usize) -> FileResult<usize> {
+    fn file_write(
+        &self,
+        _handle: FileHandle,
+        _buffer: *const u8,
+        _size: usize,
+    ) -> FileResult<usize> {
         Ok(0)
     }
 

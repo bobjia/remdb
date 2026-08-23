@@ -32,7 +32,7 @@ pub fn calculate_vector_cosine_similarity(vec1: *const f32, vec2: &[f64], dimens
     let mut dot_product = 0.0;
     let mut norm1 = 0.0;
     let mut norm2 = 0.0;
-    
+
     for i in 0..dimension as usize {
         unsafe {
             let v1 = *vec1.add(i) as f64;
@@ -42,7 +42,7 @@ pub fn calculate_vector_cosine_similarity(vec1: *const f32, vec2: &[f64], dimens
             norm2 += v2 * v2;
         }
     }
-    
+
     if norm1 == 0.0 || norm2 == 0.0 {
         0.0
     } else {
@@ -62,31 +62,35 @@ pub fn parse_vector_distance_expression(expr: &str) -> Option<(String, &'static 
     if let Some(op_pos) = expr.find("<=>") {
         return parse_vector_op(expr, op_pos, "<=>");
     }
-    
+
     None
 }
 
 /// 解析特定向量操作符的表达式
-fn parse_vector_op(expr: &str, op_pos: usize, op: &'static str) -> Option<(String, &'static str, Vec<f64>)> {
+fn parse_vector_op(
+    expr: &str,
+    op_pos: usize,
+    op: &'static str,
+) -> Option<(String, &'static str, Vec<f64>)> {
     // 提取向量字段名
     let field_name = expr[..op_pos].trim().to_string();
-    
+
     // 提取比较向量部分
     let vec_part = expr[op_pos + op.len()..].trim();
-    
+
     // 解析向量字符串，如 "[1.0, 2.0, 3.0]"
     if vec_part.starts_with('[') && vec_part.ends_with(']') {
-        let vec_str = &vec_part[1..vec_part.len()-1];
+        let vec_str = &vec_part[1..vec_part.len() - 1];
         let vec_values: Result<Vec<f64>, _> = vec_str
             .split(',')
             .map(|s| s.trim().parse::<f64>())
             .collect();
-        
+
         if let Ok(vec) = vec_values {
             return Some((field_name, op, vec));
         }
     }
-    
+
     // 如果解析失败，返回None
     None
 }

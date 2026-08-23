@@ -150,7 +150,13 @@ fn test_index_params_with_clause() {
         let record = VectorRecord {
             id: i,
             vector: [i as f32 * 0.1; 10],
-            category: if i % 3 == 0 { 3 } else if i % 3 == 1 { 1 } else { 2 },
+            category: if i % 3 == 0 {
+                3
+            } else if i % 3 == 1 {
+                1
+            } else {
+                2
+            },
         };
 
         let table = db.get_table_mut(0).unwrap();
@@ -367,7 +373,9 @@ fn test_index_build_status_monitoring() {
     println!("索引构建线程池初始化成功");
 
     // 创建索引
-    let result = db.sql_query("CREATE INDEX status_test_idx ON VECTOR_TABLE (vector) USING HNSW WITH (ONLINE=true)");
+    let result = db.sql_query(
+        "CREATE INDEX status_test_idx ON VECTOR_TABLE (vector) USING HNSW WITH (ONLINE=true)",
+    );
     assert!(result.is_ok(), "创建索引应该成功");
     println!("成功创建索引，任务已提交");
 

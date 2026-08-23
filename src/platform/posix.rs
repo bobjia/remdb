@@ -10,8 +10,6 @@ pub struct PosixPlatform;
 impl Platform for PosixPlatform {
     /// 获取当前时间戳（毫秒）
     fn get_timestamp(&self) -> u64 {
-        
-
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or(std::time::Duration::ZERO);
@@ -21,8 +19,6 @@ impl Platform for PosixPlatform {
 
     /// 获取当前时间戳（微秒）
     fn get_timestamp_us(&self) -> u64 {
-        
-
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or(std::time::Duration::ZERO);
