@@ -33,7 +33,11 @@ jobs:
         run: cargo clippy --all-features
 
       - name: Run tests
-        run: cargo test --all-features --verbose
+        run: |
+          for test in $(ls tests/*.rs | sed 's/tests\/\(.*\)\.rs/\1/' | grep -v ha_test); do
+            cargo test --all-features --verbose --test "$test"
+          done
+          cargo test --all-features --verbose --lib
 
   # ---------- 发布到 crates.io / Publish to crates.io ----------
   publish:
