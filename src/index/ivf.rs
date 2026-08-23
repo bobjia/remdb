@@ -135,7 +135,6 @@ impl IVFIndex {
     /// 保存IVF索引到文件
     #[cfg(feature = "std")]
     pub fn save<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
-
         // 保存向量元数据参数
         // 写入ivf_nlist
         writer

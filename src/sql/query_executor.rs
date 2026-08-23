@@ -26,8 +26,7 @@ use crate::sql::operations::vector::{
     calculate_vector_l2_distance, parse_vector_distance_expression,
 };
 use crate::sql::query_parser::{
-    BetweenCondition, BinaryOperator, Expression, GroupByClause,
-    JoinType,
+    BetweenCondition, BinaryOperator, Expression, GroupByClause, JoinType,
 };
 use crate::sql::Value as SqlValue;
 use crate::sql::{

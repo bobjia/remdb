@@ -254,7 +254,6 @@ impl HNSWIndex {
     /// 保存HNSW索引到文件
     #[cfg(feature = "std")]
     pub fn save<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
-
         // 保存向量元数据参数
         // 写入hnsw_m
         writer
@@ -353,7 +352,6 @@ impl HNSWIndex {
         max_nodes: usize,
         reader: &mut R,
     ) -> Result<Self> {
-
         // 读取向量元数据参数
         // 读取hnsw_m
         let mut m_bytes = [0u8; 1];
