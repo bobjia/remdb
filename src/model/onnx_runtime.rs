@@ -50,10 +50,8 @@ pub struct OnnxModel {
 }
 
 impl OnnxModel {
-
     #[cfg(feature = "model-runtime")]
     pub fn load(path: &str) -> Result<Self, String> {
-
         let session = Session::builder()
             .map_err(|e| format!("Failed to create session builder: {}", e))?
             .commit_from_file(path)
@@ -130,10 +128,8 @@ impl OnnxModel {
         })
     }
 
-
     #[cfg(feature = "model-runtime")]
     pub fn execute(&self, inputs_data: &[Vec<f32>]) -> Result<Vec<f32>, String> {
-
         if inputs_data.is_empty() {
             return Err("No inputs provided".to_string());
         }
@@ -171,10 +167,8 @@ impl OnnxModel {
         Ok(result)
     }
 
-
     #[cfg(feature = "model-runtime")]
     pub fn execute_int64(&self, inputs_data: &[Vec<i64>]) -> Result<Vec<f32>, String> {
-
         if inputs_data.is_empty() {
             return Err("No inputs provided".to_string());
         }
@@ -235,9 +229,10 @@ impl OnnxModel {
         }
     }
 
-
     #[cfg(feature = "model-runtime")]
     fn extract_sentence_embedding(
+        &self,
+        outputs: &ort::session::SessionOutputs,
     ) -> Result<Vec<f32>, String> {
         if let Some(embedding_name) = self
             .info
@@ -282,10 +277,8 @@ impl OnnxModel {
         }
     }
 
-
     #[cfg(feature = "model-runtime")]
     pub fn execute_batch(&self, inputs_data: &[Vec<f32>]) -> Result<Vec<Vec<f32>>, String> {
-
         if inputs_data.is_empty() {
             return Ok(Vec::new());
         }
@@ -351,10 +344,8 @@ impl OnnxModel {
         Ok(results)
     }
 
-
     #[cfg(feature = "model-runtime")]
-    pub fn execute_int64_batch(
-    ) -> Result<Vec<Vec<f32>>, String> {
+    pub fn execute_int64_batch(&self, inputs_data: &[Vec<i64>]) -> Result<Vec<Vec<f32>>, String> {
         #[cfg(feature = "log")]
         debug!("Executing model with {} int64 batch(es)", inputs_data.len());
 
@@ -366,7 +357,7 @@ impl OnnxModel {
         let mut results = Vec::with_capacity(batch_size);
 
         for batch_inputs in inputs_data {
-            let result = self.execute_int64(batch_inputs)?;
+            let result = self.execute_int64(core::slice::from_ref(batch_inputs))?;
             results.push(result);
         }
 
@@ -431,7 +422,6 @@ impl OnnxModel {
 
 #[cfg(feature = "model-runtime")]
 impl Clone for OnnxModel {
-
     fn clone(&self) -> Self {
         Self::load(&self.model_path).expect("Failed to clone model by reloading")
     }
@@ -439,7 +429,6 @@ impl Clone for OnnxModel {
 
 #[cfg(not(feature = "model-runtime"))]
 impl Clone for OnnxModel {
-
     fn clone(&self) -> Self {
         Self {
             model_path: self.model_path.clone(),

@@ -50,7 +50,6 @@ impl ModelUDF {
         #[cfg(feature = "log")]
         debug!("ModelUDF::execute: start for model {}", self.name);
 
-
         #[cfg(feature = "model-runtime")]
         if self.use_worker {
             return self.execute_via_worker(args);
@@ -112,7 +111,6 @@ impl ModelUDF {
             model_inputs.len()
         );
 
-
         #[cfg(feature = "model-runtime")]
         {
             let cache = get_or_init_cache();
@@ -173,7 +171,6 @@ impl ModelUDF {
 
         Ok(typed_value)
     }
-
 
     #[cfg(feature = "model-runtime")]
     fn execute_via_worker(&self, args: &[TypedValue]) -> core::result::Result<TypedValue, String> {

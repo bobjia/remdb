@@ -121,7 +121,6 @@ impl ModelManager {
             return Err(ModelError::ModelAlreadyExists);
         }
 
-
         #[cfg(feature = "model-runtime")]
         if self.use_worker {
             return self.register_model_via_worker(&name, &path, &inputs, &output);
@@ -153,7 +152,6 @@ impl ModelManager {
 
         Ok(())
     }
-
 
     #[cfg(feature = "model-runtime")]
     fn register_model_via_worker(
@@ -223,7 +221,6 @@ impl ModelManager {
     }
 
     pub fn unregister_model(&mut self, name: &str) -> Result<(), ModelError> {
-
         #[cfg(feature = "model-runtime")]
         if self.use_worker {
             return self.unregister_model_via_worker(name);
@@ -236,7 +233,6 @@ impl ModelManager {
             Err(ModelError::ModelNotFound)
         }
     }
-
 
     #[cfg(feature = "model-runtime")]
     fn unregister_model_via_worker(&mut self, name: &str) -> Result<(), ModelError> {

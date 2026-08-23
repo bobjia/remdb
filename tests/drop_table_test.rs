@@ -156,7 +156,7 @@ fn test_drop_table_vector_with_if_exists() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
-        
+
         model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
@@ -250,7 +250,7 @@ fn test_drop_table_if_exists() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
-        
+
         model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
@@ -317,7 +317,7 @@ fn test_drop_table_sql() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
-        
+
         model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
@@ -405,7 +405,7 @@ fn test_drop_table_sql_if_exists() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
-        
+
         model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
@@ -470,7 +470,7 @@ fn test_drop_table_in_transaction() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
-        
+
         model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
@@ -559,7 +559,7 @@ fn test_drop_table_memory_recovery() {
         pubsub_config: None,
         #[cfg(feature = "ha")]
         ha_config: None,
-        
+
         model_worker_config: remdb::config::ModelWorkerConfig::DEFAULT,
     };
 
