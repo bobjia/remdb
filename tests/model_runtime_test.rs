@@ -2,8 +2,6 @@
 //!
 //! Tests for ONNX model loading, execution, worker protocol, and builtin models.
 
-#![cfg(feature = "model-runtime")]
-
 use remdb::model::builtin_models::{get_builtin_model, list_builtin_models, BUILTIN_MODELS};
 use remdb::model::worker_protocol::{
     deserialize_request, deserialize_response, serialize_request, serialize_response, ErrorCode,
@@ -12,6 +10,8 @@ use remdb::model::worker_protocol::{
 use remdb::model::{ModelError, ModelInfo, ModelManager, ModelUDF, OnnxModel};
 use remdb::types::{DataType, TypedValue, Value};
 
+// Stub model tests (when model-runtime is not enabled, OnnxModel::load returns a stub)
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_onnx_model_stub_load() {
     let model = OnnxModel::load("test_model.onnx");
@@ -22,6 +22,7 @@ fn test_onnx_model_stub_load() {
     assert_eq!(model.output_count(), 1);
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_onnx_model_stub_execute() {
     let model = OnnxModel::load("test_model.onnx").unwrap();
@@ -34,6 +35,7 @@ fn test_onnx_model_stub_execute() {
     assert!(!output.is_empty());
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_onnx_model_stub_execute_batch() {
     let model = OnnxModel::load("test_model.onnx").unwrap();
@@ -50,6 +52,7 @@ fn test_onnx_model_stub_execute_batch() {
     assert_eq!(outputs.len(), 3);
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_onnx_model_get_info() {
     let model = OnnxModel::load("my_model.onnx").unwrap();
@@ -60,6 +63,7 @@ fn test_onnx_model_get_info() {
     assert!(!info.output_names.is_empty());
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_onnx_model_get_path() {
     let model = OnnxModel::load("/path/to/model.onnx").unwrap();
@@ -79,6 +83,7 @@ fn test_model_manager_with_worker() {
     assert!(manager.is_using_worker());
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_manager_register_model() {
     let mut manager = ModelManager::new();
@@ -94,6 +99,7 @@ fn test_model_manager_register_model() {
     assert_eq!(manager.model_count(), 1);
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_manager_register_duplicate() {
     let mut manager = ModelManager::new();
@@ -117,6 +123,7 @@ fn test_model_manager_register_duplicate() {
     assert!(matches!(result, Err(ModelError::ModelAlreadyExists)));
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_manager_get_model() {
     let mut manager = ModelManager::new();
@@ -137,6 +144,7 @@ fn test_model_manager_get_model() {
     assert!(matches!(not_found, Err(ModelError::ModelNotFound)));
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_manager_get_metadata() {
     let mut manager = ModelManager::new();
@@ -156,6 +164,7 @@ fn test_model_manager_get_metadata() {
     assert_eq!(metadata.inputs.len(), 1);
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_manager_unregister_model() {
     let mut manager = ModelManager::new();
@@ -179,6 +188,7 @@ fn test_model_manager_unregister_model() {
     assert!(matches!(not_found, Err(ModelError::ModelNotFound)));
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_manager_list_models() {
     let mut manager = ModelManager::new();
@@ -209,6 +219,7 @@ fn test_model_manager_list_models() {
     assert!(models.contains(&"model2".to_string()));
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_manager_clear_all() {
     let mut manager = ModelManager::new();
@@ -340,6 +351,7 @@ fn test_builtin_models_get_not_found() {
     assert!(model.is_none());
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_udf_new() {
     let onnx_model = OnnxModel::load("test.onnx").unwrap();
@@ -355,6 +367,7 @@ fn test_model_udf_new_with_worker() {
     assert_eq!(udf.name(), "test_model");
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_udf_execute_with_float() {
     let onnx_model = OnnxModel::load("test.onnx").unwrap();
@@ -371,6 +384,7 @@ fn test_model_udf_execute_with_float() {
     assert!(result.is_ok());
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_udf_execute_with_int() {
     let onnx_model = OnnxModel::load("test.onnx").unwrap();
@@ -387,6 +401,7 @@ fn test_model_udf_execute_with_int() {
     assert!(result.is_ok());
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_udf_execute_with_string() {
     let onnx_model = OnnxModel::load("test.onnx").unwrap();
@@ -397,7 +412,7 @@ fn test_model_udf_execute_with_string() {
     let arg = TypedValue {
         value_type: DataType::Text,
         value: Value {
-            text: core::ptr::null(),
+            string: [0u8; 64],
         },
     };
 
@@ -405,6 +420,7 @@ fn test_model_udf_execute_with_string() {
     assert!(result.is_ok());
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 fn test_model_udf_execute_unsupported_type() {
     let onnx_model = OnnxModel::load("test.onnx").unwrap();
@@ -414,7 +430,7 @@ fn test_model_udf_execute_unsupported_type() {
 
     let arg = TypedValue {
         value_type: DataType::Bool,
-        value: Value { bool_val: true },
+        value: Value { bool: true },
     };
 
     let result = udf.execute(&[arg]);

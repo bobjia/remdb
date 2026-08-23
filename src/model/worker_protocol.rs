@@ -7,19 +7,19 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelInput {
     pub name: String,
     pub data_type: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelOutput {
     pub name: String,
     pub data_type: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelMetadataMsg {
     pub name: String,
     pub path: String,
@@ -27,7 +27,7 @@ pub struct ModelMetadataMsg {
     pub output: ModelOutput,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ModelRequest {
     LoadModel {
         name: String,
@@ -54,7 +54,7 @@ pub enum ModelRequest {
     Shutdown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ModelResponse {
     Success,
     ModelLoaded { metadata: ModelMetadataMsg },

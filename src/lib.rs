@@ -1,5 +1,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![recursion_limit = "1024"]
+#![allow(
+    static_mut_refs,
+    clippy::not_unsafe_ptr_arg_deref,
+    clippy::never_loop,
+    clippy::absurd_extreme_comparisons,
+    clippy::mut_from_ref,
+)]
 
 use crate::table::Defer;
 use core::ptr::NonNull;
