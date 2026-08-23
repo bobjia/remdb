@@ -1,4 +1,4 @@
-name: Rust
+name: CI
 
 on:
   push:
@@ -8,15 +8,64 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
-  build:
-
+  # ---------- 检查 / Check ----------
+  check:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --all-features -- -D warnings
+
+  # ---------- 编译 & 测试 / Build & Test ----------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build (all features)
+        run: cargo build --all-features --verbose
+
+      - name: Run tests (all features)
+        run: cargo test --all-features --verbose
+
+      - name: Build documentation
+        run: cargo doc --all-features --no-deps
+
+  # ---------- 交叉编译 / Cross-compile ----------
+  # 如果需要交叉编译（如 ARM、RISC-V），可以在下面添加
+  # cross-build:
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       target: [aarch64-unknown-linux-gnu, armv7-unknown-linux-gnueabihf]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: ${{ matrix.target }}
+  #     - uses: Swatinem/rust-cache@v2
+  #     - run: cargo build --target ${{ matrix.target }} --release
+
+  # ---------- 基准测试 / Benchmark ----------
+  # 基准测试也可以作为 CI 的一部分，但通常时间较长
+  # benchmark:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - uses: Swatinem/rust-cache@v2
+  #     - name: Run benchmarks
+  #       run: cargo bench --verbose
