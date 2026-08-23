@@ -310,7 +310,10 @@ impl DatabaseManager {
     /// 切换到指定数据库
     pub fn use_database(&mut self, name: &str) -> Result<()> {
         if let Some(idx) = self.databases.iter().position(|db| db.name == name) {
-            if self.databases[idx].status == DatabaseStatus::Open {
+            // 新建的数据库状态为 Created（尚未关闭），同样可以使用
+            if self.databases[idx].status == DatabaseStatus::Open
+                || self.databases[idx].status == DatabaseStatus::Created
+            {
                 self.current_database = Some(idx);
                 Ok(())
             } else {
@@ -3815,6 +3818,7 @@ impl RemDb {
                 crate::sql::QueryExecutionError::ConstraintsConflicts => RemDbError::DuplicateKey,
                 crate::sql::QueryExecutionError::OutOfMemory => RemDbError::OutOfMemory,
                 crate::sql::QueryExecutionError::NotAllowed => RemDbError::NotAllowed,
+                crate::sql::QueryExecutionError::DatabaseExists => RemDbError::DatabaseExists,
                 _ => {
                     #[cfg(feature = "log")]
                     error!("Unhandled execution error: {:?}", err);

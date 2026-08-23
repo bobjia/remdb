@@ -27,6 +27,8 @@ pub enum QueryExecutionError {
     UnsupportedFunction(String),
     /// 无效的值
     InvalidValue,
+    /// 数据库已存在
+    DatabaseExists,
     /// 资源限制超出
     ResourceLimitExceeded(String),
 }
@@ -47,6 +49,9 @@ impl core::fmt::Display for QueryExecutionError {
             }
             QueryExecutionError::InvalidValue => {
                 write!(f, "Invalid value")
+            }
+            QueryExecutionError::DatabaseExists => {
+                write!(f, "Database exists")
             }
             QueryExecutionError::ResourceLimitExceeded(msg) => {
                 write!(f, "Resource limit exceeded: {}", msg)

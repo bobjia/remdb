@@ -42,7 +42,10 @@ pub fn execute_create_database_query(
 
     // 调用RemDb的create_database方法
     db.create_database(&database_name)
-        .map_err(|_| QueryExecutionError::InternalError)?;
+        .map_err(|err| match err {
+            crate::RemDbError::DatabaseExists => QueryExecutionError::DatabaseExists,
+            _ => QueryExecutionError::InternalError,
+        })?;
 
     // 返回空结果集
     Ok(ResultSet::new(Vec::new()))

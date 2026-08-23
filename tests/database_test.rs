@@ -116,3 +116,43 @@ fn test_database_manager_list_databases() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_use_database_on_created_database() -> Result<()> {
+    // 处理可能的互斥锁 poisoning
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
+    setup_test_db_with_memory(1024 * 1024);
+
+    let mut db = unsafe { remdb::init_global_db(&TEST_DB_CONFIG)? };
+
+    // 创建一个数据库（状态为 Created）
+    db.create_database("test_db")?;
+
+    // 新建的数据库应可直接切换使用
+    db.use_database("test_db")?;
+
+    // 切换不存在的数据库应返回 DatabaseNotFound
+    let err = db.use_database("missing").unwrap_err();
+    assert_eq!(err, remdb::RemDbError::DatabaseNotFound);
+
+    Ok(())
+}
+
+#[test]
+fn test_create_database_duplicate_returns_exists() -> Result<()> {
+    // 处理可能的互斥锁 poisoning
+    let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
+    setup_test_db_with_memory(1024 * 1024);
+
+    let mut db = unsafe { remdb::init_global_db(&TEST_DB_CONFIG)? };
+
+    db.create_database("test_db")?;
+
+    // 重复创建应返回 DatabaseExists，而不是内部错误
+    let err = db.create_database("test_db").unwrap_err();
+    assert_eq!(err, remdb::RemDbError::DatabaseExists);
+
+    Ok(())
+}
