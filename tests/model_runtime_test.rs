@@ -2,13 +2,16 @@
 //!
 //! Tests for ONNX model loading, execution, worker protocol, and builtin models.
 
+use remdb::model::{ModelError, ModelInfo, ModelManager, ModelUDF, OnnxModel};
+use remdb::types::{DataType, TypedValue, Value};
+
+#[cfg(feature = "model-runtime")]
 use remdb::model::builtin_models::{get_builtin_model, list_builtin_models, BUILTIN_MODELS};
+#[cfg(feature = "model-runtime")]
 use remdb::model::worker_protocol::{
     deserialize_request, deserialize_response, serialize_request, serialize_response, ErrorCode,
     ModelRequest, ModelResponse,
 };
-use remdb::model::{ModelError, ModelInfo, ModelManager, ModelUDF, OnnxModel};
-use remdb::types::{DataType, TypedValue, Value};
 
 // Stub model tests (when model-runtime is not enabled, OnnxModel::load returns a stub)
 #[cfg(not(feature = "model-runtime"))]
@@ -248,6 +251,7 @@ fn test_model_manager_clear_all() {
     assert_eq!(manager.model_count(), 0);
 }
 
+#[cfg(feature = "model-runtime")]
 #[test]
 fn test_model_request_serialization() {
     let requests = vec![
@@ -276,6 +280,7 @@ fn test_model_request_serialization() {
     }
 }
 
+#[cfg(feature = "model-runtime")]
 #[test]
 fn test_model_response_serialization() {
     let responses = vec![
@@ -300,6 +305,7 @@ fn test_model_response_serialization() {
     }
 }
 
+#[cfg(feature = "model-runtime")]
 #[test]
 fn test_error_code_conversion() {
     let codes = vec![
@@ -320,6 +326,7 @@ fn test_error_code_conversion() {
     }
 }
 
+#[cfg(feature = "model-runtime")]
 #[test]
 fn test_builtin_models_list() {
     let models = list_builtin_models();
@@ -334,6 +341,7 @@ fn test_builtin_models_list() {
     }
 }
 
+#[cfg(feature = "model-runtime")]
 #[test]
 fn test_builtin_models_get() {
     let model = get_builtin_model("bge-m3");
@@ -345,6 +353,7 @@ fn test_builtin_models_get() {
     assert_eq!(model.max_input_length, 8192);
 }
 
+#[cfg(feature = "model-runtime")]
 #[test]
 fn test_builtin_models_get_not_found() {
     let model = get_builtin_model("nonexistent-model");
