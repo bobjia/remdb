@@ -1267,7 +1267,7 @@ impl SqlParser {
                 );
             }
             // 调试：打印当前位置和剩余输入
-            let remaining_debug: String = self.input[self.position..].chars().take(50).collect();
+            let _remaining_debug: String = self.input[self.position..].chars().take(50).collect();
             let is_primary = self.match_keyword("PRIMARY");
             #[cfg(feature = "log")]
             debug!(

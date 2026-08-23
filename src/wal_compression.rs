@@ -7,18 +7,18 @@ use alloc::vec::Vec;
 pub fn compress_wal_data(
     data: &[u8],
     compression_type: WALCompressionType,
-    level: u8,
+    _level: u8,
 ) -> Result<Vec<u8>> {
     match compression_type {
         WALCompressionType::None => Ok(data.to_vec()),
         #[cfg(feature = "wal-compression-lz4")]
-        WALCompressionType::LZ4 => compress_lz4(data, level),
+        WALCompressionType::LZ4 => compress_lz4(data, _level),
         #[cfg(not(feature = "wal-compression-lz4"))]
         WALCompressionType::LZ4 => Err(RemDbError::InvalidConfig(
             "LZ4 compression feature not enabled".to_string(),
         )),
         #[cfg(feature = "wal-compression-zstd")]
-        WALCompressionType::ZSTD => compress_zstd(data, level),
+        WALCompressionType::ZSTD => compress_zstd(data, _level),
         #[cfg(not(feature = "wal-compression-zstd"))]
         WALCompressionType::ZSTD => Err(RemDbError::InvalidConfig(
             "ZSTD compression feature not enabled".to_string(),

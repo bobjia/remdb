@@ -4779,7 +4779,7 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
         let mut db = RemDb::new(config);
 
         // 从配置创建表
-        for (table_id, table_def) in config.tables.iter().enumerate() {
+        for (_table_id, table_def) in config.tables.iter().enumerate() {
             // 创建表
             let table_def_arc = alloc::sync::Arc::new(table_def.clone());
             let table = MemoryTable::new(table_def_arc.clone())?;
