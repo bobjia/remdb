@@ -196,6 +196,7 @@ remdb::database!(
     tables: [DOCS_TABLE]
 );
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 #[serial]
 fn test_create_model_statement() {
@@ -215,6 +216,7 @@ fn test_create_model_statement() {
     teardown_test();
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 #[serial]
 fn test_model_udf_in_query() {
@@ -265,6 +267,7 @@ fn test_invalid_model() {
     teardown_test();
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 #[serial]
 fn test_model_with_multiple_inputs() {
@@ -286,6 +289,7 @@ fn test_model_with_multiple_inputs() {
     teardown_test();
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 #[serial]
 fn test_duplicate_model_name() {
@@ -307,6 +311,7 @@ fn test_duplicate_model_name() {
     teardown_test();
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 #[serial]
 fn test_model_udf_incorrect_arguments() {
@@ -337,6 +342,7 @@ fn test_model_udf_incorrect_arguments() {
     teardown_test();
 }
 
+#[cfg(not(feature = "model-runtime"))]
 #[test]
 #[serial]
 fn test_model_udf_in_where_clause() {

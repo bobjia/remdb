@@ -5,7 +5,7 @@
     clippy::not_unsafe_ptr_arg_deref,
     clippy::never_loop,
     clippy::absurd_extreme_comparisons,
-    clippy::mut_from_ref,
+    clippy::mut_from_ref
 )]
 
 use crate::table::Defer;

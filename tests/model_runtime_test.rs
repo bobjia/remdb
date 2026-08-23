@@ -411,9 +411,7 @@ fn test_model_udf_execute_with_string() {
 
     let arg = TypedValue {
         value_type: DataType::Text,
-        value: Value {
-            string: [0u8; 64],
-        },
+        value: Value { string: [0u8; 64] },
     };
 
     let result = udf.execute(&[arg]);

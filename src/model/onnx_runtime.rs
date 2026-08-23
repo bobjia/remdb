@@ -345,7 +345,10 @@ impl OnnxModel {
     }
 
     #[cfg(feature = "model-runtime")]
-    pub fn execute_int64_batch(&self, inputs_data: &[Vec<Vec<i64>>]) -> Result<Vec<Vec<f32>>, String> {
+    pub fn execute_int64_batch(
+        &self,
+        inputs_data: &[Vec<Vec<i64>>],
+    ) -> Result<Vec<Vec<f32>>, String> {
         #[cfg(feature = "log")]
         debug!("Executing model with {} int64 batch(es)", inputs_data.len());
 
