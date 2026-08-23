@@ -135,7 +135,6 @@ impl IVFIndex {
     /// 保存IVF索引到文件
     #[cfg(feature = "std")]
     pub fn save<W: std::io::Write>(&self, writer: &mut W) -> Result<()> {
-        use std::io::Write;
 
         // 保存向量元数据参数
         // 写入ivf_nlist
@@ -213,7 +212,8 @@ impl IVFIndex {
         vectors: *mut f32,
         reader: &mut R,
     ) -> Result<Self> {
-        use std::io::Read;
+        #[cfg(not(feature = "std"))]
+        let _ = reader; // Suppress unused warning on no_std
 
         // 读取向量元数据参数
         // 读取ivf_nlist
