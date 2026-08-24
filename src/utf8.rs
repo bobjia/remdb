@@ -56,6 +56,7 @@ pub enum Utf8Result<T> {
 }
 
 /// UTF-8核心处理函数
+#[derive(Default)]
 pub struct Utf8Processor {
     config: Utf8Config,
 }
@@ -238,14 +239,6 @@ impl Utf8Processor {
         }
 
         false
-    }
-}
-
-impl Default for Utf8Processor {
-    fn default() -> Self {
-        Self {
-            config: Utf8Config::default(),
-        }
     }
 }
 

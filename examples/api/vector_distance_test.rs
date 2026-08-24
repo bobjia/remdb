@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 use core::ptr::NonNull;
 use remdb::config::{DbConfig, WALConfig};
 use remdb::memory::allocator;

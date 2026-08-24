@@ -142,7 +142,7 @@ static TEST_CONFIG: LazyLock<remdb::config::DbConfig> = LazyLock::new(|| {
             log_mode: remdb::config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
+            log_prealloc_size: 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             max_consecutive_invalid: 100,
             retained_checkpoints: 2,
@@ -183,7 +183,7 @@ fn test_create_table_with_composite_pk() -> Result<()> {
     }
 
     // 创建数据库实例
-    let mut db = RemDb::new(&*TEST_CONFIG);
+    let mut db = RemDb::new(&TEST_CONFIG);
     db.init()?;
 
     // 创建带有复合主键的表
@@ -223,7 +223,7 @@ fn test_insert_and_query_with_composite_pk() -> Result<()> {
     }
 
     // 创建数据库实例
-    let mut db = RemDb::new(&*TEST_CONFIG);
+    let mut db = RemDb::new(&TEST_CONFIG);
     db.init()?;
 
     // 创建带有复合主键的表
@@ -263,19 +263,19 @@ fn test_insert_and_query_with_composite_pk() -> Result<()> {
     record[8 + 64..8 + 64 + 8].copy_from_slice(&value.to_le_bytes());
 
     // 插入记录
-    let record_id = table.insert(record.as_ptr() as *const u8)?;
+    let _record_id = table.insert(record.as_ptr() as *const u8)?;
 
     // 插入第二条记录，不同的id2
     let id2: u32 = 2;
     record[4..8].copy_from_slice(&id2.to_le_bytes());
-    let record_id = table.insert(record.as_ptr() as *const u8)?;
+    let _record_id = table.insert(record.as_ptr() as *const u8)?;
 
     // 插入第三条记录，不同的id1
     let id1: u32 = 2;
     let id2: u32 = 1;
     record[0..4].copy_from_slice(&id1.to_le_bytes());
     record[4..8].copy_from_slice(&id2.to_le_bytes());
-    let record_id = table.insert(record.as_ptr() as *const u8)?;
+    let _record_id = table.insert(record.as_ptr() as *const u8)?;
 
     // 尝试插入重复主键记录，应该失败
     let result = table.insert(record.as_ptr() as *const u8);
@@ -305,7 +305,7 @@ fn test_composite_pk_with_three_fields() -> Result<()> {
     }
 
     // 创建数据库实例
-    let mut db = RemDb::new(&*TEST_CONFIG);
+    let mut db = RemDb::new(&TEST_CONFIG);
     db.init()?;
 
     // 创建带有三字段复合主键的表

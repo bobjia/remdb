@@ -155,7 +155,7 @@ pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, Quer
                         },
                     )
                     .map_err(|_| QueryExecutionError::InternalError)?;
-                } else if field2 != "" && field2 != "DROP" {
+                } else if !field2.is_empty() && field2 != "DROP" {
                     // 检查是否是RENAME COLUMN操作
                     // 通过检查field2是否是有效的数据类型来区分
                     match parse_data_type_with_precision(field2) {
@@ -420,11 +420,9 @@ fn find_timeseries_table_by_name<'a>(
     db: &'a RemDb,
     table_name: &str,
 ) -> Result<&'a TimeSeriesTable, QueryExecutionError> {
-    for table in db.time_series_tables.iter() {
-        if let Some(table) = table {
-            if table.def.base.name == table_name {
-                return Ok(table);
-            }
+    for table in db.time_series_tables.iter().flatten() {
+        if table.def.base.name == table_name {
+            return Ok(table);
         }
     }
 
@@ -656,16 +654,16 @@ fn execute_select_timeseries_query(
     /*
     // 计算执行时间
     let end_time = Instant::now();
-    stats.execution_time = end_time.duration_since(start_time).as_micros() as u64;
+    _stats.execution_time = end_time.duration_since(start_time).as_micros() as u64;
 
     // 输出查询执行统计信息
     #[cfg(feature = "log")]
     {
         info!("Query execution stats:");
-        info!("  Used index: {}", stats.used_index);
-        info!("  Scanned records: {}", stats.scanned_records);
-        info!("  Matched records: {}", stats.matched_records);
-        info!("  Execution time: {}μs", stats.execution_time);
+        info!("  Used index: {}", _stats.used_index);
+        info!("  Scanned records: {}", _stats.scanned_records);
+        info!("  Matched records: {}", _stats.matched_records);
+        info!("  Execution time: {}μs", _stats.execution_time);
     }
     */
 
@@ -1600,6 +1598,7 @@ fn evaluate_expression_for_aggregate(
 }
 
 /// 查询执行统计信息
+#[derive(Default)]
 struct QueryStats {
     /// 是否使用了索引
     used_index: bool,
@@ -1609,17 +1608,6 @@ struct QueryStats {
     matched_records: usize,
     /// 执行时间（微秒）
     execution_time: u64,
-}
-
-impl Default for QueryStats {
-    fn default() -> Self {
-        Self {
-            used_index: false,
-            scanned_records: 0,
-            matched_records: 0,
-            execution_time: 0,
-        }
-    }
 }
 
 /// 执行SELECT查询
@@ -1633,7 +1621,7 @@ fn execute_select_query(
 
     // 开始计时
     let start_time = Instant::now();
-    let mut stats = QueryStats::default();
+    let mut _stats = QueryStats::default();
 
     // 检查是否有FROM子句（如果没有FROM子句，则执行表达式查询）
     if query.table_name.is_empty() {
@@ -1828,8 +1816,8 @@ fn execute_select_query(
                                 }
                             }
                             use_index = true;
-                            stats.used_index = true;
-                            stats.scanned_records = 1;
+                            _stats.used_index = true;
+                            _stats.scanned_records = 1;
                         }
                         Err(RemDbError::RecordNotFound) => {
                             // 没有找到记录，继续使用全表扫描
@@ -1865,8 +1853,8 @@ fn execute_select_query(
                                 }
                             }
                             use_index = true;
-                            stats.used_index = true;
-                            stats.scanned_records = 1;
+                            _stats.used_index = true;
+                            _stats.scanned_records = 1;
                         }
                         Err(RemDbError::RecordNotFound) => {
                             // 没有找到记录，继续使用全表扫描
@@ -1902,7 +1890,7 @@ fn execute_select_query(
                 // 将记录值添加到向量中
                 all_records.push(record_values);
 
-                stats.scanned_records += 1;
+                _stats.scanned_records += 1;
                 true // 继续遍历
             });
             iterate_result.map_err(|_| QueryExecutionError::InternalError)?;
@@ -1910,7 +1898,7 @@ fn execute_select_query(
     }
 
     // 更新匹配的记录数
-    stats.matched_records = all_records.len();
+    _stats.matched_records = all_records.len();
 
     // 内存使用检查
     let estimated_memory = estimate_memory_usage_for_records(&all_records);
@@ -2173,7 +2161,7 @@ fn get_field_value_from_condition<'a>(
                 .iter()
                 .position(|f| f.name == field_name_part)
                 .unwrap_or(0); // 默认为第一个字段
-            (&main_table, &main_record_values[field_index])
+            (main_table, &main_record_values[field_index])
         } else {
             // 从连接表获取
             let field_index = join_table
@@ -2182,7 +2170,7 @@ fn get_field_value_from_condition<'a>(
                 .iter()
                 .position(|f| f.name == field_name_part)
                 .unwrap_or(0); // 默认为第一个字段
-            (&join_table, &join_record_values[field_index])
+            (join_table, &join_record_values[field_index])
         }
     } else {
         // 没有指定表名，尝试从主表查找，找不到再从连接表查找
@@ -2192,14 +2180,14 @@ fn get_field_value_from_condition<'a>(
             .iter()
             .position(|f| f.name == field_name_part)
         {
-            (&main_table, &main_record_values[field_index])
+            (main_table, &main_record_values[field_index])
         } else if let Some(field_index) = join_table
             .def
             .fields
             .iter()
             .position(|f| f.name == field_name_part)
         {
-            (&join_table, &join_record_values[field_index])
+            (join_table, &join_record_values[field_index])
         } else {
             // 字段未找到，返回主表第一个字段的默认值
             // 注意：这里理论上不会执行到，因为字段在之前的解析中已经验证过
@@ -2208,7 +2196,7 @@ fn get_field_value_from_condition<'a>(
             } else {
                 0
             };
-            (&main_table, &main_record_values[default_index])
+            (main_table, &main_record_values[default_index])
         }
     }
 }
@@ -2723,9 +2711,9 @@ fn execute_select_join_query(
                     add_joined_row(
                         &mut result_set,
                         &columns,
-                        &main_table,
+                        main_table,
                         &main_record_values,
-                        &join_table,
+                        join_table,
                         &join_default_values,
                     )
                     .expect("get_field_value should not fail")
@@ -3250,7 +3238,7 @@ fn execute_create_table_query(
                         {
                             current_time
                         } else {
-                            *i as i64
+                            *i
                         };
 
                         match data_type {
@@ -3733,9 +3721,7 @@ fn execute_show_index_build_status_query(
             let row = alloc::vec![
                 TypedValue {
                     value_type: DataType::UInt64,
-                    value: Value {
-                        u64: status.id as u64
-                    },
+                    value: Value { u64: status.id },
                 },
                 TypedValue {
                     value_type: DataType::VarChar,
@@ -3852,40 +3838,36 @@ fn execute_show_tables_query(db: &mut RemDb) -> Result<ResultSet, QueryExecution
 
     let mut result_set = ResultSet::new(columns);
 
-    for table_opt in db.tables.iter() {
-        if let Some(table) = table_opt {
-            let row = alloc::vec![TypedValue {
-                value_type: DataType::VarChar,
-                value: Value {
-                    string: {
-                        let mut s = [0u8; 64];
-                        let bytes = table.def.name.as_bytes();
-                        let len = core::cmp::min(bytes.len(), 64);
-                        s[..len].copy_from_slice(&bytes[..len]);
-                        s
-                    }
-                },
-            },];
-            result_set.add_row(row);
-        }
+    for table in db.tables.iter().flatten() {
+        let row = alloc::vec![TypedValue {
+            value_type: DataType::VarChar,
+            value: Value {
+                string: {
+                    let mut s = [0u8; 64];
+                    let bytes = table.def.name.as_bytes();
+                    let len = core::cmp::min(bytes.len(), 64);
+                    s[..len].copy_from_slice(&bytes[..len]);
+                    s
+                }
+            },
+        },];
+        result_set.add_row(row);
     }
 
-    for ts_table_opt in db.time_series_tables.iter() {
-        if let Some(ts_table) = ts_table_opt {
-            let row = alloc::vec![TypedValue {
-                value_type: DataType::VarChar,
-                value: Value {
-                    string: {
-                        let mut s = [0u8; 64];
-                        let bytes = ts_table.def.base.name.as_bytes();
-                        let len = core::cmp::min(bytes.len(), 64);
-                        s[..len].copy_from_slice(&bytes[..len]);
-                        s
-                    }
-                },
-            },];
-            result_set.add_row(row);
-        }
+    for ts_table in db.time_series_tables.iter().flatten() {
+        let row = alloc::vec![TypedValue {
+            value_type: DataType::VarChar,
+            value: Value {
+                string: {
+                    let mut s = [0u8; 64];
+                    let bytes = ts_table.def.base.name.as_bytes();
+                    let len = core::cmp::min(bytes.len(), 64);
+                    s[..len].copy_from_slice(&bytes[..len]);
+                    s
+                }
+            },
+        },];
+        result_set.add_row(row);
     }
 
     Ok(result_set)
@@ -4090,11 +4072,8 @@ fn extract_index_operation(condition: &Condition) -> Option<(String, IndexOperat
             match operator {
                 ComparisonOperator::Equal => {
                     // 相等查询
-                    if let Some(index_value) = convert_value(value) {
-                        Some((field.clone(), IndexOperation::Equal(index_value)))
-                    } else {
-                        None
-                    }
+                    convert_value(value)
+                        .map(|index_value| (field.clone(), IndexOperation::Equal(index_value)))
                 }
                 ComparisonOperator::GreaterThan
                 | ComparisonOperator::GreaterThanOrEqual
@@ -4638,11 +4617,9 @@ fn find_table_by_name<'a>(
     table_name: &str,
 ) -> Result<&'a MemoryTable, QueryExecutionError> {
     // 先查找普通表
-    for table in db.tables.iter() {
-        if let Some(table) = table {
-            if table.def.name == table_name {
-                return Ok(table);
-            }
+    for table in db.tables.iter().flatten() {
+        if table.def.name == table_name {
+            return Ok(table);
         }
     }
 
@@ -4675,7 +4652,7 @@ fn validate_expression(table: &MemoryTable, expr: &Expression) -> Result<(), Que
                     // 提取点号后面的部分作为实际字段名
                     field_name
                         .split('.')
-                        .last()
+                        .next_back()
                         .expect("field name must contain '.'")
                 } else {
                     // 没有表别名，直接使用字段名
@@ -4788,23 +4765,19 @@ fn execute_describe_query(
     let mut found_table_def: Option<Arc<TableDef>> = None;
 
     // 查找普通表
-    for table_opt in db.tables.iter() {
-        if let Some(table) = table_opt {
-            if table.def.name == query.table_name {
-                found_table_def = Some(table.def.clone());
-                break;
-            }
+    for table in db.tables.iter().flatten() {
+        if table.def.name == query.table_name {
+            found_table_def = Some(table.def.clone());
+            break;
         }
     }
 
     // 如果普通表未找到，查找时序表
     if found_table_def.is_none() {
-        for ts_table_opt in db.time_series_tables.iter() {
-            if let Some(ts_table) = ts_table_opt {
-                if ts_table.def.base.name == query.table_name {
-                    found_table_def = Some(alloc::sync::Arc::new(ts_table.def.base.clone()));
-                    break;
-                }
+        for ts_table in db.time_series_tables.iter().flatten() {
+            if ts_table.def.base.name == query.table_name {
+                found_table_def = Some(alloc::sync::Arc::new(ts_table.def.base.clone()));
+                break;
             }
         }
     }
@@ -5280,9 +5253,7 @@ fn execute_insert_query(
                 }
             } else if let Some(sql_value) = field_value {
                 // 验证字符串长度
-                if field.data_type == DataType::VarChar
-                    || field.data_type == DataType::Char
-                {
+                if field.data_type == DataType::VarChar || field.data_type == DataType::Char {
                     if let crate::sql::Value::String(s) = sql_value {
                         // 验证字符串长度（VarChar最大65536）
                         if let Some(max_length) = field.string_length {
@@ -5426,7 +5397,8 @@ fn execute_insert_query(
                         }
                         DataType::Text => {
                             // Write TextStorage as default value (usually Null)
-                            let ptr = record_data.as_mut_ptr().add(field.offset) as *mut crate::types::TextStorage;
+                            let ptr = record_data.as_mut_ptr().add(field.offset)
+                                as *mut crate::types::TextStorage;
                             core::ptr::write_unaligned(ptr, default_value.text_storage);
                         }
                         DataType::Interval => {
@@ -5536,7 +5508,7 @@ fn execute_insert_query(
         TypedValue {
             value_type: DataType::UInt64,
             value: crate::Value {
-                u64: last_insert_id as u64
+                u64: last_insert_id
             },
         },
     ];
@@ -5862,7 +5834,7 @@ fn set_field_value_with_depth(
                 let field_ptr = record_data.as_ptr().add(field.offset);
                 let value = match field.data_type {
                     DataType::UInt8 => crate::types::Value {
-                        u8: unsafe { *field_ptr as u8 },
+                        u8: unsafe { *field_ptr },
                     },
                     DataType::UInt16 => crate::types::Value {
                         u16: unsafe { core::ptr::read_unaligned(field_ptr as *const u16) },
@@ -6131,14 +6103,21 @@ fn set_field_value_with_depth(
                         let text_content = if evaluated_value.value.text_storage.is_inline() {
                             if let Some(data) = evaluated_value.value.text_storage.as_inline() {
                                 let end = data.iter().position(|b| *b == 0).unwrap_or(data.len());
-                                core::str::from_utf8(&data[..end]).unwrap_or_default().to_string()
+                                core::str::from_utf8(&data[..end])
+                                    .unwrap_or_default()
+                                    .to_string()
                             } else {
                                 String::new()
                             }
                         } else if evaluated_value.value.text_storage.is_external() {
                             if let Some(ext) = evaluated_value.value.text_storage.as_external() {
                                 if !ext.data_ptr.is_null() {
-                                    let bytes = unsafe { core::slice::from_raw_parts(ext.data_ptr, ext.length as usize) };
+                                    let bytes = unsafe {
+                                        core::slice::from_raw_parts(
+                                            ext.data_ptr,
+                                            ext.length as usize,
+                                        )
+                                    };
                                     core::str::from_utf8(bytes).unwrap_or_default().to_string()
                                 } else {
                                     String::new()
@@ -6259,7 +6238,8 @@ fn set_field_value_with_depth(
                     }
                     DataType::Text => {
                         // TextStorage already set, just write it directly
-                        let ptr = record_data.as_mut_ptr().add(offset) as *mut crate::types::TextStorage;
+                        let ptr =
+                            record_data.as_mut_ptr().add(offset) as *mut crate::types::TextStorage;
                         // Free old external allocation if present
                         crate::table::free_text_storage(ptr);
                         // Write the new TextStorage value
@@ -6338,7 +6318,7 @@ fn set_field_value_with_depth(
                         .string
                         .iter()
                         .take_while(|&&c| c != 0)
-                        .map(|&c| c)
+                        .copied()
                         .collect::<Vec<_>>();
                     let s = core::str::from_utf8(&string_slice).unwrap_or_default();
 
@@ -6913,7 +6893,7 @@ unsafe fn evaluate_between(
         between
             .field
             .split('.')
-            .last()
+            .next_back()
             .expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
@@ -7039,7 +7019,7 @@ unsafe fn evaluate_comparison(
         // 提取点号后面的部分作为实际字段名
         comp.field
             .split('.')
-            .last()
+            .next_back()
             .expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
@@ -7166,7 +7146,7 @@ fn sort_rows_with_alias(
         order_by
             .field
             .split('.')
-            .last()
+            .next_back()
             .expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
@@ -7492,7 +7472,7 @@ fn sort_rows(
         order_by
             .field
             .split('.')
-            .last()
+            .next_back()
             .expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名
@@ -7667,7 +7647,7 @@ unsafe fn get_field_value(
         // 提取点号后面的部分作为实际字段名
         field_name
             .split('.')
-            .last()
+            .next_back()
             .expect("field name must contain '.'")
     } else {
         // 没有表别名，直接使用字段名

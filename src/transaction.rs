@@ -129,7 +129,7 @@ pub struct LogItem {
 }
 
 /// 可变大小日志项（唯一支持的WAL格式）
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct VariableSizeLogItem {
     /// 固定头部
     pub header: LogItem,
@@ -151,16 +151,6 @@ impl Default for LogItem {
             tx_id: 0,
             timestamp: 0,
             checksum: 0,
-        }
-    }
-}
-
-impl Default for VariableSizeLogItem {
-    fn default() -> Self {
-        Self {
-            header: LogItem::default(),
-            old_data: Vec::new(),
-            new_data: Vec::new(),
         }
     }
 }
@@ -286,7 +276,7 @@ impl Transaction {
         checksum ^= (var_log_item.header.record_id as u32).to_le();
         checksum ^= (var_log_item.header.old_data_size as u32).to_le();
         checksum ^= (var_log_item.header.new_data_size as u32).to_le();
-        checksum ^= (var_log_item.header.tx_id as u32).to_le();
+        checksum ^= var_log_item.header.tx_id.to_le();
         checksum ^= (var_log_item.header.timestamp as u32).to_le();
 
         for i in 0..var_log_item.old_data.len() {
@@ -309,7 +299,7 @@ impl Transaction {
         checksum ^= (log_item.record_id as u32).to_le();
         checksum ^= (log_item.old_data_size as u32).to_le();
         checksum ^= (log_item.new_data_size as u32).to_le();
-        checksum ^= (log_item.tx_id as u32).to_le();
+        checksum ^= log_item.tx_id.to_le();
         checksum ^= (log_item.timestamp as u32).to_le();
 
         checksum
@@ -1371,11 +1361,7 @@ impl LogManager {
             .map_err(|_| RemDbError::FileIoError)?;
 
         let header_size = core::mem::size_of::<LogHeader>() + core::mem::size_of::<LogCheckpoint>();
-        let log_region_size = if file_size > header_size {
-            file_size - header_size
-        } else {
-            0
-        };
+        let log_region_size = file_size.saturating_sub(header_size);
 
         #[cfg(feature = "log")]
         info!(
@@ -1406,11 +1392,13 @@ impl LogManager {
         let max_skip_attempts = self.max_skip_attempts;
 
         while current_offset < file_size {
-            if let Err(_) = crate::platform::file_seek(
+            if crate::platform::file_seek(
                 handle,
                 current_offset as i64,
                 crate::platform::SeekWhence::SeekSet,
-            ) {
+            )
+            .is_err()
+            {
                 #[cfg(feature = "log")]
                 warn!(
                     "Failed to seek to offset {}, stopping recovery",
@@ -1463,11 +1451,13 @@ impl LogManager {
             };
 
             if header.old_data_size > 0 {
-                if let Err(_) = crate::platform::file_seek(
+                if crate::platform::file_seek(
                     handle,
                     data_offset as i64,
                     crate::platform::SeekWhence::SeekSet,
-                ) {
+                )
+                .is_err()
+                {
                     read_success = false;
                 } else {
                     // Read compressed size (4 bytes) if compression is enabled
@@ -1532,11 +1522,13 @@ impl LogManager {
             }
 
             if read_success && header.new_data_size > 0 {
-                if let Err(_) = crate::platform::file_seek(
+                if crate::platform::file_seek(
                     handle,
                     data_offset as i64,
                     crate::platform::SeekWhence::SeekSet,
-                ) {
+                )
+                .is_err()
+                {
                     read_success = false;
                 } else {
                     // Read compressed size (4 bytes) if compression is enabled
@@ -1620,8 +1612,8 @@ impl LogManager {
                             | LogOperation::AlterTable
                     );
 
-                    if !is_zero_initialized || is_valid_insert || has_valid_data || is_system_op {
-                        if matches!(
+                    if (!is_zero_initialized || is_valid_insert || has_valid_data || is_system_op)
+                        && matches!(
                             header.op_type,
                             LogOperation::Insert
                                 | LogOperation::Delete
@@ -1637,15 +1629,15 @@ impl LogManager {
                                 | LogOperation::ExitLowPowerMode
                                 | LogOperation::AlterTable
                                 | LogOperation::DropTable
-                        ) {
-                            valid_log_items.push(var_log_item);
-                            current_offset += HEADER_SIZE_BYTES
-                                + header.old_data_size as usize
-                                + header.new_data_size as usize;
-                            record_index += 1;
-                            consecutive_invalid_records = 0;
-                            continue;
-                        }
+                        )
+                    {
+                        valid_log_items.push(var_log_item);
+                        current_offset += HEADER_SIZE_BYTES
+                            + header.old_data_size as usize
+                            + header.new_data_size as usize;
+                        record_index += 1;
+                        consecutive_invalid_records = 0;
+                        continue;
                     }
                 }
             }
@@ -1755,13 +1747,13 @@ impl LogManager {
                 LogOperation::CreateDatabase => {
                     // 执行创建数据库操作
                     // 从日志中解析数据库名
-                    let db_name_len = if log_item.new_data.len() > 0 {
+                    let db_name_len = if !log_item.new_data.is_empty() {
                         log_item.new_data[0] as usize
                     } else {
                         continue;
                     };
                     let db_name = core::str::from_utf8(&log_item.new_data[1..1 + db_name_len])
-                        .unwrap_or_else(|_| "unknown");
+                        .unwrap_or("unknown");
 
                     #[cfg(feature = "log")]
                     info!("Creating database from WAL: {}", db_name);
@@ -1772,7 +1764,7 @@ impl LogManager {
                 LogOperation::CreateTable => {
                     // 正确解析CreateTable日志项，参考lib.rs中的实现
                     // 从日志中解析表名
-                    let name_len = if log_item.new_data.len() > 0 {
+                    let name_len = if !log_item.new_data.is_empty() {
                         log_item.new_data[0] as usize
                     } else {
                         #[cfg(feature = "log")]
@@ -1791,7 +1783,7 @@ impl LogManager {
                     }
 
                     let table_name_str = core::str::from_utf8(&log_item.new_data[1..1 + name_len])
-                        .unwrap_or_else(|_| "unknown");
+                        .unwrap_or("unknown");
                     let table_name = Box::leak(table_name_str.to_string().into_boxed_str());
 
                     // 参考lib.rs中的实现，使用固定偏移量解析
@@ -1861,7 +1853,7 @@ impl LogManager {
                         let field_name_str = core::str::from_utf8(
                             &log_item.new_data[offset..offset + field_name_len],
                         )
-                        .unwrap_or_else(|_| "unknown");
+                        .unwrap_or("unknown");
                         let field_name = Box::leak(field_name_str.to_string().into_boxed_str());
                         offset += 32; // 固定32字节字段名空间
 
@@ -1922,7 +1914,7 @@ impl LogManager {
                             let value = unsafe {
                                 match data_type {
                                     crate::types::DataType::Bool => {
-                                        if offset + 1 <= new_data_len {
+                                        if offset < new_data_len {
                                             let val = log_item.new_data[offset] != 0;
                                             offset += 1;
                                             crate::types::Value { bool: val }
@@ -1932,7 +1924,7 @@ impl LogManager {
                                         }
                                     }
                                     crate::types::DataType::Int8 => {
-                                        if offset + 1 <= new_data_len {
+                                        if offset < new_data_len {
                                             let val = log_item.new_data[offset] as i8;
                                             offset += 1;
                                             crate::types::Value { i8: val }
@@ -1942,7 +1934,7 @@ impl LogManager {
                                         }
                                     }
                                     crate::types::DataType::UInt8 => {
-                                        if offset + 1 <= new_data_len {
+                                        if offset < new_data_len {
                                             let val = log_item.new_data[offset];
                                             offset += 1;
                                             crate::types::Value { u8: val }
@@ -2083,7 +2075,7 @@ impl LogManager {
                                     | crate::types::DataType::Char
                                     | crate::types::DataType::Text => {
                                         // 确保有足够空间读取字符串长度
-                                        if offset + 1 <= new_data_len {
+                                        if offset < new_data_len {
                                             let _str_len = log_item.new_data[offset] as usize; // 1字节长度
                                             offset += 1;
 
@@ -2099,8 +2091,8 @@ impl LogManager {
                                                     str_data_size
                                                 } else {
                                                     // 空间不足，只读取可用的数据
-                                                    let remaining = new_data_len - offset;
-                                                    remaining
+
+                                                    new_data_len - offset
                                                 };
 
                                             // 复制字符串数据
@@ -2159,16 +2151,15 @@ impl LogManager {
                                 crate::types::DataType::VarChar | crate::types::DataType::Char => {
                                     64
                                 } // 默认64字节字符串
-                                crate::types::DataType::Text => core::mem::size_of::<crate::types::TextStorage>(), // TEXT存储TextStorage枚举
+                                crate::types::DataType::Text => {
+                                    core::mem::size_of::<crate::types::TextStorage>()
+                                } // TEXT存储TextStorage枚举
                                 crate::types::DataType::Json => DEFAULT_JSON_SIZE, // JSON类型默认512字节
-                                crate::types::DataType::Vector => {
+                                crate::types::DataType::Vector
                                     // 向量大小 = 维度 * 4字节（float32）
-                                    if vector_dimension > 0 {
+                                    if vector_dimension > 0 => {
                                         vector_dimension as usize * 4
-                                    } else {
-                                        8 // 默认8字节
                                     }
-                                }
                                 crate::types::DataType::Interval => 10, // 8字节值 + 1字节精度 + 1字节标志
                                 _ => 8,                                 // 默认8字节
                             }
@@ -2206,8 +2197,8 @@ impl LogManager {
                             not_null: not_null_flag,
                             unique: unique_flag,
                             auto_increment: auto_increment_flag,
-                            default_value: default_value, // 使用解析出的默认值
-                            vector_metadata: vector_metadata, // 设置向量元数据
+                            default_value,   // 使用解析出的默认值
+                            vector_metadata, // 设置向量元数据
                             json_metadata: None,
                         };
 
@@ -2286,12 +2277,12 @@ impl LogManager {
                     let table_def = crate::types::TableDef {
                         id: log_item.header.table_id,
                         name: table_name.to_string(),
-                        fields: fields,
+                        fields,
                         primary_key: primary_key_list,
                         secondary_index: None,
                         secondary_index_type: crate::types::IndexType::SortedArray,
-                        record_size: record_size,
-                        max_records: max_records,
+                        record_size,
+                        max_records,
                         version: 1u32,
                         created_at: crate::platform::get_timestamp_us(),
                         updated_at: crate::platform::get_timestamp_us(),
@@ -2397,14 +2388,14 @@ impl LogManager {
                 LogOperation::CreateIndex => {
                     // 执行创建索引操作
                     // 从日志中解析表名和字段名
-                    let table_name_len = if log_item.new_data.len() > 0 {
+                    let table_name_len = if !log_item.new_data.is_empty() {
                         log_item.new_data[0] as usize
                     } else {
                         continue;
                     };
                     let table_name =
                         core::str::from_utf8(&log_item.new_data[1..1 + table_name_len])
-                            .unwrap_or_else(|_| "unknown");
+                            .unwrap_or("unknown");
 
                     let field_name_len = if log_item.new_data.len() > 65 {
                         log_item.new_data[65] as usize
@@ -2413,7 +2404,7 @@ impl LogManager {
                     };
                     let field_name =
                         core::str::from_utf8(&log_item.new_data[66..66 + field_name_len])
-                            .unwrap_or_else(|_| "unknown");
+                            .unwrap_or("unknown");
 
                     let index_type: crate::types::IndexType = if log_item.new_data.len() > 130 {
                         log_item.new_data[130].into()
@@ -2426,14 +2417,14 @@ impl LogManager {
                 }
                 LogOperation::AlterTable => {
                     // 从日志中解析表名
-                    let table_name_len = if log_item.new_data.len() > 0 {
+                    let table_name_len = if !log_item.new_data.is_empty() {
                         log_item.new_data[0] as usize
                     } else {
                         continue;
                     };
                     let table_name =
                         core::str::from_utf8(&log_item.new_data[1..1 + table_name_len])
-                            .unwrap_or_else(|_| "unknown");
+                            .unwrap_or("unknown");
 
                     // 从日志中解析操作类型
                     let op_type = if log_item.new_data.len() > 65 {
@@ -2453,7 +2444,7 @@ impl LogManager {
                             };
                             let col_name =
                                 core::str::from_utf8(&log_item.new_data[68..68 + col_name_len])
-                                    .unwrap_or_else(|_| "unknown")
+                                    .unwrap_or("unknown")
                                     .to_string();
 
                             let data_type: crate::types::DataType = if log_item.new_data.len() > 132
@@ -2501,7 +2492,7 @@ impl LogManager {
                             };
                             let col_name =
                                 core::str::from_utf8(&log_item.new_data[68..68 + col_name_len])
-                                    .unwrap_or_else(|_| "unknown")
+                                    .unwrap_or("unknown")
                                     .to_string();
 
                             crate::AlterTableOperation::DropColumn { name: col_name }
@@ -2515,7 +2506,7 @@ impl LogManager {
                             };
                             let col_name =
                                 core::str::from_utf8(&log_item.new_data[68..68 + col_name_len])
-                                    .unwrap_or_else(|_| "unknown")
+                                    .unwrap_or("unknown")
                                     .to_string();
 
                             let data_type: crate::types::DataType = if log_item.new_data.len() > 132
@@ -2563,7 +2554,7 @@ impl LogManager {
                             };
                             let old_name =
                                 core::str::from_utf8(&log_item.new_data[68..68 + old_name_len])
-                                    .unwrap_or_else(|_| "unknown")
+                                    .unwrap_or("unknown")
                                     .to_string();
 
                             let new_name_len = if log_item.new_data.len() > 132 {
@@ -2573,7 +2564,7 @@ impl LogManager {
                             };
                             let new_name =
                                 core::str::from_utf8(&log_item.new_data[133..133 + new_name_len])
-                                    .unwrap_or_else(|_| "unknown")
+                                    .unwrap_or("unknown")
                                     .to_string();
 
                             crate::AlterTableOperation::RenameColumn { old_name, new_name }
@@ -2637,10 +2628,8 @@ impl LogManager {
                             }
 
                             // 遍历所有表，设置低功耗模式
-                            for table in &mut db.tables.iter_mut() {
-                                if let Some(table) = table {
-                                    table.set_low_power_mode(true, db.config.low_power_max_records);
-                                }
+                            for table in (&mut db.tables.iter_mut()).flatten() {
+                                table.set_low_power_mode(true, db.config.low_power_max_records);
                             }
 
                             // 更新状态
@@ -2671,10 +2660,8 @@ impl LogManager {
                             }
 
                             // 遍历所有表，退出低功耗模式
-                            for table in &mut db.tables.iter_mut() {
-                                if let Some(table) = table {
-                                    table.set_low_power_mode(false, None);
-                                }
+                            for table in (&mut db.tables.iter_mut()).flatten() {
+                                table.set_low_power_mode(false, None);
                             }
 
                             // 更新状态
@@ -2682,10 +2669,8 @@ impl LogManager {
                         }
                     } else {
                         // 如果配置不支持低功耗模式，确保所有表也处于正常模式
-                        for table in &mut db.tables.iter_mut() {
-                            if let Some(table) = table {
-                                table.set_low_power_mode(false, None);
-                            }
+                        for table in (&mut db.tables.iter_mut()).flatten() {
+                            table.set_low_power_mode(false, None);
                         }
                         // 确保数据库状态也更新
                         db.low_power_mode = false;
@@ -2781,8 +2766,8 @@ impl LogManager {
                         // 先删除旧的索引项（如果存在）
                         let _: Result<()> = primary_index.delete_composite(record_ptr);
                         // 使用复合键插入方法
-                        let _: Result<()> = primary_index
-                            .insert_composite(record_ptr, log_item.header.record_id as u16);
+                        let _: Result<()> =
+                            primary_index.insert_composite(record_ptr, log_item.header.record_id);
                     }
 
                     // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
@@ -2921,7 +2906,7 @@ impl LogManager {
                         // 将新记录插入到主键索引中
                         if let Some(primary_index) = &mut db.primary_indices[table_id] {
                             let _: Result<()> = primary_index
-                                .insert_composite(record_ptr, log_item.header.record_id as u16);
+                                .insert_composite(record_ptr, log_item.header.record_id);
                         }
                     }
                 }
@@ -3096,7 +3081,7 @@ impl TransactionManager {
             status: TransactionStatus::Active,
             isolation_level,
             start_time: crate::platform::get_timestamp_us(),
-            log_items: NonNull::new(log_buffer).unwrap_or_else(|| NonNull::dangling()),
+            log_items: NonNull::new(log_buffer).unwrap_or_else(NonNull::dangling),
             max_log_items: if log_buffer.is_null() {
                 0
             } else {
@@ -3196,7 +3181,7 @@ impl TransactionManager {
                                     let record_ptr = table
                                         .get_record_ptr_mut(log_item.header.record_id as usize);
                                     // 使用复合键删除方法
-                                    primary_index.delete_composite(record_ptr);
+                                    let _ = primary_index.delete_composite(record_ptr);
                                 }
 
                                 // 标记记录为空闲
@@ -3249,7 +3234,6 @@ impl TransactionManager {
 
                                 // 从空闲槽栈中移除该槽位，确保不重复使用
                                 if table.free_slot_count > 0 {
-                                    let mut found = false;
                                     let mut i = 0;
                                     while i < table.free_slot_count {
                                         if *table.free_slots.as_ptr().add(i)
@@ -3261,7 +3245,6 @@ impl TransactionManager {
                                                 .as_ptr()
                                                 .add(table.free_slot_count - 1);
                                             table.free_slot_count -= 1;
-                                            found = true;
                                             break;
                                         }
                                         i += 1;
@@ -3270,10 +3253,8 @@ impl TransactionManager {
 
                                 // 更新主键索引
                                 if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                                    let _: Result<()> = primary_index.insert_composite(
-                                        record_ptr,
-                                        log_item.header.record_id as u16,
-                                    );
+                                    let _: Result<()> = primary_index
+                                        .insert_composite(record_ptr, log_item.header.record_id);
                                 }
                             }
                         }
@@ -3310,10 +3291,8 @@ impl TransactionManager {
 
                                 // 将恢复后的数据插入到主键索引中
                                 if let Some(primary_index) = &mut db.primary_indices[table_id] {
-                                    let _: Result<()> = primary_index.insert_composite(
-                                        record_ptr,
-                                        log_item.header.record_id as u16,
-                                    );
+                                    let _: Result<()> = primary_index
+                                        .insert_composite(record_ptr, log_item.header.record_id);
                                 }
                             }
                         }

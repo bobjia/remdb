@@ -234,7 +234,8 @@ fn generate_field_defs(
             || col.typ.to_lowercase().contains("string")
         {
             // VarChar/Char size up to 65536
-            let varchar_size = col.typ
+            let varchar_size = col
+                .typ
                 .split('(')
                 .nth(1)
                 .and_then(|s| s.split(')').next())
@@ -355,7 +356,7 @@ fn get_type_size(sql_type: &str) -> usize {
             match param {
                 Some(p) if p <= 65536 => p,
                 Some(_) => 64, // 超过65536限制，回退到64
-                None => 64, // 默认字符串大小
+                None => 64,    // 默认字符串大小
             }
         }
         "timestamp" => 8,

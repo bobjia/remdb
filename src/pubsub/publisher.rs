@@ -168,14 +168,10 @@ impl Publisher {
                 .unwrap_or(std::time::Duration::ZERO);
             return duration.as_millis() as u64;
         }
-        #[cfg(feature = "baremetal")]
+        #[cfg(not(feature = "posix"))]
         {
-            // baremetal平台返回0（需要用户实现）
-            return 0u64;
-        }
-        #[cfg(not(any(feature = "posix", feature = "baremetal")))]
-        {
-            return 0u64;
+            // baremetal或其它平台返回0（需要用户实现）
+            0u64
         }
     }
 

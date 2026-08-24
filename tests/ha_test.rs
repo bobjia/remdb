@@ -1,7 +1,7 @@
 // HA功能测试
 #![cfg(feature = "ha")]
 
-use remdb::config::{LogMode, TimeSeriesConfig, WALConfig};
+use remdb::config::{LogMode, WALConfig};
 use remdb::ha::heartbeat::HeartbeatMonitor;
 use remdb::ha::manager::HAManager;
 use remdb::ha::replication::ReplicationManager;
@@ -285,9 +285,9 @@ fn test_ha_manager_failover() {
                 log_path: "./wal",
                 log_mode: LogMode::Async,
                 checkpoint_interval_ms: 60000,
-                log_file_size_limit: 1 * 1024 * 1024,
+                log_file_size_limit: 1024 * 1024,
                 log_prealloc_size: 0,
-                log_segment_size: 1 * 1024 * 1024,
+                log_segment_size: 1024 * 1024,
                 retained_checkpoints: 1,
                 max_consecutive_invalid: 100,
                 skip_threshold: 1000,
@@ -409,9 +409,9 @@ fn test_ha_manager() {
                 log_path: "./wal",
                 log_mode: LogMode::Async,
                 checkpoint_interval_ms: 60000,
-                log_file_size_limit: 1 * 1024 * 1024,
+                log_file_size_limit: 1024 * 1024,
                 log_prealloc_size: 0,
-                log_segment_size: 1 * 1024 * 1024,
+                log_segment_size: 1024 * 1024,
                 retained_checkpoints: 1,
                 max_consecutive_invalid: 100,
                 skip_threshold: 1000,
@@ -481,9 +481,9 @@ fn test_ha_manager_role_switch() {
                 log_path: "./wal",
                 log_mode: LogMode::Async,
                 checkpoint_interval_ms: 60000,
-                log_file_size_limit: 1 * 1024 * 1024,
+                log_file_size_limit: 1024 * 1024,
                 log_prealloc_size: 0,
-                log_segment_size: 1 * 1024 * 1024,
+                log_segment_size: 1024 * 1024,
                 retained_checkpoints: 1,
                 max_consecutive_invalid: 100,
                 skip_threshold: 1000,
@@ -588,9 +588,9 @@ fn test_ha_config_validation() {
             log_path: "./wal",
             log_mode: LogMode::Async,
             checkpoint_interval_ms: 60000,
-            log_file_size_limit: 1 * 1024 * 1024,
+            log_file_size_limit: 1024 * 1024,
             log_prealloc_size: 0,
-            log_segment_size: 1 * 1024 * 1024,
+            log_segment_size: 1024 * 1024,
             retained_checkpoints: 1,
             max_consecutive_invalid: 100,
             skip_threshold: 1000,
@@ -634,9 +634,9 @@ fn test_ha_config_validation() {
             log_path: "./wal",
             log_mode: LogMode::Async,
             checkpoint_interval_ms: 60000,
-            log_file_size_limit: 1 * 1024 * 1024,
+            log_file_size_limit: 1024 * 1024,
             log_prealloc_size: 0,
-            log_segment_size: 1 * 1024 * 1024,
+            log_segment_size: 1024 * 1024,
             retained_checkpoints: 1,
             max_consecutive_invalid: 100,
             skip_threshold: 1000,
@@ -1066,7 +1066,7 @@ fn test_sync_large_data_chunk() {
 fn test_sync_chunk_sequence() {
     let total_size = 150000usize;
     let chunk_size = remdb::ha::protocol::MAX_CHUNK_DATA_SIZE;
-    let expected_chunks = (total_size + chunk_size - 1) / chunk_size;
+    let expected_chunks = total_size.div_ceil(chunk_size);
 
     let data: Vec<u8> = (0..=255).cycle().take(total_size).collect();
 

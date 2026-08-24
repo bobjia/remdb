@@ -124,7 +124,7 @@ static TEST_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLock:
             log_mode: config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
+            log_prealloc_size: 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
             max_consecutive_invalid: 100,
@@ -179,7 +179,7 @@ fn test_create_table() {
     );
 
     // 创建数据库实例，使用静态配置
-    let mut db = RemDb::new(&*TEST_CONFIG);
+    let mut db = RemDb::new(&TEST_CONFIG);
 
     // 测试创建表
     let result = db.create_table(
@@ -201,7 +201,7 @@ fn test_create_table_invalid() {
     let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     // 无需平台初始化，直接测试参数验证逻辑
-    let mut db = RemDb::new(&*TEST_CONFIG);
+    let mut db = RemDb::new(&TEST_CONFIG);
 
     // 测试创建空字段表（应该失败）
     let result = db.create_table("empty_table", &[], None);
@@ -241,7 +241,7 @@ fn test_create_index() {
     );
 
     // 创建数据库实例，使用静态配置
-    let mut db = RemDb::new(&*TEST_CONFIG);
+    let mut db = RemDb::new(&TEST_CONFIG);
 
     // 先创建表
     let result = db.create_table(

@@ -70,8 +70,7 @@ impl MemoryAllocator for DefaultMemoryAllocator {
         #[cfg(feature = "std")]
         {
             // 使用with_capacity + resize确保capacity == size
-            let mut vec = Vec::with_capacity(size);
-            vec.resize(size, 0);
+            let mut vec = vec![0; size];
             let ptr = vec.as_mut_ptr();
             // 释放vec对内存的所有权，但不释放内存本身
             std::mem::forget(vec);

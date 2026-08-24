@@ -20,6 +20,7 @@ const BTREE_ORDER: usize = 4; // 阶数为4的B-Tree
 const TTREE_ORDER: usize = 3; // 阶数为3的T-Tree
 
 /// 索引统计信息
+#[derive(Default)]
 pub struct IndexStats {
     /// 索引使用次数
     pub access_count: usize,
@@ -29,17 +30,6 @@ pub struct IndexStats {
     pub size: usize,
     /// 索引项数量
     pub item_count: usize,
-}
-
-impl Default for IndexStats {
-    fn default() -> Self {
-        IndexStats {
-            access_count: 0,
-            hit_count: 0,
-            size: 0,
-            item_count: 0,
-        }
-    }
 }
 
 /// 主键哈希索引项
@@ -219,8 +209,7 @@ unsafe fn encode_composite_key(
                     core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp);
                 encoded_key.extend_from_slice(&value.value.to_le_bytes());
             }
-            crate::types::DataType::VarChar
-            | crate::types::DataType::Char => {
+            crate::types::DataType::VarChar | crate::types::DataType::Char => {
                 // 字符串类型：编码为长度前缀 + 内容
                 let str_slice = core::slice::from_raw_parts(field_ptr, field.size);
                 let str_len = str_slice.iter().position(|&c| c == 0).unwrap_or(field.size);
@@ -245,7 +234,8 @@ unsafe fn encode_composite_key(
                         if !ext.data_ptr.is_null() {
                             let str_len = ext.length as usize;
                             let capped_len = core::cmp::min(str_len, 255);
-                            let bytes = unsafe { core::slice::from_raw_parts(ext.data_ptr, capped_len) };
+                            let bytes =
+                                unsafe { core::slice::from_raw_parts(ext.data_ptr, capped_len) };
                             encoded_key.push(capped_len as u8);
                             encoded_key.extend_from_slice(bytes);
                         } else {
@@ -345,7 +335,9 @@ impl PrimaryIndex {
     /// 插入索引项
     pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
         // 增加索引插入计数
-        crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_index_inserts()
+        }
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
 
@@ -464,7 +456,9 @@ impl PrimaryIndex {
     /// 删除索引�?
     pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
         // 增加索引删除计数
-        crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_index_deletes()
+        }
         // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
@@ -622,10 +616,10 @@ impl VectorIndex {
         memory_start: *mut u8,
         max_items: usize,
     ) -> Result<Self> {
-        // 获取向量维度和距离类�?
-        let mut dimension = 0;
-        let mut distance_type = DistanceType::L2;
-        let mut vector_index_type = VectorIndexType::HNSW;
+        // 获取向量维度和距离类型
+        let dimension;
+        let distance_type;
+        let vector_index_type;
 
         // 验证是否有有效的辅助索引字段
         let secondary_index = def
@@ -715,10 +709,6 @@ impl VectorIndex {
                     vector_meta.ivf_nprobe,
                 )?;
                 VectorIndexImpl::IVFFlat(Some(ivf_index))
-            }
-            _ => {
-                // 默认使用线性搜�?
-                VectorIndexImpl::LinearSearch
             }
         };
 
@@ -824,7 +814,6 @@ impl VectorIndex {
                 let centroid_size = meta.dimension as usize * core::mem::size_of::<f32>();
                 nlist * centroid_size + nlist * core::mem::size_of::<usize>()
             }
-            _ => 0,
         }
     }
 
@@ -1095,7 +1084,6 @@ impl VectorIndex {
                     .map_err(|_| RemDbError::FileIoError)?;
                 VectorIndexImpl::IVFFlat(Some(ivf_index))
             }
-            _ => VectorIndexImpl::LinearSearch,
         };
 
         Ok(VectorIndex {
@@ -2166,7 +2154,9 @@ impl SecondaryIndex {
     /// 插入索引�?
     pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
         // 增加索引插入计数
-        crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_index_inserts()
+        }
         // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
@@ -2257,7 +2247,9 @@ impl SecondaryIndex {
     /// 删除索引�?
     pub unsafe fn delete(&mut self, key: *const u8, key_size: usize) -> Result<()> {
         // 增加索引删除计数
-        crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_index_deletes()
+        }
         // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
@@ -2789,7 +2781,9 @@ impl BTreeIndex {
     /// 插入索引�?
     pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
         // 增加索引插入计数
-        crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_index_inserts()
+        }
         // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
@@ -2829,12 +2823,12 @@ impl BTreeIndex {
                 new_root_mut.key_count = 0;
                 new_root_mut.children[0] = self.root;
 
-                self.split_child(new_root, 0, root);
-                self.insert_non_full(new_root, new_item);
+                let _ = self.split_child(new_root, 0, root);
+                let _ = self.insert_non_full(new_root, new_item);
 
                 self.root = Some(new_root);
             } else {
-                self.insert_non_full(root, new_item);
+                let _ = self.insert_non_full(root, new_item);
             }
         }
 
@@ -3154,7 +3148,9 @@ impl BTreeIndex {
     /// 删除索引�?
     pub unsafe fn delete(&mut self, _key: *const u8, _key_size: usize) -> Result<()> {
         // 增加索引删除计数
-        crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_index_deletes()
+        }
         // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
@@ -3365,7 +3361,9 @@ impl TTreeIndex {
     /// 插入索引�?
     pub unsafe fn insert(&mut self, key: *const u8, key_size: usize, record_id: u16) -> Result<()> {
         // 增加索引插入计数
-        crate::get_global_db().map(|db| db.metrics.inc_index_inserts());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_index_inserts()
+        }
         // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 
@@ -3433,7 +3431,7 @@ impl TTreeIndex {
                 let right_mut = right_node.as_mut();
 
                 // 分配键到左右子节�?
-                let mid = (TTREE_ORDER + 1) / 2;
+                let mid = TTREE_ORDER.div_ceil(2);
 
                 // 更新原根节点（左子节点）
                 let root_mut = root.as_mut();
@@ -3457,7 +3455,7 @@ impl TTreeIndex {
                 self.root = Some(new_root);
             } else {
                 // 递归插入到适当的子�?
-                self.insert_recursive_with_depth(root, new_item, 0);
+                let _ = self.insert_recursive_with_depth(root, new_item, 0);
             }
         }
 
@@ -3534,7 +3532,7 @@ impl TTreeIndex {
                 let new_right_mut = new_right.as_mut();
 
                 // 分配键到左右子节�?
-                let mid = (TTREE_ORDER + 1) / 2;
+                let mid = TTREE_ORDER.div_ceil(2);
 
                 // 更新原子节点（左子节点）
                 let child_mut = child_node.as_mut();
@@ -3612,7 +3610,7 @@ impl TTreeIndex {
                 }
 
                 // 分配键到当前节点和新节点
-                let mid = (TTREE_ORDER + 1) / 2;
+                let mid = TTREE_ORDER.div_ceil(2);
 
                 // 更新当前节点
                 node_mut.key_count = mid as u8;
@@ -3852,7 +3850,9 @@ impl TTreeIndex {
     /// 删除索引�?
     pub unsafe fn delete(&mut self, _key: *const u8, _key_size: usize) -> Result<()> {
         // 增加索引删除计数
-        crate::get_global_db().map(|db| db.metrics.inc_index_deletes());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_index_deletes()
+        }
         // 自旋锁保�?
         crate::platform::spin_lock(&mut self.lock);
 

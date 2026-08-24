@@ -63,7 +63,7 @@ static TEST_DB_CONFIG: std::sync::LazyLock<config::DbConfig> = std::sync::LazyLo
             log_mode: config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
+            log_prealloc_size: 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
             max_consecutive_invalid: 100,
@@ -167,7 +167,7 @@ impl Platform for TestPlatform {
 
     fn file_open(&self, path: &str, mode: FileMode) -> FileResult<FileHandle> {
         // 使用std::fs::File实现文件操作
-        use std::fs::File;
+
         use std::fs::OpenOptions;
 
         match mode {
@@ -327,7 +327,7 @@ fn test_snapshot_gen() -> Result<()> {
         // 插入测试数据
         for i in 0..5 {
             let mut record_data = [0u8; 8];
-            let id: i32 = (i + 1) as i32; // id从1开始，避免全0被视为null
+            let id: i32 = (i + 1); // id从1开始，避免全0被视为null
             let value: f32 = i as f32 * 10.0;
 
             core::ptr::copy_nonoverlapping(

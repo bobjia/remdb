@@ -860,7 +860,7 @@ pub unsafe extern "C" fn remdb_init_global(
     let mut memory_buffer = alloc::vec::Vec::with_capacity(total_memory);
 
     // 尝试调整内存缓冲区大小
-    if let Err(_) = memory_buffer.try_reserve(total_memory) {
+    if memory_buffer.try_reserve(total_memory).is_err() {
         return RemDbError::OutOfMemory;
     }
 
@@ -886,12 +886,12 @@ pub unsafe extern "C" fn remdb_init_global(
     // 转换表定义
     let mut rust_tables = Vec::new();
     for i in 0..c_config.tables_count {
-        let c_table = &*c_config.tables.offset(i as isize);
+        let c_table = &*c_config.tables.add(i);
 
         // 转换字段定义
         let mut rust_fields = Vec::new();
         for j in 0..c_table.fields_count {
-            let c_field = &*c_table.fields.offset(j as isize);
+            let c_field = &*c_table.fields.add(j);
             rust_fields.push(FieldDef {
                 name: core::str::from_utf8_unchecked(core::slice::from_raw_parts(
                     c_field.name,
@@ -1024,12 +1024,12 @@ pub unsafe extern "C" fn remdb_init_global(
             let db_mut = &mut *(*handle);
 
             for i in 0..c_config.time_series_tables_count {
-                let c_time_series_table = &*c_config.time_series_tables.offset(i as isize);
+                let c_time_series_table = &*c_config.time_series_tables.add(i);
 
                 // 转换字段定义
                 let mut rust_fields = Vec::new();
                 for j in 0..c_time_series_table.fields_count {
-                    let c_field = &*c_time_series_table.fields.offset(j as isize);
+                    let c_field = &*c_time_series_table.fields.add(j);
                     rust_fields.push(FieldDef {
                         name: core::str::from_utf8_unchecked(core::slice::from_raw_parts(
                             c_field.name,
@@ -1053,7 +1053,7 @@ pub unsafe extern "C" fn remdb_init_global(
                 // 转换标签字段索引
                 let mut rust_tag_fields = Vec::new();
                 for j in 0..c_time_series_table.tag_fields_count {
-                    let tag_field = *c_time_series_table.tag_fields.offset(j as isize);
+                    let tag_field = *c_time_series_table.tag_fields.add(j);
                     rust_tag_fields.push(tag_field);
                 }
 
@@ -1366,7 +1366,7 @@ pub unsafe extern "C" fn remdb_dump_metrics(
 
     let copy_len = core::cmp::min(metrics_bytes.len(), buffer_size - 1);
     core::ptr::copy_nonoverlapping(metrics_bytes.as_ptr(), buffer, copy_len);
-    *buffer.offset(copy_len as isize) = 0;
+    *buffer.add(copy_len) = 0;
     *written = copy_len;
 
     RemDbError::Success
@@ -1442,7 +1442,7 @@ pub unsafe extern "C" fn remdb_table_get(
     let key_size = match db.get_table(table_id) {
         Ok(table) => {
             let def = &table.def;
-            let pk_idx = match def.primary_key.get(0) {
+            let pk_idx = match def.primary_key.first() {
                 Some(idx) => *idx,
                 None => return RemDbError::ConfigError,
             };
@@ -1503,7 +1503,7 @@ pub unsafe extern "C" fn remdb_table_update(
     let key_size = match db.get_table(table_id) {
         Ok(table) => {
             let def = &table.def;
-            let pk_idx = match def.primary_key.get(0) {
+            let pk_idx = match def.primary_key.first() {
                 Some(idx) => *idx,
                 None => return RemDbError::ConfigError,
             };
@@ -1563,7 +1563,7 @@ pub unsafe extern "C" fn remdb_table_delete(
     let key_size = match db.get_table(table_id) {
         Ok(table) => {
             let def = &table.def;
-            let pk_idx = match def.primary_key.get(0) {
+            let pk_idx = match def.primary_key.first() {
                 Some(idx) => *idx,
                 None => return RemDbError::ConfigError,
             };
@@ -1663,10 +1663,7 @@ pub unsafe extern "C" fn remdb_pubsub_init(config: *const RemDbPubSubConfig) -> 
     // 解析组播地址
     let multicast_addr = if !c_config.multicast_addr.is_null() {
         let addr_str = c_str_to_rust(c_config.multicast_addr);
-        match addr_str.parse() {
-            Ok(addr) => Some(addr),
-            Err(_) => None,
-        }
+        addr_str.parse().ok()
     } else {
         None
     };
@@ -1799,7 +1796,7 @@ pub unsafe extern "C" fn remdb_time_series_batch_write(
             // 2. 将C记录转换为Rust记录
             let mut rust_records = Vec::with_capacity(count);
             for i in 0..count {
-                let c_record = unsafe { *records.offset(i as isize) };
+                let c_record = unsafe { *records.add(i) };
                 rust_records.push(c_record.into());
             }
 
@@ -1950,7 +1947,7 @@ pub unsafe extern "C" fn remdb_sql_query(
                 if column_str.is_null() {
                     // 释放已分配的内存
                     for j in 0..i {
-                        let col = *columns.offset(j as isize);
+                        let col = *columns.add(j);
                         alloc::alloc::dealloc(
                             col as *mut u8,
                             alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
@@ -1971,8 +1968,8 @@ pub unsafe extern "C" fn remdb_sql_query(
 
                 // 复制列名字符串
                 core::ptr::copy_nonoverlapping(column.as_ptr(), column_str, column.len());
-                *column_str.offset(column.len() as isize) = 0; // 添加终止符
-                *columns.offset(i as isize) = column_str as *const u8;
+                *column_str.add(column.len()) = 0; // 添加终止符
+                *columns.add(i) = column_str as *const u8;
             }
 
             // 分配内存存储行
@@ -1983,7 +1980,7 @@ pub unsafe extern "C" fn remdb_sql_query(
             if rows.is_null() {
                 // 释放已分配的内存
                 for i in 0..rust_result_set.columns.len() {
-                    let col = *columns.offset(i as isize);
+                    let col = *columns.add(i);
                     alloc::alloc::dealloc(
                         col as *mut u8,
                         alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
@@ -2012,7 +2009,7 @@ pub unsafe extern "C" fn remdb_sql_query(
                 if values.is_null() {
                     // 释放已分配的内存
                     for j in 0..i {
-                        let r = &*rows.offset(j as isize);
+                        let r = &*rows.add(j);
                         alloc::alloc::dealloc(
                             r.values as *mut u8,
                             alloc::alloc::Layout::array::<RemDbTypedValue>(r.values_count)
@@ -2025,7 +2022,7 @@ pub unsafe extern "C" fn remdb_sql_query(
                             .expect("failed to allocate memory"),
                     );
                     for j in 0..rust_result_set.columns.len() {
-                        let col = *columns.offset(j as isize);
+                        let col = *columns.add(j);
                         alloc::alloc::dealloc(
                             col as *mut u8,
                             alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
@@ -2048,11 +2045,11 @@ pub unsafe extern "C" fn remdb_sql_query(
                 for (j, value) in row.values.iter().enumerate() {
                     #[cfg(feature = "log")]
                     debug!("row {}, value {}: type={:?}", i, j, value.value_type);
-                    *values.offset(j as isize) = value.clone().into();
+                    *values.add(j) = value.clone().into();
                 }
 
                 // 设置行数据
-                let row_ptr = rows.offset(i as isize);
+                let row_ptr = rows.add(i);
                 (*row_ptr).values = values;
                 (*row_ptr).values_count = row.values.len();
             }
@@ -2081,7 +2078,7 @@ pub unsafe extern "C" fn remdb_free_result_set(result_set: *mut RemDbResultSet) 
 
     // 释放列名
     for i in 0..rs.columns_count {
-        let col = *rs.columns.offset(i as isize);
+        let col = *rs.columns.add(i);
         if !col.is_null() {
             alloc::alloc::dealloc(
                 col as *mut u8,
@@ -2098,7 +2095,7 @@ pub unsafe extern "C" fn remdb_free_result_set(result_set: *mut RemDbResultSet) 
 
     // 释放行数据
     for i in 0..rs.rows_count {
-        let row = &*rs.rows.offset(i as isize);
+        let row = &*rs.rows.add(i);
         if !row.values.is_null() {
             alloc::alloc::dealloc(
                 row.values as *mut u8,
@@ -2163,7 +2160,7 @@ pub unsafe extern "C" fn remdb_get_json_string(
         if actual_len > 0 {
             core::ptr::copy_nonoverlapping(bytes.as_ptr(), json_c_str, actual_len);
         }
-        *json_c_str.offset(actual_len as isize) = 0; // null terminator
+        *json_c_str.add(actual_len) = 0; // null terminator
 
         Ok((json_c_str as *const u8, actual_len))
     };
@@ -2236,7 +2233,7 @@ pub unsafe extern "C" fn remdb_get_json_string(
                             json_c_str,
                             json_str.len(),
                         );
-                        *json_c_str.offset(json_str.len() as isize) = 0; // 添加终止符
+                        *json_c_str.add(json_str.len()) = 0; // 添加终止符
 
                         *json_string = json_c_str as *const u8;
                         *length = json_str.len();
@@ -2288,7 +2285,7 @@ pub unsafe extern "C" fn remdb_execute_query(
     // 转换列名
     let mut rust_columns = Vec::with_capacity(columns_count);
     for i in 0..columns_count {
-        let col = *columns.offset(i as isize);
+        let col = *columns.add(i);
         if !col.is_null() {
             rust_columns.push(c_str_to_rust(col));
         }
@@ -2347,7 +2344,7 @@ pub unsafe extern "C" fn remdb_execute_query(
                 if column_str.is_null() {
                     // 释放已分配的内存
                     for j in 0..i {
-                        let col = *columns_ptr.offset(j as isize);
+                        let col = *columns_ptr.add(j);
                         alloc::alloc::dealloc(
                             col as *mut u8,
                             alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
@@ -2368,8 +2365,8 @@ pub unsafe extern "C" fn remdb_execute_query(
 
                 // 复制列名字符串
                 core::ptr::copy_nonoverlapping(column.as_ptr(), column_str, column.len());
-                *column_str.offset(column.len() as isize) = 0; // 添加终止符
-                *columns_ptr.offset(i as isize) = column_str as *const u8;
+                *column_str.add(column.len()) = 0; // 添加终止符
+                *columns_ptr.add(i) = column_str as *const u8;
             }
 
             // 分配内存存储行
@@ -2380,7 +2377,7 @@ pub unsafe extern "C" fn remdb_execute_query(
             if rows_ptr.is_null() {
                 // 释放已分配的内存
                 for i in 0..rust_result_set.columns.len() {
-                    let col = *columns_ptr.offset(i as isize);
+                    let col = *columns_ptr.add(i);
                     alloc::alloc::dealloc(
                         col as *mut u8,
                         alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
@@ -2409,7 +2406,7 @@ pub unsafe extern "C" fn remdb_execute_query(
                 if values_ptr.is_null() {
                     // 释放已分配的内存
                     for j in 0..i {
-                        let r = &*rows_ptr.offset(j as isize);
+                        let r = &*rows_ptr.add(j);
                         if !r.values.is_null() {
                             alloc::alloc::dealloc(
                                 r.values as *mut u8,
@@ -2424,7 +2421,7 @@ pub unsafe extern "C" fn remdb_execute_query(
                             .expect("failed to allocate memory"),
                     );
                     for j in 0..rust_result_set.columns.len() {
-                        let col = *columns_ptr.offset(j as isize);
+                        let col = *columns_ptr.add(j);
                         alloc::alloc::dealloc(
                             col as *mut u8,
                             alloc::alloc::Layout::array::<u8>(_c_strlen(col) + 1)
@@ -2445,11 +2442,11 @@ pub unsafe extern "C" fn remdb_execute_query(
 
                 // 转换值
                 for (j, value) in row.values.iter().enumerate() {
-                    *values_ptr.offset(j as isize) = value.clone().into();
+                    *values_ptr.add(j) = value.clone().into();
                 }
 
                 // 设置行数据
-                let row_ptr = rows_ptr.offset(i as isize);
+                let row_ptr = rows_ptr.add(i);
                 (*row_ptr).values = values_ptr;
                 (*row_ptr).values_count = row.values.len();
             }
@@ -2472,6 +2469,7 @@ pub unsafe extern "C" fn remdb_execute_query(
 /// C API: 向量索引类型枚举
 #[repr(u8)]
 #[derive(Copy, Clone)]
+#[allow(non_camel_case_types)]
 pub enum RemDbVectorIndexType {
     HNSW = 0,
     HNSW_SQ = 1,
@@ -2655,19 +2653,18 @@ pub unsafe extern "C" fn remdb_vector_search(
                         | crate::types::DataType::UInt64
                         | crate::types::DataType::Int64 = id_value.value_type
                         {
-                            *result_ids.offset(i as isize) = unsafe { id_value.value.u32 };
+                            *result_ids.add(i) = unsafe { id_value.value.u32 };
                         } else {
-                            *result_ids.offset(i as isize) = 0;
+                            *result_ids.add(i) = 0;
                         }
 
                         // 提取distance值
                         if let crate::types::DataType::Float32 | crate::types::DataType::Float64 =
                             distance_value.value_type
                         {
-                            *result_distances.offset(i as isize) =
-                                unsafe { distance_value.value.float32 };
+                            *result_distances.add(i) = unsafe { distance_value.value.float32 };
                         } else {
-                            *result_distances.offset(i as isize) = 0.0;
+                            *result_distances.add(i) = 0.0;
                         }
                     }
                 }
@@ -2737,7 +2734,7 @@ pub unsafe extern "C" fn remdb_get_index_build_status(
 
     match db.sql_query(&sql) {
         Ok(rust_result_set) => {
-            if rust_result_set.rows.len() > 0 {
+            if !rust_result_set.rows.is_empty() {
                 let row = &rust_result_set.rows[0];
                 if row.values.len() >= 2 {
                     // 假设第一列为is_building，第二列为progress
@@ -2789,14 +2786,14 @@ pub unsafe extern "C" fn remdb_create_table(
     let mut rust_fields = Vec::with_capacity(fields_count);
 
     for i in 0..fields_count {
-        let c_field = &*fields.offset(i as isize);
+        let c_field = &*fields.add(i);
         let field_name = c_str_to_rust(c_field.name);
         field_name_strings.push(field_name);
     }
 
     // 现在创建字段定义向量
     for (i, field_name) in field_name_strings.iter().enumerate() {
-        let c_field = &*fields.offset(i as isize);
+        let c_field = &*fields.add(i);
         rust_fields.push((
             field_name.as_str(),
             c_field.data_type.into(),
@@ -2841,7 +2838,7 @@ pub unsafe extern "C" fn remdb_batch_insert_record(
     // 转换列名
     let mut col_name_vec = Vec::with_capacity(column_names_count);
     for i in 0..column_names_count {
-        let col = *column_names.offset(i as isize);
+        let col = *column_names.add(i);
         if !col.is_null() {
             let col_str = c_str_to_rust(col);
             col_name_vec.push(col_str);
@@ -2855,12 +2852,12 @@ pub unsafe extern "C" fn remdb_batch_insert_record(
     let mut total_inserted = 0;
 
     for i in 0..records_count {
-        let record = *records.offset(i as isize);
+        let record = *records.add(i);
 
         // 转换单条记录的字段值
         let mut field_value_vec = Vec::with_capacity(values_per_record);
         for j in 0..values_per_record {
-            let value = *record.offset(j as isize);
+            let value = *record.add(j);
             if !value.is_null() {
                 let val_str = c_str_to_rust(value);
                 field_value_vec.push(val_str);
@@ -3227,7 +3224,7 @@ pub unsafe extern "C" fn remdb_get_databases(
 
             // 转换数据库信息
             for (i, rust_db) in rust_databases.iter().enumerate() {
-                let c_db = &mut *c_databases.offset(i as isize);
+                let c_db = &mut *c_databases.add(i);
                 *c_db = rust_db.clone().into();
             }
 

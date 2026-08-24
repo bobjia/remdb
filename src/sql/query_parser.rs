@@ -23,7 +23,7 @@ pub fn parse_time_string(time_str: &str) -> Result<i64, ()> {
         return Err(());
     }
 
-    if time_str.contains(|c| c == 'Y' || c == 'M' || c == 'D' || c == 'H' || c == 'I' || c == 'S') {
+    if time_str.contains(['Y', 'M', 'D', 'H', 'I', 'S']) {
         return Err(());
     }
 
@@ -80,11 +80,11 @@ pub fn parse_time_string(time_str: &str) -> Result<i64, ()> {
 }
 
 fn split_timezone_from_time(time_part: &str) -> (&str, i32) {
-    if let Some(pos) = time_part.find(|c| c == '+' || c == '-') {
+    if let Some(pos) = time_part.find(['+', '-']) {
         if pos > 0 {
             let before = &time_part[..pos];
             let after = &time_part[pos..];
-            if after.len() > 1 && after.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+            if after.len() > 1 && after.chars().nth(1).is_some_and(|c| c.is_ascii_digit()) {
                 let tz_seconds = parse_timezone_offset(after).unwrap_or(0);
                 return (before, tz_seconds);
             }
@@ -2884,24 +2884,24 @@ impl SqlParser {
 
                 // 将组合后的间隔字符串转换为微秒值
                 // 这里我们暂时返回一个占位符，实际解析将在执行时进行
-                return Ok(Expression::Constant {
+                Ok(Expression::Constant {
                     value: Value::String(interval_str),
                     alias: None,
-                });
+                })
             } else {
                 // 只有值，没有单位
-                return Ok(Expression::Constant {
+                Ok(Expression::Constant {
                     value: interval_value,
                     alias: None,
-                });
+                })
             }
         }
         // 不是INTERVAL，直接返回字段表达式
         else {
-            return Ok(Expression::Field {
+            Ok(Expression::Field {
                 name: identifier,
                 alias: None,
-            });
+            })
         }
     }
 
@@ -3248,7 +3248,7 @@ impl SqlParser {
 
         if self.match_keyword("LIMIT") {
             self.skip_whitespace();
-            let limit = self.parse_number()? as usize;
+            let limit = self.parse_number()?;
             Ok(Some(limit))
         } else {
             Ok(None)
@@ -3924,7 +3924,7 @@ impl SqlParser {
         } else {
             // 简化处理：只处理基本类型的值，不处理函数调用
             // 避免与其他函数形成循环调用，导致无限递归
-            return Err(QueryParseError::InvalidValue);
+            Err(QueryParseError::InvalidValue)
         }
     }
 
@@ -3993,7 +3993,7 @@ impl SqlParser {
         let keyword_bytes = keyword.as_bytes();
         let end = start + keyword_bytes.len();
 
-        if end <= self.input.as_bytes().len() {
+        if end <= self.input.len() {
             let actual_bytes = &self.input.as_bytes()[start..end];
             let expected_bytes = keyword_bytes;
 
@@ -4018,12 +4018,10 @@ impl SqlParser {
         let s_bytes = s.as_bytes();
         let end = start + s_bytes.len();
 
-        if end <= self.input.as_bytes().len() {
-            if &self.input.as_bytes()[start..end] == s_bytes {
-                self.position = end;
-                self.column += s.len();
-                return true;
-            }
+        if end <= self.input.len() && &self.input.as_bytes()[start..end] == s_bytes {
+            self.position = end;
+            self.column += s.len();
+            return true;
         }
 
         false
@@ -4050,7 +4048,7 @@ impl SqlParser {
 
     /// 查看当前字符
     fn peek_char(&self) -> Option<char> {
-        if self.position < self.input.as_bytes().len() {
+        if self.position < self.input.len() {
             Some(self.input.as_bytes()[self.position] as char)
         } else {
             None

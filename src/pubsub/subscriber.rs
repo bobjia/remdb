@@ -313,14 +313,10 @@ impl SubscriberManager {
             let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
             return duration.as_millis() as u64;
         }
-        #[cfg(feature = "baremetal")]
+        #[cfg(not(feature = "posix"))]
         {
-            // baremetal平台返回0（需要用户实现）
-            return 0u64;
-        }
-        #[cfg(not(any(feature = "posix", feature = "baremetal")))]
-        {
-            return 0u64;
+            // baremetal或其它平台返回0（需要用户实现）
+            0u64
         }
     }
 
@@ -428,14 +424,14 @@ impl SubscriberManager {
 
         if seq_num < expected_seq_num {
             // 收到重复消息，忽略
-            return None;
+            None
         } else if seq_num > expected_seq_num {
             // 收到乱序消息，需要生成NACK
-            return Some(expected_seq_num);
+            Some(expected_seq_num)
         } else {
             // 收到预期消息，更新期望序列号
             self.expected_seq_nums[topic_id as usize] = expected_seq_num + 1;
-            return None;
+            None
         }
     }
 }

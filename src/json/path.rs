@@ -169,10 +169,10 @@ impl CompiledPath {
                                     next.push(v.clone());
                                 }
                             }
-                            (PathNode::Index(index), JsonValue::Array(arr)) => {
-                                if *index < arr.len() {
-                                    next.push(arr[*index].clone());
-                                }
+                            (PathNode::Index(index), JsonValue::Array(arr))
+                                if *index < arr.len() =>
+                            {
+                                next.push(arr[*index].clone());
                             }
                             (PathNode::Wildcard, JsonValue::Object(obj)) => {
                                 for v in obj.values() {

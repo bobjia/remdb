@@ -661,7 +661,7 @@ impl ReplicationManager {
                                     let _ = primary_index.delete_composite(record_ptr);
                                     // 使用复合键插入方法
                                     let _ = primary_index
-                                        .insert_composite(record_ptr, log_item.record_id as u16);
+                                        .insert_composite(record_ptr, log_item.record_id);
                                 }
 
                                 // 更新表的max_pk值，确保新插入的记录不会覆盖旧记录
@@ -823,7 +823,7 @@ impl ReplicationManager {
                                             {
                                                 let _ = primary_index.insert_composite(
                                                     record_ptr,
-                                                    log_item.record_id as u16,
+                                                    log_item.record_id,
                                                 );
                                             }
 
@@ -898,8 +898,7 @@ impl ReplicationManager {
 
         // 将LogItem转换为字节数组 - 使用heap allocation instead of stack allocation
         // This prevents stack overflow when the LogItem is large (over 1KB)
-        let mut log_bytes = Vec::with_capacity(core::mem::size_of::<LogItem>());
-        log_bytes.resize(core::mem::size_of::<LogItem>(), 0);
+        let mut log_bytes = vec![0; core::mem::size_of::<LogItem>()];
         unsafe {
             core::ptr::write_unaligned(log_bytes.as_mut_ptr() as *mut LogItem, *log_item);
         }

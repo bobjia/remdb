@@ -77,13 +77,13 @@ impl<'a, T> core::ops::Deref for MutexGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        &*self.inner
+        &self.inner
     }
 }
 
 impl<'a, T> core::ops::DerefMut for MutexGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
-        &mut *self.inner
+        &mut self.inner
     }
 }
 
@@ -190,7 +190,7 @@ impl<'a, T> core::ops::Deref for RwLockReadGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        &*self.inner
+        &self.inner
     }
 }
 
@@ -206,13 +206,13 @@ impl<'a, T> core::ops::Deref for RwLockWriteGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        &*self.inner
+        &self.inner
     }
 }
 
 impl<'a, T> core::ops::DerefMut for RwLockWriteGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
-        &mut *self.inner
+        &mut self.inner
     }
 }
 

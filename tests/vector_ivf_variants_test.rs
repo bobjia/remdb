@@ -158,8 +158,7 @@ fn test_vector_index_ivf_basic() {
     println!("=== 测试IVF变体索引: IVF基础索引 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -235,8 +234,7 @@ fn test_vector_index_ivf_pq() {
     println!("=== 测试IVF变体索引: IVF_PQ索引 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -313,8 +311,7 @@ fn test_vector_index_ivf_variants_combination() {
     println!("=== 测试IVF变体索引: 不同变体组合 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -422,8 +419,7 @@ fn test_vector_index_ivf_compatibility() {
     println!("=== 测试IVF变体索引: 与其他索引的兼容性 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);

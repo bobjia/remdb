@@ -1,3 +1,4 @@
+#![allow(static_mut_refs, clippy::assertions_on_constants)]
 //! 向量距离算法综合测试
 //!
 //! 该测试文件验证不同距离算法（L2, IP, Cosine）的向量索引功能。
@@ -158,8 +159,7 @@ fn test_vector_distance_l2() {
     println!("=== 测试向量距离算法: L2 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -174,7 +174,7 @@ fn test_vector_distance_l2() {
     println!("包含4维向量表的数据库初始化成功");
 
     // 插入测试数据
-    let test_vectors = vec![
+    let test_vectors = [
         ([1.0, 2.0, 3.0, 4.0], 1),
         ([2.0, 3.0, 4.0, 5.0], 1),
         ([3.0, 4.0, 5.0, 6.0], 2),
@@ -229,8 +229,7 @@ fn test_vector_distance_ip() {
     println!("=== 测试向量距离算法: IP ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -245,7 +244,7 @@ fn test_vector_distance_ip() {
     println!("包含4维向量表的数据库初始化成功");
 
     // 插入测试数据
-    let test_vectors = vec![
+    let test_vectors = [
         ([1.0, 0.0, 0.0, 0.0], 1),
         ([0.0, 1.0, 0.0, 0.0], 1),
         ([0.0, 0.0, 1.0, 0.0], 2),
@@ -300,8 +299,7 @@ fn test_vector_distance_cosine() {
     println!("=== 测试向量距离算法: Cosine ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -316,7 +314,7 @@ fn test_vector_distance_cosine() {
     println!("包含4维向量表的数据库初始化成功");
 
     // 插入测试数据
-    let test_vectors = vec![
+    let test_vectors = [
         ([1.0, 0.0, 0.0, 0.0], 1),
         ([0.9, 0.1, 0.0, 0.0], 1),
         ([0.0, 1.0, 0.0, 0.0], 2),
@@ -369,8 +367,7 @@ fn test_vector_distance_multiple_algorithms() {
     println!("=== 测试多种向量距离算法组合 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 测试1: L2距离
     println!("\n--- 测试L2距离算法 ---");
@@ -385,7 +382,7 @@ fn test_vector_distance_multiple_algorithms() {
     // 插入少量测试数据
     for i in 1..=3 {
         let record = VectorRecord {
-            id: i as i32,
+            id: i,
             vector: [i as f32 * 1.0; 4],
             category: if i % 2 == 0 { 2 } else { 1 },
         };
@@ -413,7 +410,7 @@ fn test_vector_distance_multiple_algorithms() {
     // 插入少量测试数据
     for i in 1..=3 {
         let record = VectorRecord {
-            id: i as i32,
+            id: i,
             vector: [i as f32 * 1.0; 4],
             category: if i % 2 == 0 { 2 } else { 1 },
         };
@@ -439,8 +436,7 @@ fn test_vector_distance_default() {
     println!("=== 测试向量距离算法: 默认（L2） ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -457,7 +453,7 @@ fn test_vector_distance_default() {
     // 插入测试数据
     for i in 1..=5 {
         let record = VectorRecord {
-            id: i as i32,
+            id: i,
             vector: [
                 i as f32 * 1.0,
                 i as f32 * 2.0,
@@ -506,8 +502,7 @@ fn test_vector_knn_search() {
     println!("=== 测试向量KNN搜索功能 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -581,8 +576,7 @@ fn test_vector_distance_calculation() {
     println!("=== 测试向量距离计算准确性 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -659,8 +653,7 @@ fn test_vector_index_parameters() {
     println!("=== 测试向量索引参数配置 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -677,7 +670,7 @@ fn test_vector_index_parameters() {
     // 插入测试数据
     for i in 1..=5 {
         let record = VectorRecord {
-            id: i as i32,
+            id: i,
             vector: [i as f32 * 1.0; 4],
             category: if i % 2 == 0 { 2 } else { 1 },
         };
@@ -726,8 +719,7 @@ fn test_vector_alter_table() {
     println!("=== 测试向量字段的ALTER TABLE操作 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);

@@ -280,10 +280,7 @@ impl HNSWIndex {
 
         // 保存入口点
         let enter_point_offset = match self.enter_point {
-            Some(point) => {
-                let offset = unsafe { point.as_ptr().offset_from(self.nodes.as_ptr()) } as usize;
-                offset
-            }
+            Some(point) => (unsafe { point.as_ptr().offset_from(self.nodes.as_ptr()) } as usize),
             None => usize::MAX,
         };
         writer
@@ -296,10 +293,7 @@ impl HNSWIndex {
             .map_err(|_| RemDbError::FileIoError)?;
         for &point in &self.layer_enter_points {
             let offset = match point {
-                Some(p) => {
-                    let offset = unsafe { p.as_ptr().offset_from(self.nodes.as_ptr()) } as usize;
-                    offset
-                }
+                Some(p) => (unsafe { p.as_ptr().offset_from(self.nodes.as_ptr()) } as usize),
                 None => usize::MAX,
             };
             writer
@@ -580,7 +574,7 @@ impl HNSWIndex {
         // 从上到下遍历各层
         while current_level > 0 {
             let results = self.search_layer(query_vec, current_point, 1, current_level);
-            if let Some(&(_dist, point)) = results.get(0) {
+            if let Some(&(_dist, point)) = results.first() {
                 current_point = point;
             }
             current_level -= 1;
@@ -640,7 +634,7 @@ impl HNSWIndex {
         // 从上到下搜索插入位置
         while current_level > new_level {
             let results = self.search_layer(vec_ptr, entry_point, 1, current_level);
-            if let Some(&(_dist, point)) = results.get(0) {
+            if let Some(&(_dist, point)) = results.first() {
                 entry_point = point;
             }
             current_level -= 1;

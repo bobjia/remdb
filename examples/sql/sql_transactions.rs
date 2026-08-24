@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 //! SQL Transactions Example
 //!
 //! This example demonstrates RemDB's transaction features:

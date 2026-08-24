@@ -23,6 +23,7 @@ pub enum DistanceType {
 /// 向量索引类型
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Ord, PartialOrd, Default)]
+#[allow(non_camel_case_types)]
 pub enum VectorIndexType {
     /// HNSW索引（Hierarchical Navigable Small World）
     #[default]
@@ -336,7 +337,7 @@ impl
 
 /// 基本数据类型枚举
 #[repr(u8)]
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 pub enum DataType {
     /// 8位无符号整数
     UInt8 = 0,
@@ -351,6 +352,7 @@ pub enum DataType {
     /// 16位有符号整数
     Int16 = 5,
     /// 32位有符号整数
+    #[default]
     Int32 = 6,
     /// 64位有符号整数
     Int64 = 7,
@@ -478,12 +480,6 @@ impl DataType {
             // JSON类型
             DataType::Json => "JSON".to_string(),
         }
-    }
-}
-
-impl Default for DataType {
-    fn default() -> Self {
-        DataType::Int32
     }
 }
 
@@ -650,7 +646,11 @@ pub union TextStorageData {
 impl Copy for TextStorageData {}
 impl Clone for TextStorageData {
     fn clone(&self) -> Self {
-        unsafe { Self { padding: self.padding } }
+        unsafe {
+            Self {
+                padding: self.padding,
+            }
+        }
     }
 }
 impl core::fmt::Debug for TextStorageData {
@@ -666,7 +666,9 @@ impl PartialEq for TextStorageData {
 impl Eq for TextStorageData {}
 impl core::hash::Hash for TextStorageData {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        unsafe { self.padding.hash(state); }
+        unsafe {
+            self.padding.hash(state);
+        }
     }
 }
 
@@ -684,7 +686,9 @@ pub struct ExternalTextData {
 
 impl PartialEq for ExternalTextData {
     fn eq(&self, other: &Self) -> bool {
-        self.data_ptr == other.data_ptr && self.length == other.length && self.capacity == other.capacity
+        self.data_ptr == other.data_ptr
+            && self.length == other.length
+            && self.capacity == other.capacity
     }
 }
 impl Eq for ExternalTextData {}
@@ -765,12 +769,10 @@ impl TextStorage {
     /// 获取文本内容字节切片
     pub fn extract_bytes(&self) -> &[u8] {
         match self.tag {
-            TextStorageTag::Inline => {
-                unsafe {
-                    let end = self.data.inline.iter().position(|b| *b == 0).unwrap_or(256);
-                    &self.data.inline[..end]
-                }
-            }
+            TextStorageTag::Inline => unsafe {
+                let end = self.data.inline.iter().position(|b| *b == 0).unwrap_or(256);
+                &self.data.inline[..end]
+            },
             TextStorageTag::External => {
                 let ext = unsafe { &self.data.external };
                 if !ext.data_ptr.is_null() {
@@ -856,7 +858,7 @@ pub fn convert_timezone(timestamp: &db_timestamp, tz_offset: i16) -> db_timestam
     // 创建新的时间戳，保持原有精度和标志
     db_timestamp {
         value: timestamp.value,
-        tz_offset: tz_offset,
+        tz_offset,
         precision: timestamp.precision,
         flags: timestamp.flags,
     }
@@ -882,7 +884,7 @@ pub mod time_format {
     pub fn to_iso8601(_timestamp: &super::db_timestamp) -> alloc::string::String {
         // 实现ISO 8601格式化
         // 这里使用简化实现，实际应该根据精度和时区偏移进行完整格式化
-        alloc::format!("2023-01-01T12:00:00.000000+00:00")
+        "2023-01-01T12:00:00.000000+00:00".to_string()
     }
 
     /// 将db_timestamp转换为指定格式的字符串
@@ -933,11 +935,7 @@ pub mod time_utils {
 
     /// 计算两个时间戳之间的时间差（毫秒）
     pub fn time_diff(start: u64, end: u64) -> u64 {
-        if end > start {
-            end - start
-        } else {
-            start - end
-        }
+        end.abs_diff(start)
     }
 
     /// 检查时间戳是否在指定范围内
@@ -1055,9 +1053,7 @@ impl Clone for TypedValue {
                 DataType::Timestamp => new_value.time = self.value.time,
                 DataType::TimestampTZ => new_value.time = self.value.time,
                 DataType::Interval => new_value.interval = self.value.interval,
-                DataType::VarChar | DataType::Char => {
-                    new_value.string = self.value.string
-                }
+                DataType::VarChar | DataType::Char => new_value.string = self.value.string,
                 DataType::Text => {
                     // Clone TextStorage: handle External variant by allocating new memory
                     if self.value.text_storage.is_external() {
@@ -1343,7 +1339,7 @@ impl PartialOrd for TypedValue {
 /// 手动实现Ord trait，用于在BTreeMap中用作键
 impl Ord for TypedValue {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or_else(|| {
+        self.partial_cmp(other).unwrap_or({
             // 处理无法比较的情况（如NaN），将它们视为相等
             // 这确保在BTreeMap中NaN值不会导致崩溃
             core::cmp::Ordering::Equal
@@ -1443,9 +1439,9 @@ impl fmt::Debug for TypedValue {
                         .to_string(&self.value.string)
                         .unwrap_or("")
                         .trim_end_matches(char::from(0));
-                    write!(
+                    writeln!(
                         f,
-                        "TypedValue({}, \"{}\")\n",
+                        "TypedValue({}, \"{}\")",
                         self.value_type.to_sql_type(0).as_str(),
                         s
                     )
@@ -1591,10 +1587,11 @@ impl FieldDef {
                             if let Some(ext) = default.text_storage.as_external() {
                                 if !ext.data_ptr.is_null() {
                                     unsafe {
-                                        let slice = core::slice::from_raw_parts(ext.data_ptr, ext.length as usize);
-                                        core::str::from_utf8(slice)
-                                            .unwrap_or("")
-                                            .to_string()
+                                        let slice = core::slice::from_raw_parts(
+                                            ext.data_ptr,
+                                            ext.length as usize,
+                                        );
+                                        core::str::from_utf8(slice).unwrap_or("").to_string()
                                     }
                                 } else {
                                     String::new()

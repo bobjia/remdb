@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 // 示例：验证VARCHAR类型支持
 
 extern crate alloc;

@@ -1,3 +1,4 @@
+#![allow(static_mut_refs, clippy::assertions_on_constants)]
 use remdb::config::*;
 use remdb::platform::*;
 use remdb::*;
@@ -269,7 +270,7 @@ static TEST_DB_CONFIG: std::sync::LazyLock<DbConfig> = std::sync::LazyLock::new(
         log_mode: LogMode::Sync,
         checkpoint_interval_ms: 60000,
         log_file_size_limit: 16 * 1024 * 1024,
-        log_prealloc_size: 1 * 1024 * 1024,
+        log_prealloc_size: 1024 * 1024,
         log_segment_size: 16 * 1024 * 1024,
         retained_checkpoints: 3,
         max_consecutive_invalid: 100,
@@ -408,7 +409,7 @@ fn test_restart_recovery_fixed() -> Result<()> {
             .unwrap();
 
         // 重新初始化数据库
-        let db = remdb::init_global_db(&TEST_DB_CONFIG)?;
+        let _db = remdb::init_global_db(&TEST_DB_CONFIG)?;
 
         println!("第二阶段：重启数据库完成");
 

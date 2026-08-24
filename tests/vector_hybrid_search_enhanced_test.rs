@@ -165,8 +165,7 @@ fn test_vector_hybrid_search_basic() {
     println!("=== 测试向量混合搜索: 基本组合 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -250,8 +249,7 @@ fn test_vector_hybrid_search_multiple_conditions() {
     println!("=== 测试向量混合搜索: 多条件组合 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -342,8 +340,7 @@ fn test_vector_hybrid_search_different_data_types() {
     println!("=== 测试向量混合搜索: 不同数据类型条件 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -436,8 +433,7 @@ fn test_vector_hybrid_search_complex_conditions() {
     println!("=== 测试向量混合搜索: 复杂条件组合 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);
@@ -512,8 +508,7 @@ fn test_vector_index_with_secondary_index() {
     println!("=== 测试向量混合搜索: 向量索引与二级索引结合 ===");
 
     // 使用堆分配的内存缓冲区
-    let mut db_memory = Vec::with_capacity(1048576);
-    db_memory.resize(1048576, 0u8);
+    let mut db_memory = vec![0; 1048576];
 
     // 初始化环境
     remdb::platform::init_platform(&TEST_PLATFORM);

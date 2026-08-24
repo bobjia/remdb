@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 //! Model Worker Binary
 //!
 //! This is the standalone model worker process that handles model loading
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixStream;
 
 #[cfg(windows)]
 use std::fs::OpenOptions;
@@ -18,7 +19,7 @@ use remdb::model::worker_protocol::{
     deserialize_request, serialize_response, ErrorCode, ModelInput, ModelMetadataMsg, ModelOutput,
     ModelRequest, ModelResponse, WorkerConfig,
 };
-use remdb::model::{ModelInfo, OnnxModel};
+use remdb::model::OnnxModel;
 
 struct WorkerState {
     models: HashMap<String, Arc<OnnxModel>>,
@@ -89,7 +90,7 @@ impl WorkerState {
 
         match OnnxModel::load(&path) {
             Ok(model) => {
-                let info = model.get_info();
+                let _info = model.get_info();
                 let metadata = ModelMetadataMsg {
                     name: name.clone(),
                     path: path.clone(),
@@ -183,38 +184,30 @@ fn parse_args() -> (String, WorkerConfig) {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--socket" | "-s" => {
-                if i + 1 < args.len() {
-                    socket_path = args[i + 1].clone();
-                    i += 1;
-                }
+            "--socket" | "-s" if i + 1 < args.len() => {
+                socket_path = args[i + 1].clone();
+                i += 1;
             }
-            "--max-models" | "-m" => {
-                if i + 1 < args.len() {
-                    if let Ok(v) = args[i + 1].parse() {
-                        config.max_models = v;
-                    }
-                    i += 1;
+            "--max-models" | "-m" if i + 1 < args.len() => {
+                if let Ok(v) = args[i + 1].parse() {
+                    config.max_models = v;
                 }
+                i += 1;
             }
-            "--memory-limit" => {
-                if i + 1 < args.len() {
-                    let limit_str = &args[i + 1];
-                    if limit_str.ends_with('m') || limit_str.ends_with('M') {
-                        if let Ok(v) = limit_str[..limit_str.len() - 1].parse() {
-                            config.memory_limit_mb = v;
-                        }
+            "--memory-limit" if i + 1 < args.len() => {
+                let limit_str = &args[i + 1];
+                if limit_str.ends_with('m') || limit_str.ends_with('M') {
+                    if let Ok(v) = limit_str[..limit_str.len() - 1].parse() {
+                        config.memory_limit_mb = v;
                     }
-                    i += 1;
                 }
+                i += 1;
             }
-            "--timeout" | "-t" => {
-                if i + 1 < args.len() {
-                    if let Ok(v) = args[i + 1].parse() {
-                        config.request_timeout_ms = v;
-                    }
-                    i += 1;
+            "--timeout" | "-t" if i + 1 < args.len() => {
+                if let Ok(v) = args[i + 1].parse() {
+                    config.request_timeout_ms = v;
                 }
+                i += 1;
             }
             "--help" | "-h" => {
                 println!("Model Worker - Standalone model inference process");
@@ -281,8 +274,7 @@ fn handle_connection(stream: &mut UnixStream, state: &mut WorkerState) -> std::i
     let is_shutdown = matches!(request, ModelRequest::Shutdown);
 
     let response = state.handle_request(request);
-    let response_data = serialize_response(&response)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let response_data = serialize_response(&response).map_err(|e| std::io::Error::other(e))?;
 
     let len = response_data.len() as u32;
     stream.write_all(&len.to_be_bytes())?;

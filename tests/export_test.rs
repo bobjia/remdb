@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 // 导出功能测试
 // 使用标准库
 #![cfg(feature = "std")]
@@ -5,7 +6,6 @@
 // 确保测试顺序执行，避免全局状态冲突
 extern crate alloc;
 use alloc::string::String;
-use alloc::vec::Vec;
 
 use remdb::*;
 use serial_test::serial;

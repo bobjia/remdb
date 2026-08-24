@@ -26,7 +26,7 @@ fn main() {
             log_mode: config::LogMode::Async,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
+            log_prealloc_size: 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 2,
             max_consecutive_invalid: 100,
@@ -133,7 +133,7 @@ fn main() {
     let query_end = now;
 
     // 创建分区管理器（1小时一个分区）
-    let mut partition_manager = PartitionManager::new(Duration::from_secs(3600), 100); // 1小时
+    let partition_manager = PartitionManager::new(Duration::from_secs(3600), 100); // 1小时
 
     // 获取时间范围的分区
     let partitions = partition_manager.get_partitions_in_range(query_start, query_end);

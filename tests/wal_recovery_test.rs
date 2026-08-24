@@ -2,8 +2,7 @@ use remdb::config::{
     DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALCompressionType, WALConfig,
 };
 use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
-use remdb::transaction::set_low_power_mode;
-use remdb::{init_global_db, reset_global_db, RemDb};
+use remdb::{init_global_db, reset_global_db};
 use serial_test::serial;
 
 // 测试用Platform实现
@@ -71,7 +70,7 @@ impl Platform for TestPlatform {
 
     fn file_open(&self, _path: &str, _mode: FileMode) -> FileResult<FileHandle> {
         // 返回一个非空指针作为有效的FileHandle
-        Ok(1 as *const u8)
+        Ok(std::ptr::dangling::<u8>())
     }
 
     fn file_close(&self, _handle: FileHandle) -> FileResult<()> {

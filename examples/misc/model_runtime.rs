@@ -16,9 +16,9 @@
 #[cfg(feature = "model-runtime")]
 use remdb::model::builtin_models::{get_builtin_model, list_builtin_models};
 #[cfg(feature = "model-download")]
-use remdb::model::downloader::{is_url, resolve_model_path};
+use remdb::model::downloader::is_url;
 #[cfg(feature = "model-runtime")]
-use remdb::model::{ModelManager, ModelUDF, OnnxModel};
+use remdb::model::{ModelManager, OnnxModel};
 
 const BGE_SMALL_ZH_MODEL_PATH: &str = "models/bge-small-zh-v1.5.onnx";
 const BGE_SMALL_ZH_DIMENSION: usize = 512;
@@ -221,7 +221,7 @@ fn example_bge_small_zh_model() {
                 }
 
                 println!("\nExecuting batch inference (batch_size=3)...");
-                let batch_inputs: Vec<Vec<i64>> = (0..3)
+                let _batch_inputs: Vec<Vec<i64>> = (0..3)
                     .flat_map(|i| {
                         let offset = i * 10;
                         vec![

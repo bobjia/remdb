@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 #![cfg(feature = "pubsub")]
 
 #[cfg(feature = "pubsub")]
@@ -53,7 +54,7 @@ fn main() {
     }
 
     // 注册示例表内容主题
-    let test_table_topic = format!("table.test_table");
+    let _test_table_topic = "table.test_table".to_string();
     pubsub
         .register_topic("table.test_table", 12)
         .expect("Failed to register test_table content topic");
@@ -81,7 +82,7 @@ fn main() {
     let server_clone = pubsub_clone.clone();
 
     let _heartbeat_thread = thread::spawn(move || {
-        let mut interval = Duration::from_secs(5);
+        let interval = Duration::from_secs(5);
         while *running_clone.lock().unwrap() {
             // 发送心跳帧
             match server_clone.lock().unwrap().publish(0, b"heartbeat") {
@@ -99,7 +100,7 @@ fn main() {
     #[cfg(feature = "pubsub")]
     {
         let _wal_thread = thread::spawn(move || {
-            let mut interval = Duration::from_millis(1000);
+            let interval = Duration::from_millis(1000);
             let mut log_id = 0;
             let wal_op_types = [
                 "INSERT",
@@ -143,7 +144,7 @@ fn main() {
     let server_clone_table = pubsub_clone.clone();
 
     let _table_thread = thread::spawn(move || {
-        let mut interval = Duration::from_millis(2000);
+        let interval = Duration::from_millis(2000);
         let mut record_id = 0;
         #[cfg(feature = "pubsub")]
         let test_table_topic = get_table_content_topic("test_table");
@@ -178,7 +179,7 @@ fn main() {
     let server_clone_tables = pubsub_clone.clone();
 
     let _tables_thread = thread::spawn(move || {
-        let mut interval = Duration::from_millis(3000);
+        let interval = Duration::from_millis(3000);
         let mut table_id = 0;
 
         while *running_clone_tables.lock().unwrap() {
@@ -207,7 +208,7 @@ fn main() {
     let server_clone_metrics = pubsub_clone.clone();
 
     let _metrics_thread = thread::spawn(move || {
-        let mut interval = Duration::from_millis(4000);
+        let interval = Duration::from_millis(4000);
         let mut metric_id = 0;
 
         while *running_clone_metrics.lock().unwrap() {
@@ -246,7 +247,7 @@ fn main() {
     let server_clone_health = pubsub_clone.clone();
 
     let _health_thread = thread::spawn(move || {
-        let mut interval = Duration::from_millis(5000);
+        let interval = Duration::from_millis(5000);
         let health_statuses = ["Healthy", "Warning", "Healthy", "Unhealthy", "Healthy"];
         let mut health_index = 0;
 

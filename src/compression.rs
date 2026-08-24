@@ -256,7 +256,7 @@ mod tests {
         let test_vector = [1.0f32, 2.0f32, 3.0f32, 4.0f32];
         // 测试压缩
         let mut compressed = [0u8; 16]; // 4*4=16字节
-        let compressed_size =
+        let _compressed_size =
             compress_vector(test_vector.as_ptr(), dimension, compressed.as_mut_ptr());
         // 测试解压缩
         let mut decompressed = [0.0f32; 4];

@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 // 低功耗模式示例
 extern crate alloc;
 

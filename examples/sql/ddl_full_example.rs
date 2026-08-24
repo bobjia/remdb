@@ -74,7 +74,7 @@ fn main() {
                 _mode: platform::FileMode,
             ) -> platform::FileResult<platform::FileHandle> {
                 // 返回一个非空指针作为有效的FileHandle
-                Ok(1 as *const u8)
+                Ok(std::ptr::dangling::<u8>())
             }
             fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
                 Ok(())
@@ -152,7 +152,7 @@ fn main() {
         println!("   3.1 Query by primary key (id = 5):");
         let table_mut = db.get_table_mut(0).unwrap();
         let mut result_data = [0u8; 172]; // 记录大小为172字节
-        if let Ok(_) = table_mut.get_by_id(5, result_data.as_mut_ptr()) {
+        if table_mut.get_by_id(5, result_data.as_mut_ptr()).is_ok() {
             // 读取并打印结果
             let result_id = core::ptr::read(result_data.as_ptr() as *const i32);
             let result_timestamp = core::ptr::read(result_data.as_ptr().add(4) as *const u64);

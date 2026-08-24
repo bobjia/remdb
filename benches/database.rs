@@ -303,7 +303,7 @@ fn bench_table_query(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let id: i32 = (i + 1); // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
 
                 // 指针操作需要unsafe块
@@ -327,7 +327,8 @@ fn bench_table_query(c: &mut Criterion) {
 
             // 查询一条记录，get_by_id方法是unsafe的
             unsafe {
-                black_box(table.get_by_id(50, result_data.as_mut_ptr()).unwrap());
+                table.get_by_id(50, result_data.as_mut_ptr()).unwrap();
+                black_box(());
             }
         })
     });
@@ -343,7 +344,7 @@ fn bench_table_query(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let id: i32 = (i + 1); // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
 
                 // 指针操作需要unsafe块
@@ -411,7 +412,7 @@ fn bench_table_update_delete(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let id: i32 = (i + 1); // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
 
                 // 指针操作需要unsafe块
@@ -450,7 +451,8 @@ fn bench_table_update_delete(c: &mut Criterion) {
                 );
 
                 // 更新一条记录，update方法是unsafe的
-                black_box(table.update(50, update_data.as_ptr()).unwrap());
+                table.update(50, update_data.as_ptr()).unwrap();
+                black_box(());
             }
         })
     });
@@ -466,7 +468,7 @@ fn bench_table_update_delete(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let id: i32 = (i + 1); // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
 
                 // 指针操作需要unsafe块
@@ -488,7 +490,8 @@ fn bench_table_update_delete(c: &mut Criterion) {
 
             // 删除一条记录，delete方法是unsafe的
             unsafe {
-                black_box(table.delete(50).unwrap());
+                table.delete(50).unwrap();
+                black_box(());
 
                 black_box(table.record_count());
             }
@@ -590,11 +593,10 @@ fn bench_table_field_operations(c: &mut Criterion) {
                 let float_value = Value { float32: 6.28 };
 
                 // 设置一个字段值，set_field方法是unsafe的
-                black_box(
-                    table
-                        .set_field(result_data.as_mut_ptr(), 1, &float_value)
-                        .unwrap(),
-                );
+                table
+                    .set_field(result_data.as_mut_ptr(), 1, &float_value)
+                    .unwrap();
+                black_box(());
             }
         })
     });
@@ -746,7 +748,7 @@ fn bench_time_series_query(c: &mut Criterion) {
             unsafe {
                 for i in 0..500 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = (i + 1) as i32;
+                    let id: i32 = (i + 1);
                     let metric_name = "cpu_usage";
                     let value: f64 = 45.5 + i as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -785,7 +787,8 @@ fn bench_time_series_query(c: &mut Criterion) {
             // 查询指定ID的时间序列数据，get_by_id方法是unsafe的
             let mut result_data = vec![0u8; 116]; // 使用vec!在堆上分配
             unsafe {
-                black_box(table.get_by_id(250, result_data.as_mut_ptr()).unwrap());
+                table.get_by_id(250, result_data.as_mut_ptr()).unwrap();
+                black_box(());
             }
         })
     });
@@ -802,7 +805,7 @@ fn bench_time_series_query(c: &mut Criterion) {
             unsafe {
                 for i in 0..500 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = (i + 1) as i32;
+                    let id: i32 = (i + 1);
                     let metric_name = "cpu_usage";
                     let value: f64 = 45.5 + i as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -887,7 +890,7 @@ fn bench_time_series_aggregation(c: &mut Criterion) {
             unsafe {
                 for i in 0..1000 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = (i + 1) as i32;
+                    let id: i32 = (i + 1);
                     let metric_name = "cpu_usage";
                     let value: f64 = 40.0 + (i % 20) as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -936,7 +939,7 @@ fn bench_time_series_aggregation(c: &mut Criterion) {
                         let timestamp = core::ptr::read(data_ptr.add(44) as *const u64);
 
                         // 只处理特定时间范围的数据
-                        if timestamp >= 1234567890 && timestamp <= 1234568390 {
+                        if (1234567890..=1234568390).contains(&timestamp) {
                             min_value = min_value.min(value);
                             max_value = max_value.max(value);
                             sum_value += value;
@@ -987,7 +990,7 @@ fn bench_time_series_time_range_query(c: &mut Criterion) {
             unsafe {
                 for i in 0..1000 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = (i + 1) as i32;
+                    let id: i32 = (i + 1);
                     let metric_name = "cpu_usage";
                     let value: f64 = 40.0 + (i % 20) as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -1072,7 +1075,7 @@ fn bench_time_series_latest_query(c: &mut Criterion) {
             unsafe {
                 for i in 0..500 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = (i + 1) as i32;
+                    let id: i32 = (i + 1);
                     let metric_name = "cpu_usage";
                     let value: f64 = 40.0 + (i % 20) as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -1155,7 +1158,7 @@ fn bench_time_series_aggregate_functions(c: &mut Criterion) {
             unsafe {
                 for i in 0..1000 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = (i + 1) as i32;
+                    let id: i32 = (i + 1);
                     let metric_name = "cpu_usage";
                     let value: f64 = 40.0 + (i % 20) as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -1218,7 +1221,7 @@ fn bench_time_series_aggregate_functions(c: &mut Criterion) {
             unsafe {
                 for i in 0..1000 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = (i + 1) as i32;
+                    let id: i32 = (i + 1);
                     let metric_name = "cpu_usage";
                     let value: f64 = 40.0 + (i % 20) as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -1282,7 +1285,7 @@ fn bench_time_series_aggregate_functions(c: &mut Criterion) {
             unsafe {
                 for i in 0..1000 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = (i + 1) as i32;
+                    let id: i32 = (i + 1);
                     let metric_name = "cpu_usage";
                     let value: f64 = 40.0 + (i % 20) as f64;
                     let timestamp: u64 = 1234567890 + i as u64;
@@ -1363,7 +1366,7 @@ fn bench_time_series_window_aggregation(c: &mut Criterion) {
             unsafe {
                 for i in 0..1500 {
                     let mut metric_data = vec![0u8; 116]; // 使用vec!在堆上分配
-                    let id: i32 = (i + 1) as i32;
+                    let id: i32 = (i + 1);
                     let metric_name = "cpu_usage";
                     let value: f64 = 40.0 + (i % 20) as f64;
                     let timestamp: u64 = 1234567890 + i as u64 * 10; // 每10毫秒一条记录
@@ -1613,8 +1616,8 @@ fn bench_vector_query(c: &mut Criterion) {
             unsafe {
                 for i in 0..100 {
                     let mut record_data = vec![0u8; VECTOR_TABLE_DEF.record_size];
-                    let id: i32 = (i + 1) as i32;
-                    let category: i32 = (i % 5 + 1) as i32;
+                    let id: i32 = (i + 1);
+                    let category: i32 = (i % 5 + 1);
                     let vector_value = i as f32 * 0.1;
                     let vector_data = [vector_value; 32]; // 32维向量
 
@@ -1685,8 +1688,8 @@ fn bench_vector_query(c: &mut Criterion) {
             unsafe {
                 for i in 0..100 {
                     let mut record_data = vec![0u8; VECTOR_TABLE_DEF.record_size];
-                    let id: i32 = (i + 1) as i32;
-                    let category: i32 = (i % 5 + 1) as i32;
+                    let id: i32 = (i + 1);
+                    let category: i32 = (i % 5 + 1);
                     let vector_value = i as f32 * 0.1;
                     let vector_data = [vector_value; 32]; // 32维向量
 
@@ -1716,7 +1719,8 @@ fn bench_vector_query(c: &mut Criterion) {
             // 查询指定ID的向量记录，get_by_id方法是unsafe的
             let mut result_data = vec![0u8; VECTOR_TABLE_DEF.record_size];
             unsafe {
-                black_box(table.get_by_id(50, result_data.as_mut_ptr()).unwrap());
+                table.get_by_id(50, result_data.as_mut_ptr()).unwrap();
+                black_box(());
             }
         })
     });
@@ -1749,8 +1753,8 @@ fn bench_vector_index(c: &mut Criterion) {
             unsafe {
                 for i in 0..100 {
                     let mut record_data = vec![0u8; VECTOR_TABLE_DEF.record_size];
-                    let id: i32 = (i + 1) as i32;
-                    let category: i32 = (i % 5 + 1) as i32;
+                    let id: i32 = (i + 1);
+                    let category: i32 = (i % 5 + 1);
                     let vector_value = i as f32 * 0.1;
                     let vector_data = [vector_value; 32]; // 32维向量
 
@@ -2003,7 +2007,7 @@ fn bench_zero_copy_read(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let id: i32 = (i + 1); // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
 
                 // 指针操作需要unsafe块
@@ -2047,7 +2051,7 @@ fn bench_zero_copy_read(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let id: i32 = (i + 1); // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
 
                 // 指针操作需要unsafe块
@@ -2104,7 +2108,7 @@ fn bench_zero_copy_iterate(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let id: i32 = (i + 1); // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
 
                 // 指针操作需要unsafe块
@@ -2131,7 +2135,7 @@ fn bench_zero_copy_iterate(c: &mut Criterion) {
             unsafe {
                 table
                     .iterate(|_id, data_ptr| {
-                        let id = core::ptr::read(data_ptr as *const i32);
+                        let _id = core::ptr::read(data_ptr as *const i32);
                         let value = core::ptr::read(data_ptr.add(4) as *const f32);
                         sum += value;
                         count += 1;
@@ -2156,7 +2160,7 @@ fn bench_zero_copy_iterate(c: &mut Criterion) {
             // 插入测试数据
             for i in 0..100 {
                 let mut record_data = [0u8; 8];
-                let id: i32 = (i + 1) as i32; // 从1开始，避免主键为0的问题
+                let id: i32 = (i + 1); // 从1开始，避免主键为0的问题
                 let value: f32 = i as f32 * 1.0;
 
                 // 指针操作需要unsafe块
@@ -2181,7 +2185,7 @@ fn bench_zero_copy_iterate(c: &mut Criterion) {
 
             // 零拷贝遍历方式，scan_ref方法返回一个RecordCursor，实现了Iterator trait
             for record_ref in table.scan_ref() {
-                let id = record_ref.get_i32(0).unwrap();
+                let _id = record_ref.get_i32(0).unwrap();
                 let value = record_ref.get_f32(1).unwrap();
                 sum += value;
                 count += 1;

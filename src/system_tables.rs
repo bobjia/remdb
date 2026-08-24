@@ -900,8 +900,8 @@ pub unsafe fn load_config_cache(db: &crate::RemDb) -> Result<()> {
     let mut query_timeout_ms = 30000u32;
 
     // 扫描系统表获取配置
-    let mut cursor = table.scan_ref();
-    while let Some(record) = cursor.next() {
+    let cursor = table.scan_ref();
+    for record in cursor {
         // 获取config_key
         let config_key = record.get_str(0).unwrap_or("");
 
@@ -951,7 +951,7 @@ pub unsafe fn load_config_cache(db: &crate::RemDb) -> Result<()> {
 pub fn get_vector_compression_config() -> ConfigCache {
     unsafe {
         // 如果缓存已初始化，返回缓存的配置，否则返回默认配置
-        CONFIG_CACHE.as_ref().cloned().unwrap_or_else(|| {
+        CONFIG_CACHE.as_ref().cloned().unwrap_or({
             // 返回默认配置的副本，而不是引用
             ConfigCache {
                 vector_compression_enabled: false,
@@ -968,7 +968,7 @@ pub fn get_vector_compression_config() -> ConfigCache {
 pub fn get_query_resource_config() -> (u32, u32) {
     unsafe {
         // 如果缓存已初始化，返回缓存的配置，否则返回默认配置
-        let config = CONFIG_CACHE.as_ref().cloned().unwrap_or_else(|| {
+        let config = CONFIG_CACHE.as_ref().cloned().unwrap_or({
             // 返回默认配置的副本，而不是引用
             ConfigCache {
                 vector_compression_enabled: false,

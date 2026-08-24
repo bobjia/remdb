@@ -62,7 +62,7 @@ pub struct ModelMetadata {
 use lazy_static::lazy_static;
 use std::sync::Mutex;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ModelManager {
     models: BTreeMap<String, Arc<OnnxModel>>,
     metadata: BTreeMap<String, ModelMetadata>,
@@ -85,16 +85,6 @@ pub fn reset_global_model_manager() -> Result<(), ModelError> {
     let mut model_manager = get_global_model_manager()?;
     model_manager.clear_all();
     Ok(())
-}
-
-impl Default for ModelManager {
-    fn default() -> Self {
-        Self {
-            models: BTreeMap::new(),
-            metadata: BTreeMap::new(),
-            use_worker: false,
-        }
-    }
 }
 
 impl ModelManager {

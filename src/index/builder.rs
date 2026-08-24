@@ -268,7 +268,6 @@ impl IndexBuildThreadPool {
         // Index building is not supported yet
         #[cfg(feature = "log")]
         error!("Index building not supported yet");
-        return;
     }
 
     /// 提交索引构建任务

@@ -5,8 +5,6 @@
 #[macro_use]
 extern crate remdb;
 
-use core::ptr::NonNull;
-use remdb::ha::{HAConfig, HARole, ReplicationMode};
 use remdb::*;
 
 // 定义内存缓冲区
@@ -59,7 +57,7 @@ fn master_example() {
 
         let mut log_buffer = vec![transaction::VariableSizeLogItem::default(); 10];
 
-        let tx = transaction::begin(
+        let _tx = transaction::begin(
             transaction::TransactionType::ReadWrite,
             transaction::IsolationLevel::Serializable,
             &mut tx_buffer,

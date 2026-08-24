@@ -1276,7 +1276,8 @@ fn text_storage_to_string(storage: &remdb::types::TextStorage) -> String {
     } else if storage.is_external() {
         if let Some(ext) = storage.as_external() {
             if !ext.data_ptr.is_null() {
-                let bytes = unsafe { core::slice::from_raw_parts(ext.data_ptr, ext.length as usize) };
+                let bytes =
+                    unsafe { core::slice::from_raw_parts(ext.data_ptr, ext.length as usize) };
                 core::str::from_utf8(bytes).unwrap_or("").to_string()
             } else {
                 String::new()
@@ -1319,23 +1320,42 @@ fn test_text_data_type() {
         content TEXT
     )";
     let result = db.sql_query(create_sql);
-    assert!(result.is_ok(), "CREATE TABLE with TEXT should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "CREATE TABLE with TEXT should succeed: {:?}",
+        result.err()
+    );
 
     // 插入短文本数据
     let insert_sql = "INSERT INTO text_test_table (content) VALUES ('short text')";
     let result = db.sql_query(insert_sql);
-    assert!(result.is_ok(), "INSERT short text should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "INSERT short text should succeed: {:?}",
+        result.err()
+    );
 
     // 插入中等长度文本数据（接近但不超过MAX_STRING_LEN=64字节，确保TypedValue能完整存储）
     let medium_text = "Hello, this is a medium length text for testing TEXT data type!";
-    let insert_sql = format!("INSERT INTO text_test_table (content) VALUES ('{}')", medium_text);
+    let insert_sql = format!(
+        "INSERT INTO text_test_table (content) VALUES ('{}')",
+        medium_text
+    );
     let result = db.sql_query(&insert_sql);
-    assert!(result.is_ok(), "INSERT medium text should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "INSERT medium text should succeed: {:?}",
+        result.err()
+    );
 
     // 查询并验证数据
     let select_sql = "SELECT id, content FROM text_test_table ORDER BY id";
     let result = db.sql_query(select_sql);
-    assert!(result.is_ok(), "SELECT from text table should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "SELECT from text table should succeed: {:?}",
+        result.err()
+    );
 
     let result = result.unwrap();
     assert_eq!(result.row_count(), 2, "Should have 2 rows");
@@ -1350,7 +1370,10 @@ fn test_text_data_type() {
         typed_value.value_type
     );
     let content_str = unsafe { text_storage_to_string(&typed_value.value.text_storage) };
-    assert_eq!(content_str, "short text", "First row should contain short text");
+    assert_eq!(
+        content_str, "short text",
+        "First row should contain short text"
+    );
 
     // 验证第二行（中等长度文本）的内容
     let row = result.get_row(1).unwrap();
@@ -1362,7 +1385,10 @@ fn test_text_data_type() {
         typed_value.value_type
     );
     let content_str = unsafe { text_storage_to_string(&typed_value.value.text_storage) };
-    assert_eq!(content_str, medium_text, "Second row should contain medium text");
+    assert_eq!(
+        content_str, medium_text,
+        "Second row should contain medium text"
+    );
     println!("✓ Medium text length: {} bytes", content_str.len());
 
     println!("✓ TEXT data type test passed");
@@ -1402,13 +1428,24 @@ fn test_large_text_and_varchar() {
         content TEXT
     )";
     let result = db.sql_query(create_sql);
-    assert!(result.is_ok(), "CREATE TABLE should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "CREATE TABLE should succeed: {:?}",
+        result.err()
+    );
 
     // 插入大文本数据（超过256字节，触发外部存储）
     let large_text = "A".repeat(500);
-    let insert_sql = format!("INSERT INTO large_text_test (content) VALUES ('{}')", large_text);
+    let insert_sql = format!(
+        "INSERT INTO large_text_test (content) VALUES ('{}')",
+        large_text
+    );
     let result = db.sql_query(&insert_sql);
-    assert!(result.is_ok(), "INSERT large text should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "INSERT large text should succeed: {:?}",
+        result.err()
+    );
 
     // 查询并验证数据
     let select_sql = "SELECT id, content FROM large_text_test ORDER BY id";
@@ -1432,11 +1469,20 @@ fn test_large_text_and_varchar() {
 
     // 测试2: 插入超过256字节的不同内容文本
     println!("测试2: 插入复杂大文本数据");
-    let chars: Vec<char> = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ".chars().collect();
+    let chars: Vec<char> = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        .chars()
+        .collect();
     let complex_text: String = (0..300).map(|i| chars[i % chars.len()]).collect();
-    let insert_sql = format!("INSERT INTO large_text_test (content) VALUES ('{}')", complex_text);
+    let insert_sql = format!(
+        "INSERT INTO large_text_test (content) VALUES ('{}')",
+        complex_text
+    );
     let result = db.sql_query(&insert_sql);
-    assert!(result.is_ok(), "INSERT complex text should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "INSERT complex text should succeed: {:?}",
+        result.err()
+    );
 
     let select_sql = "SELECT id, content FROM large_text_test WHERE id = 2";
     let result = db.sql_query(select_sql);

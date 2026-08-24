@@ -1,3 +1,4 @@
+#![allow(static_mut_refs, clippy::assertions_on_constants)]
 //! IVF变体索引性能测试
 //!
 //! 该测试文件验证不同IVF变体索引的性能，包括IVF和IVF_PQ等。

@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 extern crate alloc;
 
 use remdb::{

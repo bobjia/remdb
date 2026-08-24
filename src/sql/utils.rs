@@ -39,7 +39,7 @@ pub fn parse_data_type_with_precision(
         // 对向量类型添加维度限制
         if base_type == "VECTOR" {
             // 向量维度限制为1-4096
-            if param < 1 || param > 4096 {
+            if !(1..=4096).contains(&param) {
                 return Err(QueryExecutionError::TypeMismatch);
             }
         }

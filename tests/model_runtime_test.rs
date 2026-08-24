@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 //! Model runtime comprehensive tests
 //!
 //! Tests for ONNX model loading, execution, worker protocol, and builtin models.

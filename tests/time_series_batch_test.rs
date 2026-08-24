@@ -1,6 +1,6 @@
+#![allow(static_mut_refs, clippy::assertions_on_constants)]
 extern crate alloc;
 
-use core::ptr::NonNull;
 use remdb::types::time_utils;
 use remdb::*;
 use serial_test::serial;
@@ -113,9 +113,8 @@ unsafe fn init_test_env() -> &'static mut RemDb {
     platform::init_platform(&DUMMY_PLATFORM);
 
     // 初始化全局数据库
-    let db = init_global_db(config).unwrap();
 
-    db
+    (init_global_db(config).unwrap()) as _
 }
 
 // 辅助函数：根据字段名获取字段索引

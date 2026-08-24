@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use crate::model::{ModelError, ModelManager};
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{debug, info, warn};
 
 #[derive(Debug, Clone)]
 pub struct BuiltinModel {
@@ -135,7 +135,7 @@ pub fn register_builtin_models(manager: &mut ModelManager) -> Result<(), ModelEr
     Ok(())
 }
 
-pub fn text_embedding(text: &str, model_name: &str) -> Result<Vec<f32>, ModelError> {
+pub fn text_embedding(_text: &str, model_name: &str) -> Result<Vec<f32>, ModelError> {
     let model = get_builtin_model(model_name).ok_or(ModelError::ModelNotFound)?;
 
     let model_path = get_builtin_model_path(model);

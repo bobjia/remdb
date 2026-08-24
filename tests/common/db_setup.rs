@@ -5,7 +5,6 @@
 use std::sync::Mutex;
 
 use super::platform::TEST_PLATFORM;
-use remdb::*;
 
 const DEFAULT_TEST_MEMORY_SIZE: usize = 1024 * 1024; // 1MB
 
@@ -47,7 +46,7 @@ pub fn cleanup_test_db() {
 }
 
 #[cfg(feature = "posix")]
-pub fn setup_test_db_with_posix_platform(size: usize) -> Box<Vec<u8>> {
+pub fn setup_test_db_with_posix_platform(_size: usize) -> Box<Vec<u8>> {
     use remdb::platform::posix;
 
     // 使用 static 数组来避免栈溢出

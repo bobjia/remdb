@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 //! SQL查询示例
 //!
 //! 该示例展示了如何使用remdb的SQL查询功能。

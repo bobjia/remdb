@@ -7,7 +7,7 @@ mod tests {
     use std::net::IpAddr;
     use std::str::FromStr;
 
-    use remdb::pubsub::{PubSub, PubSubConfig, Result, UdpMode};
+    use remdb::pubsub::{PubSub, PubSubConfig, UdpMode};
 
     #[test]
     fn test_pubsub_basic() {

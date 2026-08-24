@@ -205,7 +205,7 @@ fn main() {
             Ok(result) => {
                 println!("Inserted record: {}", result.to_string());
                 // 发布表内容变更
-                let table_data = format!("INSERT: Table=users, Record=Alice");
+                let table_data = "INSERT: Table=users, Record=Alice".to_string();
                 match server_clone
                     .lock()
                     .unwrap()
@@ -228,7 +228,7 @@ fn main() {
             Ok(result) => {
                 println!("Inserted record: {}", result.to_string());
                 // 发布表内容变更
-                let table_data = format!("INSERT: Table=users, Record=Bob");
+                let table_data = "INSERT: Table=users, Record=Bob".to_string();
                 match server_clone
                     .lock()
                     .unwrap()
@@ -250,7 +250,7 @@ fn main() {
             Ok(result) => {
                 println!("Updated record: {}", result.to_string());
                 // 发布表内容变更
-                let table_data = format!("UPDATE: Table=users, Record=Bob");
+                let table_data = "UPDATE: Table=users, Record=Bob".to_string();
                 match server_clone
                     .lock()
                     .unwrap()
@@ -271,7 +271,7 @@ fn main() {
             Ok(result) => {
                 println!("Deleted record: {}", result.to_string());
                 // 发布表内容变更
-                let table_data = format!("DELETE: Table=users, Record=Alice");
+                let table_data = "DELETE: Table=users, Record=Alice".to_string();
                 match server_clone
                     .lock()
                     .unwrap()

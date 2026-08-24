@@ -1,3 +1,4 @@
+#![allow(static_mut_refs, clippy::assertions_on_constants)]
 //! 向量索引高级功能测试
 //!
 //! 该测试文件验证向量索引的高级功能，包括更新、重建、配置参数等。
@@ -253,7 +254,7 @@ fn test_vector_index_simple_config() {
     // 插入一些测试数据
     for i in 1..=2 {
         let record = VectorRecord {
-            id: i as i32,
+            id: i,
             vector: [i as f32 * 1.0; 8],
             category: if i % 2 == 0 { 2 } else { 1 },
             value: i as f32 * 0.1,
@@ -399,7 +400,7 @@ fn test_vector_index_multiple_distance_algorithms() {
     };
 
     // 插入一些测试数据
-    let test_vectors = vec![
+    let test_vectors = [
         ([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], 1),
         ([2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], 1),
     ];
@@ -481,7 +482,7 @@ fn test_vector_index_simple_dimension() {
     // 插入一些测试数据
     for i in 1..=3 {
         let record = VectorRecord {
-            id: i as i32,
+            id: i,
             vector: [i as f32 * 1.0; 8],
             category: if i % 2 == 0 { 2 } else { 1 },
             value: i as f32 * 0.5,

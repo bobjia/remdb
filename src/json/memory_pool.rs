@@ -124,10 +124,7 @@ impl JsonMemoryPool {
     fn allocate_block(&self) -> Option<NonNull<u8>> {
         let block_size = self.config.block_size;
 
-        match crate::memory::allocator::alloc(block_size) {
-            Ok(ptr) => Some(ptr),
-            Err(_) => None,
-        }
+        crate::memory::allocator::alloc(block_size).ok()
     }
 
     /// 分配JSON内存
@@ -246,11 +243,9 @@ impl JsonMemoryPool {
 
     /// 清理内存池
     pub fn cleanup(&mut self) {
-        for block in &mut self.blocks {
-            if let Some(ptr) = block {
-                unsafe {
-                    crate::memory::allocator::free(*ptr);
-                }
+        for ptr in self.blocks.iter_mut().flatten() {
+            unsafe {
+                crate::memory::allocator::free(*ptr);
             }
         }
         self.blocks.clear();

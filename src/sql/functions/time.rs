@@ -14,7 +14,7 @@ pub fn execute_time_bucket(args: &[TypedValue]) -> Result<TypedValue, QueryExecu
     crate::log::debug!(
         "execute_time_bucket: args.len={}, args[0].type={:?}, args[1].type={:?}",
         args.len(),
-        args.get(0).map(|a| a.value_type),
+        args.first().map(|a| a.value_type),
         args.get(1).map(|a| a.value_type)
     );
     if args.len() < 2 {
@@ -284,11 +284,11 @@ pub fn parse_time_string(time_str: &str) -> Result<i64, QueryExecutionError> {
 }
 
 fn split_timezone_from_time(time_part: &str) -> (&str, i32) {
-    if let Some(pos) = time_part.find(|c| c == '+' || c == '-') {
+    if let Some(pos) = time_part.find(['+', '-']) {
         if pos > 0 {
             let before = &time_part[..pos];
             let after = &time_part[pos..];
-            if after.len() > 1 && after.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+            if after.len() > 1 && after.chars().nth(1).is_some_and(|c| c.is_ascii_digit()) {
                 let tz_seconds = parse_timezone_offset(after).unwrap_or(0);
                 return (before, tz_seconds);
             }

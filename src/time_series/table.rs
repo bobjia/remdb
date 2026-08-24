@@ -323,7 +323,7 @@ impl TimeSeriesTable {
             partition_guard.stats.record_count += 1;
 
             // 更新索引
-            self.index.insert(record.timestamp, inserted as usize);
+            self.index.insert(record.timestamp, inserted);
 
             // 更新预聚合数据
             self.update_pre_aggregations(&record);
@@ -365,7 +365,7 @@ impl TimeSeriesTable {
             partition_guard.stats.record_count = partition_guard.records.len();
 
             // 更新索引
-            self.index.insert(record.timestamp, inserted as usize);
+            self.index.insert(record.timestamp, inserted);
 
             // 更新预聚合数据
             self.update_pre_aggregations(record);

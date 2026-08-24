@@ -218,7 +218,7 @@ fn test_partition_manager() {
 
     // 测试清理过期分区
     manager.cleanup_expired_partitions(now + 10800, core::time::Duration::from_hours(1)); // 清理1小时前的数据
-    let remaining_partitions = manager.get_partitions_in_range(now - 3600, now + 10800);
+    let _remaining_partitions = manager.get_partitions_in_range(now - 3600, now + 10800);
     // 注意：当前PartitionManager的cleanup_expired_partitions方法未完全实现，所以这里不做断言
 }
 

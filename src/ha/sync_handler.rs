@@ -325,8 +325,7 @@ impl SyncHandler {
     /// Send snapshot data in chunks
     fn send_snapshot_chunks(data: &[u8]) -> Result<()> {
         let total_size = data.len() as u64;
-        let chunk_count =
-            ((total_size as usize + MAX_CHUNK_DATA_SIZE - 1) / MAX_CHUNK_DATA_SIZE) as u32;
+        let chunk_count = (total_size as usize).div_ceil(MAX_CHUNK_DATA_SIZE) as u32;
 
         // Get table count from the data
         let table_count = if !data.is_empty() { data[0] } else { 0 };
@@ -377,8 +376,7 @@ impl SyncHandler {
     /// Send WAL logs in chunks
     fn send_wal_chunks(data: &[u8]) -> Result<()> {
         let total_size = data.len() as u64;
-        let chunk_count =
-            ((total_size as usize + MAX_CHUNK_DATA_SIZE - 1) / MAX_CHUNK_DATA_SIZE) as u32;
+        let chunk_count = (total_size as usize).div_ceil(MAX_CHUNK_DATA_SIZE) as u32;
 
         // Estimate log count (rough estimate based on average LogItem size)
         let log_count = (total_size / core::mem::size_of::<LogItem>() as u64) as u32;

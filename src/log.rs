@@ -249,7 +249,7 @@ pub fn init_logger_with_file(log_path: &str, debug_mode: bool) -> Result<(), std
                 } else {
                     // 替换µs为us，避免Unicode编码问题
                     if c == 'µ' {
-                        result.push_str("u");
+                        result.push('u');
                     } else {
                         result.push(c);
                     }

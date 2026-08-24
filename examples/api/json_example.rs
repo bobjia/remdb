@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 //! JSON 字段示例
 //!
 //! 该示例展示如何使用 RemDB 的 JSON 功能：
@@ -30,7 +31,7 @@ fn main() -> Result<()> {
             log_mode: remdb::config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
+            log_prealloc_size: 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
             max_consecutive_invalid: 100,

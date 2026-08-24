@@ -103,10 +103,10 @@ impl TTLCircularBuffer {
         }
 
         // 开始写入
-        if !slot
+        if slot
             .state
             .compare_exchange(SLOT_FREE, SLOT_WRITING, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+            .is_err()
         {
             return false;
         }

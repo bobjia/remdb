@@ -220,21 +220,21 @@ impl JsonDocument {
                 // 尝试解析为整数
                 if let Ok(i) = n.parse::<i64>() {
                     // 序列化整数
-                    if i >= 0 && i < 128 {
+                    if (0..128).contains(&i) {
                         // positive fixint
                         buffer.push(i as u8);
-                    } else if i >= -32 && i < 0 {
+                    } else if (-32..0).contains(&i) {
                         // negative fixint
-                        buffer.push((i as u8) & 0xff);
-                    } else if i >= -128 && i < 128 {
+                        buffer.push(i as u8);
+                    } else if (-128..128).contains(&i) {
                         // int 8
                         buffer.push(0xd0);
                         buffer.push(i as u8);
-                    } else if i >= -32768 && i < 32768 {
+                    } else if (-32768..32768).contains(&i) {
                         // int 16
                         buffer.push(0xd1);
                         buffer.extend_from_slice(&[(i >> 8) as u8, i as u8]);
-                    } else if i >= -2147483648 && i < 2147483648 {
+                    } else if (-2147483648..2147483648).contains(&i) {
                         // int 32
                         buffer.push(0xd2);
                         buffer.extend_from_slice(&[
@@ -568,35 +568,31 @@ impl JsonDocument {
 
     /// 增加引用计数
     pub fn add_ref(&self) {
-        match &self.storage {
-            JsonStorage::External {
-                pool_id: _,
-                offset: _,
-                length: _,
-            } => {
-                let pool_manager = get_global_json_pool_manager();
-                if let Some(_manager) = pool_manager {
-                    // 暂时不实现引用计数，因为内存池还没有相应的方法
-                }
+        if let JsonStorage::External {
+            pool_id: _,
+            offset: _,
+            length: _,
+        } = &self.storage
+        {
+            let pool_manager = get_global_json_pool_manager();
+            if let Some(_manager) = pool_manager {
+                // 暂时不实现引用计数，因为内存池还没有相应的方法
             }
-            _ => {}
         }
     }
 
     /// 减少引用计数
     pub fn release(&self) {
-        match &self.storage {
-            JsonStorage::External {
-                pool_id: _,
-                offset: _,
-                length: _,
-            } => {
-                let pool_manager = get_global_json_pool_manager();
-                if let Some(_manager) = pool_manager {
-                    // 暂时不实现引用计数，因为内存池还没有相应的方法
-                }
+        if let JsonStorage::External {
+            pool_id: _,
+            offset: _,
+            length: _,
+        } = &self.storage
+        {
+            let pool_manager = get_global_json_pool_manager();
+            if let Some(_manager) = pool_manager {
+                // 暂时不实现引用计数，因为内存池还没有相应的方法
             }
-            _ => {}
         }
     }
 
@@ -680,8 +676,7 @@ impl JsonDocument {
                                 if !c.is_ascii_hexdigit() {
                                     return Err("Invalid Unicode escape");
                                 }
-                                code =
-                                    code * 16 + c.to_digit(16).expect("invalid hex digit") as u32;
+                                code = code * 16 + c.to_digit(16).expect("invalid hex digit");
                                 *index += 1;
                             }
                             if let Some(c) = char::from_u32(code) {
@@ -885,7 +880,7 @@ impl Clone for JsonDocument {
     fn clone(&self) -> Self {
         self.add_ref();
         Self {
-            storage: self.storage.clone(),
+            storage: self.storage,
             size: self.size,
         }
     }

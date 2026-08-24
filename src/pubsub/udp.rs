@@ -138,8 +138,8 @@ mod posix {
                         .bind(&addr.into())
                         .map_err(|_| PubSubError::NetworkError)?;
                     // 转换为标准库套接字
-                    let socket = socket2.into();
-                    socket
+
+                    socket2.into()
                 }
                 UdpMode::Broadcast => {
                     // 广播模式：创建套接字，设置选项，然后绑定
@@ -165,8 +165,8 @@ mod posix {
                         .bind(&addr.into())
                         .map_err(|_| PubSubError::NetworkError)?;
                     // 转换为标准库套接字
-                    let socket = socket2.into();
-                    socket
+
+                    socket2.into()
                 }
                 UdpMode::Multicast => {
                     // 组播模式：创建套接字，设置选项，加入组播组
@@ -203,8 +203,8 @@ mod posix {
                         }
                     }
                     // 转换为标准库套接字
-                    let socket = socket2.into();
-                    socket
+
+                    socket2.into()
                 }
             };
 

@@ -16,7 +16,7 @@ use ort::session::Session;
 use ort::value::Tensor;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, info, warn};
+use crate::log::{debug, info};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputType {
@@ -79,8 +79,8 @@ impl OnnxModel {
 
         let info = ModelInfo {
             name: path
-                .split(|c| c == '/' || c == '\\')
-                .last()
+                .split(['/', '\\'])
+                .next_back()
                 .unwrap_or("unknown")
                 .to_string(),
             input_names,
@@ -193,9 +193,9 @@ impl OnnxModel {
 
             self.extract_sentence_embedding(&outputs)
         } else if input_count >= 3 {
-            let seq_len = inputs_data.get(0).map(|v| v.len()).unwrap_or(512);
+            let _seq_len = inputs_data.first().map(|v| v.len()).unwrap_or(512);
 
-            let input_ids = inputs_data.get(0).ok_or("Missing input_ids")?;
+            let input_ids = inputs_data.first().ok_or("Missing input_ids")?;
             let attention_mask = inputs_data.get(1).ok_or("Missing attention_mask")?;
             let token_type_ids = inputs_data.get(2).ok_or("Missing token_type_ids")?;
 

@@ -115,7 +115,7 @@ fn test_utf8_basic_support() {
         }
 
         // 初始化全局数据库
-        let mut db = init_global_db(config).unwrap();
+        let db = init_global_db(config).unwrap();
 
         // 测试1: 插入包含UTF-8字符的记录
         println!("测试1: 插入包含UTF-8字符的记录");

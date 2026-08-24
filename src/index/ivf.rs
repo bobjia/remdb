@@ -404,7 +404,7 @@ impl IVFIndex {
             }
 
             // 更新簇中心
-            for (_i, cluster) in self.clusters.iter_mut().enumerate() {
+            for cluster in self.clusters.iter_mut() {
                 if cluster.vector_count > 0 {
                     // 计算新的簇中心
                     let mut new_centroid = vec![0.0; dimension];

@@ -331,7 +331,7 @@ impl HealthCheckResult {
     /// 将健康检查结果转换为文本格式
     pub fn to_text(&self) -> String {
         let mut text = alloc::string::String::new();
-        text.push_str(&alloc::format!("===== 健康检查结果 =====\n"));
+        text.push_str("===== 健康检查结果 =====\n");
         text.push_str(&alloc::format!("时间戳: {}\n", self.timestamp));
         text.push_str(&alloc::format!("状态: {:?}\n", self.status));
         text.push_str(&alloc::format!("详细信息: {}\n", self.details));

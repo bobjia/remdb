@@ -219,8 +219,8 @@ impl RbacManager {
                 .unwrap_or(false)
         }) {
             if let Ok(roles_table) = db.get_table(roles_table_id) {
-                let mut cursor = roles_table.scan_ref();
-                while let Some(record) = cursor.next() {
+                let cursor = roles_table.scan_ref();
+                for record in cursor {
                     let role_name = record.get_str(0).unwrap_or("");
                     if !role_name.is_empty() {
                         let role = Role::new(role_name.to_string());
@@ -238,8 +238,8 @@ impl RbacManager {
                 .unwrap_or(false)
         }) {
             if let Ok(role_perms_table) = db.get_table(role_perms_table_id) {
-                let mut cursor = role_perms_table.scan_ref();
-                while let Some(record) = cursor.next() {
+                let cursor = role_perms_table.scan_ref();
+                for record in cursor {
                     let role_name = record.get_str(0).unwrap_or("");
                     let perm_str = record.get_str(1).unwrap_or("");
                     let table_name = record.get_str(2).unwrap_or("");
@@ -268,8 +268,8 @@ impl RbacManager {
                 .unwrap_or(false)
         }) {
             if let Ok(users_table) = db.get_table(users_table_id) {
-                let mut cursor = users_table.scan_ref();
-                while let Some(record) = cursor.next() {
+                let cursor = users_table.scan_ref();
+                for record in cursor {
                     let username = record.get_str(0).unwrap_or("");
                     if !username.is_empty() {
                         let user = User::new(username.to_string());
@@ -287,8 +287,8 @@ impl RbacManager {
                 .unwrap_or(false)
         }) {
             if let Ok(user_roles_table) = db.get_table(user_roles_table_id) {
-                let mut cursor = user_roles_table.scan_ref();
-                while let Some(record) = cursor.next() {
+                let cursor = user_roles_table.scan_ref();
+                for record in cursor {
                     let username = record.get_str(0).unwrap_or("");
                     let role_name = record.get_str(1).unwrap_or("");
 

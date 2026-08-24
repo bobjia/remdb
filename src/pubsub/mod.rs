@@ -214,8 +214,7 @@ impl PubSub {
     /// 接收循环（外部可调用）
     pub fn receive_loop(&mut self) {
         // 分配接收缓冲区
-        let mut buf = alloc::vec::Vec::with_capacity(self.config.buffer_size);
-        buf.resize(self.config.buffer_size, 0);
+        let mut buf = vec![0; self.config.buffer_size];
 
         // 分配重传帧缓冲区
         let mut retransmit_frames = alloc::vec::Vec::new();

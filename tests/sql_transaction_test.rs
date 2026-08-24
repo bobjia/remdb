@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 use remdb::config::WALConfig;
 use remdb::platform::*;
 use remdb::transaction::*;

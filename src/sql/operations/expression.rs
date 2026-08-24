@@ -115,7 +115,7 @@ pub fn evaluate_expression_with_depth(
                 let actual_field_name = if field_name.contains('.') {
                     field_name
                         .split('.')
-                        .last()
+                        .next_back()
                         .expect("field name must contain '.'")
                 } else {
                     field_name
@@ -148,8 +148,8 @@ pub fn evaluate_expression_with_depth(
                 name,
                 arg_values.len()
             );
-            let result = execute_function_call(name, &arg_values);
-            result
+
+            execute_function_call(name, &arg_values)
         }
         Expression::Constant {
             value: constant, ..
@@ -202,103 +202,101 @@ pub fn evaluate_expression_with_depth(
             if matches!(
                 *op,
                 BinaryOperator::VectorL2 | BinaryOperator::VectorIP | BinaryOperator::VectorCosine
-            ) {
-                if matches!(left_val.value_type, DataType::Vector) {
-                    let vector_field = if let Expression::Field {
-                        name: ref field_name,
-                        ..
-                    } = **left
-                    {
-                        table
-                            .def
-                            .fields
-                            .iter()
-                            .find(|field| field.name == *field_name)
-                            .ok_or(QueryExecutionError::FieldNotFound)?
-                    } else {
-                        table
-                            .def
-                            .fields
-                            .iter()
-                            .find(|field| field.vector_metadata.is_some())
-                            .ok_or(QueryExecutionError::TypeMismatch)?
-                    };
-
-                    let vector_dim = vector_field
-                        .vector_metadata
+            ) && matches!(left_val.value_type, DataType::Vector)
+            {
+                let vector_field = if let Expression::Field {
+                    name: ref field_name,
+                    ..
+                } = **left
+                {
+                    table
+                        .def
+                        .fields
+                        .iter()
+                        .find(|field| field.name == *field_name)
+                        .ok_or(QueryExecutionError::FieldNotFound)?
+                } else {
+                    table
+                        .def
+                        .fields
+                        .iter()
+                        .find(|field| field.vector_metadata.is_some())
                         .ok_or(QueryExecutionError::TypeMismatch)?
-                        .dimension;
+                };
 
-                    // Handle the case where the right operand is a Json with Null storage
-                    // (the vector string was too large for the inline buffer)
-                    if matches!(right_val.value_type, DataType::Json) {
-                        if let crate::types::JsonStorage::Null =
-                            unsafe { right_val.value.json_storage }
+                let vector_dim = vector_field
+                    .vector_metadata
+                    .ok_or(QueryExecutionError::TypeMismatch)?
+                    .dimension;
+
+                // Handle the case where the right operand is a Json with Null storage
+                // (the vector string was too large for the inline buffer)
+                if matches!(right_val.value_type, DataType::Json) {
+                    if let crate::types::JsonStorage::Null = unsafe { right_val.value.json_storage }
+                    {
+                        // Try to extract the original string from the Constant expression
+                        if let Expression::Constant {
+                            value: crate::sql::Value::Json(json_str),
+                            ..
+                        } = right.as_ref()
                         {
-                            // Try to extract the original string from the Constant expression
-                            if let Expression::Constant {
-                                value: crate::sql::Value::Json(json_str),
-                                ..
-                            } = right.as_ref()
-                            {
-                                // Parse the vector directly from the string
-                                let trimmed = json_str.trim();
-                                if trimmed.starts_with('[') && trimmed.ends_with(']') {
-                                    let inner = &trimmed[1..trimmed.len() - 1];
-                                    let elements: Vec<&str> = inner
-                                        .split(',')
-                                        .map(|s| s.trim())
-                                        .filter(|s| !s.is_empty())
-                                        .collect();
-                                    if elements.len() == vector_dim as usize {
-                                        let vec2_values: Vec<f32> = elements
-                                            .iter()
-                                            .map(|s| s.parse::<f32>())
-                                            .collect::<Result<Vec<_>, _>>()
-                                            .map_err(|_| QueryExecutionError::TypeMismatch)?;
-                                        let vec2_f64: Vec<f64> =
-                                            vec2_values.iter().map(|v| *v as f64).collect();
-                                        // Check for null vector pointer before dereferencing
-                                        if unsafe { left_val.value.vector.is_null() } {
-                                            return Err(QueryExecutionError::TypeMismatch);
-                                        }
-                                        let result = match *op {
-                                            BinaryOperator::VectorL2 => unsafe {
-                                                calculate_vector_l2_distance(
-                                                    left_val.value.vector,
-                                                    &vec2_f64,
-                                                    vector_dim,
-                                                )
-                                            },
-                                            BinaryOperator::VectorIP => unsafe {
-                                                calculate_vector_inner_product(
-                                                    left_val.value.vector,
-                                                    &vec2_f64,
-                                                    vector_dim,
-                                                )
-                                            },
-                                            BinaryOperator::VectorCosine => unsafe {
-                                                calculate_vector_cosine_similarity(
-                                                    left_val.value.vector,
-                                                    &vec2_f64,
-                                                    vector_dim,
-                                                )
-                                            },
-                                            _ => return Err(QueryExecutionError::TypeMismatch),
-                                        };
-                                        return Ok(TypedValue {
-                                            value_type: DataType::Float64,
-                                            value: Value { float64: result },
-                                        });
+                            // Parse the vector directly from the string
+                            let trimmed = json_str.trim();
+                            if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                                let inner = &trimmed[1..trimmed.len() - 1];
+                                let elements: Vec<&str> = inner
+                                    .split(',')
+                                    .map(|s| s.trim())
+                                    .filter(|s| !s.is_empty())
+                                    .collect();
+                                if elements.len() == vector_dim as usize {
+                                    let vec2_values: Vec<f32> = elements
+                                        .iter()
+                                        .map(|s| s.parse::<f32>())
+                                        .collect::<Result<Vec<_>, _>>()
+                                        .map_err(|_| QueryExecutionError::TypeMismatch)?;
+                                    let vec2_f64: Vec<f64> =
+                                        vec2_values.iter().map(|v| *v as f64).collect();
+                                    // Check for null vector pointer before dereferencing
+                                    if unsafe { left_val.value.vector.is_null() } {
+                                        return Err(QueryExecutionError::TypeMismatch);
                                     }
+                                    let result = match *op {
+                                        BinaryOperator::VectorL2 => unsafe {
+                                            calculate_vector_l2_distance(
+                                                left_val.value.vector,
+                                                &vec2_f64,
+                                                vector_dim,
+                                            )
+                                        },
+                                        BinaryOperator::VectorIP => unsafe {
+                                            calculate_vector_inner_product(
+                                                left_val.value.vector,
+                                                &vec2_f64,
+                                                vector_dim,
+                                            )
+                                        },
+                                        BinaryOperator::VectorCosine => unsafe {
+                                            calculate_vector_cosine_similarity(
+                                                left_val.value.vector,
+                                                &vec2_f64,
+                                                vector_dim,
+                                            )
+                                        },
+                                        _ => return Err(QueryExecutionError::TypeMismatch),
+                                    };
+                                    return Ok(TypedValue {
+                                        value_type: DataType::Float64,
+                                        value: Value { float64: result },
+                                    });
                                 }
                             }
-                            return Err(QueryExecutionError::TypeMismatch);
                         }
+                        return Err(QueryExecutionError::TypeMismatch);
                     }
-
-                    return evaluate_vector_binary_op(left_val, *op, right_val, vector_dim);
                 }
+
+                return evaluate_vector_binary_op(left_val, *op, right_val, vector_dim);
             }
 
             evaluate_binary_op(left_val, *op, right_val)
@@ -996,7 +994,7 @@ pub fn execute_function_call(
         "JSON_ARRAY" => sql_functions::execute_json_array(args),
         "JSON_OBJECT" => sql_functions::execute_json_object(args),
         _ => crate::model::model_udf::execute_model_udf(name, args)
-            .or_else(|_| Err(QueryExecutionError::UnsupportedFunction(name.to_string()))),
+            .map_err(|_| QueryExecutionError::UnsupportedFunction(name.to_string())),
     }
 }
 

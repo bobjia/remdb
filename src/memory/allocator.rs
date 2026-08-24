@@ -227,7 +227,7 @@ impl StaticAllocator {
 
                 // 返回块数据指针
                 let data_ptr = (block.as_ptr() as usize + MemoryBlock::SIZE) as *mut u8;
-                return Ok(NonNull::new(data_ptr).ok_or(RemDbError::InvalidPointer)?);
+                return NonNull::new(data_ptr).ok_or(RemDbError::InvalidPointer);
             }
 
             current = &mut unsafe { block.as_mut() }.next;
@@ -411,7 +411,7 @@ pub fn alloc(size: usize) -> Result<NonNull<u8>> {
 pub fn free(ptr: NonNull<u8>) {
     if let Ok(mut allocator_guard) = GLOBAL_ALLOCATOR.lock() {
         if let Some(allocator) = allocator_guard.as_mut() {
-            let _ = allocator.free(ptr); // 忽略错误：无效指针无法恢复
+            allocator.free(ptr); // 忽略错误：无效指针无法恢复
         }
     }
 }

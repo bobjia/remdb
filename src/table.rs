@@ -247,7 +247,9 @@ impl<'a> RecordRef<'a> {
             } else if text_storage.is_external() {
                 if let Some(ext) = text_storage.as_external() {
                     if !ext.data_ptr.is_null() {
-                        let bytes = unsafe { core::slice::from_raw_parts(ext.data_ptr, ext.length as usize) };
+                        let bytes = unsafe {
+                            core::slice::from_raw_parts(ext.data_ptr, ext.length as usize)
+                        };
                         core::str::from_utf8(bytes).map_err(|_| RemDbError::TypeMismatch)
                     } else {
                         Ok("")
@@ -481,7 +483,7 @@ impl MemoryTable {
                 // 初始化空闲记录槽栈，将所有记录槽压入栈中
                 let free_slots = free_slots_start.cast::<usize>();
                 for i in 0..def.max_records {
-                    *free_slots.as_ptr().add(i) = (def.max_records - 1 - i) as usize;
+                    *free_slots.as_ptr().add(i) = def.max_records - 1 - i;
                 }
             } else {
                 // 跳过状态初始化，由WAL恢复过程处理
@@ -502,7 +504,7 @@ impl MemoryTable {
             lock: 0,
             record_size: def.record_size, // 使用表定义中已经计算好的record_size
             free_slots: free_slots_start.cast(),
-            free_slot_count: free_slot_count,
+            free_slot_count,
             low_power_mode: false,       // 默认不启用低功耗模式
             low_power_max_records: None, // 默认使用表定义的最大记录数
             snapshot_version: 0,         // 初始快照版本为0
@@ -975,9 +977,7 @@ impl MemoryTable {
         let field_ptr = record_data.add(offset);
 
         let value = match data_type {
-            DataType::UInt8 => Value {
-                u8: *field_ptr as u8,
-            },
+            DataType::UInt8 => Value { u8: *field_ptr },
             DataType::UInt16 => Value {
                 u16: core::ptr::read_unaligned(field_ptr as *const u16),
             },
@@ -1046,7 +1046,9 @@ impl MemoryTable {
     /// 插入记录
     pub fn insert(&mut self, record_data: *const u8) -> Result<usize> {
         // 增加写入操作计数
-        crate::get_global_db().map(|db| db.metrics.inc_write_ops());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_write_ops()
+        }
 
         // 验证约束
         unsafe {
@@ -1065,7 +1067,7 @@ impl MemoryTable {
             self.def.max_records
         };
 
-        let mut slot_id = 0;
+        let slot_id;
         let mut is_overwrite = false;
 
         if self.record_count >= max_records {
@@ -1116,8 +1118,7 @@ impl MemoryTable {
         // 记录日志（如果有活跃事务）
         if crate::transaction::has_active_tx() {
             // 保存新数据
-            let mut new_data = Vec::with_capacity(self.record_size);
-            new_data.resize(self.record_size, 0);
+            let mut new_data = vec![0; self.record_size];
             memcpy(new_data.as_mut_ptr(), record_data, self.record_size);
 
             // 检查当前事务是否有效，避免访问悬空指针
@@ -1189,7 +1190,9 @@ impl MemoryTable {
         if !is_overwrite {
             self.record_count += 1;
             // 更新内存使用：增加一条记录的内存
-            crate::get_global_db().map(|db| db.metrics.add_used_memory(self.record_size));
+            if let Some(db) = crate::get_global_db() {
+                db.metrics.add_used_memory(self.record_size)
+            }
         }
 
         let inserted_slot_id = slot_id;
@@ -1229,7 +1232,9 @@ impl MemoryTable {
     /// 更新记录
     pub unsafe fn update(&mut self, id: usize, record_data: *const u8) -> Result<()> {
         // 增加更新操作计数
-        crate::get_global_db().map(|db| db.metrics.inc_update_ops());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_update_ops()
+        }
 
         // 检查ID有效性
         if id >= self.def.max_records {
@@ -1256,13 +1261,11 @@ impl MemoryTable {
         // 记录日志（如果有活跃事务）
         if crate::transaction::has_active_tx() {
             // 保存旧数据
-            let mut old_data = Vec::with_capacity(self.record_size);
-            old_data.resize(self.record_size, 0);
+            let mut old_data = vec![0; self.record_size];
             memcpy(old_data.as_mut_ptr(), record_ptr, self.record_size);
 
             // 保存新数据
-            let mut new_data = Vec::with_capacity(self.record_size);
-            new_data.resize(self.record_size, 0);
+            let mut new_data = vec![0; self.record_size];
             memcpy(new_data.as_mut_ptr(), record_data, self.record_size);
 
             // 检查当前事务是否有效，避免访问悬空指针
@@ -1295,7 +1298,9 @@ impl MemoryTable {
     /// 删除记录
     pub unsafe fn delete(&mut self, id: usize) -> Result<()> {
         // 增加删除操作计数
-        crate::get_global_db().map(|db| db.metrics.inc_delete_ops());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_delete_ops()
+        }
         // 自旋锁保护
         crate::platform::spin_lock(&mut self.lock);
         defer! { crate::platform::spin_unlock(&mut self.lock); }
@@ -1312,8 +1317,7 @@ impl MemoryTable {
 
         if crate::transaction::has_active_tx() {
             let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
-            let mut old_data = Vec::with_capacity(self.record_size);
-            old_data.resize(self.record_size, 0);
+            let mut old_data = vec![0; self.record_size];
             memcpy(old_data.as_mut_ptr(), record_ptr, self.record_size);
 
             if let Some(mut tx) = crate::transaction::get_current_tx() {
@@ -1354,7 +1358,9 @@ impl MemoryTable {
         self.record_count -= 1;
 
         // 更新内存使用：减少一条记录的内存
-        crate::get_global_db().map(|db| db.metrics.sub_used_memory(self.record_size));
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.sub_used_memory(self.record_size)
+        }
 
         Ok(())
     }
@@ -1362,7 +1368,9 @@ impl MemoryTable {
     /// 根据ID获取记录
     pub unsafe fn get_by_id(&self, id: usize, dest: *mut u8) -> Result<()> {
         // 增加读取操作计数
-        crate::get_global_db().map(|db| db.metrics.inc_read_ops());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_read_ops()
+        }
         // 检查ID有效性
         if id >= self.def.max_records {
             return Err(RemDbError::RecordNotFound);
@@ -1383,7 +1391,9 @@ impl MemoryTable {
     /// 根据ID获取记录引用（零拷贝）
     pub fn get_by_id_ref(&self, id: usize) -> Option<RecordRef<'_>> {
         // 增加读取操作计数
-        crate::get_global_db().map(|db| db.metrics.inc_read_ops());
+        if let Some(db) = crate::get_global_db() {
+            db.metrics.inc_read_ops()
+        }
         if id >= self.def.max_records {
             return None;
         }
@@ -1412,7 +1422,6 @@ impl MemoryTable {
     }
 
     /// 发布表数据变更到pubsub
-
     #[cfg(feature = "pubsub")]
     unsafe fn publish_to_pubsub(&self, id: usize, record_data: *const u8, is_insert: bool) {
         let table_name = &self.def.name;
@@ -1447,9 +1456,7 @@ impl MemoryTable {
 
         // 根据字段类型获取值
         let value = match field.data_type {
-            crate::types::DataType::UInt8 => Value {
-                u8: *field_ptr as u8,
-            },
+            crate::types::DataType::UInt8 => Value { u8: *field_ptr },
             crate::types::DataType::UInt16 => Value {
                 u16: core::ptr::read_unaligned(field_ptr as *const u16),
             },
@@ -1486,8 +1493,7 @@ impl MemoryTable {
             crate::types::DataType::TimestampTZ => Value {
                 time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp),
             },
-            crate::types::DataType::VarChar
-            | crate::types::DataType::Char => {
+            crate::types::DataType::VarChar | crate::types::DataType::Char => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                 // 只复制不超过MAX_STRING_LEN的字节，避免缓冲区溢出
                 let copy_size = core::cmp::min(field.size, crate::types::MAX_STRING_LEN);
@@ -1496,9 +1502,8 @@ impl MemoryTable {
             }
             crate::types::DataType::Text => {
                 // 从存储中读取TextStorage
-                let text_storage = core::ptr::read_unaligned(
-                    field_ptr as *const crate::types::TextStorage,
-                );
+                let text_storage =
+                    core::ptr::read_unaligned(field_ptr as *const crate::types::TextStorage);
                 Value { text_storage }
             }
             crate::types::DataType::Interval => Value {
@@ -1574,8 +1579,7 @@ impl MemoryTable {
             crate::types::DataType::TimestampTZ => {
                 *(field_ptr as *mut crate::types::db_timestamp) = value.time;
             }
-            crate::types::DataType::VarChar
-            | crate::types::DataType::Char => {
+            crate::types::DataType::VarChar | crate::types::DataType::Char => {
                 memcpy(field_ptr, value.string.as_ptr(), field.size);
             }
             crate::types::DataType::Text => {
@@ -1993,8 +1997,7 @@ impl MemoryTable {
             if let Some(mut tx) = current_tx {
                 let tx_mut = tx.as_mut();
                 if tx_mut.is_active() && !tx_mut.is_read_only() {
-                    let mut new_data = Vec::with_capacity(self.record_size);
-                    new_data.resize(self.record_size, 0);
+                    let mut new_data = vec![0; self.record_size];
                     memcpy(new_data.as_mut_ptr(), src_ptr, self.record_size);
 
                     let var_log_item = tx_mut.begin_variable_size_log_item(
@@ -2107,8 +2110,7 @@ impl MemoryTable {
             if let Some(mut tx) = current_tx {
                 let tx_mut = tx.as_mut();
                 if tx_mut.is_active() && !tx_mut.is_read_only() {
-                    let mut new_data = Vec::with_capacity(self.record_size);
-                    new_data.resize(self.record_size, 0);
+                    let mut new_data = vec![0; self.record_size];
                     memcpy(new_data.as_mut_ptr(), src_ptr, self.record_size);
 
                     let var_log_item = tx_mut.begin_variable_size_log_item(

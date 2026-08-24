@@ -1,3 +1,4 @@
+#![allow(static_mut_refs, clippy::assertions_on_constants)]
 extern crate alloc;
 use remdb::platform::*;
 use remdb::{

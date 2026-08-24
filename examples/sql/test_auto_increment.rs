@@ -26,7 +26,7 @@ fn main() {
                 log_mode: config::LogMode::Sync,
                 checkpoint_interval_ms: 60000,
                 log_file_size_limit: 16 * 1024 * 1024,
-                log_prealloc_size: 1 * 1024 * 1024,
+                log_prealloc_size: 1024 * 1024,
                 log_segment_size: 16 * 1024 * 1024,
                 retained_checkpoints: 3,
                 max_consecutive_invalid: 100,
@@ -68,7 +68,7 @@ fn main() {
                 println!("  表名: {}", query.table_name);
                 println!("  字段数: {}", query.table_def.len());
                 println!("  主键: {:?}", query.primary_key);
-                if let Err(e) = sql::execute_query(&mut db, &query) {
+                if let Err(e) = sql::execute_query(db, &query) {
                     println!("❌ 执行失败: {}", e);
                 } else {
                     println!("✅ 执行成功: AUTOINCREMENT");
@@ -122,7 +122,7 @@ fn main() {
         match sql::parse_sql_query(insert_sql) {
             Ok(query) => {
                 println!("✅ SQL解析成功");
-                if let Err(e) = sql::execute_query(&mut db, &query) {
+                if let Err(e) = sql::execute_query(db, &query) {
                     println!("❌ 执行失败: {}", e);
                 } else {
                     println!("✅ 执行成功");
@@ -154,7 +154,7 @@ fn main() {
         match sql::parse_sql_query(create_table_sql2) {
             Ok(query) => {
                 println!("✅ SQL解析成功: AUTO_INCREMENT");
-                if let Err(e) = sql::execute_query(&mut db, &query) {
+                if let Err(e) = sql::execute_query(db, &query) {
                     println!("❌ 执行失败: {}", e);
                 } else {
                     println!("✅ 执行成功: AUTO_INCREMENT");
@@ -173,7 +173,7 @@ fn main() {
         match sql::parse_sql_query(insert_explicit_sql) {
             Ok(query) => {
                 println!("✅ SQL解析成功: 显式插入");
-                if let Err(e) = sql::execute_query(&mut db, &query) {
+                if let Err(e) = sql::execute_query(db, &query) {
                     println!("❌ 执行失败: {}", e);
                 } else {
                     println!("✅ 执行成功: 显式插入");
@@ -191,7 +191,7 @@ fn main() {
         match sql::parse_sql_query(insert_auto_sql) {
             Ok(query) => {
                 println!("✅ SQL解析成功: 自增插入");
-                if let Err(e) = sql::execute_query(&mut db, &query) {
+                if let Err(e) = sql::execute_query(db, &query) {
                     println!("❌ 执行失败: {}", e);
                 } else {
                     println!("✅ 执行成功: 自增插入");
@@ -210,7 +210,7 @@ fn main() {
         match sql::parse_sql_query(insert_explicit_sql2) {
             Ok(query) => {
                 println!("✅ SQL解析成功: test2显式插入");
-                if let Err(e) = sql::execute_query(&mut db, &query) {
+                if let Err(e) = sql::execute_query(db, &query) {
                     println!("❌ 执行失败: {}", e);
                 } else {
                     println!("✅ 执行成功: test2显式插入");
@@ -228,7 +228,7 @@ fn main() {
         match sql::parse_sql_query(insert_auto_sql2) {
             Ok(query) => {
                 println!("✅ SQL解析成功: test2自增插入");
-                if let Err(e) = sql::execute_query(&mut db, &query) {
+                if let Err(e) = sql::execute_query(db, &query) {
                     println!("❌ 执行失败: {}", e);
                 } else {
                     println!("✅ 执行成功: test2自增插入");

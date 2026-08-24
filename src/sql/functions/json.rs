@@ -659,7 +659,7 @@ pub fn execute_json_array(args: &[TypedValue]) -> Result<TypedValue, QueryExecut
 
 /// 执行JSON_OBJECT函数
 pub fn execute_json_object(args: &[TypedValue]) -> Result<TypedValue, QueryExecutionError> {
-    if args.is_empty() || args.len() % 2 != 0 {
+    if args.is_empty() || !args.len().is_multiple_of(2) {
         return Err(QueryExecutionError::TypeMismatch);
     }
 

@@ -317,7 +317,11 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             // 处理str(32)这样的类型，最大65536
             let str_size = if let Some(params) = type_params {
                 let raw = params.base10_parse().unwrap_or(32);
-                if raw > 65536 { 65536 } else { raw }
+                if raw > 65536 {
+                    65536
+                } else {
+                    raw
+                }
             } else {
                 32
             };

@@ -420,7 +420,6 @@ pub fn compare_strings(f: &str, c: &str, operator: &ComparisonOperator) -> bool 
         ComparisonOperator::LessThan => f < c,
         ComparisonOperator::LessThanOrEqual => f <= c,
         ComparisonOperator::Like => like_pattern_match(f, c),
-        _ => false,
     }
 }
 
@@ -890,7 +889,7 @@ pub unsafe fn evaluate_comparison_with_alias(
         if let Some(idx) = field_index {
             expr_values[idx].clone()
         } else {
-            evaluate_expression(table, record_values, expr).unwrap_or_else(|_| TypedValue {
+            evaluate_expression(table, record_values, expr).unwrap_or(TypedValue {
                 value_type: DataType::Int64,
                 value: Value { i64: 0 },
             })
@@ -1051,7 +1050,6 @@ pub unsafe fn evaluate_comparison_with_alias(
                 false
             }
         }
-        _ => false,
     }
 }
 
@@ -1079,7 +1077,7 @@ pub unsafe fn evaluate_between_with_alias(
         if let Some(idx) = field_index {
             expr_values[idx].clone()
         } else {
-            evaluate_expression(table, record_values, expr).unwrap_or_else(|_| TypedValue {
+            evaluate_expression(table, record_values, expr).unwrap_or(TypedValue {
                 value_type: DataType::Int64,
                 value: Value { i64: 0 },
             })

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
 #[cfg(feature = "log")]
-use crate::log::{debug, info, warn};
+use crate::log::{debug, info};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CacheStats {

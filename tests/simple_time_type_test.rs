@@ -185,7 +185,7 @@ fn test_create_table_with_time_types() {
 
     println!("Running CREATE TABLE...");
     let result = db.sql_query(create_table_sql);
-    if !result.is_ok() {
+    if result.is_err() {
         println!(
             "CREATE TABLE failed with error: {:?}",
             result.as_ref().err()
@@ -201,7 +201,7 @@ fn test_create_table_with_time_types() {
 
     println!("Running INSERT...");
     let result = db.sql_query(insert_sql);
-    if !result.is_ok() {
+    if result.is_err() {
         println!("INSERT failed with error: {:?}", result.as_ref().err());
     }
     assert!(result.is_ok());
@@ -212,7 +212,7 @@ fn test_create_table_with_time_types() {
 
     println!("Running SELECT...");
     let result = db.sql_query(select_sql);
-    if !result.is_ok() {
+    if result.is_err() {
         println!("SELECT failed with error: {:?}", result.as_ref().err());
     }
     assert!(result.is_ok());
@@ -225,7 +225,7 @@ fn test_create_table_with_time_types() {
 
     println!("Running INSERT...");
     let result = db.sql_query(insert_sql);
-    if !result.is_ok() {
+    if result.is_err() {
         println!("INSERT failed with error: {:?}", result.as_ref().err());
     }
     assert!(result.is_ok());
@@ -236,7 +236,7 @@ fn test_create_table_with_time_types() {
 
     println!("Running SELECT...");
     let result = db.sql_query(select_sql);
-    if !result.is_ok() {
+    if result.is_err() {
         println!("SELECT failed with error: {:?}", result.as_ref().err());
     }
     assert!(result.is_ok());

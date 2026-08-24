@@ -26,7 +26,7 @@ fn main() {
                 log_mode: config::LogMode::Sync,
                 checkpoint_interval_ms: 60000,
                 log_file_size_limit: 16 * 1024 * 1024,
-                log_prealloc_size: 1 * 1024 * 1024,
+                log_prealloc_size: 1024 * 1024,
                 log_segment_size: 16 * 1024 * 1024,
                 retained_checkpoints: 3,
                 max_consecutive_invalid: 100,
@@ -56,7 +56,7 @@ fn main() {
         };
 
         // 初始化数据库
-        let mut db = init_global_db(&CONFIG).expect("Failed to initialize database");
+        let db = init_global_db(&CONFIG).expect("Failed to initialize database");
 
         // 测试1：使用SQL创建表
         println!("=== 测试1：使用SQL创建表===");
@@ -64,7 +64,7 @@ fn main() {
 
         println!("执行SQL: {}", create_table_sql);
         match db.sql_query(create_table_sql) {
-            Ok(result) => {
+            Ok(_result) => {
                 println!("✅ SQL执行成功");
                 println!("结果: 成功创建表");
             }
@@ -78,7 +78,7 @@ fn main() {
         let insert_sql = "INSERT INTO test_table (name) VALUES ('Test User')";
         println!("执行SQL: {}", insert_sql);
         match db.sql_query(insert_sql) {
-            Ok(result) => {
+            Ok(_result) => {
                 println!("✅ SQL执行成功");
                 println!("结果: 成功插入数据");
             }

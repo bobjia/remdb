@@ -4,25 +4,24 @@
 //! including spawning, monitoring, and restarting.
 
 use alloc::string::String;
-use alloc::vec::Vec;
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 
 #[cfg(unix)]
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixStream;
 
 #[cfg(windows)]
 use std::os::windows::io::{AsRawSocket, FromRawSocket};
 
 use crate::model::worker_protocol::{
-    deserialize_response, serialize_request, ErrorCode, ModelRequest, ModelResponse, WorkerConfig,
+    deserialize_response, serialize_request, ModelRequest, ModelResponse,
 };
 use crate::model::ModelError;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{error, info, warn};
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/remdb_model_worker.sock";
 const DEFAULT_NAMED_PIPE: &str = r"\\.\pipe\remdb_model_worker";

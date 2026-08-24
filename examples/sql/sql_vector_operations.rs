@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 //! SQL Vector Operations Example
 //!
 //! This example demonstrates RemDB's vector operation features:

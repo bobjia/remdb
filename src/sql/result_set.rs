@@ -100,7 +100,7 @@ impl ResultSet {
             }
             result.push_str(column);
         }
-        result.push_str("\n");
+        result.push('\n');
 
         // 添加分隔线
         for (i, _) in self.columns.iter().enumerate() {
@@ -109,7 +109,7 @@ impl ResultSet {
             }
             result.push_str("----");
         }
-        result.push_str("\n");
+        result.push('\n');
 
         // 添加行数据
         for row in &self.rows {
@@ -119,7 +119,7 @@ impl ResultSet {
                 }
                 result.push_str(&value_to_string_repr(value));
             }
-            result.push_str("\n");
+            result.push('\n');
         }
 
         result
@@ -240,7 +240,9 @@ fn value_to_string_repr(value: &TypedValue) -> String {
                 } else if value.value.text_storage.is_external() {
                     if let Some(ext) = value.value.text_storage.as_external() {
                         if !ext.data_ptr.is_null() {
-                            let bytes = unsafe { core::slice::from_raw_parts(ext.data_ptr, ext.length as usize) };
+                            let bytes = unsafe {
+                                core::slice::from_raw_parts(ext.data_ptr, ext.length as usize)
+                            };
                             core::str::from_utf8(bytes).unwrap_or("").to_string()
                         } else {
                             String::new()
@@ -257,11 +259,11 @@ fn value_to_string_repr(value: &TypedValue) -> String {
             }
             DataType::Vector => {
                 // 向量类型转换为字符串表示
-                alloc::format!("[vector]")
+                "[vector]".to_string()
             }
             DataType::Json => {
                 // JSON类型转换为字符串表示
-                alloc::format!("<json>")
+                "<json>".to_string()
             }
         }
     }

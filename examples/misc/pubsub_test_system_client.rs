@@ -1,6 +1,5 @@
 #![cfg(feature = "pubsub")]
 
-use remdb::pubsub::topics::*;
 use remdb::pubsub::{PubSub, PubSubConfig, UdpMode};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -61,28 +60,28 @@ fn main() {
 
     // 订阅所有WAL主题
     pubsub
-        .subscribe(1, wal_callback.clone())
+        .subscribe(1, wal_callback)
         .expect("Failed to subscribe to WAL_INSERT topic");
     pubsub
-        .subscribe(2, wal_callback.clone())
+        .subscribe(2, wal_callback)
         .expect("Failed to subscribe to WAL_UPDATE topic");
     pubsub
-        .subscribe(3, wal_callback.clone())
+        .subscribe(3, wal_callback)
         .expect("Failed to subscribe to WAL_DELETE topic");
     pubsub
-        .subscribe(4, wal_callback.clone())
+        .subscribe(4, wal_callback)
         .expect("Failed to subscribe to WAL_TIMESERIES_INSERT topic");
     pubsub
-        .subscribe(5, wal_callback.clone())
+        .subscribe(5, wal_callback)
         .expect("Failed to subscribe to WAL_COMMIT topic");
     pubsub
-        .subscribe(6, wal_callback.clone())
+        .subscribe(6, wal_callback)
         .expect("Failed to subscribe to WAL_ABORT topic");
     pubsub
-        .subscribe(7, wal_callback.clone())
+        .subscribe(7, wal_callback)
         .expect("Failed to subscribe to WAL_CHECKPOINT topic");
     pubsub
-        .subscribe(8, wal_callback.clone())
+        .subscribe(8, wal_callback)
         .expect("Failed to subscribe to WAL_ALL topic");
 
     // 定义表内容回调

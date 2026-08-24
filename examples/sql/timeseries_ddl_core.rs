@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 use remdb::memory::allocator::init_global_allocator;
 use remdb::{
     config::{DbConfig, WALConfig},

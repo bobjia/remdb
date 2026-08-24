@@ -1,3 +1,4 @@
+#![allow(static_mut_refs, clippy::assertions_on_constants)]
 use core::mem::MaybeUninit;
 use std::ptr::NonNull;
 extern crate alloc;

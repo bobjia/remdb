@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 extern crate alloc;
 
 use remdb::*;
@@ -33,7 +34,7 @@ fn main() {
         ) WITH CONFIGURATION (max_records=100);";
 
         match db.sql_query(sql) {
-            Ok(result) => {
+            Ok(_result) => {
                 println!("Table created successfully!");
                 println!("Result: OK");
             }
@@ -57,7 +58,7 @@ fn main() {
         );";
 
         match db.sql_query(sql2) {
-            Ok(result) => {
+            Ok(_result) => {
                 println!("Table created successfully!");
                 println!("Result: OK");
             }

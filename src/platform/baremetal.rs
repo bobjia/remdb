@@ -93,7 +93,7 @@ impl Platform for BareMetalPlatform {
     fn delay_ms(&self, ms: u32) {
         // 简单的忙等待延迟
         // 实际应用中应该使用硬件定时器
-        let delay_cycles = ms as u32 * 1000;
+        let delay_cycles = ms * 1000;
 
         // 使用简单的循环延迟，避免依赖rdtsc
         unsafe {

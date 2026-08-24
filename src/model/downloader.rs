@@ -3,13 +3,12 @@
 //! This module provides functionality for downloading models from HTTP URLs.
 
 use alloc::string::String;
-use alloc::vec::Vec;
 
 #[cfg(feature = "model-download")]
 use std::path::Path;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info, warn};
+use crate::log::{debug, info};
 
 #[derive(Debug, Clone)]
 pub struct DownloadProgress {

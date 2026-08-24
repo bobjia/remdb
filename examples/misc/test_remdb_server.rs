@@ -162,12 +162,12 @@ fn main() {
         ha_config: Some(HAConfig {
             node_id: 1,
             ha_role: role,
-            replication_mode: replication_mode,
+            replication_mode,
             heartbeat_interval_ms: 5000, // 5秒
             failure_detection_ms: 15000, // 15秒
             sync_timeout_ms: 5000,       // 5秒
             master_address: master_ip,
-            master_port: master_port,
+            master_port,
             replication_port: 5556,
         }),
         time_series_defaults: TimeSeriesConfig {

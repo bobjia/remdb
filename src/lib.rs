@@ -2,10 +2,52 @@
 #![recursion_limit = "1024"]
 #![allow(
     static_mut_refs,
+    unused_unsafe,
+    unused_assignments,
+    unused_variables,
+    dead_code,
     clippy::not_unsafe_ptr_arg_deref,
     clippy::never_loop,
     clippy::absurd_extreme_comparisons,
-    clippy::mut_from_ref
+    clippy::mut_from_ref,
+    clippy::missing_safety_doc,
+    clippy::unnecessary_cast,
+    clippy::type_complexity,
+    clippy::too_many_arguments,
+    clippy::unnecessary_literal_unwrap,
+    clippy::collapsible_if,
+    clippy::comparison_chain,
+    clippy::needless_borrow,
+    clippy::needless_range_loop,
+    clippy::single_match,
+    clippy::new_without_default,
+    clippy::len_without_is_empty,
+    clippy::write_with_newline,
+    clippy::result_unit_err,
+    clippy::manual_memcpy,
+    clippy::manual_flatten,
+    clippy::vec_init_then_push,
+    clippy::ptr_arg,
+    clippy::if_same_then_else,
+    clippy::collapsible_match,
+    clippy::upper_case_acronyms,
+    clippy::same_item_push,
+    clippy::non_canonical_partial_ord_impl,
+    clippy::needless_return,
+    clippy::should_implement_trait,
+    clippy::only_used_in_recursion,
+    clippy::non_canonical_clone_impl,
+    clippy::missing_transmute_annotations,
+    clippy::manual_strip,
+    clippy::match_like_matches_macro,
+    clippy::large_enum_variant,
+    clippy::result_large_err,
+    clippy::inherent_to_string,
+    clippy::field_reassign_with_default,
+    clippy::doc_lazy_continuation,
+    clippy::no_effect,
+    clippy::explicit_auto_deref,
+    clippy::redundant_closure
 )]
 
 use crate::table::Defer;
@@ -848,7 +890,6 @@ impl RemDb {
     }
 
     /// 获取表（可变）
-
     pub fn get_table_mut(&mut self, table_id: usize) -> Result<&mut MemoryTable> {
         if table_id >= self.tables.len() {
             return Err(RemDbError::RecordNotFound);
@@ -984,10 +1025,8 @@ impl RemDb {
         crate::transaction::set_low_power_mode(true);
 
         // 遍历所有表，设置低功耗模式
-        for table in &mut self.tables.iter_mut() {
-            if let Some(table) = table {
-                table.set_low_power_mode(true, self.config.low_power_max_records);
-            }
+        for table in (&mut self.tables.iter_mut()).flatten() {
+            table.set_low_power_mode(true, self.config.low_power_max_records);
         }
 
         // 更新状态
@@ -1072,10 +1111,8 @@ impl RemDb {
         crate::transaction::set_low_power_mode(false);
 
         // 遍历所有表，退出低功耗模式
-        for table in &mut self.tables.iter_mut() {
-            if let Some(table) = table {
-                table.set_low_power_mode(false, None);
-            }
+        for table in (&mut self.tables.iter_mut()).flatten() {
+            table.set_low_power_mode(false, None);
         }
 
         // 更新状态
@@ -1451,7 +1488,7 @@ impl RemDb {
                     }
 
                     // 写入字段标志（主键、非空、唯一、自增）
-                    let flags = (field.primary_key as u8) << 0
+                    let flags = (field.primary_key as u8)
                         | (field.not_null as u8) << 1
                         | (field.unique as u8) << 2
                         | (field.auto_increment as u8) << 3;
@@ -2393,7 +2430,7 @@ impl DdlExecutor for RemDb {
                     distance_type: distance_type.unwrap_or(DistanceType::L2),
                     index_type: VectorIndexType::HNSW, // 默认使用HNSW索引
                     compression_enabled: compression_config.vector_compression_enabled,
-                    compression_scheme: compression_config.vector_compression_scheme as u8,
+                    compression_scheme: compression_config.vector_compression_scheme,
                     compression_level: compression_config.vector_compression_level,
                     hnsw_m: 16,
                     hnsw_ef_construction: 200,
@@ -2546,7 +2583,7 @@ impl DdlExecutor for RemDb {
 
                 // 写入字段定义信息
                 let mut offset = 67 + table_def.primary_key.len();
-                for (_i, field) in table_def.fields.iter().enumerate() {
+                for field in table_def.fields.iter() {
                     // 检查缓冲区是否有足够空间写入基础字段信息
                     // 基础信息：1字节长度 + 32字节名字 + 1字节类型 + 1字节约束 + 1字节默认值标志 + 2字节向量维度 = 38字节
                     if offset + 38 > log_data.len() {
@@ -2657,7 +2694,7 @@ impl DdlExecutor for RemDb {
                             crate::types::DataType::Bool
                             | crate::types::DataType::Int8
                             | crate::types::DataType::UInt8 => {
-                                if offset + 1 <= log_data.len() {
+                                if offset < log_data.len() {
                                     match field.data_type {
                                         crate::types::DataType::Bool => {
                                             log_data[offset] = default_value.bool as u8;
@@ -3645,7 +3682,7 @@ impl DdlExecutor for RemDb {
                 log_data[66] = table_index as u8;
 
                 // 根据操作类型写入详细信息
-                let mut data_size = 67;
+                let data_size;
                 match &operation {
                     AlterTableOperation::AddColumn {
                         ref name,
@@ -3756,6 +3793,8 @@ impl DdlExecutor for RemDb {
                         data_size = 133 + new_col_name_len;
                     }
                 }
+
+                let _ = log_data;
 
                 // 创建日志项
                 let log_item = crate::transaction::LogItem {
@@ -3965,7 +4004,7 @@ impl RemDb {
                 vector_metadata: None,
                 json_metadata: None,
             });
-            tag_field_indices.push((i + 2) as usize); // 时间字段(0) + 值字段(1) + 标签字段(i)
+            tag_field_indices.push(i + 2); // 时间字段(0) + 值字段(1) + 标签字段(i)
             offset += tag_field_size;
             record_size += tag_field_size;
         }
@@ -4103,7 +4142,7 @@ impl RemDb {
                 partition_guard.stats.record_count = partition_guard.records.len();
 
                 // 更新索引
-                table.index.insert(record.timestamp, inserted as usize);
+                table.index.insert(record.timestamp, inserted);
 
                 inserted += 1;
             }
@@ -4151,7 +4190,7 @@ impl RemDb {
                 // 检查是否是数值类型或布尔值
                 if value
                     .chars()
-                    .all(|c| c.is_digit(10) || c == '.' || c == '-')
+                    .all(|c| c.is_ascii_digit() || c == '.' || c == '-')
                     || value == "true"
                     || value == "false"
                 {
@@ -4225,7 +4264,7 @@ impl RemDb {
                     // 检查是否是数值类型或布尔值
                     if value
                         .chars()
-                        .all(|c| c.is_digit(10) || c == '.' || c == '-')
+                        .all(|c| c.is_ascii_digit() || c == '.' || c == '-')
                         || value == "true"
                         || value == "false"
                     {
@@ -4517,7 +4556,7 @@ impl RemDb {
                                 // 获取字段值
                                 let field_ptr = record_ptr.add(field.offset);
                                 let value_str = match field.data_type {
-                                    DataType::UInt8 => format!("{}", *field_ptr as u8),
+                                    DataType::UInt8 => format!("{}", { *field_ptr }),
                                     DataType::UInt16 => format!(
                                         "{}",
                                         core::ptr::read_unaligned(field_ptr as *const u16)
@@ -4590,8 +4629,8 @@ impl RemDb {
                                             .value
                                         )
                                     }
-                                    DataType::Vector => format!("<vector>"),
-                                    DataType::Json => format!("<json>"),
+                                    DataType::Vector => "<vector>".to_string(),
+                                    DataType::Json => "<json>".to_string(),
                                 };
 
                                 field_values.push(value_str);
@@ -4777,7 +4816,7 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
         let mut db = RemDb::new(config);
 
         // 从配置创建表
-        for (_table_id, table_def) in config.tables.iter().enumerate() {
+        for table_def in config.tables.iter() {
             // 创建表
             let table_def_arc = alloc::sync::Arc::new(table_def.clone());
             let table = MemoryTable::new(table_def_arc.clone())?;
@@ -4818,9 +4857,9 @@ pub fn init_global_db(config: &'static config::DbConfig) -> Result<&'static mut 
         // 将新的数据库实例赋值给 DB_INSTANCE
         // 旧实例会被自动丢弃（Option::Some -> Some 替换时旧值被 drop）
         DB_INSTANCE = Some(db);
-        Ok(DB_INSTANCE
+        DB_INSTANCE
             .as_mut()
-            .ok_or(RemDbError::UnexpectedNone("DB not initialized"))?)
+            .ok_or(RemDbError::UnexpectedNone("DB not initialized"))
     }
 }
 

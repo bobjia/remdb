@@ -1,7 +1,6 @@
 use remdb::config::{
     DbConfig, DefaultMemoryAllocator, LogMode, TimeSeriesConfig, WALCompressionType, WALConfig,
 };
-use remdb::platform::{init_platform, FileHandle, FileMode, FileResult, Platform, SeekWhence};
 use remdb::transaction::{LogItem, LogManager, LogOperation, VariableSizeLogItem};
 
 mod common;
@@ -35,11 +34,11 @@ fn test_variable_size_log_item_write_and_read() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: &get_test_wal_path("test_variable_size"),
+            log_path: get_test_wal_path("test_variable_size"),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
+            log_prealloc_size: 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
             max_consecutive_invalid: 100,
@@ -217,11 +216,11 @@ fn test_variable_size_log_item_large_record() {
         default_max_records: 1000,
         memory_allocator: &ALLOCATOR,
         wal_config: WALConfig {
-            log_path: &get_test_wal_path("test_large_record"),
+            log_path: get_test_wal_path("test_large_record"),
             log_mode: LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
+            log_prealloc_size: 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
             max_consecutive_invalid: 100,

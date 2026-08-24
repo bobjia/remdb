@@ -87,7 +87,7 @@ fn main() {
                 _mode: platform::FileMode,
             ) -> platform::FileResult<platform::FileHandle> {
                 // 返回一个非空指针作为有效的FileHandle
-                Ok(1 as *const u8)
+                Ok(std::ptr::dangling::<u8>())
             }
             fn file_close(&self, _handle: platform::FileHandle) -> platform::FileResult<()> {
                 Ok(())
