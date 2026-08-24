@@ -31,14 +31,13 @@ impl EmbeddingTokenizer {
             .join(model_name)
             .join("tokenizer.json");
 
-        let tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
-            .map_err(|e| {
-                format!(
-                    "Failed to load tokenizer from {}: {}",
-                    tokenizer_path.display(),
-                    e
-                )
-            })?;
+        let tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path).map_err(|e| {
+            format!(
+                "Failed to load tokenizer from {}: {}",
+                tokenizer_path.display(),
+                e
+            )
+        })?;
 
         // Default max length for BGE models is 512
         let max_input_length = 512;
@@ -60,7 +59,8 @@ impl EmbeddingTokenizer {
         text: &str,
         max_length: usize,
     ) -> Result<(Vec<i64>, Vec<i64>, Vec<i64>), String> {
-        let tokenizer = self.tokenizer
+        let tokenizer = self
+            .tokenizer
             .lock()
             .map_err(|_| "tokenizer lock poisoned".to_string())?;
 
@@ -102,7 +102,8 @@ impl EmbeddingTokenizer {
         texts: &[&str],
         max_length: usize,
     ) -> Result<Vec<(Vec<i64>, Vec<i64>, Vec<i64>)>, String> {
-        texts.iter()
+        texts
+            .iter()
             .map(|text| self.encode(text, max_length))
             .collect()
     }
@@ -166,7 +167,8 @@ impl EmbeddingEngine {
     fn load_model_internal(&self, name: &str) -> Result<(), String> {
         use std::path::PathBuf;
 
-        let mut models = self.models
+        let mut models = self
+            .models
             .lock()
             .map_err(|_| "models lock poisoned".to_string())?;
 
@@ -178,7 +180,10 @@ impl EmbeddingEngine {
         // Evict if over max_models
         if models.len() >= self.max_models {
             if let Some(key) = models.keys().next().cloned() {
-                warn!("Evicting model '{}' from cache (max {})", key, self.max_models);
+                warn!(
+                    "Evicting model '{}' from cache (max {})",
+                    key, self.max_models
+                );
                 models.remove(&key);
             }
         }
@@ -193,21 +198,29 @@ impl EmbeddingEngine {
             .ok_or_else(|| "invalid model path".to_string())?;
 
         // Load ONNX model
-        let model = OnnxModel::load(model_path_str)
-            .map_err(|e| format!("load model '{}': {}", name, e))?;
+        let model =
+            OnnxModel::load(model_path_str).map_err(|e| format!("load model '{}': {}", name, e))?;
 
         // Load tokenizer
         let tokenizer = EmbeddingTokenizer::load(&self.models_dir, name)?;
 
         // Determine embedding dimension from model info
-        let dimension = model.get_info()
+        let dimension = model
+            .get_info()
             .output_shapes
             .first()
             .and_then(|shape| shape.last().copied())
             .flatten()
             .unwrap_or(768);
 
-        models.insert(name.to_string(), ModelEntry { model, tokenizer, dimension });
+        models.insert(
+            name.to_string(),
+            ModelEntry {
+                model,
+                tokenizer,
+                dimension,
+            },
+        );
 
         Ok(())
     }
@@ -218,11 +231,13 @@ impl EmbeddingEngine {
         // Ensure model is loaded
         self.load_model_internal(model_name)?;
 
-        let models = self.models
+        let models = self
+            .models
             .lock()
             .map_err(|_| "models lock poisoned".to_string())?;
 
-        let entry = models.get(model_name)
+        let entry = models
+            .get(model_name)
             .ok_or_else(|| format!("Model '{}' not found", model_name))?;
 
         let max_length = entry.tokenizer.max_input_length;
@@ -234,12 +249,14 @@ impl EmbeddingEngine {
         let mut results = Vec::with_capacity(texts.len());
         for (input_ids, attention_mask, token_type_ids) in &tokenized {
             // Use execute_int64 which handles BERT-style multi-input models
-            let embedding = entry.model.execute_int64(&[
-                input_ids.clone(),
-                attention_mask.clone(),
-                token_type_ids.clone(),
-            ])
-            .map_err(|e| format!("inference failed: {}", e))?;
+            let embedding = entry
+                .model
+                .execute_int64(&[
+                    input_ids.clone(),
+                    attention_mask.clone(),
+                    token_type_ids.clone(),
+                ])
+                .map_err(|e| format!("inference failed: {}", e))?;
 
             // L2-normalize
             let normalized = Self::l2_normalize(&embedding);
@@ -303,7 +320,9 @@ mod tests {
         let engine = EmbeddingEngine::new(
             Some("bge-m3".to_string()),
             "./models".to_string(),
-            5, false, None,
+            5,
+            false,
+            None,
         );
         assert_eq!(engine.default_model(), Some("bge-m3"));
     }
