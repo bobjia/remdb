@@ -19,6 +19,9 @@ pub mod builtin_models;
 #[cfg(feature = "model-runtime")]
 pub mod cache;
 
+#[cfg(feature = "model-runtime")]
+pub mod embedding;
+
 #[cfg(feature = "model-download")]
 pub mod downloader;
 
