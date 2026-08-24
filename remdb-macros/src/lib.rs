@@ -325,6 +325,18 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 str_size,
                 quote!(Some(#str_size as usize)),
             )
+        } else if type_name == "text" {
+            // 处理text(1024)或text这样的类型，默认512字节（DEFAULT_TEXT_SIZE）
+            let text_size = if let Some(params) = type_params {
+                params.base10_parse().unwrap_or(512)
+            } else {
+                512
+            };
+            (
+                quote!(remdb::types::DataType::Text),
+                text_size,
+                quote!(None),
+            )
         } else if type_name == "vector" {
             // 处理vector(2)这样的向量类型
             let dim = if let Some(params) = type_params {

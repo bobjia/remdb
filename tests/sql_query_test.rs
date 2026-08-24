@@ -40,12 +40,65 @@ remdb::table!(
     }
 );
 
+// 定义TEXT类型测试表
+remdb::table!(
+    TEXT_TEST_TABLE,
+    10,
+    primary_key: id,
+    fields: {
+        id: i32,
+        content: text(1024)
+    }
+);
+
 // 定义测试数据库配置
 remdb::database!(
     TEST_DB,
-    tables: [TEST_TABLE, ORDERS_TABLE],
+    tables: [TEST_TABLE, ORDERS_TABLE, TEXT_TEST_TABLE],
     total_memory: 1048576 // 1MB
 );
+
+// TEXT类型测试的数据库配置（无预定义表，通过SQL动态创建）
+static TEXT_DB_CONFIG: std::sync::LazyLock<remdb::config::DbConfig> =
+    std::sync::LazyLock::new(|| remdb::config::DbConfig {
+        tables: vec![],
+        total_memory: 104857600,
+        default_max_records: 100,
+        low_power_mode_supported: false,
+        low_power_max_records: None,
+        memory_allocator: &remdb::config::DefaultMemoryAllocator,
+        wal_config: remdb::config::WALConfig {
+            log_path: "./wal",
+            log_mode: remdb::config::LogMode::Async,
+            log_prealloc_size: 0,
+            log_file_size_limit: 104857600,
+            log_segment_size: 1048576,
+            checkpoint_interval_ms: 30000,
+            retained_checkpoints: 2,
+            max_consecutive_invalid: 100,
+            skip_threshold: 1000,
+            skip_block_size: 1024 * 1024,
+            max_skip_attempts: 3,
+            compression_type: remdb::config::WALCompressionType::None,
+            compression_level: 3,
+        },
+        time_series_defaults: remdb::time_series::TimeSeriesConfig::DEFAULT,
+        #[cfg(feature = "pubsub")]
+        pubsub_config: None,
+        #[cfg(feature = "ha")]
+        ha_config: Some(remdb::config::HAConfig {
+            node_id: 1,
+            ha_role: remdb::ha::HARole::Auto,
+            replication_mode: remdb::ha::ReplicationMode::Async,
+            heartbeat_interval_ms: 1000,
+            failure_detection_ms: 3000,
+            sync_timeout_ms: 1000,
+            master_address: None,
+            master_port: None,
+            replication_port: 5556,
+        }),
+        model_worker_config: Default::default(),
+    });
 
 #[test]
 #[serial]
@@ -1208,5 +1261,98 @@ fn test_sql_group_by() {
     println!("单列GROUP BY查询结果行数: {}", result.row_count());
 
     // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+}
+
+/// 测试TEXT数据类型的支持
+#[test]
+#[serial]
+fn test_text_data_type() {
+    // 使用静态内存缓冲区，确保它不会在函数返回时被释放
+    static mut DB_MEMORY: [u8; 2097152] = [0u8; 2097152];
+
+    // 初始化测试平台
+    remdb::platform::init_platform(&TEST_PLATFORM);
+
+    // 初始化内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
+            .unwrap();
+    }
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+
+    // 创建数据库实例
+    let mut db = remdb::RemDb::new(&TEXT_DB_CONFIG);
+    db.init().unwrap();
+
+    // 测试1: 通过CREATE TABLE SQL创建带有TEXT类型的表
+    println!("测试1: 通过CREATE TABLE SQL创建带有TEXT类型的表");
+    let create_sql = "CREATE TABLE text_test_table (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        content TEXT
+    )";
+    let result = db.sql_query(create_sql);
+    assert!(result.is_ok(), "CREATE TABLE with TEXT should succeed: {:?}", result.err());
+
+    // 插入短文本数据
+    let insert_sql = "INSERT INTO text_test_table (content) VALUES ('short text')";
+    let result = db.sql_query(insert_sql);
+    assert!(result.is_ok(), "INSERT short text should succeed: {:?}", result.err());
+
+    // 插入中等长度文本数据（接近但不超过MAX_STRING_LEN=64字节，确保TypedValue能完整存储）
+    let medium_text = "Hello, this is a medium length text for testing TEXT data type!";
+    let insert_sql = format!("INSERT INTO text_test_table (content) VALUES ('{}')", medium_text);
+    let result = db.sql_query(&insert_sql);
+    assert!(result.is_ok(), "INSERT medium text should succeed: {:?}", result.err());
+
+    // 查询并验证数据
+    let select_sql = "SELECT id, content FROM text_test_table ORDER BY id";
+    let result = db.sql_query(select_sql);
+    assert!(result.is_ok(), "SELECT from text table should succeed: {:?}", result.err());
+
+    let result = result.unwrap();
+    assert_eq!(result.row_count(), 2, "Should have 2 rows");
+
+    // 验证第一行（短文本）的内容
+    let row = result.get_row(0).unwrap();
+    let typed_value = row.get(1).unwrap();
+    assert_eq!(
+        typed_value.value_type,
+        remdb::DataType::Text,
+        "Field should be Text type, got {:?}",
+        typed_value.value_type
+    );
+    let content_str = unsafe {
+        core::str::from_utf8(&typed_value.value.string)
+            .unwrap_or("")
+            .trim_end_matches(char::from(0))
+            .to_string()
+    };
+    assert_eq!(content_str, "short text", "First row should contain short text");
+
+    // 验证第二行（中等长度文本）的内容
+    let row = result.get_row(1).unwrap();
+    let typed_value = row.get(1).unwrap();
+    assert_eq!(
+        typed_value.value_type,
+        remdb::DataType::Text,
+        "Field should be Text type, got {:?}",
+        typed_value.value_type
+    );
+    let content_str = unsafe {
+        core::str::from_utf8(&typed_value.value.string)
+            .unwrap_or("")
+            .trim_end_matches(char::from(0))
+            .to_string()
+    };
+    assert_eq!(content_str, medium_text, "Second row should contain medium text");
+    println!("✓ Medium text length: {} bytes", content_str.len());
+
+    println!("✓ TEXT data type test passed");
+
+    // 显式释放数据库资源
+    drop(db);
     remdb::reset_global_db();
 }

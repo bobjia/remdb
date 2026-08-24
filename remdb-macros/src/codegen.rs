@@ -231,10 +231,12 @@ fn generate_field_defs(
 
         // 计算 string_length
         let string_length = if col.typ.to_lowercase().contains("varchar")
-            || col.typ.to_lowercase().contains("text")
             || col.typ.to_lowercase().contains("string")
         {
             quote!(Some(#size))
+        } else if col.typ.to_lowercase().contains("text") {
+            // TEXT类型没有固定的长度限制
+            quote!(None)
         } else {
             quote!(None)
         };
@@ -312,7 +314,8 @@ fn convert_to_data_type(sql_type: &str) -> proc_macro2::TokenStream {
         "real" | "float" => quote!(remdb::types::DataType::Float32),
         "double" | "double precision" => quote!(remdb::types::DataType::Float64),
         "boolean" | "bool" => quote!(remdb::types::DataType::Bool),
-        "text" | "varchar" | "string" => quote!(remdb::types::DataType::VarChar),
+        "text" => quote!(remdb::types::DataType::Text),
+        "varchar" | "string" => quote!(remdb::types::DataType::VarChar),
         "timestamp" => quote!(remdb::types::DataType::Timestamp),
         _ => quote!(remdb::types::DataType::Int32),
     }
@@ -326,7 +329,8 @@ fn get_type_size(sql_type: &str) -> usize {
         "tinyint" | "unsigned tinyint" | "boolean" | "bool" => 1,
         "real" | "float" => 4,
         "double" | "double precision" => 8,
-        "text" | "varchar" | "string" => 64, // 默认字符串大小
+        "text" => 512, // DEFAULT_TEXT_SIZE
+        "varchar" | "string" => 64, // 默认字符串大小
         "timestamp" => 8,
         _ => 4, // 默认大小
     }
