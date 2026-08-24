@@ -1264,6 +1264,31 @@ fn test_sql_group_by() {
     remdb::reset_global_db();
 }
 
+/// 从TextStorage提取文本内容
+fn text_storage_to_string(storage: &remdb::types::TextStorage) -> String {
+    if storage.is_inline() {
+        if let Some(data) = storage.as_inline() {
+            let end = data.iter().position(|b| *b == 0).unwrap_or(data.len());
+            core::str::from_utf8(&data[..end]).unwrap_or("").to_string()
+        } else {
+            String::new()
+        }
+    } else if storage.is_external() {
+        if let Some(ext) = storage.as_external() {
+            if !ext.data_ptr.is_null() {
+                let bytes = unsafe { core::slice::from_raw_parts(ext.data_ptr, ext.length as usize) };
+                core::str::from_utf8(bytes).unwrap_or("").to_string()
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    }
+}
+
 /// 测试TEXT数据类型的支持
 #[test]
 #[serial]
@@ -1324,12 +1349,7 @@ fn test_text_data_type() {
         "Field should be Text type, got {:?}",
         typed_value.value_type
     );
-    let content_str = unsafe {
-        core::str::from_utf8(&typed_value.value.string)
-            .unwrap_or("")
-            .trim_end_matches(char::from(0))
-            .to_string()
-    };
+    let content_str = unsafe { text_storage_to_string(&typed_value.value.text_storage) };
     assert_eq!(content_str, "short text", "First row should contain short text");
 
     // 验证第二行（中等长度文本）的内容
@@ -1341,16 +1361,96 @@ fn test_text_data_type() {
         "Field should be Text type, got {:?}",
         typed_value.value_type
     );
-    let content_str = unsafe {
-        core::str::from_utf8(&typed_value.value.string)
-            .unwrap_or("")
-            .trim_end_matches(char::from(0))
-            .to_string()
-    };
+    let content_str = unsafe { text_storage_to_string(&typed_value.value.text_storage) };
     assert_eq!(content_str, medium_text, "Second row should contain medium text");
     println!("✓ Medium text length: {} bytes", content_str.len());
 
     println!("✓ TEXT data type test passed");
+
+    // 显式释放数据库资源
+    drop(db);
+    remdb::reset_global_db();
+}
+
+/// 测试大文本和VarChar的65536限制
+#[test]
+#[serial]
+fn test_large_text_and_varchar() {
+    // 使用更大的静态内存缓冲区（16MB）
+    static mut DB_MEMORY: [u8; 16777216] = [0u8; 16777216];
+
+    // 初始化测试平台
+    remdb::platform::init_platform(&TEST_PLATFORM);
+
+    // 初始化内存分配器
+    unsafe {
+        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
+            .unwrap();
+    }
+
+    // 重置全局数据库实例，确保测试之间的隔离
+    remdb::reset_global_db();
+
+    // 创建数据库实例
+    let mut db = remdb::RemDb::new(&TEXT_DB_CONFIG);
+    db.init().unwrap();
+
+    // 测试1: 通过CREATE TABLE SQL创建带有TEXT类型的表
+    println!("测试1: 创建表并插入大文本数据");
+    let create_sql = "CREATE TABLE large_text_test (
+        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        content TEXT
+    )";
+    let result = db.sql_query(create_sql);
+    assert!(result.is_ok(), "CREATE TABLE should succeed: {:?}", result.err());
+
+    // 插入大文本数据（超过256字节，触发外部存储）
+    let large_text = "A".repeat(500);
+    let insert_sql = format!("INSERT INTO large_text_test (content) VALUES ('{}')", large_text);
+    let result = db.sql_query(&insert_sql);
+    assert!(result.is_ok(), "INSERT large text should succeed: {:?}", result.err());
+
+    // 查询并验证数据
+    let select_sql = "SELECT id, content FROM large_text_test ORDER BY id";
+    let result = db.sql_query(select_sql);
+    assert!(result.is_ok(), "SELECT should succeed: {:?}", result.err());
+
+    let result = result.unwrap();
+    assert_eq!(result.row_count(), 1, "Should have 1 row");
+
+    let row = result.get_row(0).unwrap();
+    let typed_value = row.get(1).unwrap();
+    assert_eq!(
+        typed_value.value_type,
+        remdb::DataType::Text,
+        "Field should be Text type, got {:?}",
+        typed_value.value_type
+    );
+    let content_str = unsafe { text_storage_to_string(&typed_value.value.text_storage) };
+    assert_eq!(content_str.len(), 500, "Large text should be 500 bytes");
+    assert_eq!(content_str, large_text, "Content should match");
+
+    // 测试2: 插入超过256字节的不同内容文本
+    println!("测试2: 插入复杂大文本数据");
+    let chars: Vec<char> = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ".chars().collect();
+    let complex_text: String = (0..300).map(|i| chars[i % chars.len()]).collect();
+    let insert_sql = format!("INSERT INTO large_text_test (content) VALUES ('{}')", complex_text);
+    let result = db.sql_query(&insert_sql);
+    assert!(result.is_ok(), "INSERT complex text should succeed: {:?}", result.err());
+
+    let select_sql = "SELECT id, content FROM large_text_test WHERE id = 2";
+    let result = db.sql_query(select_sql);
+    assert!(result.is_ok(), "SELECT should succeed: {:?}", result.err());
+    let result = result.unwrap();
+    assert_eq!(result.row_count(), 1, "Should have 1 row");
+
+    let row = result.get_row(0).unwrap();
+    let typed_value = row.get(1).unwrap();
+    let content_str = unsafe { text_storage_to_string(&typed_value.value.text_storage) };
+    assert_eq!(content_str.len(), 300, "Complex text should be 300 bytes");
+    assert_eq!(content_str, complex_text, "Complex content should match");
+
+    println!("✓ Large text and VarChar 65536 limit test passed");
 
     // 显式释放数据库资源
     drop(db);

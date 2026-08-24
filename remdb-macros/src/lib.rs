@@ -314,9 +314,10 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         } else if type_name == "bool" {
             (quote!(remdb::types::DataType::Bool), 1, quote!(None))
         } else if type_name == "str" {
-            // 处理str(32)这样的类型
+            // 处理str(32)这样的类型，最大65536
             let str_size = if let Some(params) = type_params {
-                params.base10_parse().unwrap_or(32)
+                let raw = params.base10_parse().unwrap_or(32);
+                if raw > 65536 { 65536 } else { raw }
             } else {
                 32
             };
@@ -326,15 +327,12 @@ pub fn table(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 quote!(Some(#str_size as usize)),
             )
         } else if type_name == "text" {
-            // 处理text(1024)或text这样的类型，默认512字节（DEFAULT_TEXT_SIZE）
-            let text_size = if let Some(params) = type_params {
-                params.base10_parse().unwrap_or(512)
-            } else {
-                512
-            };
+            // 处理text类型，字段大小固定为TextStorage的大小（264字节）
+            // 文本内容通过TextStorage动态分配，不直接存储在记录缓冲区中
+            let text_storage_size = 264; // size_of::<TextStorage>()
             (
                 quote!(remdb::types::DataType::Text),
-                text_size,
+                text_storage_size,
                 quote!(None),
             )
         } else if type_name == "vector" {

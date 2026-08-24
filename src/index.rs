@@ -220,13 +220,43 @@ unsafe fn encode_composite_key(
                 encoded_key.extend_from_slice(&value.value.to_le_bytes());
             }
             crate::types::DataType::VarChar
-            | crate::types::DataType::Char
-            | crate::types::DataType::Text => {
+            | crate::types::DataType::Char => {
                 // 字符串类型：编码为长度前缀 + 内容
                 let str_slice = core::slice::from_raw_parts(field_ptr, field.size);
                 let str_len = str_slice.iter().position(|&c| c == 0).unwrap_or(field.size);
                 encoded_key.push(str_len as u8);
                 encoded_key.extend_from_slice(&str_slice[0..str_len]);
+            }
+            crate::types::DataType::Text => {
+                // Text类型：从TextStorage中提取文本内容后编码
+                let text_storage =
+                    core::ptr::read_unaligned(field_ptr as *const crate::types::TextStorage);
+                if text_storage.is_inline() {
+                    if let Some(data) = text_storage.as_inline() {
+                        let str_len = data.iter().position(|&c| c == 0).unwrap_or(data.len());
+                        let capped_len = core::cmp::min(str_len, 255);
+                        encoded_key.push(capped_len as u8);
+                        encoded_key.extend_from_slice(&data[..capped_len]);
+                    } else {
+                        encoded_key.push(0);
+                    }
+                } else if text_storage.is_external() {
+                    if let Some(ext) = text_storage.as_external() {
+                        if !ext.data_ptr.is_null() {
+                            let str_len = ext.length as usize;
+                            let capped_len = core::cmp::min(str_len, 255);
+                            let bytes = unsafe { core::slice::from_raw_parts(ext.data_ptr, capped_len) };
+                            encoded_key.push(capped_len as u8);
+                            encoded_key.extend_from_slice(bytes);
+                        } else {
+                            encoded_key.push(0);
+                        }
+                    } else {
+                        encoded_key.push(0);
+                    }
+                } else {
+                    encoded_key.push(0);
+                }
             }
             _ => {
                 // 其他类型暂不支持作为主键

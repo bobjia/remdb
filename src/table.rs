@@ -201,9 +201,68 @@ impl<'a> RecordRef<'a> {
         {
             return Err(RemDbError::TypeMismatch);
         }
-        let bytes = unsafe { core::slice::from_raw_parts(self.field_ptr(field), field.size) };
-        let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
-        core::str::from_utf8(&bytes[..end]).map_err(|_| RemDbError::TypeMismatch)
+
+        if field.data_type == DataType::Text {
+            // For Text type, read from TextStorage in the record buffer.
+            let text_storage_ptr = self.field_ptr(field) as *const crate::types::TextStorage;
+            let text_storage = unsafe { core::ptr::read_unaligned(text_storage_ptr) };
+            // Use extract_bytes() to get the content as a byte slice.
+            // For Inline storage, the data is in the TextStorage struct which was
+            // copied to a local variable, so we can't return a reference to it.
+            // Instead, read from the record buffer directly.
+            if text_storage.is_inline() {
+                // The inline data starts at the same address as the TextStorage struct.
+                // Read from the record buffer (not the local copy) to get a &'a str.
+                // The field pointer points to the TextStorage in the record buffer.
+                // The inline data is at the data field offset within the struct.
+                let inline_data_ptr = unsafe {
+                    // Calculate the offset of the data.inline field within TextStorage.
+                    // TextStorage layout: tag (u8, 1 byte) + padding (7 bytes) + data (TextStorageData, 256 bytes)
+                    // But actually, with #[repr(C)], the tag (u8) is at offset 0 with 1 byte,
+                    // then padding to alignment of TextStorageData (which is 1, since it's [u8; 256]),
+                    // so the data starts at offset 1.
+                    // Actually, let's use the offset_of macro or just read from the same address.
+                    // The TextStorage struct is 264 bytes, with tag at offset 0 and data at offset 1.
+                    // But this depends on the compiler. Let's use a safer approach:
+                    // Read the inline data from the field pointer at the data field offset.
+                    // We know the struct layout: tag (1 byte) + padding (0 or 7 bytes) + data (256 bytes).
+                    // With #[repr(C)], the alignment of TextStorage is the max of tag (1) and data (1) = 1.
+                    // So padding is 0, and data starts at offset 1.
+                    let offset = core::mem::offset_of!(crate::types::TextStorage, data);
+                    (text_storage_ptr as *const u8).add(offset)
+                };
+                // Read the inline data from the record buffer
+                let end = unsafe {
+                    let mut i = 0usize;
+                    while i < 256 {
+                        if *inline_data_ptr.add(i) == 0 {
+                            break;
+                        }
+                        i += 1;
+                    }
+                    i
+                };
+                let bytes = unsafe { core::slice::from_raw_parts(inline_data_ptr, end) };
+                core::str::from_utf8(bytes).map_err(|_| RemDbError::TypeMismatch)
+            } else if text_storage.is_external() {
+                if let Some(ext) = text_storage.as_external() {
+                    if !ext.data_ptr.is_null() {
+                        let bytes = unsafe { core::slice::from_raw_parts(ext.data_ptr, ext.length as usize) };
+                        core::str::from_utf8(bytes).map_err(|_| RemDbError::TypeMismatch)
+                    } else {
+                        Ok("")
+                    }
+                } else {
+                    Ok("")
+                }
+            } else {
+                Ok("") // Null or empty
+            }
+        } else {
+            let bytes = unsafe { core::slice::from_raw_parts(self.field_ptr(field), field.size) };
+            let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+            core::str::from_utf8(&bytes[..end]).map_err(|_| RemDbError::TypeMismatch)
+        }
     }
 
     /// 按列索引读取原始字节切片（零拷贝）
@@ -339,12 +398,42 @@ impl<'a> Iterator for RecordIdCursor<'a> {
 impl Drop for MemoryTable {
     fn drop(&mut self) {
         unsafe {
+            // 释放所有外部文本分配
+            for i in 0..self.def.max_records {
+                let status_ptr = self.status_array.as_ptr().add(i);
+                if (*status_ptr).status == RecordStatus::Used {
+                    let record_ptr = self.data_start.as_ptr().add(i * self.record_size);
+                    crate::table::free_text_fields(record_ptr, &self.def.fields);
+                }
+            }
             // 释放数据内存
             crate::memory::allocator::free(self.data_start);
             // 释放状态数组内存
             crate::memory::allocator::free(self.status_array.cast());
             // 释放空闲槽栈内存
             crate::memory::allocator::free(self.free_slots.cast());
+        }
+    }
+}
+
+/// 释放TextStorage外部分配的内存
+pub unsafe fn free_text_storage(ptr: *const crate::types::TextStorage) {
+    let storage = core::ptr::read_unaligned(ptr);
+    if storage.is_external() {
+        if let Some(ext) = storage.as_external() {
+            if !ext.data_ptr.is_null() {
+                crate::memory::allocator::free(core::ptr::NonNull::new_unchecked(ext.data_ptr));
+            }
+        }
+    }
+}
+
+/// 释放记录中所有Text字段的外部分配
+pub unsafe fn free_text_fields(record_ptr: *const u8, fields: &[crate::types::FieldDef]) {
+    for field in fields {
+        if field.data_type == crate::types::DataType::Text {
+            let field_ptr = record_ptr.add(field.offset);
+            crate::table::free_text_storage(field_ptr as *const crate::types::TextStorage);
         }
     }
 }
@@ -928,11 +1017,17 @@ impl MemoryTable {
             DataType::Interval => Value {
                 interval: core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval),
             },
-            DataType::VarChar | DataType::Char | DataType::Text => {
+            DataType::VarChar | DataType::Char => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                 let copy_size = core::cmp::min(size, crate::types::MAX_STRING_LEN);
                 memcpy(str_value.as_mut_ptr(), field_ptr, copy_size);
                 Value { string: str_value }
+            }
+            DataType::Text => {
+                // 从存储中读取TextStorage
+                let text_storage =
+                    core::ptr::read_unaligned(field_ptr as *const crate::types::TextStorage);
+                Value { text_storage }
             }
             DataType::Vector => Value {
                 vector: field_ptr as *const f32,
@@ -1242,8 +1337,11 @@ impl MemoryTable {
         (*status_ptr).status = RecordStatus::Free;
         (*status_ptr).version += 1;
 
-        // 清空记录数据
+        // 释放Text字段的外部分配
         let record_ptr = self.data_start.as_ptr().add(id * self.record_size);
+        crate::table::free_text_fields(record_ptr, &self.def.fields);
+
+        // 清空记录数据
         memset(record_ptr, 0, self.record_size);
 
         // 将空闲槽压回栈中，确保不超过数组大小
@@ -1389,13 +1487,19 @@ impl MemoryTable {
                 time: core::ptr::read_unaligned(field_ptr as *const crate::types::db_timestamp),
             },
             crate::types::DataType::VarChar
-            | crate::types::DataType::Char
-            | crate::types::DataType::Text => {
+            | crate::types::DataType::Char => {
                 let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                 // 只复制不超过MAX_STRING_LEN的字节，避免缓冲区溢出
                 let copy_size = core::cmp::min(field.size, crate::types::MAX_STRING_LEN);
                 memcpy(str_value.as_mut_ptr(), field_ptr, copy_size);
                 Value { string: str_value }
+            }
+            crate::types::DataType::Text => {
+                // 从存储中读取TextStorage
+                let text_storage = core::ptr::read_unaligned(
+                    field_ptr as *const crate::types::TextStorage,
+                );
+                Value { text_storage }
             }
             crate::types::DataType::Interval => Value {
                 interval: core::ptr::read_unaligned(field_ptr as *const crate::types::db_interval),
@@ -1471,9 +1575,14 @@ impl MemoryTable {
                 *(field_ptr as *mut crate::types::db_timestamp) = value.time;
             }
             crate::types::DataType::VarChar
-            | crate::types::DataType::Char
-            | crate::types::DataType::Text => {
+            | crate::types::DataType::Char => {
                 memcpy(field_ptr, value.string.as_ptr(), field.size);
+            }
+            crate::types::DataType::Text => {
+                // Free old external allocation if present
+                crate::table::free_text_storage(field_ptr as *const crate::types::TextStorage);
+                // Write new TextStorage
+                *(field_ptr as *mut crate::types::TextStorage) = value.text_storage;
             }
             crate::types::DataType::Interval => {
                 *(field_ptr as *mut crate::types::db_interval) = value.interval;

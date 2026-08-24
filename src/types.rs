@@ -613,6 +613,195 @@ pub enum JsonStorage {
     Null,
 }
 
+/// TEXT存储方式枚举
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TextStorage {
+    /// 存储方式标签
+    pub tag: TextStorageTag,
+    /// 存储数据
+    pub data: TextStorageData,
+}
+
+/// TEXT存储方式标签
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum TextStorageTag {
+    /// 内联存储（最多256字节）
+    Inline = 0,
+    /// 外部存储（超过256字节，通过全局分配器分配）
+    External = 1,
+    /// NULL值
+    Null = 2,
+}
+
+/// TEXT存储数据联合体
+#[repr(C)]
+pub union TextStorageData {
+    /// 内联数据
+    pub inline: [u8; 256],
+    /// 外部数据
+    pub external: ExternalTextData,
+    /// 填充（确保大小一致）
+    pub padding: [u8; 256],
+}
+
+// 手动实现TextStorageData的trait
+impl Copy for TextStorageData {}
+impl Clone for TextStorageData {
+    fn clone(&self) -> Self {
+        unsafe { Self { padding: self.padding } }
+    }
+}
+impl core::fmt::Debug for TextStorageData {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "TextStorageData(...)")
+    }
+}
+impl PartialEq for TextStorageData {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe { self.padding == other.padding }
+    }
+}
+impl Eq for TextStorageData {}
+impl core::hash::Hash for TextStorageData {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        unsafe { self.padding.hash(state); }
+    }
+}
+
+/// 外部文本存储数据
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct ExternalTextData {
+    /// 数据指针（指向分配器分配的内存）
+    pub data_ptr: *mut u8,
+    /// 数据长度
+    pub length: u32,
+    /// 分配容量
+    pub capacity: u32,
+}
+
+impl PartialEq for ExternalTextData {
+    fn eq(&self, other: &Self) -> bool {
+        self.data_ptr == other.data_ptr && self.length == other.length && self.capacity == other.capacity
+    }
+}
+impl Eq for ExternalTextData {}
+impl core::hash::Hash for ExternalTextData {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.data_ptr.hash(state);
+        self.length.hash(state);
+        self.capacity.hash(state);
+    }
+}
+
+impl TextStorage {
+    /// 创建内联文本存储
+    pub fn new_inline(data: [u8; 256]) -> Self {
+        Self {
+            tag: TextStorageTag::Inline,
+            data: TextStorageData { inline: data },
+        }
+    }
+
+    /// 创建外部文本存储
+    pub fn new_external(data_ptr: *mut u8, length: u32, capacity: u32) -> Self {
+        Self {
+            tag: TextStorageTag::External,
+            data: TextStorageData {
+                external: ExternalTextData {
+                    data_ptr,
+                    length,
+                    capacity,
+                },
+            },
+        }
+    }
+
+    /// 创建NULL文本存储
+    pub fn new_null() -> Self {
+        Self {
+            tag: TextStorageTag::Null,
+            data: TextStorageData {
+                padding: [0u8; 256],
+            },
+        }
+    }
+
+    /// 判断是否为内联存储
+    pub fn is_inline(&self) -> bool {
+        self.tag == TextStorageTag::Inline
+    }
+
+    /// 判断是否为外部存储
+    pub fn is_external(&self) -> bool {
+        self.tag == TextStorageTag::External
+    }
+
+    /// 判断是否为NULL
+    pub fn is_null(&self) -> bool {
+        self.tag == TextStorageTag::Null
+    }
+
+    /// 获取内联数据（如果是内联存储）
+    pub fn as_inline(&self) -> Option<&[u8; 256]> {
+        if self.tag == TextStorageTag::Inline {
+            unsafe { Some(&self.data.inline) }
+        } else {
+            None
+        }
+    }
+
+    /// 获取外部数据（如果是外部存储）
+    pub fn as_external(&self) -> Option<&ExternalTextData> {
+        if self.tag == TextStorageTag::External {
+            unsafe { Some(&self.data.external) }
+        } else {
+            None
+        }
+    }
+
+    /// 获取文本内容字节切片
+    pub fn extract_bytes(&self) -> &[u8] {
+        match self.tag {
+            TextStorageTag::Inline => {
+                unsafe {
+                    let end = self.data.inline.iter().position(|b| *b == 0).unwrap_or(256);
+                    &self.data.inline[..end]
+                }
+            }
+            TextStorageTag::External => {
+                let ext = unsafe { &self.data.external };
+                if !ext.data_ptr.is_null() {
+                    unsafe { core::slice::from_raw_parts(ext.data_ptr, ext.length as usize) }
+                } else {
+                    &[]
+                }
+            }
+            TextStorageTag::Null => &[],
+        }
+    }
+}
+
+impl Default for TextStorage {
+    fn default() -> Self {
+        Self::new_null()
+    }
+}
+
+impl PartialOrd for TextStorage {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.extract_bytes().cmp(other.extract_bytes()))
+    }
+}
+
+impl Ord for TextStorage {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.extract_bytes().cmp(other.extract_bytes())
+    }
+}
+
 /// 时区信息
 #[derive(Copy, Clone, Debug)]
 pub struct TimeZone {
@@ -800,6 +989,7 @@ pub union Value {
     pub vector: *const f32,              // 向量类型（指向float32数组的指针）
     pub vector_metadata: VectorMetadata, // 向量元数据
     pub json_storage: JsonStorage,       // JSON存储
+    pub text_storage: TextStorage,       // TEXT存储
 }
 
 // 手动实现Clone trait，因为Rust不支持为union类型自动派生Clone
@@ -865,8 +1055,46 @@ impl Clone for TypedValue {
                 DataType::Timestamp => new_value.time = self.value.time,
                 DataType::TimestampTZ => new_value.time = self.value.time,
                 DataType::Interval => new_value.interval = self.value.interval,
-                DataType::VarChar | DataType::Char | DataType::Text => {
+                DataType::VarChar | DataType::Char => {
                     new_value.string = self.value.string
+                }
+                DataType::Text => {
+                    // Clone TextStorage: handle External variant by allocating new memory
+                    if self.value.text_storage.is_external() {
+                        if let Some(ext) = self.value.text_storage.as_external() {
+                            if !ext.data_ptr.is_null() {
+                                // Allocate new memory and copy data
+                                let result = crate::memory::allocator::alloc(ext.capacity as usize);
+                                match result {
+                                    Ok(new_ptr) => {
+                                        unsafe {
+                                            core::ptr::copy_nonoverlapping(
+                                                ext.data_ptr,
+                                                new_ptr.as_ptr(),
+                                                ext.length as usize,
+                                            );
+                                        }
+                                        new_value.text_storage = TextStorage::new_external(
+                                            new_ptr.as_ptr(),
+                                            ext.length,
+                                            ext.capacity,
+                                        );
+                                    }
+                                    Err(_) => {
+                                        // Fall back to Null if allocation fails
+                                        new_value.text_storage = TextStorage::new_null();
+                                    }
+                                }
+                            } else {
+                                new_value.text_storage = self.value.text_storage;
+                            }
+                        } else {
+                            new_value.text_storage = self.value.text_storage;
+                        }
+                    } else {
+                        // For Inline and Null, simple copy
+                        new_value.text_storage = self.value.text_storage;
+                    }
                 }
                 DataType::Vector => {
                     // For vectors, we don't copy the actual vector data,
@@ -932,11 +1160,15 @@ impl PartialEq for TypedValue {
                         && self.value.time.tz_offset == other.value.time.tz_offset
                 }
                 DataType::Interval => self.value.interval.value == other.value.interval.value,
-                DataType::VarChar | DataType::Char | DataType::Text => {
+                DataType::VarChar | DataType::Char => {
                     // 使用UTF-8处理器比较字符串
                     let a_str = self.value.string.as_ref();
                     let b_str = other.value.string.as_ref();
                     get_global_utf8_processor().compare(a_str, b_str) == core::cmp::Ordering::Equal
+                }
+                DataType::Text => {
+                    // 比较TextStorage内容
+                    self.value.text_storage == other.value.text_storage
                 }
                 DataType::Vector => {
                     // 向量比较：比较向量指针
@@ -1001,7 +1233,7 @@ impl Hash for TypedValue {
                     self.value.time.tz_offset.hash(state);
                 }
                 DataType::Interval => self.value.interval.value.hash(state),
-                DataType::VarChar | DataType::Char | DataType::Text => {
+                DataType::VarChar | DataType::Char => {
                     // 使用UTF-8处理器哈希字符串内容
                     if let Some(s) = get_global_utf8_processor().to_string(&self.value.string) {
                         s.trim_end_matches(char::from(0)).hash(state);
@@ -1009,6 +1241,10 @@ impl Hash for TypedValue {
                         // 如果转换失败，回退到字节哈希
                         self.value.string.hash(state);
                     }
+                }
+                DataType::Text => {
+                    // 哈希TextStorage内容
+                    self.value.text_storage.hash(state);
                 }
                 DataType::Vector => {
                     // 向量哈希：哈希向量指针
@@ -1076,11 +1312,15 @@ impl PartialOrd for TypedValue {
                         DataType::Interval => {
                             Some(self.value.interval.value.cmp(&other.value.interval.value))
                         }
-                        DataType::VarChar | DataType::Char | DataType::Text => {
+                        DataType::VarChar | DataType::Char => {
                             // 使用UTF-8处理器比较字符串
                             let a_str = self.value.string.as_ref();
                             let b_str = other.value.string.as_ref();
                             Some(get_global_utf8_processor().compare(a_str, b_str))
+                        }
+                        DataType::Text => {
+                            // 比较TextStorage内容
+                            Some(self.value.text_storage.cmp(&other.value.text_storage))
                         }
                         DataType::Vector => {
                             // 向量比较：比较向量指针
@@ -1198,7 +1438,7 @@ impl fmt::Debug for TypedValue {
                         self.value.time.value, self.value.time.tz_offset, self.value.time.precision
                     )
                 }
-                DataType::VarChar | DataType::Char | DataType::Text => {
+                DataType::VarChar | DataType::Char => {
                     let s = get_global_utf8_processor()
                         .to_string(&self.value.string)
                         .unwrap_or("")
@@ -1208,6 +1448,13 @@ impl fmt::Debug for TypedValue {
                         "TypedValue({}, \"{}\")\n",
                         self.value_type.to_sql_type(0).as_str(),
                         s
+                    )
+                }
+                DataType::Text => {
+                    write!(
+                        f,
+                        "TypedValue(Text, storage: {:?})",
+                        self.value.text_storage
                     )
                 }
                 DataType::Interval => {
@@ -1235,6 +1482,9 @@ impl fmt::Debug for TypedValue {
 
 /// 定长字符串最大长度
 pub const MAX_STRING_LEN: usize = 64;
+
+/// VARCHAR最大长度（65536字节 = 64KB）
+pub const MAX_VARCHAR_LEN: usize = 65536;
 
 /// TEXT数据最大长度（10KB）
 pub const MAX_TEXT_LEN: usize = 10240;
@@ -1318,12 +1568,44 @@ impl FieldDef {
             constraints.push_str(" DEFAULT ");
             unsafe {
                 match self.data_type {
-                    DataType::VarChar | DataType::Char | DataType::Text => {
+                    DataType::VarChar | DataType::Char => {
                         let s = get_global_utf8_processor()
                             .to_string(&default.string)
                             .unwrap_or("")
                             .trim_end_matches(char::from(0));
                         constraints.push_str(&alloc::format!("'{}'", s));
+                    }
+                    DataType::Text => {
+                        // Text type default value - extract from text_storage
+                        let text_content = if default.text_storage.is_inline() {
+                            if let Some(data) = default.text_storage.as_inline() {
+                                get_global_utf8_processor()
+                                    .to_string(data)
+                                    .unwrap_or("")
+                                    .trim_end_matches(char::from(0))
+                                    .to_string()
+                            } else {
+                                String::new()
+                            }
+                        } else if default.text_storage.is_external() {
+                            if let Some(ext) = default.text_storage.as_external() {
+                                if !ext.data_ptr.is_null() {
+                                    unsafe {
+                                        let slice = core::slice::from_raw_parts(ext.data_ptr, ext.length as usize);
+                                        core::str::from_utf8(slice)
+                                            .unwrap_or("")
+                                            .to_string()
+                                    }
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        constraints.push_str(&alloc::format!("'{}'", text_content));
                     }
                     DataType::Bool => {
                         let b = default.bool;

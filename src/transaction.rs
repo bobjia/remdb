@@ -1,7 +1,7 @@
 use crate::try_lock;
 
 use crate::defer;
-use crate::types::{RemDbError, Result, DEFAULT_JSON_SIZE, DEFAULT_TEXT_SIZE};
+use crate::types::{RemDbError, Result, DEFAULT_JSON_SIZE};
 use crate::DdlExecutor;
 use core::default::Default;
 use core::ptr::NonNull;
@@ -2159,7 +2159,7 @@ impl LogManager {
                                 crate::types::DataType::VarChar | crate::types::DataType::Char => {
                                     64
                                 } // 默认64字节字符串
-                                crate::types::DataType::Text => DEFAULT_TEXT_SIZE, // TEXT类型默认512字节
+                                crate::types::DataType::Text => core::mem::size_of::<crate::types::TextStorage>(), // TEXT存储TextStorage枚举
                                 crate::types::DataType::Json => DEFAULT_JSON_SIZE, // JSON类型默认512字节
                                 crate::types::DataType::Vector => {
                                     // 向量大小 = 维度 * 4字节（float32）

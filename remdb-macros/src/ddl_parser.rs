@@ -125,13 +125,8 @@ fn parse_columns(columns_part: &str) -> Result<Vec<ColumnDef>, String> {
                     is_unsigned = true;
                 }
                 _ => {
-                    // 处理带括号的类型，如TEXT(32) -> TEXT
-                    let typ_part = part;
-                    if let Some(paren_pos) = typ_part.find('(') {
-                        typ = typ_part[..paren_pos].to_string();
-                    } else {
-                        typ = typ_part.to_string();
-                    }
+                    // 保留带括号的类型，如 VARCHAR(256), TEXT, INTEGER 等
+                    typ = part.to_string();
                     break;
                 }
             }

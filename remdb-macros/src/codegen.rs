@@ -233,7 +233,15 @@ fn generate_field_defs(
         let string_length = if col.typ.to_lowercase().contains("varchar")
             || col.typ.to_lowercase().contains("string")
         {
-            quote!(Some(#size))
+            // VarChar/Char size up to 65536
+            let varchar_size = col.typ
+                .split('(')
+                .nth(1)
+                .and_then(|s| s.split(')').next())
+                .and_then(|s| s.trim().parse::<usize>().ok())
+                .unwrap_or(64);
+            let capped_size = core::cmp::min(varchar_size, 65536usize);
+            quote!(Some(#capped_size))
         } else if col.typ.to_lowercase().contains("text") {
             // TEXT类型没有固定的长度限制
             quote!(None)
@@ -322,15 +330,34 @@ fn convert_to_data_type(sql_type: &str) -> proc_macro2::TokenStream {
 }
 
 fn get_type_size(sql_type: &str) -> usize {
-    match sql_type.to_lowercase().as_str() {
+    // Handle parameterized types like varchar(256), text(512)
+    let base_type = sql_type.split('(').next().unwrap_or(sql_type).trim();
+    let param = sql_type
+        .split('(')
+        .nth(1)
+        .and_then(|s| s.split(')').next())
+        .and_then(|s| s.trim().parse::<usize>().ok());
+
+    match base_type.to_lowercase().as_str() {
         "integer" | "int" | "unsigned integer" | "uint" => 4,
         "bigint" | "unsigned bigint" => 8,
         "smallint" | "unsigned smallint" => 2,
         "tinyint" | "unsigned tinyint" | "boolean" | "bool" => 1,
         "real" | "float" => 4,
         "double" | "double precision" => 8,
-        "text" => 512, // DEFAULT_TEXT_SIZE
-        "varchar" | "string" => 64, // 默认字符串大小
+        "text" => {
+            // Text类型存储TextStorage枚举（264字节 = 256字节内联 + 8字节判别式/对齐）
+            264
+        }
+        "varchar" | "string" => {
+            // 如果有参数如 varchar(256)，使用参数值；否则使用默认64
+            // 最大允许65536
+            match param {
+                Some(p) if p <= 65536 => p,
+                Some(_) => 64, // 超过65536限制，回退到64
+                None => 64, // 默认字符串大小
+            }
+        }
         "timestamp" => 8,
         _ => 4, // 默认大小
     }

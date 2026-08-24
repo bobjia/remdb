@@ -5282,10 +5282,9 @@ fn execute_insert_query(
                 // 验证字符串长度
                 if field.data_type == DataType::VarChar
                     || field.data_type == DataType::Char
-                    || field.data_type == DataType::Text
                 {
                     if let crate::sql::Value::String(s) = sql_value {
-                        // 验证字符串长度
+                        // 验证字符串长度（VarChar最大65536）
                         if let Some(max_length) = field.string_length {
                             if s.len() > max_length {
                                 // 自动创建的事务需要回滚，避免泄漏
@@ -5297,21 +5296,10 @@ fn execute_insert_query(
                                 }
                                 return Err(QueryExecutionError::TypeMismatch);
                             }
-                        } else if field.data_type == DataType::Text {
-                            // TEXT类型限制为10KB
-                            const MAX_TEXT_SIZE: usize = 10 * 1024; // 10KB
-                            if s.len() > MAX_TEXT_SIZE {
-                                // 自动创建的事务需要回滚，避免泄漏
-                                if !has_active_tx {
-                                    unsafe {
-                                        crate::transaction::rollback()
-                                            .map_err(|_| QueryExecutionError::InternalError)?;
-                                    }
-                                }
-                                return Err(QueryExecutionError::TypeMismatch);
-                            }
                         }
                     }
+                } else if field.data_type == DataType::Text {
+                    // TEXT类型没有长度限制
                 }
 
                 // 转换并设置字段值
@@ -5427,7 +5415,7 @@ fn execute_insert_query(
                                 default_value.time,
                             );
                         }
-                        DataType::VarChar | DataType::Char | DataType::Text => {
+                        DataType::VarChar | DataType::Char => {
                             // Only copy up to MAX_STRING_LEN bytes to avoid buffer overflow
                             let copy_len = core::cmp::min(field.size, crate::types::MAX_STRING_LEN);
                             core::ptr::copy_nonoverlapping(
@@ -5435,6 +5423,11 @@ fn execute_insert_query(
                                 record_data.as_mut_ptr().add(field.offset),
                                 copy_len,
                             );
+                        }
+                        DataType::Text => {
+                            // Write TextStorage as default value (usually Null)
+                            let ptr = record_data.as_mut_ptr().add(field.offset) as *mut crate::types::TextStorage;
+                            core::ptr::write_unaligned(ptr, default_value.text_storage);
                         }
                         DataType::Interval => {
                             core::ptr::write_unaligned(
@@ -5901,7 +5894,7 @@ fn set_field_value_with_depth(
                     DataType::Bool => crate::types::Value {
                         bool: unsafe { *field_ptr != 0 },
                     },
-                    DataType::VarChar | DataType::Char | DataType::Text => {
+                    DataType::VarChar | DataType::Char => {
                         let mut str_value = [0u8; crate::types::MAX_STRING_LEN];
                         // Only copy up to MAX_STRING_LEN bytes to avoid buffer overflow
                         let copy_len = core::cmp::min(field.size, crate::types::MAX_STRING_LEN);
@@ -5913,6 +5906,13 @@ fn set_field_value_with_depth(
                             );
                         }
                         crate::types::Value { string: str_value }
+                    }
+                    DataType::Text => {
+                        // Read TextStorage from the record
+                        let text_storage = unsafe {
+                            core::ptr::read_unaligned(field_ptr as *const crate::types::TextStorage)
+                        };
+                        crate::types::Value { text_storage }
                     }
                     DataType::Json => crate::types::Value {
                         json_storage: unsafe {
@@ -6118,13 +6118,57 @@ fn set_field_value_with_depth(
                 core::ptr::write_unaligned(ptr, timestamp);
             }
 
-            // 字符串类型
-            DataType::VarChar | DataType::Char | DataType::Text => {
+            // 字符串类型（VarChar/Char）
+            DataType::VarChar | DataType::Char => {
                 let str_value = match evaluated_value.value_type {
-                    DataType::VarChar | DataType::Char | DataType::Text => {
+                    DataType::VarChar | DataType::Char => {
                         let s =
                             core::str::from_utf8(&evaluated_value.value.string).unwrap_or_default();
                         s
+                    }
+                    DataType::Text => {
+                        // 从TextStorage提取字符串
+                        let text_content = if evaluated_value.value.text_storage.is_inline() {
+                            if let Some(data) = evaluated_value.value.text_storage.as_inline() {
+                                let end = data.iter().position(|b| *b == 0).unwrap_or(data.len());
+                                core::str::from_utf8(&data[..end]).unwrap_or_default().to_string()
+                            } else {
+                                String::new()
+                            }
+                        } else if evaluated_value.value.text_storage.is_external() {
+                            if let Some(ext) = evaluated_value.value.text_storage.as_external() {
+                                if !ext.data_ptr.is_null() {
+                                    let bytes = unsafe { core::slice::from_raw_parts(ext.data_ptr, ext.length as usize) };
+                                    core::str::from_utf8(bytes).unwrap_or_default().to_string()
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        };
+                        // Return as owned string
+                        return match alloc::string::String::from_utf8(text_content.into_bytes()) {
+                            Ok(s) => {
+                                let ptr = record_data.as_mut_ptr().add(offset);
+                                let max_len = field_size;
+                                let bytes = s.as_bytes();
+                                let copy_len = core::cmp::min(bytes.len(), max_len);
+                                let mut i = 0;
+                                while i < copy_len {
+                                    *ptr.add(i) = bytes[i];
+                                    i += 1;
+                                }
+                                while i < max_len {
+                                    *ptr.add(i) = 0;
+                                    i += 1;
+                                }
+                                Ok(())
+                            }
+                            Err(_) => Err(QueryExecutionError::TypeMismatch),
+                        };
                     }
                     DataType::Json => {
                         // 从JSON存储中提取字符串（用于向VarChar列写入JSON字符串）
@@ -6187,6 +6231,95 @@ fn set_field_value_with_depth(
                 for i in str_value.len()..max_len {
                     *ptr.add(i) = 0;
                 }
+            }
+
+            // TEXT类型（支持动态分配）
+            DataType::Text => {
+                // 获取字符串内容
+                let (text_bytes, text_len) = match evaluated_value.value_type {
+                    DataType::VarChar | DataType::Char => {
+                        // Try to get the original string from the expression constant
+                        // (evaluate_expression truncates to 64 bytes for string constants).
+                        // This is critical for TEXT columns that can hold >64 bytes.
+                        let s = if let Expression::Constant {
+                            value: SqlValue::String(s),
+                            ..
+                        } = expr
+                        {
+                            s.clone()
+                        } else {
+                            core::str::from_utf8(&evaluated_value.value.string)
+                                .unwrap_or_default()
+                                .trim_end_matches(char::from(0))
+                                .to_string()
+                        };
+                        let bytes = s.as_bytes().to_vec();
+                        let len = bytes.len();
+                        (bytes, len)
+                    }
+                    DataType::Text => {
+                        // TextStorage already set, just write it directly
+                        let ptr = record_data.as_mut_ptr().add(offset) as *mut crate::types::TextStorage;
+                        // Free old external allocation if present
+                        crate::table::free_text_storage(ptr);
+                        // Write the new TextStorage value
+                        core::ptr::write_unaligned(ptr, evaluated_value.value.text_storage);
+                        return Ok(());
+                    }
+                    DataType::Int64 => {
+                        let s = evaluated_value.value.i64.to_string();
+                        let len = s.len();
+                        (s.into_bytes(), len)
+                    }
+                    DataType::Float64 => {
+                        let s = evaluated_value.value.float64.to_string();
+                        let len = s.len();
+                        (s.into_bytes(), len)
+                    }
+                    DataType::Bool => {
+                        let s = evaluated_value.value.bool.to_string();
+                        let len = s.len();
+                        (s.into_bytes(), len)
+                    }
+                    _ => return Err(QueryExecutionError::TypeMismatch),
+                };
+
+                // 创建TextStorage并写入
+                let text_storage = if text_len <= 256 {
+                    // 内联存储
+                    let mut inline_data = [0u8; 256];
+                    inline_data[..text_len].copy_from_slice(&text_bytes[..text_len]);
+                    crate::types::TextStorage::new_inline(inline_data)
+                } else {
+                    // 外部存储：通过全局分配器分配内存
+                    let capacity = text_len;
+                    match crate::memory::allocator::alloc(capacity) {
+                        Ok(ptr) => {
+                            unsafe {
+                                core::ptr::copy_nonoverlapping(
+                                    text_bytes.as_ptr(),
+                                    ptr.as_ptr(),
+                                    text_len,
+                                );
+                            }
+                            crate::types::TextStorage::new_external(
+                                ptr.as_ptr(),
+                                text_len as u32,
+                                capacity as u32,
+                            )
+                        }
+                        Err(_) => {
+                            // 分配失败，回退到Null
+                            crate::types::TextStorage::new_null()
+                        }
+                    }
+                };
+
+                let ptr = record_data.as_mut_ptr().add(offset) as *mut crate::types::TextStorage;
+                // Free old external allocation if present
+                crate::table::free_text_storage(ptr);
+                // Write the new TextStorage value
+                core::ptr::write_unaligned(ptr, text_storage);
             }
             // 时间间隔类型
             DataType::Interval => {

@@ -225,9 +225,32 @@ fn value_to_string_repr(value: &TypedValue) -> String {
             DataType::Bool => alloc::format!("{}", value.value.bool),
             DataType::Timestamp => alloc::format!("{}", value.value.time.value),
             DataType::TimestampTZ => alloc::format!("{}", value.value.time.value),
-            DataType::VarChar | DataType::Char | DataType::Text => {
+            DataType::VarChar | DataType::Char => {
                 let string_slice = core::str::from_utf8(&value.value.string).unwrap_or("");
                 string_slice.trim_end_matches(char::from(0)).to_string()
+            }
+            DataType::Text => {
+                if value.value.text_storage.is_inline() {
+                    if let Some(data) = value.value.text_storage.as_inline() {
+                        let end = data.iter().position(|b| *b == 0).unwrap_or(data.len());
+                        core::str::from_utf8(&data[..end]).unwrap_or("").to_string()
+                    } else {
+                        String::new()
+                    }
+                } else if value.value.text_storage.is_external() {
+                    if let Some(ext) = value.value.text_storage.as_external() {
+                        if !ext.data_ptr.is_null() {
+                            let bytes = unsafe { core::slice::from_raw_parts(ext.data_ptr, ext.length as usize) };
+                            core::str::from_utf8(bytes).unwrap_or("").to_string()
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                }
             }
             DataType::Interval => {
                 alloc::format!("{}", value.value.interval.value)

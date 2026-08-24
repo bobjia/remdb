@@ -96,8 +96,7 @@ pub use system_tables::{
 pub use table::{MemoryTable, RecordCursor, RecordIdCursor, RecordRef};
 pub use types::{
     DataType, DistanceType, FieldDef, IndexType, RecordStatus, RemDbError, Result, TableDef, Value,
-    VectorIndexType, VectorMetadata, DEFAULT_JSON_SIZE, DEFAULT_TEXT_SIZE, MAX_STRING_LEN,
-    MAX_TEXT_LEN,
+    VectorIndexType, VectorMetadata, DEFAULT_JSON_SIZE, MAX_STRING_LEN,
 };
 
 pub use index::{
@@ -2337,11 +2336,8 @@ impl DdlExecutor for RemDb {
                     }
                 }
                 DataType::Text => {
-                    if *dimension > 0 {
-                        *dimension as usize
-                    } else {
-                        DEFAULT_TEXT_SIZE
-                    }
+                    // Text字段存储TextStorage枚举（约264字节），不是文本内容本身
+                    core::mem::size_of::<crate::types::TextStorage>()
                 }
                 DataType::Json => {
                     if *dimension > 0 {
@@ -3054,7 +3050,8 @@ impl DdlExecutor for RemDb {
 
                 // 计算字段大小
                 let field_size = match data_type {
-                    DataType::VarChar | DataType::Char | DataType::Text => size as usize,
+                    DataType::VarChar | DataType::Char => size as usize,
+                    DataType::Text => core::mem::size_of::<crate::types::TextStorage>(),
                     DataType::Vector => {
                         // 向量类型：维度 * 4字节（f32）
                         size as usize * 4
@@ -3161,7 +3158,8 @@ impl DdlExecutor for RemDb {
 
                 // 计算新字段大小
                 let new_size = match data_type {
-                    DataType::VarChar | DataType::Char | DataType::Text => size as usize,
+                    DataType::VarChar | DataType::Char => size as usize,
+                    DataType::Text => core::mem::size_of::<crate::types::TextStorage>(),
                     DataType::Vector => {
                         // 向量类型：维度 * 4字节（f32）
                         size as usize * 4
