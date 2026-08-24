@@ -46,6 +46,7 @@ sha2 = { version = "0.10", optional = true }
 futures = { version = "0.3", optional = true }
 ndarray = { version = "0.15", optional = true }
 ureq = { version = "2.9", optional = true }
+tokenizers = { version = "0.21", optional = true }
 
 [dependencies.tracing]
 version = "0.1"
@@ -320,7 +321,7 @@ ha = ["pubsub"]
 log = []
 wal-compression-lz4 = ["lz4"]
 wal-compression-zstd = ["zstd"]
-model-runtime = ["ort", "serde", "bincode", "tokio", "ndarray"]
+model-runtime = ["ort", "serde", "bincode", "tokio", "ndarray", "tokenizers"]
 model-download = ["reqwest", "sha2", "std", "futures", "ureq"]
 
 [profile.release]
