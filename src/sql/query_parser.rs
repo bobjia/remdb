@@ -3686,9 +3686,16 @@ impl SqlParser {
 
             while let Some(c) = self.next_char() {
                 if c == quote_char {
-                    break;
+                    // Check for escaped quote (e.g., '' inside single-quoted string)
+                    if self.peek_char() == Some(quote_char) {
+                        self.next_char(); // consume the second quote
+                        string_value.push(c); // add one quote character
+                    } else {
+                        break; // closing quote
+                    }
+                } else {
+                    string_value.push(c);
                 }
-                string_value.push(c);
             }
 
             // 先检查是否是带类型提示的JSON字符串

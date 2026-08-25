@@ -6355,15 +6355,28 @@ fn set_field_value_with_depth(
                         }
                         crate::types::JsonStorage::Null => {
                             // For Null storage, the JSON string was too large for the inline buffer.
-                            // Try to extract the original string from the expression.
-                            if let Expression::Constant {
-                                value: crate::sql::Value::Json(s),
-                                ..
-                            } = expr
-                            {
-                                s.clone()
-                            } else {
-                                return Err(QueryExecutionError::TypeMismatch);
+                            // Try to extract the original string from the Constant expression.
+                            let extracted = match expr {
+                                Expression::Constant {
+                                    value: crate::sql::Value::Json(s),
+                                    ..
+                                } => Some(s.clone()),
+                                Expression::Constant {
+                                    value: crate::sql::Value::String(s),
+                                    ..
+                                } => Some(s.clone()),
+                                _ => None,
+                            };
+                            match extracted {
+                                Some(s) => s,
+                                None => {
+                                    #[cfg(feature = "log")]
+                                    debug!(
+                                        "Vector field: JsonStorage::Null but expression is not Expression::Constant with Json/String value, expr={:?}",
+                                        expr
+                                    );
+                                    return Err(QueryExecutionError::TypeMismatch);
+                                }
                             }
                         }
                         _ => return Err(QueryExecutionError::TypeMismatch),

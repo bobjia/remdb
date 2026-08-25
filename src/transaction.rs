@@ -1357,8 +1357,14 @@ impl LogManager {
         use alloc::format;
         let wal_file_path = format!("{}/remdb.wal", self.log_path);
 
-        let file_size = crate::platform::file_size(wal_file_path.as_str())
-            .map_err(|_| RemDbError::FileIoError)?;
+        let file_size = match crate::platform::file_size(wal_file_path.as_str()) {
+            Ok(size) => size,
+            Err(_) => {
+                #[cfg(feature = "log")]
+                warn!("Failed to get WAL file size, skipping recovery process");
+                return Ok(());
+            }
+        };
 
         let header_size = core::mem::size_of::<LogHeader>() + core::mem::size_of::<LogCheckpoint>();
         let log_region_size = file_size.saturating_sub(header_size);
