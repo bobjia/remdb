@@ -20,6 +20,7 @@ pub struct BuiltinModel {
     pub max_input_length: usize,
     pub file_name: &'static str,
     pub download_url: Option<&'static str>,
+    pub tokenizer_url: Option<&'static str>,
 }
 
 pub const BUILTIN_MODELS: &[BuiltinModel] = &[
@@ -31,6 +32,7 @@ pub const BUILTIN_MODELS: &[BuiltinModel] = &[
         max_input_length: 8192,
         file_name: "bge-m3.onnx",
         download_url: Some("https://huggingface.co/BAAI/bge-m3/resolve/main/onnx/model.onnx"),
+        tokenizer_url: Some("https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer.json"),
     },
     BuiltinModel {
         name: "bge-small-zh",
@@ -40,6 +42,7 @@ pub const BUILTIN_MODELS: &[BuiltinModel] = &[
         max_input_length: 512,
         file_name: "bge-small-zh.onnx",
         download_url: Some("https://huggingface.co/BAAI/bge-small-zh/resolve/main/onnx/model.onnx"),
+        tokenizer_url: Some("https://huggingface.co/BAAI/bge-small-zh/resolve/main/tokenizer.json"),
     },
     BuiltinModel {
         name: "all-minilm-l6-v2",
@@ -49,6 +52,7 @@ pub const BUILTIN_MODELS: &[BuiltinModel] = &[
         max_input_length: 256,
         file_name: "all-minilm-l6-v2.onnx",
         download_url: Some("https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"),
+        tokenizer_url: Some("https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"),
     },
 ];
 

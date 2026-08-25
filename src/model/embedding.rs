@@ -13,6 +13,11 @@ use std::sync::Mutex;
 use crate::log::{info, warn};
 use crate::model::OnnxModel;
 
+#[cfg(feature = "model-download")]
+use crate::model::builtin_models::get_builtin_model;
+#[cfg(feature = "model-download")]
+use crate::model::downloader::{download_model_sync, DownloadError};
+
 /// Wrapper around Hugging Face tokenizers for embedding models
 pub struct EmbeddingTokenizer {
     tokenizer: Mutex<tokenizers::Tokenizer>,
@@ -127,10 +132,8 @@ pub struct EmbeddingEngine {
     /// Maximum number of models to cache
     max_models: usize,
     /// HuggingFace mirror URL
-    #[allow(dead_code)]
     hf_mirror: Option<String>,
     /// Whether to auto-download models
-    #[allow(dead_code)]
     auto_download: bool,
 }
 
@@ -163,6 +166,89 @@ impl EmbeddingEngine {
         Ok(())
     }
 
+    /// Apply HuggingFace mirror URL to a download URL
+    fn apply_mirror(&self, url: &str) -> String {
+        if let Some(ref mirror) = self.hf_mirror {
+            // Replace the HuggingFace base URL with the mirror
+            if url.starts_with("https://huggingface.co/") {
+                return url.replacen("https://huggingface.co", mirror, 1);
+            }
+        }
+        url.to_string()
+    }
+
+    /// Try to download a model file and its tokenizer
+    #[cfg(feature = "model-download")]
+    fn download_model_files(&self, name: &str) -> Result<(), String> {
+        use std::path::PathBuf;
+
+        let model_dir = PathBuf::from(&self.models_dir).join(name);
+        let model_path = model_dir.join(format!("{}.onnx", name));
+        let tokenizer_path = model_dir.join("tokenizer.json");
+
+        // Check if files already exist
+        if model_path.exists() && tokenizer_path.exists() {
+            return Ok(());
+        }
+
+        // Look up the model in built-in models
+        let builtin = get_builtin_model(name).ok_or_else(|| {
+            format!(
+                "Model '{}' not found in built-in models and no local file at {}",
+                name,
+                model_path.display()
+            )
+        })?;
+
+        // Get download URLs and apply mirror if configured
+        let model_url = builtin
+            .download_url
+            .ok_or_else(|| format!("No download URL for model '{}'", name))?;
+        let tokenizer_url = builtin
+            .tokenizer_url
+            .ok_or_else(|| format!("No tokenizer URL for model '{}'", name))?;
+
+        let model_url = self.apply_mirror(model_url);
+        let tokenizer_url = self.apply_mirror(tokenizer_url);
+
+        // Create the model directory
+        std::fs::create_dir_all(&model_dir).map_err(|e| {
+            format!(
+                "Failed to create model directory '{}': {}",
+                model_dir.display(),
+                e
+            )
+        })?;
+
+        // Download the ONNX model file
+        info!(
+            "Downloading embedding model '{}' from {} ...",
+            name, model_url
+        );
+        download_model_sync(&model_url, &model_path, None::<fn(_)>)
+            .map_err(|e| format!("Failed to download model '{}': {}", name, e))?;
+
+        // Download the tokenizer file
+        info!(
+            "Downloading tokenizer for '{}' from {} ...",
+            name, tokenizer_url
+        );
+        download_model_sync(&tokenizer_url, &tokenizer_path, None::<fn(_)>)
+            .map_err(|e| format!("Failed to download tokenizer for '{}': {}", name, e))?;
+
+        info!("Model '{}' downloaded successfully", name);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "model-download"))]
+    fn download_model_files(&self, name: &str) -> Result<(), String> {
+        Err(format!(
+            "Auto-download is not supported because 'model-download' feature is not enabled. \
+             Please manually download model '{}' to {}/{}",
+            name, self.models_dir, name
+        ))
+    }
+
     /// Load a model (and its tokenizer) from disk, caching it.
     fn load_model_internal(&self, name: &str) -> Result<(), String> {
         use std::path::PathBuf;
@@ -192,6 +278,30 @@ impl EmbeddingEngine {
         let model_path = PathBuf::from(&self.models_dir)
             .join(name)
             .join(format!("{}.onnx", name));
+
+        // If the model file doesn't exist and auto-download is enabled, try to download
+        if !model_path.exists() {
+            if self.auto_download {
+                // Drop the lock before downloading to avoid blocking other operations
+                drop(models);
+                self.download_model_files(name)?;
+                // Re-acquire the lock after download
+                models = self
+                    .models
+                    .lock()
+                    .map_err(|_| "models lock poisoned".to_string())?;
+                // Check again if another thread loaded the model while we were downloading
+                if models.contains_key(name) {
+                    return Ok(());
+                }
+            } else {
+                return Err(format!(
+                    "Model '{}' not found at {}. Set auto_download=true to enable automatic download.",
+                    name,
+                    model_path.display()
+                ));
+            }
+        }
 
         let model_path_str = model_path
             .to_str()
