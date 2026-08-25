@@ -195,6 +195,29 @@ impl OnnxModel {
                 .map_err(|e| format!("Model execution failed: {}", e))?;
 
             self.extract_sentence_embedding(&outputs)
+        } else if input_count == 2 {
+            // Model expects 2 inputs: input_ids and attention_mask (no token_type_ids)
+            let input_ids = inputs_data.first().ok_or("Missing input_ids")?;
+            let attention_mask = inputs_data.get(1).ok_or("Missing attention_mask")?;
+
+            let input_ids_tensor =
+                Tensor::from_array(([1, input_ids.len()], input_ids.clone().into_boxed_slice()))
+                    .map_err(|e| format!("Failed to create input_ids tensor: {}", e))?;
+
+            let attention_mask_tensor = Tensor::from_array((
+                [1, attention_mask.len()],
+                attention_mask.clone().into_boxed_slice(),
+            ))
+            .map_err(|e| format!("Failed to create attention_mask tensor: {}", e))?;
+
+            let outputs = session
+                .run(ort::inputs![
+                    "input_ids" => input_ids_tensor,
+                    "attention_mask" => attention_mask_tensor,
+                ])
+                .map_err(|e| format!("Model execution failed: {}", e))?;
+
+            self.extract_sentence_embedding(&outputs)
         } else if input_count >= 3 {
             let _seq_len = inputs_data.first().map(|v| v.len()).unwrap_or(512);
 
