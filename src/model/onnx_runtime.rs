@@ -15,11 +15,11 @@ use ort::session::Session;
 #[cfg(feature = "model-runtime")]
 use ort::value::Tensor;
 
-#[cfg(feature = "log")]
+#[cfg(all(feature = "log", feature = "model-runtime"))]
 use crate::log::{debug, info};
 
 #[cfg(all(feature = "log", not(feature = "model-runtime")))]
-use crate::log::warn;
+use crate::log::{debug, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputType {
@@ -114,8 +114,8 @@ impl OnnxModel {
 
         let info = ModelInfo {
             name: path
-                .split(|c| c == '/' || c == '\\')
-                .last()
+                .split(['/', '\\'])
+                .next_back()
                 .unwrap_or("unknown")
                 .to_string(),
             input_names: vec!["input".to_string()],

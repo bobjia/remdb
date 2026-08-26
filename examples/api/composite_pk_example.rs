@@ -10,6 +10,7 @@ static DB_CONFIG: remdb::config::DbConfig = remdb::config::DbConfig {
     low_power_max_records: None,
     default_max_records: 1000,
     memory_allocator: unsafe {
+        #[allow(static_mut_refs)]
         static mut DEFAULT_ALLOCATOR: remdb::config::DefaultMemoryAllocator =
             remdb::config::DefaultMemoryAllocator;
         &mut DEFAULT_ALLOCATOR
@@ -40,6 +41,7 @@ static DB_CONFIG: remdb::config::DbConfig = remdb::config::DbConfig {
 
 /// 复合主键示例
 fn main() -> Result<()> {
+    #[allow(static_mut_refs)]
     unsafe {
         remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())?;
 

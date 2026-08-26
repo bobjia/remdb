@@ -5,6 +5,12 @@ use remdb::config::MemoryAllocator;
 /// 简单的内存分配器实现，用于测试
 pub struct TestAllocator;
 
+impl Default for TestAllocator {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl TestAllocator {
     /// 创建新的测试分配器
     pub const fn new() -> Self {

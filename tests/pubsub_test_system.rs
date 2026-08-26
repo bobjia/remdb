@@ -10,6 +10,7 @@ const WAL_LOG_TOPIC_ID: u16 = 1;
 const TABLE_CONTENT_TOPIC_ID: u16 = 2;
 
 // 全局变量用于存储测试结果
+#[allow(dead_code)]
 static mut TEST_RESULTS: Vec<(String, bool, String)> = Vec::new();
 
 // 心跳机制测试
@@ -199,10 +200,8 @@ fn test_wal_log_topic() {
         let mut log_id = 0;
         while *running_clone.lock().unwrap() {
             let wal_data = format!(
-                "WAL_LOG_{}: Operation=INSERT, Table=test_table, ID={}, Data={}",
-                log_id,
-                log_id,
-                format!("test_data_{}", log_id)
+                "WAL_LOG_{}: Operation=INSERT, Table=test_table, ID={}, Data=test_data_{}",
+                log_id, log_id, log_id
             );
             server_clone_thread
                 .lock()

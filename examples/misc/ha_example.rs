@@ -2,8 +2,8 @@
 
 #![cfg(feature = "ha")]
 
-#[macro_use]
-extern crate remdb;
+// #[macro_use]
+// extern crate remdb;
 
 use remdb::*;
 
@@ -43,7 +43,8 @@ fn master_example() {
 
     unsafe {
         // 初始化内存分配器
-        memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
+        #[allow(static_mut_refs)]
+        let _ = memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
 
         // 初始化平台抽象层
         #[cfg(feature = "posix")]
@@ -80,7 +81,7 @@ fn master_example() {
 
         core::ptr::copy_nonoverlapping(name.as_ptr(), record_data.as_mut_ptr().add(4), name.len());
 
-        core::ptr::write(record_data.as_mut_ptr().add(36) as *mut u8, age);
+        core::ptr::write(record_data.as_mut_ptr().add(36), age);
         core::ptr::write(record_data.as_mut_ptr().add(37) as *mut bool, active);
 
         // 插入记录
@@ -108,7 +109,8 @@ fn slave_example() {
 
     unsafe {
         // 初始化内存分配器
-        memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
+        #[allow(static_mut_refs)]
+        let _ = memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len());
 
         // 初始化平台抽象层
         #[cfg(feature = "posix")]
@@ -133,7 +135,7 @@ fn slave_example() {
                 let result_name = core::str::from_utf8(&result_data[4..36])
                     .unwrap()
                     .trim_end_matches(char::from(0));
-                let result_age = core::ptr::read(result_data.as_ptr().add(36) as *const u8);
+                let result_age = core::ptr::read(result_data.as_ptr().add(36));
                 let result_active = core::ptr::read(result_data.as_ptr().add(37) as *const bool);
 
                 println!("从节点：成功读取到主节点复制的数据");

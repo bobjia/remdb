@@ -12,6 +12,7 @@ static mut DB_MEMORY: [u8; 8 * 1024 * 1024] = [0; 8 * 1024 * 1024];
 static ALLOCATOR: DefaultMemoryAllocator = DefaultMemoryAllocator;
 
 fn main() -> Result<()> {
+    #[allow(static_mut_refs)]
     unsafe {
         remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())?;
     }
@@ -28,7 +29,7 @@ fn main() -> Result<()> {
             log_mode: remdb::config::LogMode::Sync,
             checkpoint_interval_ms: 60000,
             log_file_size_limit: 16 * 1024 * 1024,
-            log_prealloc_size: 1 * 1024 * 1024,
+            log_prealloc_size: 1024 * 1024,
             log_segment_size: 16 * 1024 * 1024,
             retained_checkpoints: 3,
             max_consecutive_invalid: 100,

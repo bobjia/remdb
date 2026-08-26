@@ -4,7 +4,7 @@ use remdb::config::{
 use remdb::transaction::{LogItem, LogManager, LogOperation, VariableSizeLogItem};
 
 mod common;
-use common::setup_test_db_with_posix;
+use common::db_setup::setup_test_db_with_posix;
 
 #[cfg(windows)]
 fn get_test_wal_path(name: &str) -> &'static str {

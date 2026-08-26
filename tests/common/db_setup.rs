@@ -29,9 +29,7 @@ pub fn setup_test_db_with_memory(size: usize) {
     let ptr = db_memory.as_mut_ptr();
 
     // 5. 初始化新的全局分配器
-    unsafe {
-        remdb::memory::allocator::init_global_allocator(ptr, db_memory.len()).unwrap();
-    }
+    remdb::memory::allocator::init_global_allocator(ptr, db_memory.len()).unwrap();
 
     // 6. 将新的内存池保存到静态变量中，确保其在整个测试期间有效
     *TEST_DB_MEMORY.lock().unwrap() = Some(db_memory);
@@ -46,7 +44,7 @@ pub fn cleanup_test_db() {
 }
 
 #[cfg(feature = "posix")]
-pub fn setup_test_db_with_posix_platform(_size: usize) -> Box<Vec<u8>> {
+pub fn setup_test_db_with_posix_platform(_size: usize) -> Vec<u8> {
     use remdb::platform::posix;
 
     // 使用 static 数组来避免栈溢出
@@ -58,16 +56,20 @@ pub fn setup_test_db_with_posix_platform(_size: usize) -> Box<Vec<u8>> {
     remdb::reset_global_db();
 
     // 再初始化新的分配器
+    #[allow(static_mut_refs)]
     unsafe {
-        remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
-            .unwrap();
+        remdb::memory::allocator::init_global_allocator(
+            &raw mut DB_MEMORY as *mut u8,
+            core::mem::size_of_val(&*DB_MEMORY),
+        )
+        .unwrap();
     }
 
-    // 返回一个空的 Box，因为内存已经在 static 数组中
-    Box::new(Vec::new())
+    // 返回一个空的 Vec，因为内存已经在 static 数组中
+    Vec::new()
 }
 
 #[cfg(feature = "posix")]
-pub fn setup_test_db_with_posix() -> Box<Vec<u8>> {
+pub fn setup_test_db_with_posix() -> Vec<u8> {
     setup_test_db_with_posix_platform(DEFAULT_TEST_MEMORY_SIZE)
 }

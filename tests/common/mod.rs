@@ -8,7 +8,4 @@
 pub mod db_setup;
 pub mod platform;
 
-pub use db_setup::{setup_test_db, setup_test_db_with_memory};
-
-#[cfg(feature = "posix")]
-pub use db_setup::setup_test_db_with_posix;
+pub use db_setup::setup_test_db;

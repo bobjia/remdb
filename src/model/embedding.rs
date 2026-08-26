@@ -16,7 +16,7 @@ use crate::model::OnnxModel;
 #[cfg(feature = "model-download")]
 use crate::model::builtin_models::get_builtin_model;
 #[cfg(feature = "model-download")]
-use crate::model::downloader::{download_model_sync, DownloadError};
+use crate::model::downloader::download_model_sync;
 
 /// Wrapper around Hugging Face tokenizers for embedding models
 pub struct EmbeddingTokenizer {
@@ -379,7 +379,7 @@ impl EmbeddingEngine {
     /// L2-normalize a vector
     pub fn l2_normalize(vec: &[f32]) -> Vec<f32> {
         let sum_sq: f32 = vec.iter().map(|&v| v * v).sum();
-        if sum_sq <= core::f32::EPSILON {
+        if sum_sq <= f32::EPSILON {
             return vec.to_vec();
         }
         let norm = sum_sq.sqrt();

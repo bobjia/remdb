@@ -15,8 +15,8 @@ use remdb::{config, RemDb};
 use std::sync::Mutex;
 
 mod common;
-use crate::common::platform::TEST_PLATFORM;
-use common::{setup_test_db, setup_test_db_with_memory};
+// use crate::common::platform::TEST_PLATFORM;
+// use common::{setup_test_db, setup_test_db_with_memory};
 
 // 全局互斥锁，确保测试串行执行
 static TEST_MUTEX: Mutex<()> = Mutex::new(());

@@ -1343,12 +1343,22 @@ impl VectorIndex {
             VectorIndexImpl::HNSW(Some(hnsw_index)) => {
                 let r = hnsw_index.search(query_vec, k);
                 crate::platform::spin_unlock(&mut self.lock);
-                r?
+                // If the HNSW index has no enter point (empty), return empty results
+                match r {
+                    Ok(results) => results,
+                    Err(RemDbError::RecordNotFound) => Vec::new(),
+                    Err(e) => return Err(e),
+                }
             }
             VectorIndexImpl::IVFFlat(Some(ivf_index)) => {
                 let r = ivf_index.search(query_vec, k);
                 crate::platform::spin_unlock(&mut self.lock);
-                r?
+                // If the IVF index has no data, return empty results
+                match r {
+                    Ok(results) => results,
+                    Err(RemDbError::RecordNotFound) => Vec::new(),
+                    Err(e) => return Err(e),
+                }
             }
             _ => {
                 // Linear search: compute all distances, sort, take top k

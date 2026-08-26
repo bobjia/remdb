@@ -108,9 +108,7 @@ static TEST_PLATFORM: TestPlatform = TestPlatform;
 #[test]
 fn test_index_recovery() -> Result<()> {
     // 初始化平台
-    unsafe {
-        remdb::platform::init_platform(&TEST_PLATFORM);
-    }
+    remdb::platform::init_platform(&TEST_PLATFORM);
 
     // 初始化全局内存分配器
     unsafe {

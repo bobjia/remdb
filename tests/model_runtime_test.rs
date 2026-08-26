@@ -3,7 +3,7 @@
 //!
 //! Tests for ONNX model loading, execution, worker protocol, and builtin models.
 
-use remdb::model::{ModelError, ModelInfo, ModelManager, ModelUDF, OnnxModel};
+use remdb::model::{ModelError, ModelManager, ModelUDF, OnnxModel};
 use remdb::types::{DataType, TypedValue, Value};
 
 #[cfg(feature = "model-runtime")]

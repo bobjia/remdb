@@ -1301,6 +1301,7 @@ fn test_text_data_type() {
     remdb::platform::init_platform(&TEST_PLATFORM);
 
     // 初始化内存分配器
+    #[allow(static_mut_refs)]
     unsafe {
         remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
             .unwrap();
@@ -1409,6 +1410,7 @@ fn test_large_text_and_varchar() {
     remdb::platform::init_platform(&TEST_PLATFORM);
 
     // 初始化内存分配器
+    #[allow(static_mut_refs)]
     unsafe {
         remdb::memory::allocator::init_global_allocator(DB_MEMORY.as_mut_ptr(), DB_MEMORY.len())
             .unwrap();
