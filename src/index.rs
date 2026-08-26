@@ -1,6 +1,7 @@
 pub mod builder;
 mod hnsw;
 mod ivf;
+pub mod pq;
 use crate::platform::{memcpy, memset};
 use crate::types::{
     DataType, DistanceType, IndexType, RemDbError, Result, TableDef, VectorIndexType,
@@ -579,6 +580,8 @@ enum VectorIndexImpl {
     HNSW(Option<hnsw::HNSWIndex>),
     /// IVF_FLAT索引    
     IVFFlat(Option<ivf::IVFIndex>),
+    /// IVF_PQ索引
+    IVFPQ(Option<pq::IVFPQIndex>),
 }
 
 /// 向量索引
@@ -700,7 +703,7 @@ impl VectorIndex {
                     hnsw::HNSWIndex::new(*vector_meta, vectors, hnsw_memory, max_items)?;
                 VectorIndexImpl::HNSW(Some(hnsw_index))
             }
-            VectorIndexType::IVF | VectorIndexType::IVF_PQ => {
+            VectorIndexType::IVF => {
                 // 创建IVF_FLAT索引
                 let ivf_index = ivf::IVFIndex::new(
                     *vector_meta,
@@ -709,6 +712,18 @@ impl VectorIndex {
                     vector_meta.ivf_nprobe,
                 )?;
                 VectorIndexImpl::IVFFlat(Some(ivf_index))
+            }
+            VectorIndexType::IVF_PQ => {
+                // 创建IVF_PQ索引
+                let ivf_pq = pq::IVFPQIndex::new(
+                    vector_meta.dimension as usize,
+                    vector_meta.ivf_nlist as usize,
+                    vector_meta.ivf_nprobe as usize,
+                    32,  // M=32 subquantizers
+                    8,   // 8 bits per subvector
+                    vector_meta.distance_type,
+                )?;
+                VectorIndexImpl::IVFPQ(Some(ivf_pq))
             }
         };
 
@@ -795,24 +810,36 @@ impl VectorIndex {
             VectorIndexType::HNSW | VectorIndexType::HNSW_SQ | VectorIndexType::HNSW_BQ => {
                 let max_level = (max_items as f64).ln() as usize;
                 let max_level = core::cmp::max(max_level, 1);
-
+                // New HNSW uses Vec<Vec<NonNull<HNSWNode>>>, approximate memory:
+                // Base node: vector_offset(usize) + record_id(u16) + neighbors(Vec)
+                // Vec overhead: 3 * usize per Vec
+                // Each Vec<NonNull> at each level: capacity ~ m (32)
+                let m = meta.hnsw_m as usize;
+                let m = core::cmp::max(m, 16);
                 let base_node_size = core::mem::size_of::<usize>() + core::mem::size_of::<u16>();
-                let neighbor_counts_capacity = max_level + 1;
-                let neighbors_capacity = (max_level + 1) * 32;
-
-                let vec_overhead = 3 * core::mem::size_of::<usize>();
-                let neighbor_counts_size = vec_overhead + neighbor_counts_capacity;
-                let neighbors_size =
-                    vec_overhead + neighbors_capacity * core::mem::size_of::<NonNull<()>>();
-
-                let node_total_size = base_node_size + neighbor_counts_size + neighbors_size;
+                let outer_vec_size = core::mem::size_of::<Vec<Vec<NonNull<()>>>>();
+                let inner_vec_size = (max_level + 1) * (core::mem::size_of::<Vec<NonNull<()>>>()
+                    + m * core::mem::size_of::<NonNull<()>>());
+                let node_total_size = base_node_size + outer_vec_size + inner_vec_size;
                 max_items * node_total_size
             }
-            VectorIndexType::IVF | VectorIndexType::IVF_PQ => {
+            VectorIndexType::IVF => {
                 let nlist = meta.ivf_nlist as usize;
                 let nlist = core::cmp::max(nlist, 1);
                 let centroid_size = meta.dimension as usize * core::mem::size_of::<f32>();
                 nlist * centroid_size + nlist * core::mem::size_of::<usize>()
+            }
+            VectorIndexType::IVF_PQ => {
+                let nlist = meta.ivf_nlist as usize;
+                let nlist = core::cmp::max(nlist, 1);
+                let m = 32; // PQ subquantizers per vector
+                let code_size = m; // 1 byte per subquantizer
+                let centroid_size = meta.dimension as usize * core::mem::size_of::<f32>();
+                // Cluster: centroid + PQ codes (max_items/nlist * code_size) + record_ids
+                let avg_per_cluster = (max_items / nlist).saturating_add(1);
+                let cluster_codes_size = avg_per_cluster * code_size;
+                let cluster_record_ids_size = avg_per_cluster * core::mem::size_of::<u16>();
+                nlist * (centroid_size + cluster_codes_size + cluster_record_ids_size)
             }
         }
     }
@@ -1181,6 +1208,12 @@ impl VectorIndex {
         let impl_result = match &mut self.index_impl {
             VectorIndexImpl::HNSW(Some(hnsw_index)) => hnsw_index.insert(start_offset, record_id),
             VectorIndexImpl::IVFFlat(Some(ivf_index)) => ivf_index.insert(start_offset, record_id),
+            VectorIndexImpl::IVFPQ(Some(ivf_pq)) => {
+                // Prepare vector slice for PQ insertion
+                let vec_ptr = self.vectors.add(start_offset);
+                let vec_slice = core::slice::from_raw_parts(vec_ptr, self.dimension as usize);
+                ivf_pq.insert(vec_slice, record_id).map_err(|_| RemDbError::OutOfMemory)
+            }
             _ => {
                 // 线性搜索不需要额外操作
                 Ok(())
@@ -1285,6 +1318,17 @@ impl VectorIndex {
                 },
                 Err(e) => Err(e),
             },
+            VectorIndexImpl::IVFPQ(Some(ivf_pq)) => {
+                let dim = self.dimension as usize;
+                let query_slice = core::slice::from_raw_parts(query_vec, dim);
+                match ivf_pq.search(query_slice, 1) {
+                    Ok(results) => match results.first() {
+                        Some(&(_, record_id)) => Ok(record_id),
+                        None => Err(RemDbError::RecordNotFound),
+                    },
+                    Err(e) => Err(e),
+                }
+            },
             _ => {
                 // 线性搜索查找最相似的向量
                 let mut min_distance = f32::MAX;
@@ -1354,6 +1398,18 @@ impl VectorIndex {
                 let r = ivf_index.search(query_vec, k);
                 crate::platform::spin_unlock(&mut self.lock);
                 // If the IVF index has no data, return empty results
+                match r {
+                    Ok(results) => results,
+                    Err(RemDbError::RecordNotFound) => Vec::new(),
+                    Err(e) => return Err(e),
+                }
+            }
+            VectorIndexImpl::IVFPQ(Some(ivf_pq)) => {
+                // Convert query to slice for PQ search
+                let dim = self.dimension as usize;
+                let query_slice = core::slice::from_raw_parts(query_vec, dim);
+                let r = ivf_pq.search(query_slice, k);
+                crate::platform::spin_unlock(&mut self.lock);
                 match r {
                     Ok(results) => results,
                     Err(RemDbError::RecordNotFound) => Vec::new(),
