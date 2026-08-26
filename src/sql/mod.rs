@@ -4,7 +4,7 @@
 
 mod error;
 pub mod functions;
-mod operations;
+pub mod operations;
 mod query_executor;
 pub mod query_parser;
 mod result_set;
