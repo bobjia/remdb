@@ -3,32 +3,17 @@
 //! 该模块负责执行SQL查询并返回结果集。
 
 use alloc::string::String;
-use alloc::string::ToString;
 use alloc::vec::Vec;
-use std::time::Instant;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error, info};
+use crate::log::{debug, error};
 use crate::model::model_manager::get_global_model_manager;
-use crate::sql::operations::comparison::{
-    compare_values, evaluate_condition_with_alias, get_field_value, extract_index_operation,
-    IndexOperation,
-};
 use crate::sql::operations::ddl;
 use crate::sql::operations::dml;
-use crate::sql::operations::expression::{
-    evaluate_expression, evaluate_expression_for_aggregate, evaluate_expression_without_table,
-    execute_function_call,
-};
+use crate::sql::operations::select::execute_select_query;
 use crate::sql::operations::timeseries::execute_select_timeseries_query;
-use crate::sql::query_parser::{Expression, GroupByClause, JoinType};
-use crate::sql::utils::{estimate_memory_usage_for_records, sort_rows_with_alias};
-use crate::sql::{
-    check_memory_limit, ComparisonCondition, ComparisonOperator, Condition, QueryExecutionError,
-    ResultSet, SqlQuery,
-};
-use crate::types::{DataType, JsonStorage, TypedValue};
-use crate::{MemoryTable, RemDb, RemDbError, Value, MAX_STRING_LEN};
+use crate::sql::{QueryExecutionError, ResultSet, SqlQuery};
+use crate::RemDb;
 
 /// 执行SQL查询
 pub fn execute_query(db: &mut RemDb, query: &SqlQuery) -> Result<ResultSet, QueryExecutionError> {

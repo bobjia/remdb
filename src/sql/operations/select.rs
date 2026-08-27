@@ -5,7 +5,7 @@
 use std::time::Instant;
 
 #[cfg(feature = "log")]
-use crate::log::{debug, error};
+use crate::log::{debug, info};
 use crate::sql::operations::comparison::{
     compare_values, evaluate_condition_with_alias, get_field_value, extract_index_operation,
     IndexOperation,
@@ -24,7 +24,6 @@ use crate::types::{DataType, JsonStorage, TypedValue};
 use crate::{MemoryTable, RemDb, RemDbError, Value, MAX_STRING_LEN};
 use alloc::string::String;
 use alloc::string::ToString;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 /// 执行没有FROM子句的表达式查询
 fn execute_expression_query(
@@ -1641,7 +1640,7 @@ fn add_joined_row(
 }
 
 /// 执行SELECT查询
-fn execute_select_query(
+pub fn execute_select_query(
     db: &mut RemDb,
     query: &SqlQuery,
 ) -> Result<ResultSet, QueryExecutionError> {

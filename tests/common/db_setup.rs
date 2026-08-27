@@ -60,7 +60,7 @@ pub fn setup_test_db_with_posix_platform(_size: usize) -> Vec<u8> {
     unsafe {
         remdb::memory::allocator::init_global_allocator(
             &raw mut DB_MEMORY as *mut u8,
-            core::mem::size_of_val(&*DB_MEMORY),
+            core::mem::size_of_val(&DB_MEMORY),
         )
         .unwrap();
     }
