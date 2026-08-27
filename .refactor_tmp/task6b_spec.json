@@ -1,0 +1,9 @@
+{
+  "source": "/workspace/src/sql/query_executor.rs",
+  "moves": [
+    {"name": "evaluate_condition", "target": "/workspace/src/sql/operations/comparison.rs"},
+    {"name": "evaluate_between", "target": "/workspace/src/sql/operations/comparison.rs"},
+    {"name": "evaluate_comparison", "target": "/workspace/src/sql/operations/comparison.rs"},
+    {"name": "get_field_value", "target": "/workspace/src/sql/operations/comparison.rs"}
+  ]
+}

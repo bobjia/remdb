@@ -1,0 +1,16 @@
+{
+  "source": "/workspace/src/sql/query_executor.rs",
+  "moves": [
+    {"name": "process_aggregate_query", "target": "/workspace/src/sql/operations/select.rs"},
+    {"name": "QueryStats", "target": "/workspace/src/sql/operations/select.rs"},
+    {"name": "execute_select_query", "target": "/workspace/src/sql/operations/select.rs"},
+    {"name": "add_joined_row", "target": "/workspace/src/sql/operations/select.rs"},
+    {"name": "validate_cross_table_columns", "target": "/workspace/src/sql/operations/select.rs"},
+    {"name": "execute_select_join_query", "target": "/workspace/src/sql/operations/select.rs"},
+    {"name": "process_group_by_query", "target": "/workspace/src/sql/operations/select.rs"},
+    {"name": "find_table_by_name", "target": "/workspace/src/sql/operations/select.rs"},
+    {"name": "validate_expression", "target": "/workspace/src/sql/operations/select.rs"},
+    {"name": "validate_columns", "target": "/workspace/src/sql/operations/select.rs"},
+    {"name": "execute_expression_query", "target": "/workspace/src/sql/operations/select.rs"}
+  ]
+}

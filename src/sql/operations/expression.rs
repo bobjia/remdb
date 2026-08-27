@@ -1135,3 +1135,103 @@ pub fn evaluate_expression_without_table_with_depth(
         }
     }
 }
+/// 为聚合函数计算表达式值
+pub fn evaluate_expression_for_aggregate(
+    args: &[Expression],
+    record_values: &[TypedValue],
+    field_index_map: &std::collections::HashMap<String, usize>,
+) -> Result<TypedValue, QueryExecutionError> {
+    if args.is_empty() {
+        // 对于COUNT(*), COUNT(1)等无参数情况
+        return Ok(TypedValue {
+            value_type: DataType::UInt64,
+            value: Value { u64: 1 },
+        });
+    }
+
+    // 简化处理，只处理第一个参数
+    // TODO: 支持更复杂的表达式
+    let arg = &args[0];
+    match arg {
+        Expression::Field { name, .. } if name == "*" => {
+            // 对于COUNT(*)，返回1用于计数
+            Ok(TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: 1 },
+            })
+        }
+        Expression::Constant { value, .. } => {
+            // 常量值，直接转换
+            use crate::sql::Value as SqlValue;
+
+            let (value_type, value) = match value {
+                SqlValue::Integer(i) => (DataType::Int64, Value { i64: *i }),
+                SqlValue::Float(f) => (DataType::Float64, Value { float64: *f }),
+                SqlValue::String(s) => {
+                    let mut buf = [0; MAX_STRING_LEN];
+                    let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                    buf[..len].copy_from_slice(&s.as_bytes()[..len]);
+                    (DataType::VarChar, Value { string: buf })
+                }
+                SqlValue::Boolean(b) => (DataType::Bool, Value { bool: *b }),
+                SqlValue::Null => (
+                    DataType::Json,
+                    Value {
+                        json_storage: crate::types::JsonStorage::Null,
+                    },
+                ),
+                SqlValue::Identifier(s) => {
+                    // 标识符作为字符串处理
+                    let mut buf = [0; MAX_STRING_LEN];
+                    let len = core::cmp::min(s.len(), MAX_STRING_LEN);
+                    buf[..len].copy_from_slice(&s.as_bytes()[..len]);
+                    (DataType::VarChar, Value { string: buf })
+                }
+                SqlValue::Json(json_str) => {
+                    let mut buf = [0u8; 256];
+                    let len = core::cmp::min(json_str.len(), 256);
+                    buf[..len].copy_from_slice(&json_str.as_bytes()[..len]);
+                    let json_storage = if json_str.len() <= 256 {
+                        crate::types::JsonStorage::Inline(buf)
+                    } else {
+                        crate::types::JsonStorage::Null
+                    };
+                    (DataType::Json, Value { json_storage })
+                }
+            };
+
+            Ok(TypedValue { value_type, value })
+        }
+        Expression::Field { name, .. } => {
+            // 字段引用：从 record_values 中获取字段值
+            // 处理带表名/别名的字段 (如 "table.field" 或 "t.field")
+            let field_name = if name.contains('.') {
+                let parts: Vec<&str> = name.split('.').collect();
+                parts[1]
+            } else {
+                name.as_str()
+            };
+
+            // 查找字段索引
+            if let Some(&index) = field_index_map.get(field_name) {
+                if index < record_values.len() {
+                    Ok(record_values[index].clone())
+                } else {
+                    Err(QueryExecutionError::InternalError)
+                }
+            } else {
+                // 字段未找到，返回错误
+                Err(QueryExecutionError::FieldNotFound)
+            }
+        }
+        _ => {
+            // 对于其他表达式，这里简化处理，返回默认值
+            // TODO: 支持更复杂的表达式
+            Ok(TypedValue {
+                value_type: DataType::UInt64,
+                value: Value { u64: 1 },
+            })
+        }
+    }
+}
+

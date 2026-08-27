@@ -1,0 +1,6 @@
+{
+  "source": "/workspace/src/sql/query_executor.rs",
+  "moves": [
+    {"name": "evaluate_expression_for_aggregate", "target": "/workspace/src/sql/operations/expression.rs"}
+  ]
+}

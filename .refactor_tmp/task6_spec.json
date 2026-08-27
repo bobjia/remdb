@@ -1,0 +1,11 @@
+{
+  "source": "/workspace/src/sql/query_executor.rs",
+  "moves": [
+    {"name": "execute_insert_query", "target": "/workspace/src/sql/operations/dml.rs"},
+    {"name": "execute_delete_query", "target": "/workspace/src/sql/operations/dml.rs"},
+    {"name": "execute_update_query", "target": "/workspace/src/sql/operations/dml.rs"},
+    {"name": "set_field_value", "target": "/workspace/src/sql/operations/dml.rs"},
+    {"name": "set_field_value_with_depth", "target": "/workspace/src/sql/operations/dml.rs"},
+    {"name": "execute_insert_timeseries_query", "target": "/workspace/src/sql/operations/dml.rs"}
+  ]
+}

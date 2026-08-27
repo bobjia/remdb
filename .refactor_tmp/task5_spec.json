@@ -1,0 +1,12 @@
+{
+  "source": "/workspace/src/sql/query_executor.rs",
+  "moves": [
+    {"name": "find_timeseries_table_by_name", "target": "/workspace/src/sql/operations/timeseries.rs"},
+    {"name": "extract_time_range_from_condition", "target": "/workspace/src/sql/operations/timeseries.rs"},
+    {"name": "execute_select_timeseries_query", "target": "/workspace/src/sql/operations/timeseries.rs"},
+    {"name": "downsample_records", "target": "/workspace/src/sql/operations/timeseries.rs"},
+    {"name": "interpolate_missing_window", "target": "/workspace/src/sql/operations/timeseries.rs"},
+    {"name": "parse_sample_interval", "target": "/workspace/src/sql/operations/timeseries.rs"},
+    {"name": "evaluate_timeseries_expression", "target": "/workspace/src/sql/operations/timeseries.rs"}
+  ]
+}

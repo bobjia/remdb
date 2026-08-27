@@ -1,0 +1,8 @@
+{
+  "source": "/workspace/src/sql/query_executor.rs",
+  "moves": [
+    {"name": "extract_indexed_condition", "target": "/workspace/src/sql/operations/comparison.rs"},
+    {"name": "IndexOperation", "target": "/workspace/src/sql/operations/comparison.rs"},
+    {"name": "extract_index_operation", "target": "/workspace/src/sql/operations/comparison.rs"}
+  ]
+}

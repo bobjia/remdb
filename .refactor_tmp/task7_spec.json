@@ -1,0 +1,13 @@
+{
+  "source": "/workspace/src/sql/query_executor.rs",
+  "moves": [
+    {"name": "execute_create_table_query", "target": "/workspace/src/sql/operations/ddl.rs"},
+    {"name": "execute_show_index_build_status_query", "target": "/workspace/src/sql/operations/ddl.rs"},
+    {"name": "execute_reindex_query", "target": "/workspace/src/sql/operations/ddl.rs"},
+    {"name": "execute_show_tables_query", "target": "/workspace/src/sql/operations/ddl.rs"},
+    {"name": "execute_create_index_query", "target": "/workspace/src/sql/operations/ddl.rs"},
+    {"name": "execute_describe_query", "target": "/workspace/src/sql/operations/ddl.rs"},
+    {"name": "execute_create_time_series_table_query", "target": "/workspace/src/sql/operations/ddl.rs"},
+    {"name": "execute_create_checkpoint_query", "target": "/workspace/src/sql/operations/ddl.rs"}
+  ]
+}
